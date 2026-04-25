@@ -1,0 +1,17 @@
+/target
+**/*.rs.bk
+Cargo.lock.bk
+
+# IDE
+.idea/
+.vscode/
+
+# macOS
+.DS_Store
+
+# HEAL local state when used inside this repo for dogfooding
+/.heal/
+
+# tmp / output dirs from CLAUDE.md conventions
+/tmp/
+/.output/

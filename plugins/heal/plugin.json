@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/claude-plugin",
+  "name": "heal",
+  "version": "0.1.0",
+  "description": "HEAL — code health monitoring & maintenance via Claude Code hooks and skills.",
+  "author": "kechol",
+  "license": "MIT",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "command": "hooks/post-edit.sh"
+      }
+    ],
+    "Stop": [
+      {
+        "command": "hooks/on-stop.sh"
+      }
+    ]
+  },
+  "skills": [
+    "skills/check-code",
+    "skills/check-docs"
+  ]
+}
