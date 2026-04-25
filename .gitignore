@@ -15,3 +15,10 @@ Cargo.lock.bk
 # tmp / output dirs from CLAUDE.md conventions
 /tmp/
 /.output/
+
+# Local-only design notes (kept on disk, intentionally not in git history).
+/KNOWLEDGE.md
+/TODO.md
+
+# Claude Code local settings (per-machine permissions etc.)
+/.claude/
