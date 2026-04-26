@@ -22,6 +22,7 @@ tree-sitter = { workspace = true }
 tree-sitter-typescript = { workspace = true }
 tree-sitter-rust = { workspace = true }
 ignore = { workspace = true }
+git2 = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

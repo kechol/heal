@@ -6,6 +6,7 @@
 //! excludes (mirroring `LocObserver::scan`'s contract).
 
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use ignore::WalkBuilder;
 
@@ -27,13 +28,33 @@ pub(crate) fn walk_supported_files(root: &Path, excluded: &[String]) -> Vec<Path
         .filter_map(|entry| {
             let path = entry.into_path();
             Language::from_path(&path)?;
-            if !excluded.is_empty() {
-                let s = path.to_string_lossy();
-                if excluded.iter().any(|pat| s.contains(pat.as_str())) {
-                    return None;
-                }
+            if is_path_excluded(&path, excluded) {
+                return None;
             }
             Some(path)
         })
         .collect()
+}
+
+/// Substring-match exclusion check shared by every observer that walks
+/// project paths. Empty `patterns` is the fast path.
+#[must_use]
+pub(crate) fn is_path_excluded(path: &Path, patterns: &[String]) -> bool {
+    if patterns.is_empty() {
+        return false;
+    }
+    let s = path.to_string_lossy();
+    patterns.iter().any(|pat| s.contains(pat.as_str()))
+}
+
+/// Unix-second cutoff for git-history observers: "anything older than
+/// `since_days` is out of scope". Returns `i64::MIN` if the system clock is
+/// before the epoch (effectively "no cutoff") so every commit is admitted.
+#[must_use]
+pub(crate) fn since_cutoff(since_days: u32) -> i64 {
+    let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) else {
+        return i64::MIN;
+    };
+    let secs = i64::try_from(now.as_secs()).unwrap_or(i64::MAX);
+    secs.saturating_sub(i64::from(since_days).saturating_mul(86_400))
 }

@@ -4,7 +4,11 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod change_coupling;
+pub mod churn;
 pub mod complexity;
+pub mod duplication;
+pub mod hotspot;
 pub mod lang;
 pub mod loc;
 mod walk;

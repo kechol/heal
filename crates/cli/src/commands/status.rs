@@ -4,7 +4,11 @@ use anyhow::Result;
 use heal_core::config::load_from_project;
 use heal_core::history::HistoryReader;
 use heal_core::HealPaths;
+use heal_observer::change_coupling::{ChangeCouplingObserver, ChangeCouplingReport};
+use heal_observer::churn::{ChurnObserver, ChurnReport};
 use heal_observer::complexity::{ComplexityMetric, ComplexityObserver, ComplexityReport};
+use heal_observer::duplication::{DuplicationObserver, DuplicationReport};
+use heal_observer::hotspot::{compose as compose_hotspot, HotspotReport, HotspotWeights};
 use heal_observer::loc::{LocObserver, LocReport};
 use serde_json::json;
 
@@ -12,6 +16,10 @@ use serde_json::json;
 const TOP_LANGUAGES: usize = 5;
 /// Number of high-complexity functions to surface per metric.
 const TOP_FUNCTIONS: usize = 5;
+/// Number of files to surface for churn / coupling / hotspot rankings.
+const TOP_FILES: usize = 5;
+/// Number of duplication blocks to surface inline.
+const TOP_DUPLICATES: usize = 5;
 
 pub fn run(project: &Path, json_output: bool) -> Result<()> {
     let paths = HealPaths::new(project);
@@ -31,6 +39,29 @@ pub fn run(project: &Path, json_output: bool) -> Result<()> {
         .map(|c| LocObserver::from_config(c).scan(project));
     let complexity_observer = cfg.as_ref().map(ComplexityObserver::from_config);
     let complexity = complexity_observer.as_ref().map(|obs| obs.scan(project));
+    let churn = cfg
+        .as_ref()
+        .filter(|c| c.metrics.churn.enabled)
+        .map(|c| ChurnObserver::from_config(c).scan(project));
+    let change_coupling = cfg
+        .as_ref()
+        .filter(|c| c.metrics.change_coupling.enabled)
+        .map(|c| ChangeCouplingObserver::from_config(c).scan(project));
+    let duplication = cfg
+        .as_ref()
+        .filter(|c| c.metrics.duplication.enabled)
+        .map(|c| DuplicationObserver::from_config(c).scan(project));
+    let hotspot = match (cfg.as_ref(), churn.as_ref(), complexity.as_ref()) {
+        (Some(c), Some(ch), Some(cx)) if c.metrics.hotspot.enabled => Some(compose_hotspot(
+            ch,
+            cx,
+            HotspotWeights {
+                churn: c.metrics.hotspot.weight_churn,
+                complexity: c.metrics.hotspot.weight_complexity,
+            },
+        )),
+        _ => None,
+    };
 
     if json_output {
         println!(
@@ -41,6 +72,10 @@ pub fn run(project: &Path, json_output: bool) -> Result<()> {
                 "snapshots": snapshot_count,
                 "loc": loc,
                 "complexity": complexity,
+                "churn": churn,
+                "change_coupling": change_coupling,
+                "duplication": duplication,
+                "hotspot": hotspot,
             }))?
         );
         return Ok(());
@@ -59,6 +94,18 @@ pub fn run(project: &Path, json_output: bool) -> Result<()> {
     }
     if let (Some(obs), Some(report)) = (complexity_observer.as_ref(), complexity.as_ref()) {
         print_complexity_summary(obs, report);
+    }
+    if let Some(report) = churn.as_ref() {
+        print_churn_summary(report);
+    }
+    if let Some(report) = change_coupling.as_ref() {
+        print_coupling_summary(report);
+    }
+    if let Some(report) = duplication.as_ref() {
+        print_duplication_summary(report);
+    }
+    if let Some(report) = hotspot.as_ref() {
+        print_hotspot_summary(report);
     }
     Ok(())
 }
@@ -126,6 +173,113 @@ fn print_top_functions(report: &ComplexityReport, header: &str, metric: Complexi
             f.file.display(),
             f.line,
             f.name,
+        );
+    }
+}
+
+fn print_churn_summary(report: &ChurnReport) {
+    println!();
+    if report.files.is_empty() {
+        println!("  churn: no commits in the last {} days", report.since_days);
+        return;
+    }
+    println!(
+        "  churn (last {} days): {} files across {} commits (+{}/-{} lines)",
+        report.since_days,
+        report.totals.files,
+        report.totals.commits,
+        report.totals.lines_added,
+        report.totals.lines_deleted,
+    );
+    println!("  most-churned files:");
+    for f in report.worst_n(TOP_FILES) {
+        println!(
+            "    - {:>3}  {}  (+{}/-{})",
+            f.commits,
+            f.path.display(),
+            f.lines_added,
+            f.lines_deleted,
+        );
+    }
+}
+
+fn print_coupling_summary(report: &ChangeCouplingReport) {
+    println!();
+    if report.pairs.is_empty() {
+        println!(
+            "  change coupling: no pairs at min_coupling={} ({} commits scanned)",
+            report.min_coupling, report.totals.commits_considered,
+        );
+        return;
+    }
+    println!(
+        "  change coupling: {} pairs across {} files (min_coupling={}, {} commits scanned)",
+        report.totals.pairs,
+        report.totals.files,
+        report.min_coupling,
+        report.totals.commits_considered,
+    );
+    println!("  most-coupled pairs:");
+    for pair in report.pairs.iter().take(TOP_FILES) {
+        println!(
+            "    - {:>3}  {}  ↔  {}",
+            pair.count,
+            pair.a.display(),
+            pair.b.display(),
+        );
+    }
+}
+
+fn print_duplication_summary(report: &DuplicationReport) {
+    println!();
+    if report.blocks.is_empty() {
+        println!(
+            "  duplication: no blocks ≥ {} tokens detected",
+            report.min_tokens
+        );
+        return;
+    }
+    println!(
+        "  duplication: {} blocks affecting {} files (min_tokens={}, total duplicate tokens {})",
+        report.totals.duplicate_blocks,
+        report.totals.files_affected,
+        report.min_tokens,
+        report.totals.duplicate_tokens,
+    );
+    println!("  largest duplicate blocks:");
+    for block in report.blocks.iter().take(TOP_DUPLICATES) {
+        let locs: Vec<String> = block
+            .locations
+            .iter()
+            .map(|l| format!("{}:{}-{}", l.path.display(), l.start_line, l.end_line))
+            .collect();
+        println!(
+            "    - {:>3} tokens × {} locations: {}",
+            block.token_count,
+            block.locations.len(),
+            locs.join(", "),
+        );
+    }
+}
+
+fn print_hotspot_summary(report: &HotspotReport) {
+    println!();
+    if report.entries.is_empty() {
+        println!("  hotspot: no files have both churn and complexity signal");
+        return;
+    }
+    println!(
+        "  hotspot: {} files (max score {:.1})",
+        report.totals.files, report.totals.max_score,
+    );
+    println!("  top hotspots (CCN_sum × commits):");
+    for entry in report.worst_n(TOP_FILES) {
+        println!(
+            "    - {:>6.1}  {}  (CCN_sum={}, commits={})",
+            entry.score,
+            entry.path.display(),
+            entry.ccn_sum,
+            entry.churn_commits,
         );
     }
 }
