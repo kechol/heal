@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod complexity;
+pub mod lang;
 pub mod loc;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
