@@ -24,6 +24,7 @@ chrono = { version = "0.4", features = ["serde", "clock"] }
 include_dir = "0.7"
 flate2 = "1.0"
 tempfile = "3"
+tokei = { version = "14", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -9,7 +9,12 @@ no-default-features = false
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "warn"
-ignore = []
+ignore = [
+    # `term_size` is unmaintained, pulled transitively via `tokei -> table_formatter`.
+    # Not an exploitable issue (terminal width detection); revisit when tokei
+    # upstream migrates to `terminal_size`.
+    "RUSTSEC-2020-0163",
+]
 
 [licenses]
 confidence-threshold = 0.93

@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod loc;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ObservationMeta {
     pub name: &'static str,

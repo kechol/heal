@@ -12,8 +12,35 @@ fn empty_toml_yields_recommended_metric_defaults() {
     assert!(cfg.metrics.doc_update_skew.enabled);
     assert!(!cfg.metrics.bus_factor.enabled);
     assert!(!cfg.metrics.line_coverage.enabled);
+    assert!(cfg.metrics.loc.inherit_git_excludes);
+    assert!(cfg.metrics.loc.exclude_paths.is_empty());
     assert_eq!(cfg.git.since_days, 90);
     assert_eq!(cfg.agent.provider, "claude-code");
+}
+
+#[test]
+fn loc_config_round_trips_with_overrides() {
+    let cfg = r#"
+        [metrics.loc]
+        inherit_git_excludes = false
+        exclude_paths = ["dist", "vendor"]
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    assert!(!parsed.metrics.loc.inherit_git_excludes);
+    assert_eq!(
+        parsed.metrics.loc.exclude_paths,
+        vec!["dist".to_string(), "vendor".to_string()]
+    );
+}
+
+#[test]
+fn loc_section_rejects_unknown_fields() {
+    let bad = r#"
+        [metrics.loc]
+        unknown = "oops"
+    "#;
+    let err = Config::from_toml_str(bad).unwrap_err().to_string();
+    assert!(err.contains("unknown"), "got: {err}");
 }
 
 #[test]

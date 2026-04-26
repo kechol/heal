@@ -74,6 +74,8 @@ fn default_since_days() -> u32 {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct MetricsConfig {
+    #[serde(default)]
+    pub loc: LocConfig,
     #[serde(default = "default_enabled")]
     pub churn: ChurnConfig,
     #[serde(default = "default_enabled")]
@@ -101,6 +103,7 @@ impl Default for MetricsConfig {
         // Match serde's "section missing" behavior so programmatic `default()`
         // and `from_toml_str("")` produce the same struct.
         Self {
+            loc: LocConfig::default(),
             churn: ChurnConfig::enabled(),
             hotspot: HotspotConfig::enabled(),
             change_coupling: ChangeCouplingConfig::enabled(),
@@ -113,6 +116,30 @@ impl Default for MetricsConfig {
             bus_factor: ToggleConfig::default(),
         }
     }
+}
+
+/// LOC has no enable/disable toggle: it is a foundational metric that other
+/// observers (hotspot, churn weighting, primary-language detection) depend on.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct LocConfig {
+    #[serde(default = "default_true")]
+    pub inherit_git_excludes: bool,
+    #[serde(default)]
+    pub exclude_paths: Vec<String>,
+}
+
+impl Default for LocConfig {
+    fn default() -> Self {
+        Self {
+            inherit_git_excludes: true,
+            exclude_paths: Vec::new(),
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 trait Toggle {
