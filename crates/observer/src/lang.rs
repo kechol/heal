@@ -19,11 +19,16 @@ const TYPESCRIPT_FUNCTIONS_QUERY: &str = include_str!("../queries/typescript/fun
 const TYPESCRIPT_CCN_QUERY: &str = include_str!("../queries/typescript/ccn.scm");
 const TYPESCRIPT_COGNITIVE_QUERY: &str = include_str!("../queries/typescript/cognitive.scm");
 
+const RUST_FUNCTIONS_QUERY: &str = include_str!("../queries/rust/functions.scm");
+const RUST_CCN_QUERY: &str = include_str!("../queries/rust/ccn.scm");
+const RUST_COGNITIVE_QUERY: &str = include_str!("../queries/rust/cognitive.scm");
+
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Language {
     TypeScript,
     Tsx,
+    Rust,
 }
 
 /// A compiled tree-sitter `Query` paired with its typed capture indices.
@@ -68,6 +73,7 @@ impl LanguageQueries {
 
 static TYPESCRIPT_QUERIES: LanguageQueries = LanguageQueries::new();
 static TSX_QUERIES: LanguageQueries = LanguageQueries::new();
+static RUST_QUERIES: LanguageQueries = LanguageQueries::new();
 
 impl Language {
     /// Dispatch on file extension. Returns `None` for unsupported types — the
@@ -78,6 +84,7 @@ impl Language {
         match ext {
             "ts" | "mts" | "cts" => Some(Self::TypeScript),
             "tsx" => Some(Self::Tsx),
+            "rs" => Some(Self::Rust),
             _ => None,
         }
     }
@@ -88,6 +95,7 @@ impl Language {
         match self {
             Self::TypeScript => "typescript",
             Self::Tsx => "tsx",
+            Self::Rust => "rust",
         }
     }
 
@@ -96,6 +104,7 @@ impl Language {
         match self {
             Self::TypeScript => LANGUAGE_TYPESCRIPT.into(),
             Self::Tsx => LANGUAGE_TSX.into(),
+            Self::Rust => tree_sitter_rust::LANGUAGE.into(),
         }
     }
 
@@ -103,8 +112,8 @@ impl Language {
     pub fn functions_query(self) -> &'static CompiledQuery<FunctionCaptures> {
         self.cache().functions.get_or_init(|| {
             let lang = self.ts_language();
-            let query =
-                Query::new(&lang, TYPESCRIPT_FUNCTIONS_QUERY).expect("functions.scm must compile");
+            let query = Query::new(&lang, self.functions_query_source())
+                .expect("functions.scm must compile");
             let captures = FunctionCaptures {
                 scope: capture_index(&query, "function.scope"),
             };
@@ -116,7 +125,7 @@ impl Language {
     pub fn ccn_query(self) -> &'static CompiledQuery<CcnCaptures> {
         self.cache().ccn.get_or_init(|| {
             let lang = self.ts_language();
-            let query = Query::new(&lang, TYPESCRIPT_CCN_QUERY).expect("ccn.scm must compile");
+            let query = Query::new(&lang, self.ccn_query_source()).expect("ccn.scm must compile");
             let captures = CcnCaptures {
                 point: capture_index(&query, "ccn.point"),
                 binary: capture_index(&query, "ccn.binary"),
@@ -129,8 +138,8 @@ impl Language {
     pub fn cognitive_query(self) -> &'static CompiledQuery<CognitiveCaptures> {
         self.cache().cognitive.get_or_init(|| {
             let lang = self.ts_language();
-            let query =
-                Query::new(&lang, TYPESCRIPT_COGNITIVE_QUERY).expect("cognitive.scm must compile");
+            let query = Query::new(&lang, self.cognitive_query_source())
+                .expect("cognitive.scm must compile");
             let captures = CognitiveCaptures {
                 if_: capture_index(&query, "if"),
                 else_: capture_index(&query, "else"),
@@ -146,6 +155,28 @@ impl Language {
         match self {
             Self::TypeScript => &TYPESCRIPT_QUERIES,
             Self::Tsx => &TSX_QUERIES,
+            Self::Rust => &RUST_QUERIES,
+        }
+    }
+
+    fn functions_query_source(self) -> &'static str {
+        match self {
+            Self::TypeScript | Self::Tsx => TYPESCRIPT_FUNCTIONS_QUERY,
+            Self::Rust => RUST_FUNCTIONS_QUERY,
+        }
+    }
+
+    fn ccn_query_source(self) -> &'static str {
+        match self {
+            Self::TypeScript | Self::Tsx => TYPESCRIPT_CCN_QUERY,
+            Self::Rust => RUST_CCN_QUERY,
+        }
+    }
+
+    fn cognitive_query_source(self) -> &'static str {
+        match self {
+            Self::TypeScript | Self::Tsx => TYPESCRIPT_COGNITIVE_QUERY,
+            Self::Rust => RUST_COGNITIVE_QUERY,
         }
     }
 }
@@ -186,6 +217,14 @@ mod tests {
     }
 
     #[test]
+    fn dispatches_rust_extension() {
+        assert_eq!(
+            Language::from_path(&PathBuf::from("crates/core/src/lib.rs")),
+            Some(Language::Rust)
+        );
+    }
+
+    #[test]
     fn rejects_unsupported_extensions() {
         // JavaScript support is intentionally deferred to a follow-up.
         assert_eq!(Language::from_path(&PathBuf::from("foo.js")), None);
@@ -210,11 +249,14 @@ mod tests {
         parser
             .set_language(&Language::Tsx.ts_language())
             .expect("tsx grammar loads");
+        parser
+            .set_language(&Language::Rust.ts_language())
+            .expect("rust grammar loads");
     }
 
     #[test]
     fn cached_queries_compile_and_index() {
-        for lang in [Language::TypeScript, Language::Tsx] {
+        for lang in [Language::TypeScript, Language::Tsx, Language::Rust] {
             let f = lang.functions_query();
             assert!(f.query.pattern_count() > 0);
             let _ = f.captures.scope;

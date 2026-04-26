@@ -125,9 +125,11 @@ impl<'p> Walker<'p> {
     }
 
     fn visit_else(&mut self, node: Node<'_>, depth: u32) {
-        // If the else_clause directly wraps an if_statement, the inner if
-        // (special-cased as else-if in visit_if) absorbs the +1.
-        let wraps_if = direct_child_of_kind(node, "if_statement").is_some();
+        // If the else_clause directly wraps an if (TS: if_statement, Rust:
+        // if_expression), the inner if — special-cased as else-if in visit_if —
+        // absorbs the +1.
+        let wraps_if = direct_child_of_kind(node, "if_statement").is_some()
+            || direct_child_of_kind(node, "if_expression").is_some();
         if !wraps_if {
             self.score = self.score.saturating_add(1);
         }

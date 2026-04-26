@@ -1,12 +1,18 @@
 //! Integration coverage for the complexity module: function extraction,
-//! CCN, and Cognitive Complexity over hand-crafted TypeScript / TSX snippets
-//! whose scores are derived inline so test failures are easy to interpret.
+//! CCN, and Cognitive Complexity over hand-crafted TypeScript / TSX / Rust
+//! snippets whose scores are derived inline so test failures are easy to
+//! interpret.
 
 use heal_observer::complexity::{analyze, extract_functions, parse, FunctionMetric};
 use heal_observer::lang::Language;
 
 fn analyze_ts(source: &str) -> Vec<FunctionMetric> {
     let parsed = parse(source.to_string(), Language::TypeScript).expect("parse ok");
+    analyze(&parsed)
+}
+
+fn analyze_rust(source: &str) -> Vec<FunctionMetric> {
+    let parsed = parse(source.to_string(), Language::Rust).expect("rust parse ok");
     analyze(&parsed)
 }
 
@@ -234,4 +240,198 @@ function List({ items }: Props) {
         .expect("anonymous arrow inside .map should be its own scope");
     assert_eq!(anon.ccn, 1);
     assert_eq!(anon.cognitive, 0);
+}
+
+// =====================================================================
+// Rust coverage
+// =====================================================================
+
+#[test]
+fn rust_ccn_baseline_for_empty_function_is_one() {
+    let metrics = analyze_rust("fn noop() {}");
+    let m = metric(&metrics, "noop");
+    assert_eq!(m.ccn, 1);
+}
+
+#[test]
+fn rust_ccn_sums_decision_points() {
+    // Hand count for `mixed`:
+    //   1 (baseline)
+    // + 1 (if)
+    // + 1 (for)
+    // + 1 (&&)
+    // + 1 (?)
+    // + 3 (3 match arms)
+    // = 8
+    let source = r#"
+fn mixed(xs: &[i32], flag: bool) -> Result<(), std::io::Error> {
+    if flag && xs.len() > 0 {
+        for x in xs {
+            std::fs::write("/tmp/x", x.to_string())?;
+            let kind = match *x {
+                0 => "zero",
+                n if n > 0 => "pos",
+                _ => "neg",
+            };
+            println!("{kind}");
+        }
+    }
+    Ok(())
+}
+"#;
+    let metrics = analyze_rust(source);
+    let m = metric(&metrics, "mixed");
+    assert_eq!(m.ccn, 8, "got {m:?}");
+}
+
+#[test]
+fn rust_cognitive_baseline_for_straight_line_is_zero() {
+    let metrics = analyze_rust("fn add(a: i32, b: i32) -> i32 { a + b }");
+    let m = metric(&metrics, "add");
+    assert_eq!(m.cognitive, 0);
+}
+
+#[test]
+fn rust_cognitive_nests_with_depth() {
+    // Three nested ifs → 1 + 2 + 3 = 6 (Sonar PDF example).
+    let source = r"
+fn deep(a: bool, b: bool, c: bool) -> i32 {
+    if a {
+        if b {
+            if c {
+                return 1;
+            }
+        }
+    }
+    0
+}
+";
+    let metrics = analyze_rust(source);
+    let m = metric(&metrics, "deep");
+    assert_eq!(m.cognitive, 6, "got {m:?}");
+}
+
+#[test]
+fn rust_cognitive_else_if_chain_does_not_double_nest() {
+    // if … else if … else if … else
+    //   +1 (if, depth 0)
+    //   +1 (else-if, no nesting bonus)
+    //   +1 (else-if, no nesting bonus)
+    //   +1 (else)
+    //   = 4
+    let source = r#"
+fn classify(n: i32) -> &'static str {
+    if n < 0 {
+        "neg"
+    } else if n == 0 {
+        "zero"
+    } else if n < 10 {
+        "small"
+    } else {
+        "large"
+    }
+}
+"#;
+    let metrics = analyze_rust(source);
+    let m = metric(&metrics, "classify");
+    assert_eq!(m.cognitive, 4, "got {m:?}");
+}
+
+#[test]
+fn rust_cognitive_match_treats_arms_as_one_increment() {
+    // match itself: +1 (depth 0). Arms inherit nesting=1 but contribute
+    // nothing on their own. The if inside the third arm: +1 + 1 (depth 1) = +2.
+    // The plain else block: +1 (no depth bonus per Sonar's else rule).
+    // Total: +1 + 2 + 1 = 4.
+    let source = r"
+fn classify(opt: Option<i32>) -> i32 {
+    match opt {
+        Some(0) => 0,
+        Some(n) => n,
+        None => {
+            if true {
+                -1
+            } else {
+                -2
+            }
+        }
+    }
+}
+";
+    let metrics = analyze_rust(source);
+    let m = metric(&metrics, "classify");
+    assert_eq!(m.cognitive, 4, "got {m:?}");
+}
+
+#[test]
+fn rust_cognitive_try_operator_counts_as_flat_increment() {
+    // Two `?` operators: +1 each (no nesting bonus, since they're flat).
+    let source = r"
+fn read_two() -> Result<String, std::io::Error> {
+    let a = std::fs::read_to_string('a')?;
+    let b = std::fs::read_to_string(&a)?;
+    Ok(b)
+}
+";
+    let metrics = analyze_rust(source);
+    let m = metric(&metrics, "read_two");
+    assert_eq!(m.cognitive, 2, "got {m:?}");
+}
+
+#[test]
+fn rust_closure_isolation_from_outer_function() {
+    // outer's body has 1 if → CCN 2, Cognitive 1.
+    // closure's body has 1 if → CCN 2, Cognitive 1.
+    // outer must NOT include the closure's decision points.
+    let source = r"
+fn outer(a: bool) -> i32 {
+    let inner = |x: i32| if x > 0 { 1 } else { 0 };
+    if a { inner(1) } else { inner(-1) }
+}
+";
+    let metrics = analyze_rust(source);
+    let outer = metric(&metrics, "outer");
+    assert_eq!(
+        outer.ccn, 2,
+        "outer CCN should exclude closure's decisions: {outer:?}"
+    );
+    assert_eq!(
+        outer.cognitive, 2,
+        "outer Cognitive: 1 (if) + 1 (else block) = 2: {outer:?}"
+    );
+
+    // The closure is named via the let_declaration's pattern.
+    let inner = metric(&metrics, "inner");
+    assert_eq!(inner.ccn, 2);
+    assert_eq!(
+        inner.cognitive, 2,
+        "closure Cognitive: 1 (if) + 1 (else block) = 2: {inner:?}"
+    );
+}
+
+#[test]
+fn rust_if_let_and_while_let_smoke() {
+    // if let / while let aren't separate node kinds in tree-sitter-rust 0.24+
+    // — they're encoded as if_expression / while_expression with let_condition
+    // children. The existing captures should fire either way.
+    let source = r"
+fn process(opt: Option<i32>) -> i32 {
+    let mut iter = opt.into_iter();
+    while let Some(x) = iter.next() {
+        if let Some(y) = Some(x).filter(|n| *n > 0) {
+            return y;
+        }
+    }
+    0
+}
+";
+    let metrics = analyze_rust(source);
+    let m = metric(&metrics, "process");
+    // Hand count CCN: 1 (baseline) + 1 (while) + 1 (if let) + 1 (closure |n| > 0
+    // is the closure body's binary; closure is its own scope, so doesn't count
+    // here) = 3 in the outer fn.
+    assert_eq!(m.ccn, 3, "got {m:?}");
+    // Cognitive: while +1+0=1 (depth→1). if let inside while: +1+1=2 (depth→2).
+    // Total = 3.
+    assert_eq!(m.cognitive, 3, "got {m:?}");
 }

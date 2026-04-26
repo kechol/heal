@@ -20,6 +20,8 @@ chrono = { workspace = true }
 tokei = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-typescript = { workspace = true }
+tree-sitter-rust = { workspace = true }
+ignore = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -445,6 +445,21 @@ impl Config {
         })
     }
 
+    /// The exclude-path list every observer should honor: `git.exclude_paths`
+    /// (when `metrics.loc.inherit_git_excludes` is true) followed by
+    /// `metrics.loc.exclude_paths`. The LOC config holds the canonical
+    /// project-wide exclude set so a single `[metrics.loc]` edit propagates.
+    #[must_use]
+    pub fn observer_excluded_paths(&self) -> Vec<String> {
+        let mut excluded: Vec<String> = if self.metrics.loc.inherit_git_excludes {
+            self.git.exclude_paths.clone()
+        } else {
+            Vec::new()
+        };
+        excluded.extend(self.metrics.loc.exclude_paths.iter().cloned());
+        excluded
+    }
+
     /// Default config for a new project. The caller is expected to fine-tune
     /// based on `heal init` auto-detection (solo vs team etc.) afterwards.
     #[must_use]

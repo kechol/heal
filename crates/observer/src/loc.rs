@@ -71,14 +71,8 @@ impl LocObserver {
     /// is true (default), then `metrics.loc.exclude_paths` is appended.
     #[must_use]
     pub fn from_config(cfg: &Config) -> Self {
-        let mut excluded: Vec<String> = if cfg.metrics.loc.inherit_git_excludes {
-            cfg.git.exclude_paths.clone()
-        } else {
-            Vec::new()
-        };
-        excluded.extend(cfg.metrics.loc.exclude_paths.iter().cloned());
         Self {
-            excluded,
+            excluded: cfg.observer_excluded_paths(),
             exclude_languages: Vec::new(),
         }
     }

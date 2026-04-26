@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub mod complexity;
 pub mod lang;
 pub mod loc;
+mod walk;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ObservationMeta {

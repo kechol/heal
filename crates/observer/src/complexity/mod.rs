@@ -12,6 +12,12 @@ use crate::lang::Language;
 
 mod ccn;
 mod cognitive;
+mod observer;
+
+pub use observer::{
+    ComplexityMetric, ComplexityObserver, ComplexityReport, ComplexityTotals, FileComplexity,
+    FunctionFinding,
+};
 
 pub(super) const LOGICAL_OPERATORS: &[&str] = &["&&", "||", "??"];
 
@@ -115,8 +121,9 @@ fn scope_from_node(node: Node<'_>, source: &str) -> FunctionScope {
 }
 
 /// Best-effort name resolution: prefer the node's own `name` field, then walk
-/// the parent chain for binding context (`variable_declarator`, `pair`,
-/// `assignment_expression`). Falls back to `<anonymous@LINE>`.
+/// the parent chain for binding context (TS `variable_declarator`, JS `pair`,
+/// JS `assignment_expression`, Rust `let_declaration`). Falls back to
+/// `<anonymous@LINE>`.
 fn resolve_function_name(node: Node<'_>, source: &str) -> String {
     if let Some(name_node) = node.child_by_field_name("name") {
         if let Ok(text) = name_node.utf8_text(source.as_bytes()) {
@@ -125,25 +132,21 @@ fn resolve_function_name(node: Node<'_>, source: &str) -> String {
     }
 
     if let Some(parent) = node.parent() {
-        match parent.kind() {
-            "variable_declarator" | "assignment_expression" => {
-                if let Some(lhs) = parent
-                    .child_by_field_name("name")
-                    .or_else(|| parent.child_by_field_name("left"))
-                {
-                    if let Ok(text) = lhs.utf8_text(source.as_bytes()) {
-                        return text.to_string();
-                    }
-                }
+        let lhs = match parent.kind() {
+            "variable_declarator" | "assignment_expression" => parent
+                .child_by_field_name("name")
+                .or_else(|| parent.child_by_field_name("left")),
+            "pair" => parent.child_by_field_name("key"),
+            // Rust: `let f = |x| ...` — pattern field carries the binding.
+            // For destructured patterns we get the literal source slice, which
+            // is still more useful than `<anonymous>`.
+            "let_declaration" => parent.child_by_field_name("pattern"),
+            _ => None,
+        };
+        if let Some(lhs) = lhs {
+            if let Ok(text) = lhs.utf8_text(source.as_bytes()) {
+                return text.to_string();
             }
-            "pair" => {
-                if let Some(key) = parent.child_by_field_name("key") {
-                    if let Ok(text) = key.utf8_text(source.as_bytes()) {
-                        return text.to_string();
-                    }
-                }
-            }
-            _ => {}
         }
     }
 

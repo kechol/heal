@@ -1,17 +1,9 @@
-use std::fs;
-use std::path::Path;
-
 use heal_core::config::{Config, LocConfig, MetricsConfig};
 use heal_observer::loc::{LocObserver, LocReport};
 use heal_observer::Observer;
 
-fn write(root: &Path, rel: &str, body: &str) {
-    let path = root.join(rel);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, body).unwrap();
-}
+mod common;
+use common::write;
 
 fn ts_file() -> &'static str {
     "// hi\nexport const a = 1;\nexport const b = 2;\nexport const c = 3;\n"
