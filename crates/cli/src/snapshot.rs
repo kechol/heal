@@ -19,6 +19,14 @@ use heal_observer::hotspot::HotspotReport;
 
 use crate::observers::{run_all, ObserverReports};
 
+/// `capture` plus serialization to the opaque JSON used as the `Snapshot`
+/// `data` payload. Both `heal init` and `heal hook commit` write the same
+/// shape, so the conversion lives here once.
+pub(crate) fn capture_value(project: &Path) -> Result<serde_json::Value> {
+    let snap = capture(project)?;
+    Ok(serde_json::to_value(&snap).expect("MetricsSnapshot serialization is infallible"))
+}
+
 /// Run every enabled observer and package the results into a snapshot.
 ///
 /// Returns `Ok(MetricsSnapshot::default())` when the project hasn't been

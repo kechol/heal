@@ -530,10 +530,11 @@ impl Config {
         excluded
     }
 
-    /// Default config for a new project. The caller is expected to fine-tune
-    /// based on `heal init` auto-detection (solo vs team etc.) afterwards.
+    /// Default config for a new project. `profile` selects between
+    /// solo-developer (Bus Factor off, low ceremony) and team (Bus Factor
+    /// on) flavors; `heal init` decides which based on git committer count.
     #[must_use]
-    pub fn recommended_for_solo() -> Self {
+    pub fn recommended(profile: ProjectProfile) -> Self {
         let mut cfg = Self {
             project: ProjectConfig::default(),
             git: GitConfig::default(),
@@ -542,7 +543,7 @@ impl Config {
             agent: AgentConfig::default(),
             notify: NotifyConfig::default(),
         };
-        cfg.metrics.bus_factor.enabled = false;
+        cfg.metrics.bus_factor.enabled = matches!(profile, ProjectProfile::Team);
         cfg.policy.insert(
             "high_complexity_new_function".to_string(),
             PolicyConfig {
@@ -557,6 +558,15 @@ impl Config {
         );
         cfg
     }
+}
+
+/// How `heal init` is expected to use the project: a single-developer repo
+/// or a multi-committer team. Drives a small number of recommended-config
+/// toggles (currently just Bus Factor on/off).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectProfile {
+    Solo,
+    Team,
 }
 
 /// Convenience: load from `.heal/config.toml` under a project root.

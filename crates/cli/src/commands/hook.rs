@@ -13,17 +13,12 @@ pub fn run(project: &Path, event: HookEvent) -> Result<()> {
     let writer = HistoryWriter::new(paths.history_dir());
 
     let payload = match event {
-        HookEvent::Commit => capture_commit(project)?,
+        HookEvent::Commit => snapshot::capture_value(project)?,
         HookEvent::Edit | HookEvent::Stop => capture_stdin()?,
     };
 
     writer.append(&Snapshot::new(event.as_str(), payload))?;
     Ok(())
-}
-
-fn capture_commit(project: &Path) -> Result<serde_json::Value> {
-    let snap = snapshot::capture(project)?;
-    Ok(serde_json::to_value(snap).expect("MetricsSnapshot serialization is infallible"))
 }
 
 fn capture_stdin() -> Result<serde_json::Value> {

@@ -1,4 +1,4 @@
-use heal_core::config::{Config, PolicyAction};
+use heal_core::config::{Config, PolicyAction, ProjectProfile};
 
 #[test]
 fn empty_toml_yields_recommended_metric_defaults() {
@@ -114,7 +114,7 @@ fn policy_action_is_kebab_case() {
 fn save_then_load_roundtrips() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
-    let cfg = Config::recommended_for_solo();
+    let cfg = Config::recommended(ProjectProfile::Solo);
     cfg.save(&path).unwrap();
     let reloaded = Config::load(&path).unwrap();
     assert_eq!(cfg, reloaded);
