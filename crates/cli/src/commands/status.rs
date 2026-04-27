@@ -14,10 +14,6 @@ use serde_json::json;
 
 use crate::observers::run_all;
 
-/// Fallback `top_n` when no `.heal/config.toml` exists yet (status runs
-/// before `heal init`). Mirrors `MetricsConfig::default().top_n`.
-const DEFAULT_TOP_N: usize = 5;
-
 pub fn run(project: &Path, json_output: bool) -> Result<()> {
     let paths = HealPaths::new(project);
     let cfg_exists = paths.config().exists();
@@ -37,7 +33,6 @@ pub fn run(project: &Path, json_output: bool) -> Result<()> {
     } else {
         None
     };
-    let top_n = cfg.as_ref().map_or(DEFAULT_TOP_N, |c| c.metrics.top_n);
     let reports = cfg.as_ref().map(|c| run_all(project, c));
 
     if json_output {
@@ -63,24 +58,32 @@ pub fn run(project: &Path, json_output: bool) -> Result<()> {
         println!("HEAL is not initialized in this project. Run `heal init` first.");
         return Ok(());
     }
+    let metrics = &cfg
+        .as_ref()
+        .expect("cfg_exists branch implies cfg loaded")
+        .metrics;
     let reports = reports.expect("cfg present implies reports built");
     println!("HEAL status (project: {})", project.display());
     println!("  config:           {}", paths.config().display());
     println!("  history segments: {}", history_segments.len());
     println!("  snapshots:        {snapshot_count}");
-    print_loc_summary(&reports.loc, top_n);
-    print_complexity_summary(&reports.complexity_observer, &reports.complexity, top_n);
+    print_loc_summary(&reports.loc, metrics.top_n_loc());
+    print_complexity_summary(
+        &reports.complexity_observer,
+        &reports.complexity,
+        metrics.top_n_complexity(),
+    );
     if let Some(report) = reports.churn.as_ref() {
-        print_churn_summary(report, top_n);
+        print_churn_summary(report, metrics.top_n_churn());
     }
     if let Some(report) = reports.change_coupling.as_ref() {
-        print_coupling_summary(report, top_n);
+        print_coupling_summary(report, metrics.top_n_change_coupling());
     }
     if let Some(report) = reports.duplication.as_ref() {
-        print_duplication_summary(report, top_n);
+        print_duplication_summary(report, metrics.top_n_duplication());
     }
     if let Some(report) = reports.hotspot.as_ref() {
-        print_hotspot_summary(report, top_n);
+        print_hotspot_summary(report, metrics.top_n_hotspot());
     }
     if let (Some((snap, _)), Some(d)) = (latest.as_ref(), delta.as_ref()) {
         print_delta_summary(snap, d);

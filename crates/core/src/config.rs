@@ -74,9 +74,9 @@ fn default_since_days() -> u32 {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct MetricsConfig {
-    /// How many entries each `worst_n` / status ranking surfaces. Applies
-    /// uniformly across complexity, churn, coupling, duplication, hotspot.
-    /// Per-metric overrides are deferred to v0.2.
+    /// Default `worst_n` width for status rankings. Each metric below can
+    /// override this with its own `top_n = N`; absent overrides fall back
+    /// to this value.
     #[serde(default = "default_top_n")]
     pub top_n: usize,
     #[serde(default)]
@@ -124,6 +124,35 @@ impl Default for MetricsConfig {
     }
 }
 
+impl MetricsConfig {
+    /// Resolve the effective `top_n` for a given metric: per-metric override
+    /// wins, otherwise fall back to the global `metrics.top_n`.
+    #[must_use]
+    pub fn top_n_loc(&self) -> usize {
+        self.loc.top_n.unwrap_or(self.top_n)
+    }
+    #[must_use]
+    pub fn top_n_complexity(&self) -> usize {
+        self.ccn.top_n.unwrap_or(self.top_n)
+    }
+    #[must_use]
+    pub fn top_n_churn(&self) -> usize {
+        self.churn.top_n.unwrap_or(self.top_n)
+    }
+    #[must_use]
+    pub fn top_n_change_coupling(&self) -> usize {
+        self.change_coupling.top_n.unwrap_or(self.top_n)
+    }
+    #[must_use]
+    pub fn top_n_duplication(&self) -> usize {
+        self.duplication.top_n.unwrap_or(self.top_n)
+    }
+    #[must_use]
+    pub fn top_n_hotspot(&self) -> usize {
+        self.hotspot.top_n.unwrap_or(self.top_n)
+    }
+}
+
 /// LOC has no enable/disable toggle: it is a foundational metric that other
 /// observers (hotspot, churn weighting, primary-language detection) depend on.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -133,6 +162,9 @@ pub struct LocConfig {
     pub inherit_git_excludes: bool,
     #[serde(default)]
     pub exclude_paths: Vec<String>,
+    /// Per-metric override for `metrics.top_n` — only the top languages list.
+    #[serde(default)]
+    pub top_n: Option<usize>,
 }
 
 impl Default for LocConfig {
@@ -140,6 +172,7 @@ impl Default for LocConfig {
         Self {
             inherit_git_excludes: true,
             exclude_paths: Vec::new(),
+            top_n: None,
         }
     }
 }
@@ -176,11 +209,17 @@ impl Toggle for ToggleConfig {
 #[serde(deny_unknown_fields)]
 pub struct ChurnConfig {
     pub enabled: bool,
+    /// Per-metric override for `metrics.top_n` — most-churned files list.
+    #[serde(default)]
+    pub top_n: Option<usize>,
 }
 
 impl Toggle for ChurnConfig {
     fn enabled() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            top_n: None,
+        }
     }
 }
 
@@ -192,6 +231,10 @@ pub struct HotspotConfig {
     pub weight_churn: f64,
     #[serde(default = "default_weight")]
     pub weight_complexity: f64,
+    /// Per-metric override for `metrics.top_n` — top hotspot files. Also
+    /// drives the new-in-top-N membership diff in `SnapshotDelta`.
+    #[serde(default)]
+    pub top_n: Option<usize>,
 }
 
 impl Eq for HotspotConfig {}
@@ -202,6 +245,7 @@ impl Default for HotspotConfig {
             enabled: false,
             weight_churn: default_weight(),
             weight_complexity: default_weight(),
+            top_n: None,
         }
     }
 }
@@ -225,6 +269,9 @@ pub struct ChangeCouplingConfig {
     pub enabled: bool,
     #[serde(default = "default_min_coupling")]
     pub min_coupling: u32,
+    /// Per-metric override for `metrics.top_n` — most-coupled pairs list.
+    #[serde(default)]
+    pub top_n: Option<usize>,
 }
 
 impl Default for ChangeCouplingConfig {
@@ -232,6 +279,7 @@ impl Default for ChangeCouplingConfig {
         Self {
             enabled: false,
             min_coupling: default_min_coupling(),
+            top_n: None,
         }
     }
 }
@@ -241,6 +289,7 @@ impl Toggle for ChangeCouplingConfig {
         Self {
             enabled: true,
             min_coupling: default_min_coupling(),
+            top_n: None,
         }
     }
 }
@@ -255,6 +304,9 @@ pub struct DuplicationConfig {
     pub enabled: bool,
     #[serde(default = "default_min_tokens")]
     pub min_tokens: u32,
+    /// Per-metric override for `metrics.top_n` — largest duplicate blocks.
+    #[serde(default)]
+    pub top_n: Option<usize>,
 }
 
 impl Default for DuplicationConfig {
@@ -262,6 +314,7 @@ impl Default for DuplicationConfig {
         Self {
             enabled: false,
             min_tokens: default_min_tokens(),
+            top_n: None,
         }
     }
 }
@@ -271,6 +324,7 @@ impl Toggle for DuplicationConfig {
         Self {
             enabled: true,
             min_tokens: default_min_tokens(),
+            top_n: None,
         }
     }
 }
@@ -285,6 +339,10 @@ pub struct CcnConfig {
     pub enabled: bool,
     #[serde(default = "default_warn_delta_pct")]
     pub warn_delta_pct: u32,
+    /// Per-metric override for `metrics.top_n` — covers both CCN and
+    /// Cognitive listings since they share the "complexity:" status section.
+    #[serde(default)]
+    pub top_n: Option<usize>,
 }
 
 impl Default for CcnConfig {
@@ -292,6 +350,7 @@ impl Default for CcnConfig {
         Self {
             enabled: false,
             warn_delta_pct: default_warn_delta_pct(),
+            top_n: None,
         }
     }
 }
@@ -301,6 +360,7 @@ impl Toggle for CcnConfig {
         Self {
             enabled: true,
             warn_delta_pct: default_warn_delta_pct(),
+            top_n: None,
         }
     }
 }

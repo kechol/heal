@@ -30,6 +30,32 @@ fn metrics_top_n_round_trips() {
 }
 
 #[test]
+fn per_metric_top_n_overrides_global() {
+    let cfg = r"
+        [metrics]
+        top_n = 5
+
+        [metrics.churn]
+        enabled = true
+        top_n = 20
+
+        [metrics.hotspot]
+        enabled = true
+        top_n = 8
+    ";
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    let m = &parsed.metrics;
+    assert_eq!(m.top_n, 5);
+    assert_eq!(m.top_n_churn(), 20);
+    assert_eq!(m.top_n_hotspot(), 8);
+    // Untouched metrics fall back to the global.
+    assert_eq!(m.top_n_loc(), 5);
+    assert_eq!(m.top_n_complexity(), 5);
+    assert_eq!(m.top_n_duplication(), 5);
+    assert_eq!(m.top_n_change_coupling(), 5);
+}
+
+#[test]
 fn loc_config_round_trips_with_overrides() {
     let cfg = r#"
         [metrics.loc]

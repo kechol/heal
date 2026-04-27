@@ -108,6 +108,7 @@ fn from_config_can_opt_out_of_git_excludes() {
             loc: LocConfig {
                 inherit_git_excludes: false,
                 exclude_paths: vec!["vendor".to_string()],
+                top_n: None,
             },
             ..MetricsConfig::default()
         },
