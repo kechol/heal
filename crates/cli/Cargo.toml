@@ -11,6 +11,13 @@ description = "HEAL command-line interface (binary `heal`)"
 [lints]
 workspace = true
 
+[features]
+# Forward heal-observer's language gates so `cargo install heal-cli
+# --no-default-features --features lang-rust` builds a smaller binary.
+default = ["lang-ts", "lang-rust"]
+lang-ts = ["heal-observer/lang-ts"]
+lang-rust = ["heal-observer/lang-rust"]
+
 [[bin]]
 name = "heal"
 path = "src/main.rs"

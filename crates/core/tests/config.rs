@@ -14,8 +14,19 @@ fn empty_toml_yields_recommended_metric_defaults() {
     assert!(!cfg.metrics.line_coverage.enabled);
     assert!(cfg.metrics.loc.inherit_git_excludes);
     assert!(cfg.metrics.loc.exclude_paths.is_empty());
+    assert_eq!(cfg.metrics.top_n, 5);
     assert_eq!(cfg.git.since_days, 90);
     assert_eq!(cfg.agent.provider, "claude-code");
+}
+
+#[test]
+fn metrics_top_n_round_trips() {
+    let cfg = r"
+        [metrics]
+        top_n = 12
+    ";
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    assert_eq!(parsed.metrics.top_n, 12);
 }
 
 #[test]

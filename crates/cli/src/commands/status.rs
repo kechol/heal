@@ -2,24 +2,21 @@ use std::path::Path;
 
 use anyhow::Result;
 use heal_core::config::load_from_project;
-use heal_core::history::HistoryReader;
+use heal_core::history::{HistoryReader, Snapshot, SnapshotDelta};
 use heal_core::HealPaths;
-use heal_observer::change_coupling::{ChangeCouplingObserver, ChangeCouplingReport};
-use heal_observer::churn::{ChurnObserver, ChurnReport};
+use heal_observer::change_coupling::ChangeCouplingReport;
+use heal_observer::churn::ChurnReport;
 use heal_observer::complexity::{ComplexityMetric, ComplexityObserver, ComplexityReport};
-use heal_observer::duplication::{DuplicationObserver, DuplicationReport};
-use heal_observer::hotspot::{compose as compose_hotspot, HotspotReport, HotspotWeights};
-use heal_observer::loc::{LocObserver, LocReport};
+use heal_observer::duplication::DuplicationReport;
+use heal_observer::hotspot::HotspotReport;
+use heal_observer::loc::LocReport;
 use serde_json::json;
 
-/// Number of language entries to show inline in the text-mode summary.
-const TOP_LANGUAGES: usize = 5;
-/// Number of high-complexity functions to surface per metric.
-const TOP_FUNCTIONS: usize = 5;
-/// Number of files to surface for churn / coupling / hotspot rankings.
-const TOP_FILES: usize = 5;
-/// Number of duplication blocks to surface inline.
-const TOP_DUPLICATES: usize = 5;
+use crate::observers::run_all;
+
+/// Fallback `top_n` when no `.heal/config.toml` exists yet (status runs
+/// before `heal init`). Mirrors `MetricsConfig::default().top_n`.
+const DEFAULT_TOP_N: usize = 5;
 
 pub fn run(project: &Path, json_output: bool) -> Result<()> {
     let paths = HealPaths::new(project);
@@ -28,40 +25,20 @@ pub fn run(project: &Path, json_output: bool) -> Result<()> {
     let snapshot_count = HistoryReader::iter_segments(history_segments.clone())
         .flatten()
         .count();
+    let latest =
+        HistoryReader::latest_metrics_snapshot_from(history_segments.clone()).unwrap_or(None);
+    let delta = latest
+        .as_ref()
+        .and_then(|(_, m)| m.delta.as_ref())
+        .and_then(|v| serde_json::from_value::<SnapshotDelta>(v.clone()).ok());
 
     let cfg = if cfg_exists {
         Some(load_from_project(project)?)
     } else {
         None
     };
-    let loc = cfg
-        .as_ref()
-        .map(|c| LocObserver::from_config(c).scan(project));
-    let complexity_observer = cfg.as_ref().map(ComplexityObserver::from_config);
-    let complexity = complexity_observer.as_ref().map(|obs| obs.scan(project));
-    let churn = cfg
-        .as_ref()
-        .filter(|c| c.metrics.churn.enabled)
-        .map(|c| ChurnObserver::from_config(c).scan(project));
-    let change_coupling = cfg
-        .as_ref()
-        .filter(|c| c.metrics.change_coupling.enabled)
-        .map(|c| ChangeCouplingObserver::from_config(c).scan(project));
-    let duplication = cfg
-        .as_ref()
-        .filter(|c| c.metrics.duplication.enabled)
-        .map(|c| DuplicationObserver::from_config(c).scan(project));
-    let hotspot = match (cfg.as_ref(), churn.as_ref(), complexity.as_ref()) {
-        (Some(c), Some(ch), Some(cx)) if c.metrics.hotspot.enabled => Some(compose_hotspot(
-            ch,
-            cx,
-            HotspotWeights {
-                churn: c.metrics.hotspot.weight_churn,
-                complexity: c.metrics.hotspot.weight_complexity,
-            },
-        )),
-        _ => None,
-    };
+    let top_n = cfg.as_ref().map_or(DEFAULT_TOP_N, |c| c.metrics.top_n);
+    let reports = cfg.as_ref().map(|c| run_all(project, c));
 
     if json_output {
         println!(
@@ -70,12 +47,13 @@ pub fn run(project: &Path, json_output: bool) -> Result<()> {
                 "initialized": cfg_exists,
                 "history_segments": history_segments.len(),
                 "snapshots": snapshot_count,
-                "loc": loc,
-                "complexity": complexity,
-                "churn": churn,
-                "change_coupling": change_coupling,
-                "duplication": duplication,
-                "hotspot": hotspot,
+                "loc": reports.as_ref().map(|r| &r.loc),
+                "complexity": reports.as_ref().map(|r| &r.complexity),
+                "churn": reports.as_ref().and_then(|r| r.churn.as_ref()),
+                "change_coupling": reports.as_ref().and_then(|r| r.change_coupling.as_ref()),
+                "duplication": reports.as_ref().and_then(|r| r.duplication.as_ref()),
+                "hotspot": reports.as_ref().and_then(|r| r.hotspot.as_ref()),
+                "delta": delta,
             }))?
         );
         return Ok(());
@@ -85,32 +63,77 @@ pub fn run(project: &Path, json_output: bool) -> Result<()> {
         println!("HEAL is not initialized in this project. Run `heal init` first.");
         return Ok(());
     }
+    let reports = reports.expect("cfg present implies reports built");
     println!("HEAL status (project: {})", project.display());
     println!("  config:           {}", paths.config().display());
     println!("  history segments: {}", history_segments.len());
     println!("  snapshots:        {snapshot_count}");
-    if let Some(report) = loc.as_ref() {
-        print_loc_summary(report);
+    print_loc_summary(&reports.loc, top_n);
+    print_complexity_summary(&reports.complexity_observer, &reports.complexity, top_n);
+    if let Some(report) = reports.churn.as_ref() {
+        print_churn_summary(report, top_n);
     }
-    if let (Some(obs), Some(report)) = (complexity_observer.as_ref(), complexity.as_ref()) {
-        print_complexity_summary(obs, report);
+    if let Some(report) = reports.change_coupling.as_ref() {
+        print_coupling_summary(report, top_n);
     }
-    if let Some(report) = churn.as_ref() {
-        print_churn_summary(report);
+    if let Some(report) = reports.duplication.as_ref() {
+        print_duplication_summary(report, top_n);
     }
-    if let Some(report) = change_coupling.as_ref() {
-        print_coupling_summary(report);
+    if let Some(report) = reports.hotspot.as_ref() {
+        print_hotspot_summary(report, top_n);
     }
-    if let Some(report) = duplication.as_ref() {
-        print_duplication_summary(report);
-    }
-    if let Some(report) = hotspot.as_ref() {
-        print_hotspot_summary(report);
+    if let (Some((snap, _)), Some(d)) = (latest.as_ref(), delta.as_ref()) {
+        print_delta_summary(snap, d);
     }
     Ok(())
 }
 
-fn print_loc_summary(report: &LocReport) {
+fn print_delta_summary(prev: &Snapshot, delta: &SnapshotDelta) {
+    println!();
+    let from_label = delta.from_sha.as_deref().map_or_else(
+        || prev.timestamp.format("%Y-%m-%d").to_string(),
+        |s| s.chars().take(8).collect::<String>(),
+    );
+    println!("  delta vs prior snapshot ({from_label}):");
+    if let Some(c) = delta.complexity.as_ref() {
+        println!(
+            "    complexity:  max_ccn {:+}  max_cog {:+}  fns {:+}",
+            c.max_ccn, c.max_cognitive, c.functions,
+        );
+        if !c.new_top_ccn.is_empty() {
+            println!("      new in top CCN: {}", c.new_top_ccn.join(", "));
+        }
+    }
+    if let Some(ch) = delta.churn.as_ref() {
+        println!(
+            "    churn:       commits_in_window {:+}  top_changed={}",
+            ch.commits_in_window, ch.top_file_changed,
+        );
+    }
+    if let Some(h) = delta.hotspot.as_ref() {
+        println!("    hotspot:     max_score {:+.1}", h.max_score);
+        if !h.top_files_added.is_empty() {
+            println!("      added:    {}", h.top_files_added.join(", "));
+        }
+        if !h.top_files_dropped.is_empty() {
+            println!("      dropped:  {}", h.top_files_dropped.join(", "));
+        }
+    }
+    if let Some(d) = delta.duplication.as_ref() {
+        println!(
+            "    duplication: blocks {:+}  tokens {:+}",
+            d.duplicate_blocks, d.duplicate_tokens,
+        );
+    }
+    if let Some(cc) = delta.change_coupling.as_ref() {
+        println!(
+            "    coupling:    pairs {:+}  files {:+}",
+            cc.pairs, cc.files,
+        );
+    }
+}
+
+fn print_loc_summary(report: &LocReport, top_n: usize) {
     println!();
     if let Some(name) = report.primary.as_deref() {
         println!(
@@ -123,7 +146,7 @@ fn print_loc_summary(report: &LocReport) {
     }
     if !report.languages.is_empty() {
         println!("  top languages:");
-        for entry in report.languages.iter().take(TOP_LANGUAGES) {
+        for entry in report.languages.iter().take(top_n) {
             println!(
                 "    - {:<16} {:>6} LOC across {} files",
                 entry.name, entry.counts.code, entry.files
@@ -132,7 +155,7 @@ fn print_loc_summary(report: &LocReport) {
     }
 }
 
-fn print_complexity_summary(obs: &ComplexityObserver, report: &ComplexityReport) {
+fn print_complexity_summary(obs: &ComplexityObserver, report: &ComplexityReport, top_n: usize) {
     if !obs.ccn_enabled && !obs.cognitive_enabled {
         return;
     }
@@ -149,15 +172,25 @@ fn print_complexity_summary(obs: &ComplexityObserver, report: &ComplexityReport)
         report.totals.max_cognitive,
     );
     if obs.ccn_enabled {
-        print_top_functions(report, "highest CCN", ComplexityMetric::Ccn);
+        print_top_functions(report, "highest CCN", ComplexityMetric::Ccn, top_n);
     }
     if obs.cognitive_enabled {
-        print_top_functions(report, "highest Cognitive", ComplexityMetric::Cognitive);
+        print_top_functions(
+            report,
+            "highest Cognitive",
+            ComplexityMetric::Cognitive,
+            top_n,
+        );
     }
 }
 
-fn print_top_functions(report: &ComplexityReport, header: &str, metric: ComplexityMetric) {
-    let top = report.worst_n(TOP_FUNCTIONS, metric);
+fn print_top_functions(
+    report: &ComplexityReport,
+    header: &str,
+    metric: ComplexityMetric,
+    top_n: usize,
+) {
+    let top = report.worst_n(top_n, metric);
     if top.is_empty() {
         return;
     }
@@ -177,7 +210,7 @@ fn print_top_functions(report: &ComplexityReport, header: &str, metric: Complexi
     }
 }
 
-fn print_churn_summary(report: &ChurnReport) {
+fn print_churn_summary(report: &ChurnReport, top_n: usize) {
     println!();
     if report.files.is_empty() {
         println!("  churn: no commits in the last {} days", report.since_days);
@@ -192,7 +225,7 @@ fn print_churn_summary(report: &ChurnReport) {
         report.totals.lines_deleted,
     );
     println!("  most-churned files:");
-    for f in report.worst_n(TOP_FILES) {
+    for f in report.worst_n(top_n) {
         println!(
             "    - {:>3}  {}  (+{}/-{})",
             f.commits,
@@ -203,7 +236,7 @@ fn print_churn_summary(report: &ChurnReport) {
     }
 }
 
-fn print_coupling_summary(report: &ChangeCouplingReport) {
+fn print_coupling_summary(report: &ChangeCouplingReport, top_n: usize) {
     println!();
     if report.pairs.is_empty() {
         println!(
@@ -220,7 +253,7 @@ fn print_coupling_summary(report: &ChangeCouplingReport) {
         report.totals.commits_considered,
     );
     println!("  most-coupled pairs:");
-    for pair in report.pairs.iter().take(TOP_FILES) {
+    for pair in report.worst_n_pairs(top_n) {
         println!(
             "    - {:>3}  {}  ↔  {}",
             pair.count,
@@ -230,7 +263,7 @@ fn print_coupling_summary(report: &ChangeCouplingReport) {
     }
 }
 
-fn print_duplication_summary(report: &DuplicationReport) {
+fn print_duplication_summary(report: &DuplicationReport, top_n: usize) {
     println!();
     if report.blocks.is_empty() {
         println!(
@@ -247,7 +280,7 @@ fn print_duplication_summary(report: &DuplicationReport) {
         report.totals.duplicate_tokens,
     );
     println!("  largest duplicate blocks:");
-    for block in report.blocks.iter().take(TOP_DUPLICATES) {
+    for block in report.worst_n_blocks(top_n) {
         let locs: Vec<String> = block
             .locations
             .iter()
@@ -262,7 +295,7 @@ fn print_duplication_summary(report: &DuplicationReport) {
     }
 }
 
-fn print_hotspot_summary(report: &HotspotReport) {
+fn print_hotspot_summary(report: &HotspotReport, top_n: usize) {
     println!();
     if report.entries.is_empty() {
         println!("  hotspot: no files have both churn and complexity signal");
@@ -273,7 +306,7 @@ fn print_hotspot_summary(report: &HotspotReport) {
         report.totals.files, report.totals.max_score,
     );
     println!("  top hotspots (CCN_sum × commits):");
-    for entry in report.worst_n(TOP_FILES) {
+    for entry in report.worst_n(top_n) {
         println!(
             "    - {:>6.1}  {}  (CCN_sum={}, commits={})",
             entry.score,

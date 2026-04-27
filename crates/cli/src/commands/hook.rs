@@ -4,16 +4,16 @@ use std::path::Path;
 use anyhow::Result;
 use heal_core::history::{HistoryWriter, Snapshot};
 use heal_core::HealPaths;
-use serde_json::json;
 
 use crate::cli::HookEvent;
+use crate::snapshot;
 
 pub fn run(project: &Path, event: HookEvent) -> Result<()> {
     let paths = HealPaths::new(project);
     let writer = HistoryWriter::new(paths.history_dir());
 
     let payload = match event {
-        HookEvent::Commit => capture_commit(),
+        HookEvent::Commit => capture_commit(project)?,
         HookEvent::Edit | HookEvent::Stop => capture_stdin()?,
     };
 
@@ -21,9 +21,9 @@ pub fn run(project: &Path, event: HookEvent) -> Result<()> {
     Ok(())
 }
 
-fn capture_commit() -> serde_json::Value {
-    // v0.1: minimal payload. Richer git introspection lives in heal-observer.
-    json!({ "source": "git-post-commit" })
+fn capture_commit(project: &Path) -> Result<serde_json::Value> {
+    let snap = snapshot::capture(project)?;
+    Ok(serde_json::to_value(snap).expect("MetricsSnapshot serialization is infallible"))
 }
 
 fn capture_stdin() -> Result<serde_json::Value> {

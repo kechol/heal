@@ -43,6 +43,7 @@ fn empty_when_disabled() {
     assert_eq!(report.min_tokens, 20);
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn detects_cross_file_duplicate() {
     let dir = tempfile::tempdir().unwrap();
@@ -112,6 +113,39 @@ fn excluded_substrings_skip_files() {
     assert!(report.blocks.is_empty());
 }
 
+#[cfg(feature = "lang-rust")]
+#[test]
+fn worst_n_blocks_truncates_in_existing_order() {
+    let dir = tempfile::tempdir().unwrap();
+    // First duplicate: full block (largest).
+    write(dir.path(), "src/a.rs", duplicate_block());
+    write(dir.path(), "src/b.rs", duplicate_block());
+    // Second duplicate: shorter shared body (smaller).
+    let small = "fn helper(x: i32, y: i32) -> i32 {\n    \
+                 let a = x + y;\n    \
+                 let b = a * 2;\n    \
+                 let c = b + a;\n    \
+                 c + a + b + x + y\n}\n";
+    write(dir.path(), "src/c.rs", small);
+    write(dir.path(), "src/d.rs", small);
+
+    let report = observer(15).scan(dir.path());
+    assert!(
+        report.blocks.len() >= 2,
+        "expected ≥2 blocks, got {:?}",
+        report.blocks,
+    );
+
+    // worst_n_blocks(1) returns the largest by token_count.
+    let top1 = report.worst_n_blocks(1);
+    assert_eq!(top1.len(), 1);
+    assert_eq!(top1[0].token_count, report.blocks[0].token_count);
+
+    // n exceeding length returns everything available.
+    assert_eq!(report.worst_n_blocks(99).len(), report.blocks.len());
+}
+
+#[cfg(feature = "lang-ts")]
 #[test]
 fn typescript_duplicates_are_detected() {
     let dir = tempfile::tempdir().unwrap();

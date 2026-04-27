@@ -165,6 +165,17 @@ pub struct DuplicationReport {
     pub min_tokens: u32,
 }
 
+impl DuplicationReport {
+    /// Top-N duplicate blocks by token count (descending). The underlying
+    /// `blocks` vector is already sorted at scan time.
+    #[must_use]
+    pub fn worst_n_blocks(&self, n: usize) -> Vec<DuplicateBlock> {
+        let mut top = self.blocks.clone();
+        top.truncate(n);
+        top
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DuplicationTotals {
     pub duplicate_blocks: usize,

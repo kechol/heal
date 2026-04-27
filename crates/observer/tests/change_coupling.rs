@@ -167,6 +167,59 @@ fn bulk_commits_are_skipped() {
 }
 
 #[test]
+fn worst_n_pairs_and_files_truncate_in_existing_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = init_repo(dir.path());
+    let now = now_secs();
+
+    // Build a 4-file co-change matrix with distinct counts so the ranking is
+    // unambiguous: (a,b)=3, (a,c)=2, (b,c)=1, (c,d)=1.
+    for i in 0..3 {
+        commit_files(
+            &repo,
+            &[("a.rs", &format!("a{i}\n")), ("b.rs", &format!("b{i}\n"))],
+            &format!("ab {i}"),
+            now - 100 + i,
+        );
+    }
+    for i in 0..2 {
+        commit_files(
+            &repo,
+            &[("a.rs", &format!("a-x{i}\n")), ("c.rs", &format!("c{i}\n"))],
+            &format!("ac {i}"),
+            now - 80 + i,
+        );
+    }
+    commit_files(
+        &repo,
+        &[("b.rs", "b-y\n"), ("c.rs", "c-y\n")],
+        "bc",
+        now - 60,
+    );
+    commit_files(
+        &repo,
+        &[("c.rs", "c-z\n"), ("d.rs", "d-z\n")],
+        "cd",
+        now - 40,
+    );
+
+    let report = observer(1).scan(dir.path());
+    assert_eq!(report.pairs.len(), 4);
+
+    let top2 = report.worst_n_pairs(2);
+    assert_eq!(top2.len(), 2);
+    assert_eq!(top2[0].count, 3);
+    assert_eq!(top2[1].count, 2);
+
+    // n exceeding length returns everything available.
+    assert_eq!(report.worst_n_pairs(99).len(), 4);
+
+    let top_files = report.worst_n_files(2);
+    assert_eq!(top_files.len(), 2);
+    assert!(top_files[0].sum >= top_files[1].sum);
+}
+
+#[test]
 fn excluded_substrings_skip_paths() {
     let dir = tempfile::tempdir().unwrap();
     let repo = init_repo(dir.path());

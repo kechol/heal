@@ -74,6 +74,11 @@ fn default_since_days() -> u32 {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct MetricsConfig {
+    /// How many entries each `worst_n` / status ranking surfaces. Applies
+    /// uniformly across complexity, churn, coupling, duplication, hotspot.
+    /// Per-metric overrides are deferred to v0.2.
+    #[serde(default = "default_top_n")]
+    pub top_n: usize,
     #[serde(default)]
     pub loc: LocConfig,
     #[serde(default = "default_enabled")]
@@ -103,6 +108,7 @@ impl Default for MetricsConfig {
         // Match serde's "section missing" behavior so programmatic `default()`
         // and `from_toml_str("")` produce the same struct.
         Self {
+            top_n: default_top_n(),
             loc: LocConfig::default(),
             churn: ChurnConfig::enabled(),
             hotspot: HotspotConfig::enabled(),
@@ -140,6 +146,10 @@ impl Default for LocConfig {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_top_n() -> usize {
+    5
 }
 
 trait Toggle {

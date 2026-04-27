@@ -6,28 +6,45 @@
 //! pay query-compile cost exactly once per (language, query) pair.
 //!
 //! Variants are gated by `#[non_exhaustive]` so adding `JavaScript` / `Jsx`
-//! later doesn't break exhaustive matches downstream. The TS-only initial scope
-//! is intentional; JS support lands in a follow-up TODO.
+//! later doesn't break exhaustive matches downstream. Each variant is also
+//! gated behind a Cargo feature (`lang-ts`, `lang-rust`) so a downstream binary
+//! can drop unused grammars to shrink the build. The crate `compile_error!`s
+//! when no language feature is enabled — we have no need for a registry that
+//! supports zero languages, and excluding the variant guard keeps the public
+//! API total.
 
 use std::path::Path;
 use std::sync::OnceLock;
 
 use tree_sitter::{Language as TsLanguage, Query};
+#[cfg(feature = "lang-ts")]
 use tree_sitter_typescript::{LANGUAGE_TSX, LANGUAGE_TYPESCRIPT};
 
+#[cfg(not(any(feature = "lang-ts", feature = "lang-rust")))]
+compile_error!("heal-observer requires at least one language feature: lang-ts or lang-rust");
+
+#[cfg(feature = "lang-ts")]
 const TYPESCRIPT_FUNCTIONS_QUERY: &str = include_str!("../queries/typescript/functions.scm");
+#[cfg(feature = "lang-ts")]
 const TYPESCRIPT_CCN_QUERY: &str = include_str!("../queries/typescript/ccn.scm");
+#[cfg(feature = "lang-ts")]
 const TYPESCRIPT_COGNITIVE_QUERY: &str = include_str!("../queries/typescript/cognitive.scm");
 
+#[cfg(feature = "lang-rust")]
 const RUST_FUNCTIONS_QUERY: &str = include_str!("../queries/rust/functions.scm");
+#[cfg(feature = "lang-rust")]
 const RUST_CCN_QUERY: &str = include_str!("../queries/rust/ccn.scm");
+#[cfg(feature = "lang-rust")]
 const RUST_COGNITIVE_QUERY: &str = include_str!("../queries/rust/cognitive.scm");
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Language {
+    #[cfg(feature = "lang-ts")]
     TypeScript,
+    #[cfg(feature = "lang-ts")]
     Tsx,
+    #[cfg(feature = "lang-rust")]
     Rust,
 }
 
@@ -71,8 +88,11 @@ impl LanguageQueries {
     }
 }
 
+#[cfg(feature = "lang-ts")]
 static TYPESCRIPT_QUERIES: LanguageQueries = LanguageQueries::new();
+#[cfg(feature = "lang-ts")]
 static TSX_QUERIES: LanguageQueries = LanguageQueries::new();
+#[cfg(feature = "lang-rust")]
 static RUST_QUERIES: LanguageQueries = LanguageQueries::new();
 
 impl Language {
@@ -82,8 +102,11 @@ impl Language {
     pub fn from_path(path: &Path) -> Option<Self> {
         let ext = path.extension()?.to_str()?;
         match ext {
+            #[cfg(feature = "lang-ts")]
             "ts" | "mts" | "cts" => Some(Self::TypeScript),
+            #[cfg(feature = "lang-ts")]
             "tsx" => Some(Self::Tsx),
+            #[cfg(feature = "lang-rust")]
             "rs" => Some(Self::Rust),
             _ => None,
         }
@@ -93,8 +116,11 @@ impl Language {
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
+            #[cfg(feature = "lang-ts")]
             Self::TypeScript => "typescript",
+            #[cfg(feature = "lang-ts")]
             Self::Tsx => "tsx",
+            #[cfg(feature = "lang-rust")]
             Self::Rust => "rust",
         }
     }
@@ -102,8 +128,11 @@ impl Language {
     #[must_use]
     pub fn ts_language(self) -> TsLanguage {
         match self {
+            #[cfg(feature = "lang-ts")]
             Self::TypeScript => LANGUAGE_TYPESCRIPT.into(),
+            #[cfg(feature = "lang-ts")]
             Self::Tsx => LANGUAGE_TSX.into(),
+            #[cfg(feature = "lang-rust")]
             Self::Rust => tree_sitter_rust::LANGUAGE.into(),
         }
     }
@@ -153,29 +182,38 @@ impl Language {
 
     fn cache(self) -> &'static LanguageQueries {
         match self {
+            #[cfg(feature = "lang-ts")]
             Self::TypeScript => &TYPESCRIPT_QUERIES,
+            #[cfg(feature = "lang-ts")]
             Self::Tsx => &TSX_QUERIES,
+            #[cfg(feature = "lang-rust")]
             Self::Rust => &RUST_QUERIES,
         }
     }
 
     fn functions_query_source(self) -> &'static str {
         match self {
+            #[cfg(feature = "lang-ts")]
             Self::TypeScript | Self::Tsx => TYPESCRIPT_FUNCTIONS_QUERY,
+            #[cfg(feature = "lang-rust")]
             Self::Rust => RUST_FUNCTIONS_QUERY,
         }
     }
 
     fn ccn_query_source(self) -> &'static str {
         match self {
+            #[cfg(feature = "lang-ts")]
             Self::TypeScript | Self::Tsx => TYPESCRIPT_CCN_QUERY,
+            #[cfg(feature = "lang-rust")]
             Self::Rust => RUST_CCN_QUERY,
         }
     }
 
     fn cognitive_query_source(self) -> &'static str {
         match self {
+            #[cfg(feature = "lang-ts")]
             Self::TypeScript | Self::Tsx => TYPESCRIPT_COGNITIVE_QUERY,
+            #[cfg(feature = "lang-rust")]
             Self::Rust => RUST_COGNITIVE_QUERY,
         }
     }
@@ -192,6 +230,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    #[cfg(feature = "lang-ts")]
     #[test]
     fn dispatches_typescript_extensions() {
         assert_eq!(
@@ -208,6 +247,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "lang-ts")]
     #[test]
     fn dispatches_tsx_extension() {
         assert_eq!(
@@ -216,6 +256,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "lang-rust")]
     #[test]
     fn dispatches_rust_extension() {
         assert_eq!(
@@ -226,7 +267,8 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_extensions() {
-        // JavaScript support is intentionally deferred to a follow-up.
+        // JavaScript / Python / docs / config types are not part of v0.1's
+        // grammar set even with all language features enabled.
         assert_eq!(Language::from_path(&PathBuf::from("foo.js")), None);
         assert_eq!(Language::from_path(&PathBuf::from("foo.jsx")), None);
         assert_eq!(Language::from_path(&PathBuf::from("foo.py")), None);
@@ -240,6 +282,7 @@ mod tests {
         assert_eq!(Language::from_path(&PathBuf::from("")), None);
     }
 
+    #[cfg(all(feature = "lang-ts", feature = "lang-rust"))]
     #[test]
     fn loads_grammars() {
         let mut parser = tree_sitter::Parser::new();
@@ -254,6 +297,7 @@ mod tests {
             .expect("rust grammar loads");
     }
 
+    #[cfg(all(feature = "lang-ts", feature = "lang-rust"))]
     #[test]
     fn cached_queries_compile_and_index() {
         for lang in [Language::TypeScript, Language::Tsx, Language::Rust] {

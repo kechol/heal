@@ -8,6 +8,7 @@ pub mod change_coupling;
 pub mod churn;
 pub mod complexity;
 pub mod duplication;
+pub mod git;
 pub mod hotspot;
 pub mod lang;
 pub mod loc;

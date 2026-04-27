@@ -2,11 +2,15 @@
 //! exercising the observer's project-walk + per-file analysis pipeline.
 
 use heal_core::config::Config;
-use heal_observer::complexity::{ComplexityMetric, ComplexityObserver};
+#[cfg(feature = "lang-rust")]
+use heal_observer::complexity::ComplexityMetric;
+use heal_observer::complexity::ComplexityObserver;
 
 mod common;
+#[allow(unused_imports)]
 use common::write;
 
+#[allow(dead_code)]
 fn enabled_observer() -> ComplexityObserver {
     ComplexityObserver {
         excluded: Vec::new(),
@@ -30,6 +34,7 @@ fn returns_empty_report_when_both_metrics_disabled() {
     assert_eq!(report.totals.functions, 0);
 }
 
+#[cfg(all(feature = "lang-ts", feature = "lang-rust"))]
 #[test]
 fn aggregates_metrics_across_typescript_and_rust() {
     let dir = tempfile::tempdir().unwrap();
@@ -66,6 +71,7 @@ fn aggregates_metrics_across_typescript_and_rust() {
     assert_eq!(report.totals.max_ccn, 3);
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn excluded_substrings_skip_files() {
     let dir = tempfile::tempdir().unwrap();
@@ -82,6 +88,7 @@ fn excluded_substrings_skip_files() {
     assert!(report.files[0].path.ends_with("keep.rs"));
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn gitignore_is_respected() {
     let dir = tempfile::tempdir().unwrap();
@@ -109,6 +116,7 @@ fn gitignore_is_respected() {
     );
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn worst_n_orders_descending_by_metric() {
     let dir = tempfile::tempdir().unwrap();

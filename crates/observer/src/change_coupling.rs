@@ -159,6 +159,26 @@ pub struct ChangeCouplingReport {
     pub min_coupling: u32,
 }
 
+impl ChangeCouplingReport {
+    /// Top-N pairs by co-occurrence count (descending). The underlying
+    /// `pairs` vector is already sorted by `collect_pairs`.
+    #[must_use]
+    pub fn worst_n_pairs(&self, n: usize) -> Vec<FilePair> {
+        let mut top = self.pairs.clone();
+        top.truncate(n);
+        top
+    }
+
+    /// Top-N files by sum-of-coupling (descending). The underlying
+    /// `file_sums` vector is already sorted by `compute_file_sums`.
+    #[must_use]
+    pub fn worst_n_files(&self, n: usize) -> Vec<FileSum> {
+        let mut top = self.file_sums.clone();
+        top.truncate(n);
+        top
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FilePair {
     /// Always the lexicographically smaller path of the pair.

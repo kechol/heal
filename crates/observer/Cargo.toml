@@ -11,6 +11,14 @@ description = "Metric observers (LOC, AST, churn, duplication, doc skew) for HEA
 [lints]
 workspace = true
 
+[features]
+# v0.1 keeps TypeScript and Rust as the default-enabled grammars to preserve
+# pre-feature-flag binary behavior. JavaScript support is deferred to v0.4+
+# along with `.js` / `.jsx` query files.
+default = ["lang-ts", "lang-rust"]
+lang-ts = ["dep:tree-sitter-typescript"]
+lang-rust = ["dep:tree-sitter-rust"]
+
 [dependencies]
 heal-core = { workspace = true }
 anyhow = { workspace = true }
@@ -19,8 +27,8 @@ serde_json = { workspace = true }
 chrono = { workspace = true }
 tokei = { workspace = true }
 tree-sitter = { workspace = true }
-tree-sitter-typescript = { workspace = true }
-tree-sitter-rust = { workspace = true }
+tree-sitter-typescript = { workspace = true, optional = true }
+tree-sitter-rust = { workspace = true, optional = true }
 ignore = { workspace = true }
 git2 = { workspace = true }
 

@@ -11,8 +11,10 @@ use heal_observer::complexity::{
 use heal_observer::hotspot::{compose, HotspotObserver, HotspotWeights};
 
 mod common;
+#[allow(unused_imports)]
 use common::{commit_files, init_repo, write};
 
+#[allow(dead_code)]
 fn now_secs() -> i64 {
     i64::try_from(
         SystemTime::now()
@@ -143,6 +145,7 @@ fn empty_when_disabled() {
     assert!(report.entries.is_empty());
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn scan_runs_underlying_observers() {
     let dir = tempfile::tempdir().unwrap();

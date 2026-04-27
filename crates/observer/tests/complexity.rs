@@ -3,14 +3,18 @@
 //! snippets whose scores are derived inline so test failures are easy to
 //! interpret.
 
-use heal_observer::complexity::{analyze, extract_functions, parse, FunctionMetric};
+#[cfg(feature = "lang-ts")]
+use heal_observer::complexity::extract_functions;
+use heal_observer::complexity::{analyze, parse, FunctionMetric};
 use heal_observer::lang::Language;
 
+#[cfg(feature = "lang-ts")]
 fn analyze_ts(source: &str) -> Vec<FunctionMetric> {
     let parsed = parse(source.to_string(), Language::TypeScript).expect("parse ok");
     analyze(&parsed)
 }
 
+#[cfg(feature = "lang-rust")]
 fn analyze_rust(source: &str) -> Vec<FunctionMetric> {
     let parsed = parse(source.to_string(), Language::Rust).expect("rust parse ok");
     analyze(&parsed)
@@ -23,6 +27,7 @@ fn metric<'a>(metrics: &'a [FunctionMetric], name: &str) -> &'a FunctionMetric {
         .unwrap_or_else(|| panic!("no metric named {name}; have {metrics:?}"))
 }
 
+#[cfg(feature = "lang-ts")]
 #[test]
 fn extracts_all_function_shaped_scopes() {
     // 5 scope kinds the registry must handle:
@@ -68,6 +73,7 @@ const arrow = (n: number) => n * 2;
     assert_eq!(scopes.len(), 5, "expected exactly 5 scopes, got {scopes:?}");
 }
 
+#[cfg(feature = "lang-ts")]
 #[test]
 fn ccn_baseline_for_empty_function_is_one() {
     let metrics = analyze_ts("function noop() {}");
@@ -75,6 +81,7 @@ fn ccn_baseline_for_empty_function_is_one() {
     assert_eq!(m.ccn, 1);
 }
 
+#[cfg(feature = "lang-ts")]
 #[test]
 fn ccn_sums_decision_points() {
     // Hand count for `mixed`:
@@ -98,6 +105,7 @@ function mixed(xs: number[], flag: boolean) {
     assert_eq!(m.ccn, 5, "got {m:?}");
 }
 
+#[cfg(feature = "lang-ts")]
 #[test]
 fn cognitive_baseline_for_straight_line_is_zero() {
     let source = "function add(a: number, b: number): number { return a + b; }";
@@ -106,6 +114,7 @@ fn cognitive_baseline_for_straight_line_is_zero() {
     assert_eq!(m.cognitive, 0);
 }
 
+#[cfg(feature = "lang-ts")]
 #[test]
 fn cognitive_nests_with_depth() {
     // From Sonar's PDF: three nested ifs score 1 + 2 + 3 = 6.
@@ -126,6 +135,7 @@ function deep(a: boolean, b: boolean, c: boolean) {
     assert_eq!(m.cognitive, 6, "got {m:?}");
 }
 
+#[cfg(feature = "lang-ts")]
 #[test]
 fn cognitive_else_if_chain_does_not_double_nest() {
     // if … else if … else if … else
@@ -152,6 +162,7 @@ function classify(n: number): string {
     assert_eq!(m.cognitive, 4, "got {m:?}");
 }
 
+#[cfg(feature = "lang-ts")]
 #[test]
 fn cognitive_logical_chain_counts_operator_switches() {
     // `a && b || c && d`:
@@ -170,6 +181,7 @@ fn cognitive_logical_chain_counts_operator_switches() {
     assert_eq!(m.cognitive, 1, "got {m:?}");
 }
 
+#[cfg(feature = "lang-ts")]
 #[test]
 fn nested_function_isolation() {
     // outer's body has 1 if → CCN 2, Cognitive 1.
@@ -207,6 +219,7 @@ function outer(a: boolean, b: boolean, c: boolean) {
     assert_eq!(inner.cognitive, 3, "inner Cognitive (1 + 2): {inner:?}");
 }
 
+#[cfg(feature = "lang-ts")]
 #[test]
 fn tsx_grammar_parses_components() {
     let source = r"
@@ -246,6 +259,7 @@ function List({ items }: Props) {
 // Rust coverage
 // =====================================================================
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn rust_ccn_baseline_for_empty_function_is_one() {
     let metrics = analyze_rust("fn noop() {}");
@@ -253,6 +267,7 @@ fn rust_ccn_baseline_for_empty_function_is_one() {
     assert_eq!(m.ccn, 1);
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn rust_ccn_sums_decision_points() {
     // Hand count for `mixed`:
@@ -284,6 +299,7 @@ fn mixed(xs: &[i32], flag: bool) -> Result<(), std::io::Error> {
     assert_eq!(m.ccn, 8, "got {m:?}");
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn rust_cognitive_baseline_for_straight_line_is_zero() {
     let metrics = analyze_rust("fn add(a: i32, b: i32) -> i32 { a + b }");
@@ -291,6 +307,7 @@ fn rust_cognitive_baseline_for_straight_line_is_zero() {
     assert_eq!(m.cognitive, 0);
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn rust_cognitive_nests_with_depth() {
     // Three nested ifs → 1 + 2 + 3 = 6 (Sonar PDF example).
@@ -311,6 +328,7 @@ fn deep(a: bool, b: bool, c: bool) -> i32 {
     assert_eq!(m.cognitive, 6, "got {m:?}");
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn rust_cognitive_else_if_chain_does_not_double_nest() {
     // if … else if … else if … else
@@ -337,6 +355,7 @@ fn classify(n: i32) -> &'static str {
     assert_eq!(m.cognitive, 4, "got {m:?}");
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn rust_cognitive_match_treats_arms_as_one_increment() {
     // match itself: +1 (depth 0). Arms inherit nesting=1 but contribute
@@ -363,6 +382,7 @@ fn classify(opt: Option<i32>) -> i32 {
     assert_eq!(m.cognitive, 4, "got {m:?}");
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn rust_cognitive_try_operator_counts_as_flat_increment() {
     // Two `?` operators: +1 each (no nesting bonus, since they're flat).
@@ -378,6 +398,7 @@ fn read_two() -> Result<String, std::io::Error> {
     assert_eq!(m.cognitive, 2, "got {m:?}");
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn rust_closure_isolation_from_outer_function() {
     // outer's body has 1 if → CCN 2, Cognitive 1.
@@ -409,6 +430,7 @@ fn outer(a: bool) -> i32 {
     );
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn rust_if_let_and_while_let_smoke() {
     // if let / while let aren't separate node kinds in tree-sitter-rust 0.24+

@@ -44,6 +44,24 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --locked
 
+  test-single-language:
+    # Sanity-check that each language Cargo feature builds & tests in
+    # isolation. Catches forgotten cfg gates that the default-feature build
+    # would otherwise mask.
+    name: test (single-language)
+    strategy:
+      fail-fast: false
+      matrix:
+        feature: [lang-ts, lang-rust]
+    runs-on: ubuntu-latest
+    env:
+      FEATURE: ${{ matrix.feature }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p heal-observer --no-default-features --features "$FEATURE" --locked
+
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest
