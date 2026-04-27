@@ -6,9 +6,10 @@ use std::path::Path;
 
 use anyhow::Result;
 use heal_core::config::{load_from_project, MetricsConfig};
-use heal_core::history::{
-    ChangeCouplingDelta, ChurnDelta, ComplexityDelta, DuplicationDelta, HistoryReader,
-    HotspotDelta, MetricsSnapshot, SnapshotDelta, METRICS_SNAPSHOT_VERSION,
+use heal_core::eventlog::EventLog;
+use heal_core::snapshot::{
+    ChangeCouplingDelta, ChurnDelta, ComplexityDelta, DuplicationDelta, HotspotDelta,
+    MetricsSnapshot, SnapshotDelta, METRICS_SNAPSHOT_VERSION,
 };
 use heal_core::HealPaths;
 use heal_observer::change_coupling::ChangeCouplingReport;
@@ -45,9 +46,9 @@ pub(crate) fn capture(project: &Path) -> Result<MetricsSnapshot> {
     // Best-effort delta against the previous snapshot. Failures here are
     // non-fatal — the hook still records the new snapshot, just without a
     // diff payload.
-    let reader = HistoryReader::new(paths.history_dir());
-    if let Ok(Some((prev_snap, prev_metrics))) = reader.latest_metrics_snapshot() {
-        let delta = compute_delta(prev_snap.timestamp, &prev_metrics, &reports, &cfg.metrics);
+    let log = EventLog::new(paths.snapshots_dir());
+    if let Ok(Some((prev_event, prev_metrics))) = MetricsSnapshot::latest_in(&log) {
+        let delta = compute_delta(prev_event.timestamp, &prev_metrics, &reports, &cfg.metrics);
         snap.delta =
             Some(serde_json::to_value(&delta).expect("SnapshotDelta serialization is infallible"));
     }

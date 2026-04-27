@@ -2,7 +2,8 @@ use std::path::Path;
 
 use anyhow::Result;
 use heal_core::config::load_from_project;
-use heal_core::history::{HistoryReader, Snapshot, SnapshotDelta};
+use heal_core::eventlog::{Event, EventLog};
+use heal_core::snapshot::{MetricsSnapshot, SnapshotDelta};
 use heal_core::HealPaths;
 use heal_observer::change_coupling::ChangeCouplingReport;
 use heal_observer::churn::ChurnReport;
@@ -17,12 +18,14 @@ use crate::observers::run_all;
 pub fn run(project: &Path, json_output: bool) -> Result<()> {
     let paths = HealPaths::new(project);
     let cfg_exists = paths.config().exists();
-    let history_segments = HistoryReader::new(paths.history_dir()).segments()?;
-    let snapshot_count = HistoryReader::iter_segments(history_segments.clone())
+    let snapshot_segments = EventLog::new(paths.snapshots_dir()).segments()?;
+    let segment_count = snapshot_segments.len();
+    let snapshot_count = EventLog::iter_segments(snapshot_segments.clone())
         .flatten()
         .count();
-    let latest =
-        HistoryReader::latest_metrics_snapshot_from(history_segments.clone()).unwrap_or(None);
+    // Move (not clone) the segment list into `latest_in_segments` — `iter_segments`
+    // above already consumed a clone, so this read is the last user.
+    let latest = MetricsSnapshot::latest_in_segments(snapshot_segments).unwrap_or(None);
     let delta = latest
         .as_ref()
         .and_then(|(_, m)| m.delta.as_ref())
@@ -40,7 +43,7 @@ pub fn run(project: &Path, json_output: bool) -> Result<()> {
             "{}",
             serde_json::to_string_pretty(&json!({
                 "initialized": cfg_exists,
-                "history_segments": history_segments.len(),
+                "snapshot_segments": segment_count,
                 "snapshots": snapshot_count,
                 "loc": reports.as_ref().map(|r| &r.loc),
                 "complexity": reports.as_ref().map(|r| &r.complexity),
@@ -64,9 +67,9 @@ pub fn run(project: &Path, json_output: bool) -> Result<()> {
         .metrics;
     let reports = reports.expect("cfg present implies reports built");
     println!("HEAL status (project: {})", project.display());
-    println!("  config:           {}", paths.config().display());
-    println!("  history segments: {}", history_segments.len());
-    println!("  snapshots:        {snapshot_count}");
+    println!("  config:            {}", paths.config().display());
+    println!("  snapshot segments: {segment_count}");
+    println!("  snapshots:         {snapshot_count}");
     print_loc_summary(&reports.loc, metrics.top_n_loc());
     print_complexity_summary(
         &reports.complexity_observer,
@@ -91,7 +94,7 @@ pub fn run(project: &Path, json_output: bool) -> Result<()> {
     Ok(())
 }
 
-fn print_delta_summary(prev: &Snapshot, delta: &SnapshotDelta) {
+fn print_delta_summary(prev: &Event, delta: &SnapshotDelta) {
     println!();
     let from_label = delta.from_sha.as_deref().map_or_else(
         || prev.timestamp.format("%Y-%m-%d").to_string(),

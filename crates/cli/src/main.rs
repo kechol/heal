@@ -6,6 +6,8 @@ mod commands;
 mod observers;
 mod plugin_assets;
 mod snapshot;
+#[cfg(test)]
+mod test_support;
 
 fn main() -> Result<()> {
     let cli = cli::Cli::parse();

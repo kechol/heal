@@ -8,15 +8,15 @@
 //!      recommended `config.toml` (skipped when one already exists unless
 //!      `--force`).
 //!   4. Install a `post-commit` git hook that calls `heal hook commit`.
-//!   5. Run an initial scan and append it to history as an `init` event so
-//!      `heal status` has something to compare against.
+//!   5. Run an initial scan and append it to `snapshots/` as an `init`
+//!      event so `heal status` has something to compare against.
 
 use std::fmt;
 use std::path::Path;
 
 use anyhow::{Context, Result};
 use heal_core::config::{Config, ProjectProfile};
-use heal_core::history::{HistoryWriter, Snapshot};
+use heal_core::eventlog::{Event, EventLog};
 use heal_core::HealPaths;
 use heal_observer::git;
 use heal_observer::loc::LocObserver;
@@ -37,7 +37,8 @@ const HEAL_HOOK_MARKER: &str = "# heal post-commit hook";
 const POST_COMMIT_SCRIPT: &str = "\
 #!/usr/bin/env sh
 # heal post-commit hook
-# Records a metrics snapshot to .heal/history/YYYY-MM.jsonl after each commit.
+# Records a MetricsSnapshot to .heal/snapshots/YYYY-MM.jsonl plus a
+# CommitInfo entry to .heal/logs/YYYY-MM.jsonl after each commit.
 # Failures are swallowed so a broken HEAL install never blocks a commit.
 set -eu
 if ! command -v heal >/dev/null 2>&1; then
@@ -203,46 +204,18 @@ fn set_executable(_path: &Path) -> Result<()> {
 
 fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<()> {
     let payload = snapshot::capture_value(project)?;
-    HistoryWriter::new(paths.history_dir()).append(&Snapshot::new("init", payload))?;
+    EventLog::new(paths.snapshots_dir()).append(&Event::new("init", payload))?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
+    use crate::test_support::{commit, init_repo};
     use tempfile::TempDir;
 
-    fn git(cwd: &Path, args: &[&str]) {
-        let status = Command::new("git")
-            .args(args)
-            .current_dir(cwd)
-            .status()
-            .expect("git available on $PATH");
-        assert!(status.success(), "git {args:?} failed in {}", cwd.display());
-    }
-
-    fn init_repo(cwd: &Path) {
-        git(cwd, &["init", "-q"]);
-        git(cwd, &["config", "commit.gpgsign", "false"]);
-    }
-
-    fn commit(cwd: &Path, file: &str, body: &str, email: &str) {
-        std::fs::write(cwd.join(file), body).unwrap();
-        git(cwd, &["add", file]);
-        git(
-            cwd,
-            &[
-                "-c",
-                &format!("user.email={email}"),
-                "-c",
-                "user.name=tester",
-                "commit",
-                "-q",
-                "-m",
-                "snap",
-            ],
-        );
+    fn commit_default(cwd: &Path, file: &str, body: &str, email: &str) {
+        commit(cwd, file, body, email, "snap");
     }
 
     fn hook_path(project: &Path) -> std::path::PathBuf {
@@ -261,8 +234,8 @@ mod tests {
     fn detect_profile_returns_solo_for_single_author() {
         let dir = TempDir::new().unwrap();
         init_repo(dir.path());
-        commit(dir.path(), "a.txt", "1", "solo@example.com");
-        commit(dir.path(), "b.txt", "2", "solo@example.com");
+        commit_default(dir.path(), "a.txt", "1", "solo@example.com");
+        commit_default(dir.path(), "b.txt", "2", "solo@example.com");
         assert_eq!(detect_profile(dir.path()), ProjectProfile::Solo);
     }
 
@@ -270,9 +243,9 @@ mod tests {
     fn detect_profile_returns_team_for_three_authors() {
         let dir = TempDir::new().unwrap();
         init_repo(dir.path());
-        commit(dir.path(), "a.txt", "1", "alice@example.com");
-        commit(dir.path(), "b.txt", "2", "bob@example.com");
-        commit(dir.path(), "c.txt", "3", "carol@example.com");
+        commit_default(dir.path(), "a.txt", "1", "alice@example.com");
+        commit_default(dir.path(), "b.txt", "2", "bob@example.com");
+        commit_default(dir.path(), "c.txt", "3", "carol@example.com");
         assert_eq!(detect_profile(dir.path()), ProjectProfile::Team);
     }
 
@@ -395,18 +368,18 @@ mod tests {
     }
 
     #[test]
-    fn run_end_to_end_creates_layout_config_and_history() {
+    fn run_end_to_end_creates_layout_config_and_snapshot() {
         let dir = TempDir::new().unwrap();
         init_repo(dir.path());
-        commit(dir.path(), "main.rs", "fn main() {}\n", "solo@example.com");
+        commit_default(dir.path(), "main.rs", "fn main() {}\n", "solo@example.com");
         run(dir.path(), false).unwrap();
         let paths = HealPaths::new(dir.path());
         assert!(paths.config().exists(), "config.toml must exist");
-        assert!(paths.history_dir().exists(), "history dir must exist");
-        let any_history = std::fs::read_dir(paths.history_dir())
+        assert!(paths.snapshots_dir().exists(), "snapshots dir must exist");
+        let any_snapshot = std::fs::read_dir(paths.snapshots_dir())
             .unwrap()
             .any(|e| e.is_ok());
-        assert!(any_history, "history must contain the init snapshot");
+        assert!(any_snapshot, "snapshots dir must contain the init record");
         assert!(
             hook_path(dir.path()).exists(),
             "post-commit hook must be installed",

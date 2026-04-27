@@ -32,8 +32,8 @@ impl HealPaths {
     }
 
     #[must_use]
-    pub fn history_dir(&self) -> PathBuf {
-        self.root.join("history")
+    pub fn snapshots_dir(&self) -> PathBuf {
+        self.root.join("snapshots")
     }
 
     #[must_use]
@@ -55,7 +55,7 @@ impl HealPaths {
     pub fn ensure(&self) -> std::io::Result<()> {
         for dir in [
             self.root.as_path(),
-            &self.history_dir(),
+            &self.snapshots_dir(),
             &self.logs_dir(),
             &self.docs_dir(),
             &self.reports_dir(),

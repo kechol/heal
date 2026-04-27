@@ -1,8 +1,23 @@
+//! `heal hook <commit|edit|stop>` — single entrypoint invoked by git hooks
+//! and the Claude plugin. Each event has a different write target:
+//!
+//! | event  | snapshots/ | logs/ | observer scan | stdin payload |
+//! | ------ | :--------: | :---: | :-----------: | :-----------: |
+//! | commit |     ✓      |   ✓   |       ✓       |       —       |
+//! | edit   |     —      |   ✓   |       —       |       ✓       |
+//! | stop   |     —      |   ✓   |       —       |       ✓       |
+//!
+//! `commit` is the only event that runs observers (heavy work) — `edit` and
+//! `stop` stay below ~1ms so the Claude plugin loop isn't slowed down.
+//! `commit` also writes a lightweight metadata record to `logs/` so the
+//! event timeline (`heal logs`) is the single source of truth for "what
+//! happened when", while `snapshots/` retains the typed metric series.
+
 use std::io::{IsTerminal, Read};
 use std::path::Path;
 
 use anyhow::Result;
-use heal_core::history::{HistoryWriter, Snapshot};
+use heal_core::eventlog::{Event, EventLog};
 use heal_core::HealPaths;
 
 use crate::cli::HookEvent;
@@ -10,15 +25,41 @@ use crate::snapshot;
 
 pub fn run(project: &Path, event: HookEvent) -> Result<()> {
     let paths = HealPaths::new(project);
-    let writer = HistoryWriter::new(paths.history_dir());
+    let logs = EventLog::new(paths.logs_dir());
 
-    let payload = match event {
-        HookEvent::Commit => snapshot::capture_value(project)?,
-        HookEvent::Edit | HookEvent::Stop => capture_stdin()?,
-    };
-
-    writer.append(&Snapshot::new(event.as_str(), payload))?;
+    match event {
+        HookEvent::Commit => run_commit(project, &paths, &logs)?,
+        HookEvent::Edit | HookEvent::Stop => {
+            // v0.1: stop nudge wiring lives here once `state.json` carries
+            // threshold-exceedance findings. For now both events are pure
+            // log appends so the hook adds no noise to a Claude session.
+            logs.append(&Event::new(event.as_str(), capture_stdin()?))?;
+        }
+    }
     Ok(())
+}
+
+fn run_commit(project: &Path, paths: &HealPaths, logs: &EventLog) -> Result<()> {
+    let metrics_payload = snapshot::capture_value(project)?;
+    EventLog::new(paths.snapshots_dir())
+        .append(&Event::new(HookEvent::Commit.as_str(), metrics_payload))?;
+    logs.append(&Event::new(
+        HookEvent::Commit.as_str(),
+        commit_log_payload(project),
+    ))?;
+    Ok(())
+}
+
+/// Lightweight snapshot of the just-recorded commit (sha, parent, author,
+/// subject, file/line change counts). Pure metadata — the heavy metric
+/// payload lives in `snapshots/`. A failed lookup is logged to stderr but
+/// returns `Value::Null` so the post-commit hook never aborts the commit.
+fn commit_log_payload(project: &Path) -> serde_json::Value {
+    let Some(info) = heal_observer::git::head_commit_info(project) else {
+        eprintln!("heal: commit metadata unavailable (HEAD missing or not a git repo)");
+        return serde_json::Value::Null;
+    };
+    serde_json::to_value(&info).expect("CommitInfo serialization is infallible")
 }
 
 fn capture_stdin() -> Result<serde_json::Value> {
@@ -37,4 +78,84 @@ fn capture_stdin() -> Result<serde_json::Value> {
         Ok(v) => v,
         Err(_) => serde_json::Value::String(buf),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{commit, init_repo};
+    use tempfile::TempDir;
+
+    fn read_log_events(paths: &HealPaths) -> Vec<Event> {
+        EventLog::new(paths.logs_dir())
+            .try_iter()
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn commit_writes_to_both_snapshots_and_logs() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit(
+            dir.path(),
+            "lib.rs",
+            "fn ok() {}\n",
+            "alice@example.com",
+            "feat: add ok",
+        );
+        let paths = HealPaths::new(dir.path());
+        paths.ensure().unwrap();
+        // Commit hook needs `.heal/config.toml` to drive observers; init flow
+        // would normally create it, but we exercise the hook in isolation.
+        std::fs::write(paths.config(), "").unwrap();
+
+        run(dir.path(), HookEvent::Commit).unwrap();
+
+        let snap_events: Vec<Event> = EventLog::new(paths.snapshots_dir())
+            .try_iter()
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(snap_events.len(), 1);
+        assert_eq!(snap_events[0].event, HookEvent::Commit.as_str());
+
+        let log_events = read_log_events(&paths);
+        assert_eq!(log_events.len(), 1);
+        assert_eq!(log_events[0].event, HookEvent::Commit.as_str());
+        let info: heal_observer::git::CommitInfo =
+            serde_json::from_value(log_events[0].data.clone()).unwrap();
+        assert_eq!(info.author_email.as_deref(), Some("alice@example.com"));
+        assert_eq!(info.message_summary, "feat: add ok");
+        assert_eq!(info.files_changed, 1);
+        assert!(info.insertions >= 1);
+    }
+
+    #[test]
+    fn edit_only_writes_to_logs() {
+        let dir = TempDir::new().unwrap();
+        let paths = HealPaths::new(dir.path());
+        paths.ensure().unwrap();
+        run(dir.path(), HookEvent::Edit).unwrap();
+
+        let snap_files: usize = std::fs::read_dir(paths.snapshots_dir()).unwrap().count();
+        assert_eq!(snap_files, 0);
+
+        let log_events = read_log_events(&paths);
+        assert_eq!(log_events.len(), 1);
+        assert_eq!(log_events[0].event, HookEvent::Edit.as_str());
+        assert!(log_events[0].data.is_null());
+    }
+
+    #[test]
+    fn stop_only_writes_to_logs() {
+        let dir = TempDir::new().unwrap();
+        let paths = HealPaths::new(dir.path());
+        paths.ensure().unwrap();
+        run(dir.path(), HookEvent::Stop).unwrap();
+        let log_events = read_log_events(&paths);
+        assert_eq!(log_events.len(), 1);
+        assert_eq!(log_events[0].event, HookEvent::Stop.as_str());
+    }
 }

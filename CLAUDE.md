@@ -8,7 +8,7 @@ constraints that shape any change you propose.
 
 HEAL is a Rust CLI (binary: `heal`) that turns code-health signals into
 work for AI coding agents. The current state is **v0.1 foundation only**:
-workspace, config, history rotation, and the Claude plugin scaffold exist;
+workspace, config, event-log rotation, and the Claude plugin scaffold exist;
 metric observers and the autonomous repair loop do not.
 
 For the *why*, read [`KNOWLEDGE.md`](./KNOWLEDGE.md) (design philosophy,
@@ -22,7 +22,7 @@ scope. Don't pull v0.3 work into v0.1.
 ```
 crates/
   cli/        # heal-cli  — CLI binary `heal`, command dispatch, plugin embed
-  core/       # heal-core — config, history, state, paths, error types
+  core/       # heal-core — config, eventlog, snapshot, state, paths, error types
   observer/   # heal-observer — metric collectors (skeleton today)
 plugins/
   heal/       # Claude Code plugin tree (NOT a Rust crate)
@@ -80,14 +80,23 @@ CI (`.github/workflows/ci.yml`) runs all four — keep them green.
   pattern (`*Config` struct + `Default` + `Toggle` + register on
   `MetricsConfig`).
 
-### History (`.heal/history/YYYY-MM.jsonl`)
-- Append-only, month-rotated. Don't introduce a different rotation
-  strategy without updating `KNOWLEDGE.md` § 11.2.
-- Reading is transparent over future `.gz` compaction; the
-  `HistoryReader` already handles both. Compaction itself ships in v0.2+.
-- `HistoryReader::iter_segments(segments)` exists so callers that already
-  paid for `segments()` (e.g. `heal status`) don't re-glob the directory.
-  Use it.
+### Event log (`.heal/snapshots/YYYY-MM.jsonl` and `.heal/logs/YYYY-MM.jsonl`)
+- Both directories use the same generic `heal_core::eventlog::EventLog`
+  store: append-only, month-rotated, reads transparent across `.gz`.
+  Compaction ships in v0.2+.
+- **`snapshots/`** holds `MetricsSnapshot` events written by the `commit`
+  hook. `heal status` reads these for the metric series and delta. Decode
+  the latest record with `snapshot::MetricsSnapshot::latest_in(&log)`.
+- **`logs/`** holds raw hook events (`commit` / `edit` / `stop`). The
+  `commit` entry carries lightweight `CommitInfo` metadata only (sha,
+  parent, author email, message summary, files_changed/insertions/
+  deletions); the heavy metric payload stays in `snapshots/`. `heal logs`
+  reads these.
+- `EventLog::iter_segments(segments)` exists so callers that already paid
+  for `segments()` (e.g. `heal status`) don't re-glob the directory. Use
+  it.
+- Don't introduce a different rotation strategy without updating
+  `KNOWLEDGE.md` § 11.2.
 
 ### Claude plugin
 - Source of truth lives at `plugins/heal/`. **Do not** copy plugin assets
@@ -110,7 +119,7 @@ When proposing changes, check the unchecked TODO items in `TODO.md`:
 - ✅ **In scope for v0.1**: tokei integration, tree-sitter for TS/JS,
   CCN / Cognitive / Duplication / Churn / Change-Coupling observers,
   `heal status` finding output, `heal check` Claude wiring, hook scripts,
-  history rotation polish, install/update flow.
+  event-log rotation polish, install/update flow.
 - 🚫 **Out of scope**: `heal run` (v0.2), additional languages beyond
   TS/JS (v0.2+), LSP-based metrics (v0.5), Doc generation (v0.5),
   multi-agent abstraction (v0.4).

@@ -12,8 +12,8 @@ pub enum Error {
         source: toml::de::Error,
     },
 
-    #[error("invalid history record at {path}: {source}")]
-    HistoryParse {
+    #[error("invalid event-log record at {path}: {source}")]
+    EventLogParse {
         path: PathBuf,
         #[source]
         source: serde_json::Error,

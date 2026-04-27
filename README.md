@@ -4,7 +4,7 @@
 > harness that turns codebase decay signals into autonomous maintenance work
 > for AI coding agents.
 
-> ⚠️ **Status: v0.1 foundation.** The workspace, configuration, history
+> ⚠️ **Status: v0.1 foundation.** The workspace, configuration, event-log
 > rotation, and Claude plugin scaffolding are in place. Metric observers and
 > the autonomous repair loop land in subsequent releases — see
 > [`TODO.md`](./TODO.md).
@@ -38,7 +38,7 @@ care about the *why*; this README focuses on the *what* and *how*.
 └──────────┬──────────────────────────────────────────────────┘
            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Aggregator — `.heal/history/YYYY-MM.jsonl` (heal-core)      │
+│  Aggregator — `.heal/snapshots/YYYY-MM.jsonl` (heal-core)    │
 └──────────┬──────────────────────────────────────────────────┘
            ▼
 ┌─────────────────────────────────────────────────────────────┐
@@ -71,14 +71,16 @@ mise installed, `cd` into the project and let it resolve the version
 
 ```sh
 # Inside any git repository:
-heal init                # creates .heal/{config.toml,history,logs,docs,reports}
+heal init                # creates .heal/{config.toml,snapshots,logs,docs,reports}
 heal skills install      # extracts the bundled Claude plugin into .claude/plugins/heal
 heal status              # show snapshot count and findings
+heal logs                # stream the commit/edit/stop event timeline
 ```
 
-Once observers and policies are wired up (later v0.1 milestones), git
-post-commit and Claude Code Stop hooks will record events into
-`.heal/history/YYYY-MM.jsonl` and surface findings via `heal status`.
+Git post-commit hooks write `MetricsSnapshot` records to
+`.heal/snapshots/YYYY-MM.jsonl` and a lightweight commit metadata entry to
+`.heal/logs/YYYY-MM.jsonl`. Claude Code Edit/Stop hooks append to the same
+logs file. `heal status` reads `snapshots/`; `heal logs` reads `logs/`.
 
 ## CLI
 
@@ -87,7 +89,7 @@ post-commit and Claude Code Stop hooks will record events into
 | `heal init` | Create `.heal/` and write a recommended `config.toml` | v0.1 |
 | `heal hook <commit\|edit\|stop>` | Hook entrypoint (git or Claude plugin) | v0.1 |
 | `heal status [--json]` | Metric summary and recent findings | v0.1 |
-| `heal logs [--since RFC3339] [--filter EVENT]` | Stream structured history | v0.1 |
+| `heal logs [--since RFC3339] [--filter EVENT] [--limit N] [--json]` | Stream `.heal/logs/` events | v0.1 |
 | `heal check` | Read-only Claude Code analysis | v0.1 (stub today) |
 | `heal skills <install\|update\|status\|uninstall>` | Manage the bundled plugin | v0.1 |
 | `heal run` | Apply repairs via Claude Code (PR mode) | v0.2+ |

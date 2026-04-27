@@ -34,13 +34,10 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Browse structured history logs.
-    Logs {
-        #[arg(long)]
-        since: Option<String>,
-        #[arg(long)]
-        filter: Option<String>,
-    },
+    /// Browse `.heal/logs/` event entries (commit/edit/stop hook records).
+    /// Commit entries hold metadata only — see `heal status` for the
+    /// metric series persisted in `.heal/snapshots/`.
+    Logs(LogsArgs),
     /// Launch Claude Code (`claude -p`) with the read-only check-* skills.
     Check,
     /// Manage the bundled Claude plugin.
@@ -61,8 +58,8 @@ pub enum HookEvent {
 }
 
 impl HookEvent {
-    /// Canonical event name written to history.jsonl. Co-located with the
-    /// enum so adding a variant forces every match arm to be updated.
+    /// Canonical event name embedded in `Event::event`. Co-located with the
+    /// enum so adding a variant forces every dispatch site to update.
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
@@ -71,6 +68,22 @@ impl HookEvent {
             Self::Stop => "stop",
         }
     }
+}
+
+#[derive(Debug, clap::Args)]
+pub struct LogsArgs {
+    /// Drop entries older than this RFC 3339 timestamp.
+    #[arg(long)]
+    pub since: Option<String>,
+    /// Keep only entries whose `event` equals this name (e.g. `edit`).
+    #[arg(long)]
+    pub filter: Option<String>,
+    /// Keep only the N most recent entries (after filtering).
+    #[arg(long)]
+    pub limit: Option<usize>,
+    /// Emit raw JSONL instead of pretty text.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Clone, Copy, Subcommand)]
@@ -97,9 +110,7 @@ impl Cli {
             Command::Init { force } => commands::init::run(&project, force),
             Command::Hook { event } => commands::hook::run(&project, event),
             Command::Status { json } => commands::status::run(&project, json),
-            Command::Logs { since, filter } => {
-                commands::logs::run(&project, since.as_deref(), filter.as_deref())
-            }
+            Command::Logs(args) => commands::logs::run(&project, &args),
             Command::Check => commands::check::run(&project),
             Command::Skills { action } => commands::skills::run(&project, action),
         }
