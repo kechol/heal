@@ -1,4 +1,4 @@
-use heal_core::config::{Config, PolicyAction, ProjectProfile};
+use heal_core::config::{Config, PolicyAction};
 
 #[test]
 fn empty_toml_yields_recommended_metric_defaults() {
@@ -8,15 +8,10 @@ fn empty_toml_yields_recommended_metric_defaults() {
     assert!(cfg.metrics.duplication.enabled);
     assert!(cfg.metrics.ccn.enabled);
     assert!(cfg.metrics.cognitive.enabled);
-    assert!(cfg.metrics.doc_coverage.enabled);
-    assert!(cfg.metrics.doc_update_skew.enabled);
-    assert!(!cfg.metrics.bus_factor.enabled);
-    assert!(!cfg.metrics.line_coverage.enabled);
     assert!(cfg.metrics.loc.inherit_git_excludes);
     assert!(cfg.metrics.loc.exclude_paths.is_empty());
     assert_eq!(cfg.metrics.top_n, 5);
     assert_eq!(cfg.git.since_days, 90);
-    assert_eq!(cfg.agent.provider, "claude-code");
 }
 
 #[test]
@@ -114,7 +109,7 @@ fn policy_action_is_kebab_case() {
 fn save_then_load_roundtrips() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
-    let cfg = Config::recommended(ProjectProfile::Solo);
+    let cfg = Config::default();
     cfg.save(&path).unwrap();
     let reloaded = Config::load(&path).unwrap();
     assert_eq!(cfg, reloaded);

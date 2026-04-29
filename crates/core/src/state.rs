@@ -11,8 +11,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 
+/// Runtime state. Forward-compatible by design — unknown fields are tolerated
+/// so an older binary never fails to read a state file written by a newer one
+/// (the worst case is a re-fired nudge while the new field is unrecognised).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct State {
     #[serde(default)]
     pub last_fired: BTreeMap<String, DateTime<Utc>>,
@@ -21,7 +23,6 @@ pub struct State {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct OpenProposal {
     pub rule: String,
     pub file: String,
@@ -43,6 +44,10 @@ impl State {
         }
     }
 
+    /// Atomic write: serialize, write to a sibling temp file, then rename.
+    /// Avoids leaving a half-written `state.json` behind after SIGINT — a
+    /// truncated file would otherwise make every subsequent `heal hook
+    /// session-start` invocation hard-error on parse until the user deletes it.
     pub fn save(&self, path: &Path) -> Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| Error::Io {
@@ -51,7 +56,19 @@ impl State {
             })?;
         }
         let body = serde_json::to_string_pretty(self).expect("State serialization is infallible");
-        std::fs::write(path, body).map_err(|e| Error::Io {
+        let tmp = match path.file_name() {
+            Some(name) => {
+                let mut t = name.to_os_string();
+                t.push(".tmp");
+                path.with_file_name(t)
+            }
+            None => path.with_extension("tmp"),
+        };
+        std::fs::write(&tmp, body).map_err(|e| Error::Io {
+            path: tmp.clone(),
+            source: e,
+        })?;
+        std::fs::rename(&tmp, path).map_err(|e| Error::Io {
             path: path.to_path_buf(),
             source: e,
         })

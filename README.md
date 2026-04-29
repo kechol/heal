@@ -1,61 +1,39 @@
 # HEAL
 
 > **H**ook-driven **E**valuation & **A**utonomous **L**oop — a code-health
-> harness that turns codebase decay signals into autonomous maintenance work
-> for AI coding agents.
+> harness that turns codebase decay signals into work for AI coding agents.
 
-> ⚠️ **Status: v0.1 foundation.** The workspace, configuration, event-log
-> rotation, and Claude plugin scaffolding are in place. Metric observers and
-> the autonomous repair loop land in subsequent releases — see
-> [`TODO.md`](./TODO.md).
+LLM coding agents are usually reactive: a human files a task before the
+agent moves. Codebases, meanwhile, decay continuously — complexity creeps,
+hotspots shift, duplicates accumulate. HEAL closes that gap by turning
+**codebase state changes** into **agent triggers**.
 
-## Why
+v0.1 is the **observe** half of the loop: collect metrics on every commit,
+expose them through `heal status` / `heal check`, and surface threshold
+breaches to Claude Code as a session-start nudge. Autonomous repair
+(`heal run`, PR generation) lands later.
 
-LLM coding agents are usually reactive: a human has to file the task before
-the agent moves. Codebases, meanwhile, decay continuously — complexity
-creeps, hotspots shift, docs fall behind code. HEAL closes that gap by
-turning **codebase state changes** into **agent triggers**:
+> ⚠️ **Status: v0.1.** macOS / Linux only. API may shift before v0.2.
 
-- Observe code-health metrics (hotspot, complexity, churn, duplication, doc
-  coverage / skew, …).
-- Decide what to surface based on policy (`report-only` → `notify` →
-  `propose` → `execute`).
-- Hand triggered work to Claude Code (or another agent) via skills.
+## What it measures
 
-The full design rationale, metric catalog, OSS tool reference, and policy
-patterns live in [`KNOWLEDGE.md`](./KNOWLEDGE.md). Read that first if you
-care about the *why*; this README focuses on the *what* and *how*.
+Every metric is computed by a `heal-observer` collector and persisted on
+the post-commit hook to `.heal/snapshots/YYYY-MM.jsonl`.
 
-## Architecture
+| Metric           | What it captures                                                              | Languages       |
+| ---------------- | ----------------------------------------------------------------------------- | --------------- |
+| LOC              | Lines of code per language; primary-language detection (`tokei`)              | language-agnostic |
+| CCN              | McCabe Cyclomatic Complexity per function (tree-sitter queries)               | TypeScript, Rust |
+| Cognitive        | Sonar-style Cognitive Complexity (nesting + logical-chain switches)           | TypeScript, Rust |
+| Churn            | Per-file commit frequency and added/deleted line totals over a `since_days` window | language-agnostic (git) |
+| Change Coupling  | Co-change pair counter (`code-maat` style); bulk-commit cap; sum-of-coupling per file | language-agnostic (git) |
+| Duplication      | Type-1 (exact) clones via tree-sitter leaf tokens + Rabin-Karp                | TypeScript, Rust |
+| Hotspot          | `commits × ccn_sum × weights` composition over Churn + CCN                    | TypeScript, Rust |
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Codebase (source, tests, docs, .git/)                       │
-└──────────┬──────────────────────────────────────────────────┘
-           ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Observer  — metric collection (heal-observer crate)         │
-└──────────┬──────────────────────────────────────────────────┘
-           ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Aggregator — `.heal/snapshots/YYYY-MM.jsonl` (heal-core)    │
-└──────────┬──────────────────────────────────────────────────┘
-           ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Trigger    — policy evaluation, cool-down, dedup            │
-└──────────┬──────────────────────────────────────────────────┘
-           ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Executor   — Claude Code skills, `heal run` (v0.2+)         │
-└─────────────────────────────────────────────────────────────┘
-```
+Per-metric Cargo features (`lang-ts`, `lang-rust`) decide which language
+parsers compile in; the default build enables both.
 
 ## Install
-
-> v0.1 supports macOS and Linux only. Windows is not on the roadmap before
-> v0.5.
-
-Build from source (the only option until the first release):
 
 ```sh
 git clone https://github.com/kechol/heal
@@ -63,51 +41,90 @@ cd heal
 cargo install --path crates/cli   # produces the `heal` binary
 ```
 
-Toolchain: this repo pins Rust via [mise](https://mise.jdx.dev). If you have
-mise installed, `cd` into the project and let it resolve the version
-(currently Rust 1.95 stable).
+Toolchain: Rust 1.85+. The repo pins the exact version via
+[mise](https://mise.jdx.dev) — `mise install` from the project root if you
+use it, otherwise any rustup install ≥ 1.85 will work.
+
+> macOS and Linux only for v0.1. The hook scripts and path handling assume
+> a POSIX-ish environment.
 
 ## Quickstart
 
+Inside any git repository:
+
 ```sh
-# Inside any git repository:
 heal init                # creates .heal/{config.toml,snapshots,logs,docs,reports}
+                         # and installs .git/hooks/post-commit
 heal skills install      # extracts the bundled Claude plugin into .claude/plugins/heal
-heal status              # show snapshot count and findings
-heal logs                # stream the commit/edit/stop event timeline
+heal status              # show metric summary and findings
+heal logs                # stream the commit / edit / stop event timeline
 ```
 
-Git post-commit hooks write `MetricsSnapshot` records to
-`.heal/snapshots/YYYY-MM.jsonl` and a lightweight commit metadata entry to
-`.heal/logs/YYYY-MM.jsonl`. Claude Code Edit/Stop hooks append to the same
-logs file. `heal status` reads `snapshots/`; `heal logs` reads `logs/`.
+After `heal init`, every git commit triggers the post-commit hook, which
+runs the observers and appends one `MetricsSnapshot` to `.heal/snapshots/`
+plus a `CommitInfo` (sha, parent, author, subject, file/line counts) to
+`.heal/logs/`. Claude Code Edit/Stop hooks (installed by
+`heal skills install`) append to the same logs file.
+
+`heal status` reads `snapshots/`; `heal logs` reads `logs/`. The two
+directories share a generic event-log format (append-only, month-rotated
+JSONL, transparent reads over `.gz` once compaction lands).
 
 ## CLI
 
-| Command | Purpose | Available |
-|---------|---------|-----------|
-| `heal init` | Create `.heal/` and write a recommended `config.toml` | v0.1 |
-| `heal hook <commit\|edit\|stop>` | Hook entrypoint (git or Claude plugin) | v0.1 |
-| `heal status [--json]` | Metric summary and recent findings | v0.1 |
-| `heal logs [--since RFC3339] [--filter EVENT] [--limit N] [--json]` | Stream `.heal/logs/` events | v0.1 |
-| `heal check` | Read-only Claude Code analysis | v0.1 (stub today) |
-| `heal skills <install\|update\|status\|uninstall>` | Manage the bundled plugin | v0.1 |
-| `heal run` | Apply repairs via Claude Code (PR mode) | v0.2+ |
-| `heal docs` | Documentation coverage / preview | v0.3+ |
+| Command | Purpose |
+|---------|---------|
+| `heal init [--force]` | Create `.heal/`, write a default `config.toml`, install the post-commit hook, capture an initial snapshot. |
+| `heal status [--json] [--metric <name>]` | Metric summary and most recent finding. `--metric` scopes output to a single observer (`loc` / `complexity` / `churn` / `change-coupling` / `duplication` / `hotspot`). |
+| `heal logs [--since <RFC3339>] [--filter <event>] [--limit N] [--json]` | Stream `.heal/logs/` events. |
+| `heal check [overview\|hotspots\|complexity\|duplication\|coupling] [-- <claude args>]` | Launch Claude Code (`claude -p`) with the matching read-only `check-*` skill. Anything after `--` forwards verbatim to `claude`. |
+| `heal hook <commit\|edit\|stop\|session-start>` | Hook entrypoint invoked by git or the Claude plugin. Not for direct use. |
+| `heal skills <install\|update\|status\|uninstall>` | Manage the bundled Claude plugin under `.claude/plugins/heal/`. |
 
-Run `heal --help` or `heal <subcommand> --help` for argument details.
+Run `heal --help` or `heal <subcommand> --help` for full argument details.
 
 ## Configuration
 
-`heal init` writes `.heal/config.toml`. Every metric has an `enabled` flag
-and policy actions follow a four-tier ladder
-(`report-only` → `notify` → `propose` → `execute`) so you can opt in to
-automation gradually. See `KNOWLEDGE.md` § 11.4 for the full schema and
-auto-detection rules.
+`heal init` writes `.heal/config.toml`. Every metric ships with sensible
+defaults; the config file is mostly there so you can override them. The
+schema is strict (`deny_unknown_fields`) so typos surface as errors rather
+than silently dropping settings.
 
-History records rotate per calendar month
-(`.heal/history/YYYY-MM.jsonl`). Reading is transparent over future `.gz`
-compaction.
+Selected knobs:
+
+```toml
+[project]
+# Free-form natural language passed to `heal check`. Use anything the
+# model understands — "Japanese", "日本語", "ja", "français".
+response_language = "Japanese"
+
+[git]
+since_days = 90              # Lookback window for churn / change coupling.
+exclude_paths = ["dist/"]    # Substrings; matched against every observed path.
+
+[metrics]
+top_n = 5                    # Default size of every "worst-N" listing.
+
+[metrics.loc]
+inherit_git_excludes = true  # Combine git.exclude_paths with metrics.loc.exclude_paths.
+
+[metrics.duplication]
+min_tokens = 50              # Minimum window length for a duplicate block.
+
+[metrics.hotspot]
+weight_churn = 1.0
+weight_complexity = 1.0
+top_n = 8                    # Per-metric override of the global metrics.top_n.
+
+[policy.high_complexity_new_function]
+action = "report-only"
+cooldown_hours = 24
+threshold = { ccn = 15, delta_pct = 20 }
+```
+
+Policy entries drive per-rule cool-down for the SessionStart nudge today;
+the `action` ladder (`report-only` → `notify` → `propose` → `execute`)
+becomes meaningful when `heal run` lands.
 
 ## Repository layout
 
@@ -115,32 +132,77 @@ compaction.
 heal/
 ├── crates/
 │   ├── cli/        # `heal-cli` — CLI binary `heal`
-│   ├── core/       # `heal-core` — config, history, state, paths, errors
-│   └── observer/   # `heal-observer` — metric collectors (skeleton today)
+│   ├── core/       # `heal-core` — config, eventlog, snapshot, state, paths
+│   └── observer/   # `heal-observer` — LOC, complexity, churn, coupling, duplication, hotspot
 ├── plugins/
 │   └── heal/       # Claude Code plugin (embedded into `heal-cli` via include_dir!)
-├── KNOWLEDGE.md    # Design philosophy + metric catalog + implementation plan
-├── TODO.md         # Roadmap (v0.1 → v0.5)
-└── CLAUDE.md       # Guidance for Claude Code when working in this repo
+├── LICENSE-MIT
+├── LICENSE-APACHE
+└── README.md
 ```
+
+`plugins/heal/` is the source of truth for the Claude plugin tree. It is
+embedded into the `heal` binary at build time and materialised into
+`.claude/plugins/heal/` by `heal skills install`.
+
+## Claude plugin
+
+`heal skills install` extracts:
+
+- Three hook scripts wired to `heal hook <event>`:
+  - `PostToolUse(Edit|Write|MultiEdit)` → `heal hook edit` (logs only)
+  - `Stop` → `heal hook stop` (logs only)
+  - `SessionStart` → `heal hook session-start` (cool-down-aware nudge)
+- Five read-only `check-*` skills (`overview`, `hotspots`, `complexity`,
+  `duplication`, `coupling`) that pull from `heal status --metric <x>`.
+
+Each installed asset's fingerprint is tracked in `.heal-install.json`, so
+`heal skills update` can refresh bundled assets without overwriting files
+the user has hand-edited (use `--force` to override).
 
 ## Development
 
 ```sh
-cargo build --workspace
-cargo test  --workspace
-cargo fmt   --all
+cargo build  --workspace
+cargo test   --workspace
+cargo fmt    --all
 cargo clippy --workspace --all-targets -- -D warnings
-cargo deny  check                       # license / advisory / source audit
+cargo deny   check
 ```
 
-CI runs all four on push / PR (`.github/workflows/ci.yml`).
+CI runs all five on push / PR. `clippy::pedantic = warn` at the workspace
+level — new code is expected to pass clippy clean.
+
+### Crate boundaries
+
+- **`heal-core`** — pure data types and on-disk formats (config, eventlog,
+  snapshot, state, paths, error). No CLI, no agent invocation, no observer
+  logic.
+- **`heal-observer`** — metric collectors. Stateless. Reads the project
+  tree and emits structured payloads.
+- **`heal-cli`** — argument parsing, command dispatch, hook entrypoints,
+  plugin extraction. Thin wrapper over `heal-core` and `heal-observer`.
 
 ## Contributing
 
-The project is in early bootstrap; expect API churn until v0.2. Issues and
-PRs are welcome — please reference `TODO.md` for what's in scope.
+Issues and PRs welcome. The project is in early bootstrap; please open an
+issue before introducing a new crate, a new external dependency, or a
+schema change to `.heal/`.
 
 ## License
 
-MIT — see [`LICENSE`](./LICENSE).
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](./LICENSE-APACHE) or
+  <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](./LICENSE-MIT) or
+  <http://opensource.org/licenses/MIT>)
+
+at your option.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally
+submitted for inclusion in the work by you, as defined in the Apache-2.0
+license, shall be dual-licensed as above, without any additional terms or
+conditions.

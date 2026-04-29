@@ -19,7 +19,6 @@
 //! - Parallel scanning. The walker is single-threaded.
 
 use std::collections::HashMap;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -32,10 +31,13 @@ use crate::lang::Language;
 use crate::walk::walk_supported_files;
 use crate::{ObservationMeta, Observer};
 
-/// FNV-1a 64-bit prime — used as the polynomial base for Rabin-Karp.
-/// Mixed via `wrapping_*` arithmetic; collisions are caught by the
-/// post-bucket exact slice comparison.
+/// FNV-1a 64-bit prime — used both as the per-token identity hash multiplier
+/// and as the polynomial base for the Rabin-Karp window hash. Mixed via
+/// `wrapping_*` arithmetic; collisions in the rolling hash are caught by
+/// the post-bucket exact slice comparison.
 const HASH_BASE: u64 = 0x100_0000_01b3;
+/// FNV-1a 64-bit offset basis.
+const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 
 #[derive(Debug, Clone, Default)]
 pub struct DuplicationObserver {
@@ -252,6 +254,10 @@ fn collect_tokens(parsed: &ParsedFile) -> (Vec<u64>, Vec<u32>) {
 
 /// Returns the token-identity hash + 1-based start line for a real leaf
 /// token, or `None` for branches / extras / errors / whitespace-only text.
+///
+/// Uses a hand-rolled FNV-1a 64-bit hash so the per-token identity is
+/// reproducible across processes and Rust toolchains — `std::hash::DefaultHasher`
+/// is explicitly *not* stable across releases.
 fn leaf_token(node: &tree_sitter::Node<'_>, source: &[u8]) -> Option<(u64, u32)> {
     if node.child_count() != 0 || node.is_extra() || node.is_error() || node.is_missing() {
         return None;
@@ -260,11 +266,15 @@ fn leaf_token(node: &tree_sitter::Node<'_>, source: &[u8]) -> Option<(u64, u32)>
     if text.trim().is_empty() {
         return None;
     }
-    let mut h = DefaultHasher::new();
-    node.kind_id().hash(&mut h);
-    text.hash(&mut h);
+    let mut h = FNV_OFFSET;
+    for b in node.kind_id().to_le_bytes() {
+        h = (h ^ u64::from(b)).wrapping_mul(HASH_BASE);
+    }
+    for b in text.as_bytes() {
+        h = (h ^ u64::from(*b)).wrapping_mul(HASH_BASE);
+    }
     let line = u32::try_from(node.start_position().row + 1).unwrap_or(u32::MAX);
-    Some((h.finish(), line))
+    Some((h, line))
 }
 
 /// Build the per-window Rabin-Karp hash list for a file's token stream.

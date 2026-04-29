@@ -98,3 +98,36 @@ fn metrics_snapshot_default_version_is_current() {
     assert!(snap.git_sha.is_none());
     assert!(snap.delta.is_none());
 }
+
+#[test]
+fn latest_in_skips_corrupt_jsonl_lines() {
+    use std::io::Write;
+    let dir = tempfile::tempdir().unwrap();
+    let log = EventLog::new(dir.path());
+
+    let real = MetricsSnapshot {
+        git_sha: Some("good".into()),
+        ..MetricsSnapshot::default()
+    };
+    log.append(&Event {
+        timestamp: Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap(),
+        event: "commit".into(),
+        data: serde_json::to_value(&real).unwrap(),
+    })
+    .unwrap();
+
+    // Append a half-written line directly to simulate a SIGINT mid-write.
+    // The current segment file is named YYYY-MM.jsonl; reuse the timestamp
+    // we wrote above.
+    let seg = dir.path().join("2026-04.jsonl");
+    let mut f = std::fs::OpenOptions::new().append(true).open(&seg).unwrap();
+    writeln!(f, "{{ this is not json").unwrap();
+    drop(f);
+
+    let (_, metrics) = MetricsSnapshot::latest_in(&log).unwrap().unwrap();
+    assert_eq!(
+        metrics.git_sha.as_deref(),
+        Some("good"),
+        "corrupt trailing line must be skipped, not propagated as an error"
+    );
+}

@@ -61,7 +61,7 @@ fn run_commit(project: &Path, paths: &HealPaths, logs: &EventLog) -> Result<()> 
 
 /// `SessionStart` entry point: append the raw payload to `logs/`, then read
 /// the latest `MetricsSnapshot`, derive findings, filter by per-rule
-/// cool-down, and emit a nudge to `out`. The state file (`runtime/state.json`)
+/// cool-down, and emit a nudge to `out`. The state file (`.heal/state.json`)
 /// is updated only when at least one finding actually fires so a silent
 /// session leaves `last_fired` untouched.
 fn run_session_start(
@@ -341,7 +341,7 @@ mod tests {
         let stdout = String::from_utf8(buf).unwrap();
         assert!(stdout.contains("HEAL"));
         assert!(stdout.contains("src/auth/session.ts"));
-        // last_fired must be persisted under the new runtime/ path.
+        // last_fired persists under .heal/state.json.
         let state = State::load(&paths.state()).unwrap();
         assert!(state
             .last_fired

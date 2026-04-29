@@ -99,11 +99,13 @@ impl MetricsSnapshot {
                 if line.trim().is_empty() {
                     continue;
                 }
-                let event: Event =
-                    serde_json::from_str(line).map_err(|source| Error::EventLogParse {
-                        path: seg.path.clone(),
-                        source,
-                    })?;
+                // Skip records that fail to parse (legacy payloads, mid-write
+                // truncation after SIGINT, future schema variants). The
+                // module doc-contract is "skip silently" — propagating here
+                // would brick `heal status` after a single corrupt line.
+                let Ok(event) = serde_json::from_str::<Event>(line) else {
+                    continue;
+                };
                 if let Ok(metrics) = serde_json::from_value::<Self>(event.data.clone()) {
                     return Ok(Some((event, metrics)));
                 }

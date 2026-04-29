@@ -146,12 +146,15 @@ enum VersionCmp {
     InstalledNewer,
 }
 
-/// Best-effort dotted-numeric version compare. Falls back to byte
-/// equality when either side fails to parse so an "unknown" version
-/// degrades gracefully.
+/// Best-effort dotted-numeric version compare. Strips the semver
+/// pre-release / build-metadata suffix (`0.1.0-rc1`, `0.1.0+sha.abc`) before
+/// parsing so a pre-release binary doesn't get classified as drift against
+/// an install marker recorded with the same release version.
 fn compare_versions(installed: &str, bundled: &str) -> VersionCmp {
-    let parse =
-        |s: &str| -> Option<Vec<u32>> { s.split('.').map(|p| p.parse::<u32>().ok()).collect() };
+    let parse = |s: &str| -> Option<Vec<u32>> {
+        let core = s.split(['-', '+']).next().unwrap_or(s);
+        core.split('.').map(|p| p.parse::<u32>().ok()).collect()
+    };
     match (parse(installed), parse(bundled)) {
         (Some(i), Some(b)) => {
             use std::cmp::Ordering::{Equal, Greater, Less};

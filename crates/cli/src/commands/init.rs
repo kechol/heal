@@ -2,11 +2,10 @@
 //!
 //! Steps, in order:
 //!   1. Ensure `.heal/` layout exists.
-//!   2. Detect the primary language via `LocObserver` (used both for status
-//!      output and to seed `project.primary_language` in config).
-//!   3. Detect solo vs. team by counting distinct git authors, then write a
-//!      recommended `config.toml` (skipped when one already exists unless
-//!      `--force`).
+//!   2. Detect the primary language via `LocObserver` for the user-facing
+//!      summary (not persisted — `heal status` re-detects on every call).
+//!   3. Write a default `config.toml` (skipped when one already exists
+//!      unless `--force`).
 //!   4. Install a `post-commit` git hook that calls `heal hook commit`.
 //!   5. Run an initial scan and append it to `snapshots/` as an `init`
 //!      event so `heal status` has something to compare against.
@@ -15,23 +14,13 @@ use std::fmt;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use heal_core::config::{Config, ProjectProfile};
+use heal_core::config::Config;
 use heal_core::eventlog::{Event, EventLog};
 use heal_core::HealPaths;
 use heal_observer::git;
 use heal_observer::loc::LocObserver;
 
 use crate::snapshot;
-
-/// At least this many distinct author emails on HEAD's history flips the
-/// recommended config from solo to team. Two committers (e.g. dev + bot)
-/// are still treated as solo.
-const TEAM_AUTHOR_THRESHOLD: usize = 3;
-
-/// Cap on commits walked when counting distinct authors. Bounded so a
-/// long-lived repo doesn't slow down `heal init` even if the threshold
-/// short-circuit never fires.
-const AUTHOR_SCAN_LIMIT: usize = 500;
 
 const HEAL_HOOK_MARKER: &str = "# heal post-commit hook";
 const POST_COMMIT_SCRIPT: &str = "\
@@ -40,11 +29,10 @@ const POST_COMMIT_SCRIPT: &str = "\
 # Records a MetricsSnapshot to .heal/snapshots/YYYY-MM.jsonl plus a
 # CommitInfo entry to .heal/logs/YYYY-MM.jsonl after each commit.
 # Failures are swallowed so a broken HEAL install never blocks a commit.
-set -eu
-if ! command -v heal >/dev/null 2>&1; then
-  exit 0
+if command -v heal >/dev/null 2>&1; then
+  heal hook commit || true
 fi
-heal hook commit || true
+exit 0
 ";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,8 +82,7 @@ pub fn run(project: &Path, force: bool) -> Result<()> {
         .with_context(|| format!("creating {}", paths.root().display()))?;
 
     let primary_language = LocObserver::default().scan(project).primary;
-    let profile = detect_profile(project);
-    let config_action = write_config(&paths, profile, primary_language.as_deref(), force)?;
+    let config_action = write_config(&paths, force)?;
     let hook_action = install_post_commit_hook(project, force)?;
     run_initial_scan(project, &paths)?;
 
@@ -105,13 +92,6 @@ pub fn run(project: &Path, force: bool) -> Result<()> {
     } else {
         println!("  primary language: (not detected)");
     }
-    println!(
-        "  profile:          {}",
-        match profile {
-            ProjectProfile::Solo => "solo",
-            ProjectProfile::Team => "team",
-        }
-    );
     println!(
         "  config:           {} ({config_action})",
         paths.config().display(),
@@ -124,29 +104,13 @@ pub fn run(project: &Path, force: bool) -> Result<()> {
     Ok(())
 }
 
-fn detect_profile(project: &Path) -> ProjectProfile {
-    let n = git::distinct_author_emails(project, AUTHOR_SCAN_LIMIT, TEAM_AUTHOR_THRESHOLD);
-    if n >= TEAM_AUTHOR_THRESHOLD {
-        ProjectProfile::Team
-    } else {
-        ProjectProfile::Solo
-    }
-}
-
-fn write_config(
-    paths: &HealPaths,
-    profile: ProjectProfile,
-    primary_language: Option<&str>,
-    force: bool,
-) -> Result<ConfigAction> {
+fn write_config(paths: &HealPaths, force: bool) -> Result<ConfigAction> {
     let cfg_path = paths.config();
     let already_present = cfg_path.exists();
     if already_present && !force {
         return Ok(ConfigAction::KeptExisting);
     }
-    let mut cfg = Config::recommended(profile);
-    cfg.project.primary_language = primary_language.map(str::to_string);
-    cfg.save(&cfg_path)?;
+    Config::default().save(&cfg_path)?;
     Ok(if already_present {
         ConfigAction::Overwrote
     } else {
@@ -225,51 +189,14 @@ mod tests {
     }
 
     #[test]
-    fn detect_profile_returns_solo_for_no_git() {
-        let dir = TempDir::new().unwrap();
-        assert_eq!(detect_profile(dir.path()), ProjectProfile::Solo);
-    }
-
-    #[test]
-    fn detect_profile_returns_solo_for_single_author() {
-        let dir = TempDir::new().unwrap();
-        init_repo(dir.path());
-        commit_default(dir.path(), "a.txt", "1", "solo@example.com");
-        commit_default(dir.path(), "b.txt", "2", "solo@example.com");
-        assert_eq!(detect_profile(dir.path()), ProjectProfile::Solo);
-    }
-
-    #[test]
-    fn detect_profile_returns_team_for_three_authors() {
-        let dir = TempDir::new().unwrap();
-        init_repo(dir.path());
-        commit_default(dir.path(), "a.txt", "1", "alice@example.com");
-        commit_default(dir.path(), "b.txt", "2", "bob@example.com");
-        commit_default(dir.path(), "c.txt", "3", "carol@example.com");
-        assert_eq!(detect_profile(dir.path()), ProjectProfile::Team);
-    }
-
-    #[test]
-    fn write_config_seeds_primary_language() {
+    fn write_config_writes_default_when_absent() {
         let dir = TempDir::new().unwrap();
         let paths = HealPaths::new(dir.path());
         paths.ensure().unwrap();
-        let action = write_config(&paths, ProjectProfile::Solo, Some("Rust"), false).unwrap();
+        let action = write_config(&paths, false).unwrap();
         assert_eq!(action, ConfigAction::Wrote);
         let cfg = Config::load(&paths.config()).unwrap();
-        assert_eq!(cfg.project.primary_language.as_deref(), Some("Rust"));
-        assert!(!cfg.metrics.bus_factor.enabled);
-    }
-
-    #[test]
-    fn write_config_team_profile_enables_bus_factor() {
-        let dir = TempDir::new().unwrap();
-        let paths = HealPaths::new(dir.path());
-        paths.ensure().unwrap();
-        write_config(&paths, ProjectProfile::Team, None, false).unwrap();
-        let cfg = Config::load(&paths.config()).unwrap();
-        assert!(cfg.metrics.bus_factor.enabled);
-        assert!(cfg.project.primary_language.is_none());
+        assert_eq!(cfg, Config::default());
     }
 
     #[test]
@@ -278,7 +205,7 @@ mod tests {
         let paths = HealPaths::new(dir.path());
         paths.ensure().unwrap();
         std::fs::write(paths.config(), "# user-edited\n").unwrap();
-        let action = write_config(&paths, ProjectProfile::Solo, Some("Rust"), false).unwrap();
+        let action = write_config(&paths, false).unwrap();
         assert_eq!(action, ConfigAction::KeptExisting);
         let body = std::fs::read_to_string(paths.config()).unwrap();
         assert_eq!(body, "# user-edited\n");
@@ -290,10 +217,10 @@ mod tests {
         let paths = HealPaths::new(dir.path());
         paths.ensure().unwrap();
         std::fs::write(paths.config(), "# user-edited\n").unwrap();
-        let action = write_config(&paths, ProjectProfile::Solo, Some("Rust"), true).unwrap();
+        let action = write_config(&paths, true).unwrap();
         assert_eq!(action, ConfigAction::Overwrote);
         let cfg = Config::load(&paths.config()).unwrap();
-        assert_eq!(cfg.project.primary_language.as_deref(), Some("Rust"));
+        assert_eq!(cfg, Config::default());
     }
 
     #[test]

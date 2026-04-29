@@ -21,39 +21,17 @@ pub struct Config {
     pub metrics: MetricsConfig,
     #[serde(default)]
     pub policy: BTreeMap<String, PolicyConfig>,
-    #[serde(default)]
-    pub agent: AgentConfig,
-    #[serde(default)]
-    pub notify: NotifyConfig,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectConfig {
-    #[serde(default)]
-    pub primary_language: Option<String>,
     /// Natural language for AI-generated explanations (`heal check`
     /// output, future `run-*` proposals). Free-form so users can write
     /// `"Japanese"`, `"日本語"`, `"ja"`, `"français"` — the value is
     /// passed verbatim to the model. `None` keeps the model default.
     #[serde(default)]
     pub response_language: Option<String>,
-    #[serde(default = "default_docs_dir")]
-    pub docs_dir: String,
-}
-
-impl Default for ProjectConfig {
-    fn default() -> Self {
-        Self {
-            primary_language: None,
-            response_language: None,
-            docs_dir: default_docs_dir(),
-        }
-    }
-}
-
-fn default_docs_dir() -> String {
-    ".heal/docs".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -78,7 +56,7 @@ fn default_since_days() -> u32 {
     90
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct MetricsConfig {
     /// Default `worst_n` width for status rankings. Each metric below can
@@ -100,15 +78,9 @@ pub struct MetricsConfig {
     pub ccn: CcnConfig,
     #[serde(default = "default_enabled")]
     pub cognitive: ToggleConfig,
-    #[serde(default)]
-    pub line_coverage: LineCoverageConfig,
-    #[serde(default = "default_enabled")]
-    pub doc_coverage: ToggleConfig,
-    #[serde(default = "default_enabled")]
-    pub doc_update_skew: DocUpdateSkewConfig,
-    #[serde(default)]
-    pub bus_factor: ToggleConfig,
 }
+
+impl Eq for MetricsConfig {}
 
 impl Default for MetricsConfig {
     fn default() -> Self {
@@ -123,10 +95,6 @@ impl Default for MetricsConfig {
             duplication: DuplicationConfig::enabled(),
             ccn: CcnConfig::enabled(),
             cognitive: ToggleConfig::enabled(),
-            line_coverage: LineCoverageConfig::default(),
-            doc_coverage: ToggleConfig::enabled(),
-            doc_update_skew: DocUpdateSkewConfig::enabled(),
-            bus_factor: ToggleConfig::default(),
         }
     }
 }
@@ -376,45 +344,6 @@ fn default_warn_delta_pct() -> u32 {
     30
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct LineCoverageConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub lcov_path: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct DocUpdateSkewConfig {
-    pub enabled: bool,
-    #[serde(default = "default_max_skew_days")]
-    pub max_skew_days: u32,
-}
-
-impl Default for DocUpdateSkewConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            max_skew_days: default_max_skew_days(),
-        }
-    }
-}
-
-impl Toggle for DocUpdateSkewConfig {
-    fn enabled() -> Self {
-        Self {
-            enabled: true,
-            max_skew_days: default_max_skew_days(),
-        }
-    }
-}
-
-fn default_max_skew_days() -> u32 {
-    30
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub enum PolicyAction {
@@ -440,44 +369,6 @@ fn default_cooldown_hours() -> u32 {
     24
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct AgentConfig {
-    #[serde(default = "default_agent_provider")]
-    pub provider: String,
-}
-
-impl Default for AgentConfig {
-    fn default() -> Self {
-        Self {
-            provider: default_agent_provider(),
-        }
-    }
-}
-
-fn default_agent_provider() -> String {
-    "claude-code".to_string()
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct NotifyConfig {
-    #[serde(default = "default_stop_hook_message")]
-    pub stop_hook_message: String,
-}
-
-impl Default for NotifyConfig {
-    fn default() -> Self {
-        Self {
-            stop_hook_message: default_stop_hook_message(),
-        }
-    }
-}
-
-fn default_stop_hook_message() -> String {
-    "HEAL: コードのメンテナンスが必要なタイミングです。`heal status` で確認できます".to_string()
-}
-
 impl Config {
     /// Read and validate a config from disk.
     pub fn load(path: &Path) -> Result<Self> {
@@ -497,10 +388,15 @@ impl Config {
         })
     }
 
+    /// Parse a TOML body. Useful for tests and for round-trip checks.
+    #[must_use = "ignoring the parse result will silently swallow schema errors"]
     pub fn from_toml_str(s: &str) -> std::result::Result<Self, toml::de::Error> {
         toml::from_str(s)
     }
 
+    /// Serialize back to TOML. The struct is owned so this is infallible
+    /// for any value produced by `Default::default()` or `Config::load`.
+    #[must_use = "the serialised string is the only return value"]
     pub fn to_toml_string(&self) -> std::result::Result<String, toml::ser::Error> {
         toml::to_string_pretty(self)
     }
@@ -536,44 +432,6 @@ impl Config {
         excluded.extend(self.metrics.loc.exclude_paths.iter().cloned());
         excluded
     }
-
-    /// Default config for a new project. `profile` selects between
-    /// solo-developer (Bus Factor off, low ceremony) and team (Bus Factor
-    /// on) flavors; `heal init` decides which based on git committer count.
-    #[must_use]
-    pub fn recommended(profile: ProjectProfile) -> Self {
-        let mut cfg = Self {
-            project: ProjectConfig::default(),
-            git: GitConfig::default(),
-            metrics: MetricsConfig::default(),
-            policy: BTreeMap::new(),
-            agent: AgentConfig::default(),
-            notify: NotifyConfig::default(),
-        };
-        cfg.metrics.bus_factor.enabled = matches!(profile, ProjectProfile::Team);
-        cfg.policy.insert(
-            "high_complexity_new_function".to_string(),
-            PolicyConfig {
-                action: PolicyAction::ReportOnly,
-                threshold: BTreeMap::from([
-                    ("ccn".to_string(), toml::Value::Integer(15)),
-                    ("delta_pct".to_string(), toml::Value::Integer(20)),
-                ]),
-                trigger: None,
-                cooldown_hours: 24,
-            },
-        );
-        cfg
-    }
-}
-
-/// How `heal init` is expected to use the project: a single-developer repo
-/// or a multi-committer team. Drives a small number of recommended-config
-/// toggles (currently just Bus Factor on/off).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProjectProfile {
-    Solo,
-    Team,
 }
 
 /// Convenience: load from `.heal/config.toml` under a project root.

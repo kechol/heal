@@ -17,13 +17,15 @@
 //! Drift detection (2) compares an on-disk fingerprint with the manifest's
 //! recorded fingerprint from the previous install.
 //!
-//! The fingerprint algorithm is std's `DefaultHasher` (`SipHash`) formatted
+//! The fingerprint algorithm is a hand-rolled FNV-1a 64-bit hash formatted
 //! as 16 hex digits. It is *not* cryptographic — its only job is to
 //! distinguish "byte-for-byte identical to last install" from "edited."
+//! FNV is preferred over `std::hash::DefaultHasher` because the std hasher
+//! is explicitly unstable across Rust toolchain versions, which would
+//! invalidate every recorded fingerprint after a `rustc` upgrade.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::hash::{DefaultHasher, Hasher};
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -341,13 +343,16 @@ fn inject_skill_metadata(body: &str, meta: &SkillInstallMeta) -> String {
 }
 
 /// Drift-detection fingerprint shared by `extract` (manifest writer) and
-/// `skills::status` (drift reader). `DefaultHasher::new()` uses a fixed
-/// seed across processes (unlike `RandomState`), so the same bytes map
-/// to the same hex digest every run.
+/// `skills::status` (drift reader). FNV-1a 64-bit — same bytes always map
+/// to the same hex digest across processes and toolchain versions.
 pub(crate) fn fingerprint(bytes: &[u8]) -> String {
-    let mut h = DefaultHasher::new();
-    h.write(bytes);
-    format!("{:016x}", h.finish())
+    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x100_0000_01b3;
+    let mut h = FNV_OFFSET;
+    for b in bytes {
+        h = (h ^ u64::from(*b)).wrapping_mul(FNV_PRIME);
+    }
+    format!("{h:016x}")
 }
 
 fn relative_key(p: &Path) -> String {

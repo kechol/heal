@@ -6,16 +6,16 @@ fn ensure_creates_all_subdirs() {
     let paths = HealPaths::new(dir.path());
     paths.ensure().unwrap();
 
-    for sub in ["runtime", "snapshots", "logs", "docs", "reports"] {
+    for sub in ["snapshots", "logs", "docs", "reports"] {
         assert!(paths.root().join(sub).is_dir(), "missing {sub}");
     }
 }
 
 #[test]
-fn state_lives_under_runtime() {
+fn state_lives_at_heal_root() {
     let dir = tempfile::tempdir().unwrap();
     let paths = HealPaths::new(dir.path());
-    assert_eq!(paths.state(), paths.runtime_dir().join("state.json"));
+    assert_eq!(paths.state(), paths.root().join("state.json"));
 }
 
 #[test]
