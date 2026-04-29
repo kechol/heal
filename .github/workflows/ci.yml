@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# Minimum-privilege default for the GITHUB_TOKEN. Every job below only
+# reads the checkout — no writes to issues, PRs, releases, or the repo
+# itself. Jobs that need more must opt in explicitly.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
