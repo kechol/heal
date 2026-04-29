@@ -39,7 +39,6 @@ permissions:
 # If there's a prerelease-style suffix to the version, then the release(s)
 # will be marked as a prerelease.
 on:
-  pull_request:
   push:
     tags:
       - '**[0-9]+.[0-9]+.[0-9]+*'
@@ -297,7 +296,18 @@ jobs:
             echo "$AUTO_NOTES"
           } > "$RUNNER_TEMP/notes.txt"
 
-          gh release create "${TAG}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
+          # Idempotent against re-runs: a partial earlier failure (e.g.
+          # the homebrew job missing its token) leaves the GitHub Release
+          # already created, which would make `gh release create` error
+          # on the next attempt. Detect the existing release and refresh
+          # it in place instead.
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists — refreshing notes and assets in place."
+            gh release edit "${TAG}" --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" $PRERELEASE_FLAG
+            gh release upload "${TAG}" --clobber artifacts/*
+          else
+            gh release create "${TAG}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
+          fi
 
   publish-homebrew-formula:
     needs:
@@ -369,10 +379,30 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Skip if heal-cli@VERSION already published
+        # Idempotent against re-runs: cargo publish hard-errors if the
+        # exact version already exists on crates.io. Probe the registry
+        # API and short-circuit cleanly if so. Tag form `v0.1.1` ->
+        # version `0.1.1`.
+        id: check
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          VERSION="${TAG#v}"
+          HTTP=$(curl -sS -o /dev/null -w '%{http_code}' \
+            "https://crates.io/api/v1/crates/heal-cli/${VERSION}")
+          if [ "$HTTP" = "200" ]; then
+            echo "heal-cli ${VERSION} already on crates.io — skipping publish."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Authenticate with crates.io
-        uses: rust-lang/crates-io-auth-action@b7e9a28eded4986ec6b1fa40eeee8f8f165559ec # v1
+        if: steps.check.outputs.skip != 'true'
+        uses: rust-lang/crates-io-auth-action@bbd81622f20ce9e2dd9622e3218b975523e45bbe # v1
         id: auth
       - name: cargo publish heal-cli
+        if: steps.check.outputs.skip != 'true'
         run: cargo publish -p heal-cli
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
