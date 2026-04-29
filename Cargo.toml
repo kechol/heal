@@ -44,3 +44,8 @@ missing_panics_doc = "allow"
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
