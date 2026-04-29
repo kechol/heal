@@ -37,29 +37,42 @@ parsers compile in; the default build enables both.
 
 ## Install
 
+Pick whichever fits your environment. macOS and Linux only for v0.1.
+
+### Homebrew
+
 ```sh
-git clone https://github.com/kechol/heal
-cd heal
-cargo install --path crates/cli   # produces the `heal` binary
+brew install kechol/tap/heal-cli
 ```
 
-Toolchain: Rust 1.85+. The repo pins the exact version via
-[mise](https://mise.jdx.dev) — `mise install` from the project root if you
-use it, otherwise any rustup install ≥ 1.85 will work.
+### Cargo
 
-> macOS and Linux only for v0.1. The hook scripts and path handling assume
-> a POSIX-ish environment.
+```sh
+cargo install heal-cli
+```
+
+### Shell installer (pre-built binary)
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/kechol/heal/releases/latest/download/heal-cli-installer.sh | sh
+```
+
+Verify:
+
+```sh
+heal --version
+```
 
 ## Quickstart
 
 Inside any git repository:
 
 ```sh
-heal init                # creates .heal/{config.toml,snapshots,logs,docs,reports}
-                         # and installs .git/hooks/post-commit
-heal skills install      # extracts the bundled Claude plugin into .claude/plugins/heal
-heal status              # show metric summary and findings
-heal logs                # stream the commit / edit / stop event timeline
+heal init                # create .heal/ and install the post-commit hook
+heal status              # see the first metric snapshot
+heal check               # ask Claude to walk through it (needs Claude Code)
+heal skills install      # optional: ongoing nudges via the Claude plugin
 ```
 
 After `heal init`, every git commit triggers the post-commit hook, which
@@ -68,9 +81,11 @@ plus a `CommitInfo` (sha, parent, author, subject, file/line counts) to
 `.heal/logs/`. Claude Code Edit/Stop hooks (installed by
 `heal skills install`) append to the same logs file.
 
-`heal status` reads `snapshots/`; `heal logs` reads `logs/`. The two
-directories share a generic event-log format (append-only, month-rotated
-JSONL, transparent reads over `.gz` once compaction lands).
+`heal status` reads `snapshots/`; `heal logs` reads `logs/`. Both share
+a generic append-only month-rotated JSONL format, with transparent reads
+over `.gz` once compaction lands.
+
+The full walkthrough lives at <https://kechol.github.io/heal/getting-started/>.
 
 ## CLI
 

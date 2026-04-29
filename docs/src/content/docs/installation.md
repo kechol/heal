@@ -1,69 +1,85 @@
 ---
 title: Installation
-description: Toolchain requirements and the supported install paths for the heal CLI.
+description: Three ways to install the heal CLI — Homebrew, Cargo, or the shell installer.
 ---
 
-HEAL is a Rust binary published through the `heal-cli` crate (the `heal`
-crate name on crates.io is taken). Installing it gives you a single
-`heal` executable on your `PATH`.
+HEAL is a single binary called `heal`. Pick whichever install method
+fits your environment — they all give you the same binary.
 
 ## Requirements
 
 - **OS**: macOS or Linux. Windows is not supported in v0.1; the hook
   scripts and path handling assume a POSIX shell.
-- **Rust toolchain**: 1.85 or newer. The repository pins the exact
-  version via [mise](https://mise.jdx.dev) (`mise.toml`), but any rustup
-  install at or above the minimum will work.
-- **Git**: any modern release. `heal` depends on libgit2 (via the `git2`
-  crate) for churn and change-coupling, but you also need a working
-  `git` CLI for the post-commit hook to fire.
+- **Git**: any modern release. HEAL uses libgit2 internally, but you
+  also need a working `git` CLI for the post-commit hook to fire.
 
-## From source (recommended for v0.1)
+## Homebrew (macOS / Linux)
 
 ```sh
-git clone https://github.com/kechol/heal
-cd heal
-cargo install --path crates/cli
+brew install kechol/tap/heal-cli
 ```
 
-`cargo install --path crates/cli` builds and copies the `heal` binary
-into `~/.cargo/bin`. Make sure that directory is on your `PATH`.
+This taps `kechol/homebrew-tap` and installs the prebuilt `heal`
+binary that ships with each release. Upgrade with the usual
+`brew upgrade`.
 
-## With mise
+## Cargo
 
-If you use [mise](https://mise.jdx.dev) for toolchain management, the
-project ships a pinned `mise.toml`:
+If you already have a Rust toolchain on `PATH` (1.85 or newer):
 
 ```sh
-mise install
-cargo install --path crates/cli
+cargo install heal-cli
 ```
 
-`mise install` reads the repo's `mise.toml` and brings the matching Rust
-release into a project-local toolchain. From there `cargo install`
-behaves exactly as above.
+`cargo install` builds from crates.io and drops `heal` in
+`~/.cargo/bin`. Make sure that directory is on your `PATH`.
 
-## crates.io
+## Shell installer (pre-built binary)
 
-`cargo install heal-cli` is the planned distribution path. v0.1 is still
-unreleased on crates.io; once the first tagged release lands, this will
-be the one-line install. Follow [`TODO.md`](https://github.com/kechol/heal/blob/main/TODO.md)
-for the release plan.
+For one-off installs without Homebrew or Rust:
 
-## Verifying the install
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/kechol/heal/releases/latest/download/heal-cli-installer.sh | sh
+```
+
+The script downloads the right pre-built binary for your platform
+from the [latest GitHub release](https://github.com/kechol/heal/releases/latest)
+and installs it under `$CARGO_HOME/bin` (defaults to `~/.cargo/bin`).
+It is the same artifact Homebrew uses — just delivered without the
+`brew` ceremony.
+
+## Verify the install
 
 ```sh
 heal --version
 heal --help
 ```
 
-`heal --help` lists every subcommand. If the binary is missing, double
-check that `~/.cargo/bin` (or your custom `CARGO_HOME/bin`) is on your
-shell `PATH`.
+`heal --help` lists every subcommand. If the binary is missing,
+double check that `~/.cargo/bin` (or your custom `CARGO_HOME/bin`)
+is on your shell `PATH`.
+
+## Updating
+
+| Install method | Update command                 |
+| -------------- | ------------------------------ |
+| Homebrew       | `brew upgrade heal-cli`        |
+| Cargo          | `cargo install heal-cli` again |
+| Shell          | re-run the installer command   |
+
+After upgrading, run `heal skills update` inside any project that has
+the Claude plugin installed, so the bundled skills stay in sync with
+the binary.
 
 ## Uninstall
 
-`cargo uninstall heal-cli` removes the binary. `heal` does not write
-anywhere outside `.heal/` and `.git/hooks/post-commit` inside the
-repositories where you ran `heal init`; remove those directories /
-hook lines by hand if you want a clean slate.
+| Install method | Uninstall command          |
+| -------------- | -------------------------- |
+| Homebrew       | `brew uninstall heal-cli`  |
+| Cargo          | `cargo uninstall heal-cli` |
+| Shell          | `rm ~/.cargo/bin/heal`     |
+
+`heal` writes only inside `.heal/` and the `.git/hooks/post-commit`
+hook of repositories where you ran `heal init`. Remove those by hand
+if you want a clean slate.
