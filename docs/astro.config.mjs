@@ -2,18 +2,19 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
-// HEAL is hosted at https://kechol.github.io/heal/. The `base` matches the
+// heal is hosted at https://kechol.github.io/heal/. The `base` matches the
 // repository name so all links resolve under that prefix.
 export default defineConfig({
   site: 'https://kechol.github.io',
   base: '/heal',
   integrations: [
     starlight({
-      title: 'HEAL',
+      title: 'heal',
       description:
-        'Hook-driven Evaluation & Autonomous Loop — a code-health harness that turns codebase decay signals into work for AI coding agents.',
+        'A code-health harness that measures your codebase on every commit and surfaces relevant changes to your AI agent.',
       logo: { src: './src/assets/logo.svg', replacesTitle: false },
       favicon: '/favicon.svg',
+      customCss: ['./src/styles/custom.css'],
       defaultLocale: 'root',
       locales: {
         root: { label: 'English', lang: 'en' },

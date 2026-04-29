@@ -3,7 +3,7 @@ title: Installation
 description: Three ways to install the heal CLI — Homebrew, Cargo, or the shell installer.
 ---
 
-HEAL is a single binary named `heal`. The three install methods
+heal is a single binary named `heal`. The three install methods
 below produce the same binary; choose whichever suits the
 environment.
 
@@ -11,7 +11,7 @@ environment.
 
 - **OS**: macOS or Linux. Windows is not supported in v0.1; the hook
   scripts and path handling assume a POSIX shell.
-- **Git**: any modern release. HEAL uses libgit2 internally, but you
+- **Git**: any modern release. heal uses libgit2 internally, but you
   also need a working `git` CLI for the post-commit hook to fire.
 
 ## Homebrew (macOS / Linux)

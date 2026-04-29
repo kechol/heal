@@ -1,9 +1,9 @@
 ---
 title: Concept
-description: Why HEAL exists, what problem it solves, and how it approaches your codebase.
+description: Why heal exists, what problem it solves, and how it approaches your codebase.
 ---
 
-This page describes the design rationale behind HEAL. To start using
+This page describes the design rationale behind heal. To start using
 it directly, see [Quick Start](/heal/quick-start/) and return here
 later.
 
@@ -21,17 +21,17 @@ is reactive maintenance: by the time someone notices that a file has
 become difficult to work with, the regressions are already in
 production.
 
-## The HEAL idea
+## The heal idea
 
 > **Turn codebase health signals into agent triggers.**
 
-HEAL observes the codebase in the same way a CI system observes test
+heal observes the codebase in the same way a CI system observes test
 runs:
 
 - On every commit, it measures the codebase (complexity, churn,
   duplication, hotspots).
 - It writes a small snapshot to `.heal/snapshots/`.
-- When the next Claude Code session opens, HEAL surfaces what changed
+- When the next Claude Code session opens, heal surfaces what changed
   — provided something crossed a threshold worth attention.
 
 The result: rather than relying on the human to remember to run a
@@ -41,7 +41,7 @@ in the project; consider refactoring."_
 
 ## The loop
 
-Long-term, HEAL is structured around a three-step loop:
+Long-term, heal is structured around a three-step loop:
 
 1. **Observe** — collect health metrics on every commit.
 2. **Nudge** — surface meaningful changes to the human and agent at
@@ -55,8 +55,8 @@ arrives in v0.2 behind an opt-in policy. See
 
 ## Read-only by default
 
-HEAL does not modify source files in v0.1. Every command either reads
-metrics or hands them to Claude for explanation. The only files HEAL
+heal does not modify source files in v0.1. Every command either reads
+metrics or hands them to Claude for explanation. The only files heal
 writes are:
 
 - `.heal/` — its own data directory
@@ -65,7 +65,7 @@ writes are:
 
 The `propose` and `execute` rungs of the policy ladder activate in
 v0.2. Until then, every change is a human decision informed by what
-HEAL surfaced.
+heal surfaced.
 
 ## Why metrics
 
@@ -80,7 +80,7 @@ Six metrics ship in v0.1:
 - **Hotspot** — churn × complexity, the "code as a crime scene" view
 
 Each is a long-standing, well-studied metric. None are AI-specific.
-HEAL's contribution is not the metrics themselves — they have existed
+heal's contribution is not the metrics themselves — they have existed
 for decades — but the use of them as triggers for the agent loop,
 removing the human from the polling path.
 
@@ -100,14 +100,14 @@ surrounding state. Hooks let the codebase emit signals on its own:
 Both hooks invoke the same `heal` binary. There is no background
 process to manage.
 
-## What HEAL is not
+## What heal is not
 
-- **Not a linter.** Linters report on individual lines. HEAL reports
+- **Not a linter.** Linters report on individual lines. heal reports
   on which files warrant attention.
-- **Not a code reviewer.** That role belongs to Claude; HEAL shapes
+- **Not a code reviewer.** That role belongs to Claude; heal shapes
   the prompt.
 - **Not a CI gate.** The post-commit hook fires after a commit lands.
-  HEAL tracks the long-term trajectory of the codebase rather than
+  heal tracks the long-term trajectory of the codebase rather than
   blocking individual PRs.
 - **Not multi-agent (yet).** v0.1 supports Claude Code only. A
   provider abstraction lands in v0.5.

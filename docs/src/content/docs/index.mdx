@@ -1,32 +1,33 @@
 ---
-title: HEAL
+title: heal
 description: A code-health harness that measures your codebase on every commit and surfaces relevant changes to your AI agent.
-template: splash
-hero:
-  tagline: A code-health harness that measures your codebase on every commit and surfaces relevant changes to your AI agent.
-  actions:
-    - text: Quick Start (5 minutes)
-      link: /heal/quick-start/
-      icon: right-arrow
-      variant: primary
-    - text: Read the concept
-      link: /heal/concept/
-      icon: open-book
-    - text: View on GitHub
-      link: https://github.com/kechol/heal
-      icon: external
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid, LinkButton } from '@astrojs/starlight/components';
+
+`heal` measures your codebase on every commit and surfaces the
+relevant changes to your next Claude Code session.
+
+<LinkButton href="/heal/quick-start/" icon="right-arrow">
+  Quick Start (5 min)
+</LinkButton>
+<LinkButton href="/heal/concept/" variant="secondary" icon="open-book">
+  Read the concept
+</LinkButton>
+
+## Why heal
 
 AI coding agents are good at producing the next change you request.
 Codebases, however, evolve continuously: complexity accumulates, the
 same files get touched repeatedly, and duplicated blocks drift in.
-The agent does not observe these changes — without an external signal,
-the human is the only one tracking them.
+The agent does not observe these long-term shifts — without an
+external signal, the human is the only one tracking them.
 
-HEAL fills that gap. It measures the codebase on every commit and
-surfaces the relevant changes to the next Claude Code session.
+`heal` fills that gap. A git post-commit hook records a metric
+snapshot on every commit; a Claude SessionStart hook surfaces what
+crossed a threshold the next time a session opens.
+
+## At a glance
 
 <CardGrid>
   <Card title="Six standard metrics" icon="seti:rust">
@@ -38,7 +39,7 @@ surfaces the relevant changes to the next Claude Code session.
     daemon, no scheduler.
   </Card>
   <Card title="Read-only by default" icon="approve-check">
-    In v0.1, HEAL only reads the repository. Automated repair arrives in v0.2 behind an explicit
+    In v0.1, `heal` only reads the repository. Automated repair arrives in v0.2 behind an explicit
     policy opt-in.
   </Card>
   <Card title="Single binary" icon="rocket">
@@ -51,12 +52,3 @@ surfaces the relevant changes to the next Claude Code session.
 macOS and Linux only. The CLI surface and on-disk schemas may change
 before v0.2. Feedback is welcome; expect rough edges.
 :::
-
-## Where to start
-
-- For background, read the [concept](/heal/concept/) — a three-minute
-  overview of what HEAL is for.
-- To try it, follow [Quick Start](/heal/quick-start/) — a
-  five-minute install and first snapshot.
-- For day-to-day use, [CLI](/heal/cli/) and
-  [Configuration](/heal/configuration/) cover the common operations.

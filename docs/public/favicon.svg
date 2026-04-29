@@ -1,4 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="12" fill="#0f172a"/>
-  <path d="M18 14h6v15h16V14h6v36h-6V35H24v15h-6z" fill="#22d3ee"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="heal">
+  <path
+    d="M 16 50
+       C 14 28, 18 12, 24 12
+       C 28 12, 27 28, 25 50
+       C 27 38, 33 30, 42 30
+       C 52 30, 54 40, 50 50
+       C 53 47, 56 46, 60 48"
+    fill="none"
+    stroke="#5d8a5e"
+    stroke-width="4.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
 </svg>

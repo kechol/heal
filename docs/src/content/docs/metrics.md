@@ -1,11 +1,11 @@
 ---
 title: Metrics
-description: The six metrics HEAL collects on every commit, what each one means, and when to use it.
+description: The six metrics heal collects on every commit, what each one means, and when to use it.
 ---
 
-HEAL ships with six metrics. None are AI-specific; each is a
+heal ships with six metrics. None are AI-specific; each is a
 long-standing code-health metric that has been in use for decades.
-HEAL's contribution is using them as triggers: it collects the
+heal's contribution is using them as triggers: it collects the
 metrics on every commit and surfaces threshold breaches to the next
 Claude session.
 
@@ -163,9 +163,9 @@ The formula is multiplicative, so a file with high complexity but no
 recent commits scores zero. This is intentional: hotspot is meant to
 identify _active_ trouble, not historical debt.
 
-## How HEAL uses these
+## How heal uses these
 
-Every commit, HEAL writes a `MetricsSnapshot` to `.heal/snapshots/`.
+Every commit, heal writes a `MetricsSnapshot` to `.heal/snapshots/`.
 `heal status` prints the summary; `heal check` hands the data to
 Claude with a focused prompt. When a threshold is crossed between
 snapshots, the SessionStart hook surfaces it as a notice in the next

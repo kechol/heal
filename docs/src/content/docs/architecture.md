@@ -1,9 +1,9 @@
 ---
 title: Architecture
-description: Where HEAL stores data, how the event log and snapshots work, and how the pieces fit together.
+description: Where heal stores data, how the event log and snapshots work, and how the pieces fit together.
 ---
 
-This page describes HEAL's internals — useful when debugging a
+This page describes heal's internals — useful when debugging a
 missing nudge, scripting against the JSON output, or wanting an
 overview of how the components fit together. It is not required
 reading for day-to-day use.
@@ -223,6 +223,6 @@ Key decisions:
   together cover the entire input surface. There is nothing to
   start or monitor.
 
-For very large projects (on the order of millions of commits), HEAL
+For very large projects (on the order of millions of commits), heal
 will need a more efficient store; SQLite is on the v0.2 list. In
 v0.1, simplicity is intentional.

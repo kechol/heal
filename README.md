@@ -1,11 +1,11 @@
-# HEAL
+# heal
 
-> **H**ook-driven **E**valuation & **A**utonomous **L**oop — a code-health
+> **h**ook-driven **e**valuation & **a**utonomous **l**oop — a code-health
 > harness that turns codebase decay signals into work for AI coding agents.
 
 LLM coding agents are usually reactive: a human files a task before the
 agent moves. Codebases, meanwhile, decay continuously — complexity creeps,
-hotspots shift, duplicates accumulate. HEAL closes that gap by turning
+hotspots shift, duplicates accumulate. heal closes that gap by turning
 **codebase state changes** into **agent triggers**.
 
 v0.1 is the **observe** half of the loop: collect metrics on every commit,

@@ -1,9 +1,9 @@
 ---
 title: Claude plugin
-description: How the bundled Claude Code plugin connects HEAL's metrics to Claude sessions.
+description: How the bundled Claude Code plugin connects heal's metrics to Claude sessions.
 ---
 
-HEAL ships with a Claude Code plugin so the metrics it collects can
+heal ships with a Claude Code plugin so the metrics it collects can
 flow into Claude sessions automatically. The plugin is installed once
 per repository with `heal skills install`. From that point on:
 
@@ -101,7 +101,7 @@ After upgrading the `heal` binary:
 heal skills update
 ```
 
-This is **drift-aware**. HEAL records the fingerprint of every file
+This is **drift-aware**. heal records the fingerprint of every file
 it installs in `.claude/plugins/heal/.heal-install.json`. On update:
 
 - Files matching the recorded bundled fingerprint are overwritten

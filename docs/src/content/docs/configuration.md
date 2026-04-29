@@ -3,7 +3,7 @@ title: Configuration
 description: How to read and edit .heal/config.toml — every section explained, with one realistic example.
 ---
 
-`heal init` writes `.heal/config.toml`. Every HEAL setting has a
+`heal init` writes `.heal/config.toml`. Every heal setting has a
 sensible default, so the initial install works without edits. Edit
 the file only to override defaults for the project.
 
@@ -13,7 +13,7 @@ the file only to override defaults for the project.
 <your-repo>/.heal/config.toml
 ```
 
-The configuration is per-repository; there is no global config. HEAL
+The configuration is per-repository; there is no global config. heal
 re-reads the file on every invocation — no daemon to restart.
 
 ## Example configuration
@@ -208,7 +208,7 @@ threshold = { ccn = 15, delta_pct = 20 }
   of the same rule.
 - `threshold` — rule-specific thresholds. Keys depend on the rule.
 
-The five rules HEAL evaluates at session start:
+The five rules heal evaluates at session start:
 
 | Rule id                        | Fires when                                    |
 | ------------------------------ | --------------------------------------------- |

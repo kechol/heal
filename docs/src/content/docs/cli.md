@@ -21,7 +21,7 @@ day-to-day operations.
 
 ## `heal init`
 
-Bootstraps HEAL inside a git repository:
+Bootstraps heal inside a git repository:
 
 ```sh
 heal init
