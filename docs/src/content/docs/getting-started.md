@@ -1,13 +1,21 @@
 ---
 title: Getting Started
-description: Install the heal CLI, initialise it inside a git repository, and read your first metric snapshot.
+description: Install heal, set it up in a git repo, and see your first metrics in five minutes.
 ---
 
-This page walks through installing HEAL, wiring it into a git repository, and
-reading the first snapshot it writes. It assumes a Unix shell (macOS or
-Linux) and a working Rust toolchain (1.85+).
+This page is a five-minute walkthrough. By the end you will have HEAL
+running in a real repository and you will have read your first
+metrics. If you want the _why_ before the _how_, start with
+[Concept](/heal/concept/).
 
-## 1. Install the CLI
+You will need:
+
+- macOS or Linux (Windows is not supported in v0.1)
+- A working git repo to play with
+- Rust 1.85 or newer
+- (Optional but recommended) the [Claude Code](https://claude.com/code) CLI
+
+## 1. Install `heal`
 
 ```sh
 git clone https://github.com/kechol/heal
@@ -15,66 +23,100 @@ cd heal
 cargo install --path crates/cli
 ```
 
-This produces a `heal` binary in `~/.cargo/bin`. The repository pins its
-exact Rust toolchain via [mise](https://mise.jdx.dev) — running `mise install`
-from the project root picks up the same version, but any rustup install
-≥ 1.85 will work too.
+`cargo install` puts the `heal` binary in `~/.cargo/bin`. Make sure
+that directory is on your `PATH`, then check:
 
-## 2. Initialise inside a repository
+```sh
+heal --version
+```
 
-From any git repository:
+For full install options (mise, future crates.io release) see
+[Installation](/heal/installation/).
+
+## 2. Set up a repository
+
+From inside any git repo:
 
 ```sh
 heal init
 ```
 
-`heal init` creates `.heal/` (with `config.toml`, `snapshots/`, `logs/`,
-`docs/`, `reports/`), installs `.git/hooks/post-commit`, and captures an
-initial metric snapshot. The post-commit hook is idempotent: re-running
-`heal init` leaves user-managed hook content alone unless you pass
-`--force`.
+This is the bootstrap step. It:
 
-The init step also detects whether you are on a **solo** or **team** project
-based on distinct committer email count (≥ 3 → team) and writes a config
-profile to match.
+- Creates `.heal/` with a default `config.toml` and the
+  `snapshots/` / `logs/` directories.
+- Installs `.git/hooks/post-commit` (so every future commit writes a
+  snapshot automatically).
+- Runs the observers once and writes an initial snapshot.
 
-## 3. Install the Claude plugin
+`heal init` is **safe to re-run**. It will leave your config alone
+unless you pass `--force`, and it marks its hook with a comment so
+re-installing never duplicates.
+
+## 3. (Optional) install the Claude plugin
+
+If you use Claude Code, install the bundled plugin:
 
 ```sh
 heal skills install
 ```
 
-Extracts the bundled Claude Code plugin into `.claude/plugins/heal/`,
-including hook scripts (`PostToolUse`, `Stop`, `SessionStart`) and five
-read-only skills (`check-overview`, `check-hotspots`, `check-complexity`,
-`check-duplication`, `check-coupling`).
+This drops a small plugin tree into `.claude/plugins/heal/` so that:
 
-Each installed file's fingerprint is recorded in `.heal-install.json` so
-that `heal skills update` can refresh bundled assets without overwriting
-files you have hand-edited.
+- Claude logs every edit it makes to `.heal/logs/`.
+- The next time you open a Claude session in this repo, HEAL prints a
+  nudge if a metric crossed a threshold since the last commit.
 
-## 4. Read the first snapshot
+You can skip this step and HEAL still works — `heal status` and
+`heal check` are both useful without the plugin. See
+[Claude plugin](/heal/claude-plugin/) for what the plugin adds.
+
+## 4. Make a commit and look at the metrics
+
+Make any commit in the repo. After it lands:
 
 ```sh
 heal status
-heal logs
 ```
 
-`heal status` reads `.heal/snapshots/` and prints the metric summary plus
-the most recent finding. `heal logs` streams the event log under
-`.heal/logs/` (commit, edit, stop, session-start events). Both directories
-share an append-only month-rotated JSONL format.
+You will see a summary of the enabled metrics — primary language,
+recent churn, and so on — plus a delta block showing what moved
+since the previous snapshot.
 
-Once you make a commit, the post-commit hook calls `heal hook commit`,
-which appends a fresh `MetricsSnapshot` to `snapshots/` and a lightweight
-`CommitInfo` record to `logs/`. From that point onward `heal status` will
-show a delta against the previous snapshot.
+If you also have Claude Code installed:
 
-## 5. Where to go next
+```sh
+heal check
+```
 
-- Read about the [CLI commands](https://github.com/kechol/heal#cli) (a full
-  per-command reference will land on this site soon).
-- Skim the [TODO.md roadmap](https://github.com/kechol/heal/blob/main/TODO.md)
-  to see what is in scope for v0.1 and what is deferred to v0.2+.
-- Browse [`.heal/config.toml`](https://github.com/kechol/heal#configuration)
-  options to tune thresholds for your project.
+This launches Claude headlessly with a read-only skill that walks
+through the metrics in plain language. Claude does not modify your
+code; it just explains what HEAL just measured.
+
+## 5. Tune what you care about
+
+The default config has the safe metrics on (LOC, churn, cognitive
+complexity) and the heavier ones off (CCN, duplication, change
+coupling, hotspot). Open `.heal/config.toml` and flip on what you
+want:
+
+```toml
+[metrics.hotspot]
+enabled = true
+
+[metrics.duplication]
+enabled = true
+```
+
+Save and run `heal status` again. There is no daemon to restart —
+HEAL re-reads the config every time you call it.
+
+For the full list of knobs see [Configuration](/heal/configuration/).
+
+## What to read next
+
+- [Concept](/heal/concept/) — the design idea, in three minutes.
+- [Metrics](/heal/metrics/) — what each number actually means.
+- [CLI](/heal/cli/) — every subcommand with examples.
+- [Claude plugin](/heal/claude-plugin/) — hooks and the five
+  `check-*` skills.

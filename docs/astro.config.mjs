@@ -35,6 +35,47 @@ export default defineConfig({
               translations: { ja: 'クイックスタート' },
               slug: 'getting-started',
             },
+            {
+              label: 'Concept',
+              translations: { ja: '設計思想' },
+              slug: 'concept',
+            },
+            {
+              label: 'Installation',
+              translations: { ja: 'インストール' },
+              slug: 'installation',
+            },
+          ],
+        },
+        {
+          label: 'Reference',
+          translations: { ja: 'リファレンス' },
+          items: [
+            {
+              label: 'CLI',
+              translations: { ja: 'CLI' },
+              slug: 'cli',
+            },
+            {
+              label: 'Configuration',
+              translations: { ja: '設定' },
+              slug: 'configuration',
+            },
+            {
+              label: 'Metrics',
+              translations: { ja: 'メトリクス' },
+              slug: 'metrics',
+            },
+            {
+              label: 'Claude plugin',
+              translations: { ja: 'Claude プラグイン' },
+              slug: 'claude-plugin',
+            },
+            {
+              label: 'Architecture',
+              translations: { ja: 'アーキテクチャ' },
+              slug: 'architecture',
+            },
           ],
         },
       ],
