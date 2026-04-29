@@ -324,15 +324,48 @@ jobs:
           done
           git push
 
+  # Publish the source crate to crates.io via Trusted Publishing (OIDC).
+  # Requires the kechol/heal repo to be registered as a Trusted Publisher
+  # for the heal-cli crate at https://crates.io/crates/heal-cli/settings
+  # (workflow filename: release.yml, environment: release). No long-lived
+  # CARGO_REGISTRY_TOKEN is stored — the auth action exchanges the GitHub
+  # OIDC token for a short-lived crates.io token at job runtime.
+  publish-crates-io:
+    needs:
+      - plan
+      - host
+    runs-on: "ubuntu-22.04"
+    # The "release" GitHub environment is what crates.io's Trusted
+    # Publisher config expects to see in the OIDC claim. Create it under
+    # repo Settings -> Environments before the first run.
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    if: ${{ !fromJson(needs.plan.outputs.val).announcement_is_prerelease || fromJson(needs.plan.outputs.val).publish_prereleases }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Authenticate with crates.io
+        uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - name: cargo publish heal-cli
+        run: cargo publish -p heal-cli
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
   announce:
     needs:
       - plan
       - host
       - publish-homebrew-formula
+      - publish-crates-io
     # use "always() && ..." to allow us to wait for all publish jobs while
     # still allowing individual publish jobs to skip themselves (for prereleases).
     # "host" however must run to completion, no skipping allowed!
-    if: ${{ always() && needs.host.result == 'success' && (needs.publish-homebrew-formula.result == 'skipped' || needs.publish-homebrew-formula.result == 'success') }}
+    if: ${{ always() && needs.host.result == 'success' && (needs.publish-homebrew-formula.result == 'skipped' || needs.publish-homebrew-formula.result == 'success') && (needs.publish-crates-io.result == 'skipped' || needs.publish-crates-io.result == 'success') }}
     runs-on: "ubuntu-22.04"
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
