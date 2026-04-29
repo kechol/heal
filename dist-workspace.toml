@@ -21,3 +21,5 @@ publish-jobs = ["homebrew"]
 install-updater = false
 # Whether to enable GitHub Attestations
 github-attestations = true
+# Which actions to run on pull requests
+pr-run-mode = "skip"
