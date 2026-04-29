@@ -17,8 +17,8 @@ breaches to Claude Code as a session-start nudge. Autonomous repair
 
 ## What it measures
 
-Every metric is computed by a `heal-observer` collector and persisted on
-the post-commit hook to `.heal/snapshots/YYYY-MM.jsonl`.
+Every metric is computed by a collector under `src/observer/` and
+persisted on the post-commit hook to `.heal/snapshots/YYYY-MM.jsonl`.
 
 | Metric           | What it captures                                                              | Languages       |
 | ---------------- | ----------------------------------------------------------------------------- | --------------- |
@@ -131,19 +131,25 @@ becomes meaningful when `heal run` lands.
 ```
 heal/
 ├── crates/
-│   ├── cli/        # `heal-cli` — CLI binary `heal`
-│   ├── core/       # `heal-core` — config, eventlog, snapshot, state, paths
-│   └── observer/   # `heal-observer` — LOC, complexity, churn, coupling, duplication, hotspot
-├── plugins/
-│   └── heal/       # Claude Code plugin (embedded into `heal-cli` via include_dir!)
+│   └── cli/
+│       ├── src/
+│       │   ├── core/          # config, eventlog, snapshot, state, paths
+│       │   ├── observer/      # LOC, complexity, churn, coupling, duplication, hotspot
+│       │   ├── commands/      # CLI subcommand dispatch
+│       │   └── …
+│       ├── plugins/heal/      # Claude Code plugin (embedded via include_dir!)
+│       └── queries/           # tree-sitter queries for CCN / Cognitive / functions
+├── plugins → crates/cli/plugins   # convenience symlink for plugin authoring
 ├── LICENSE-MIT
 ├── LICENSE-APACHE
 └── README.md
 ```
 
-`plugins/heal/` is the source of truth for the Claude plugin tree. It is
-embedded into the `heal` binary at build time and materialised into
-`.claude/plugins/heal/` by `heal skills install`.
+The crate-level `crates/cli/plugins/heal/` directory is the source of
+truth for the Claude plugin tree. It sits inside `heal-cli` so the
+crates.io tarball ships it, and is materialised into
+`.claude/plugins/heal/` by `heal skills install`. The top-level
+`plugins/` symlink is a convenience for editors and shell tab-completion.
 
 ## Claude plugin
 
@@ -173,15 +179,18 @@ cargo deny   check
 CI runs all five on push / PR. `clippy::pedantic = warn` at the workspace
 level — new code is expected to pass clippy clean.
 
-### Crate boundaries
+### Module layout
 
-- **`heal-core`** — pure data types and on-disk formats (config, eventlog,
-  snapshot, state, paths, error). No CLI, no agent invocation, no observer
-  logic.
-- **`heal-observer`** — metric collectors. Stateless. Reads the project
+The whole CLI lives in a single crate, `heal-cli`, organised internally
+as if the original three-layer split were still in place:
+
+- **`src/core/`** — config, event log, snapshot, state, paths, error
+  types. Pure data types and on-disk formats; no CLI or observer logic.
+- **`src/observer/`** — metric collectors (LOC, complexity, churn,
+  change coupling, duplication, hotspot). Stateless: reads the project
   tree and emits structured payloads.
-- **`heal-cli`** — argument parsing, command dispatch, hook entrypoints,
-  plugin extraction. Thin wrapper over `heal-core` and `heal-observer`.
+- **`src/commands/` + `src/cli.rs` + `src/main.rs`** — argument parsing,
+  command dispatch, hook entrypoints, plugin extraction.
 
 ## Contributing
 

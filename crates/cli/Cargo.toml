@@ -1,36 +1,69 @@
 [package]
 name = "heal-cli"
+description = "Hook-driven Evaluation & Autonomous Loop — code-health harness CLI for AI coding agents"
+documentation = "https://docs.rs/heal-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
 rust-version.workspace = true
-description = "HEAL command-line interface (binary `heal`)"
+keywords.workspace = true
+categories.workspace = true
+
+# Files shipped to crates.io. The default Cargo logic only walks `src/`,
+# `Cargo.toml`, `Cargo.lock`, and a few common docs — `plugins/` and
+# `queries/` would be silently dropped, breaking `include_dir!` and
+# `include_str!` in the published tarball.
+include = [
+    "src/**/*",
+    "tests/**/*",
+    "plugins/**/*",
+    "queries/**/*.scm",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+]
 
 [lints]
 workspace = true
 
 [features]
-# Forward heal-observer's language gates so `cargo install heal-cli
-# --no-default-features --features lang-rust` builds a smaller binary.
+# Keeps TypeScript and Rust as the default-enabled grammars. JavaScript
+# support is deferred to a later release along with `.js` / `.jsx` query
+# files.
 default = ["lang-ts", "lang-rust"]
-lang-ts = ["heal-observer/lang-ts"]
-lang-rust = ["heal-observer/lang-rust"]
+lang-ts = ["dep:tree-sitter-typescript"]
+lang-rust = ["dep:tree-sitter-rust"]
+
+[lib]
+name = "heal_cli"
+path = "src/lib.rs"
 
 [[bin]]
 name = "heal"
 path = "src/main.rs"
 
 [dependencies]
-heal-core = { workspace = true }
-heal-observer = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }
+thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+toml = { workspace = true }
 chrono = { workspace = true }
 include_dir = { workspace = true }
+flate2 = { workspace = true }
+tokei = { workspace = true }
+tree-sitter = { workspace = true }
+tree-sitter-typescript = { workspace = true, optional = true }
+tree-sitter-rust = { workspace = true, optional = true }
+ignore = { workspace = true }
+git2 = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+git2 = { workspace = true }

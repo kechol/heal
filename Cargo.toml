@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/cli", "crates/core", "crates/observer"]
+members = ["crates/cli"]
 resolver = "2"
 
 [workspace.package]
@@ -8,12 +8,12 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 authors = ["Kazuyuki SUZUKI"]
 repository = "https://github.com/kechol/heal"
+homepage = "https://github.com/kechol/heal"
 rust-version = "1.85"
+keywords = ["code-quality", "metrics", "complexity", "claude", "harness"]
+categories = ["command-line-utilities", "development-tools"]
 
 [workspace.dependencies]
-heal-core = { path = "crates/core", version = "0.1.0" }
-heal-observer = { path = "crates/observer", version = "0.1.0" }
-
 anyhow = "1.0"
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }

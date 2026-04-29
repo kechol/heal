@@ -1,5 +1,9 @@
-//! Build-time embedding of the Claude plugin tree (`plugins/heal/`) and the
-//! install/update bookkeeping that surrounds it.
+//! Build-time embedding of the Claude plugin tree (`crates/cli/plugins/heal/`)
+//! and the install/update bookkeeping that surrounds it.
+//!
+//! The plugin tree lives inside the `heal-cli` crate directory so a published
+//! crates.io tarball includes it — `include_dir!` is a compile-time read,
+//! and Cargo only packages files inside the crate directory.
 //!
 //! ## Why a manifest?
 //!
@@ -33,7 +37,7 @@ use chrono::{DateTime, Utc};
 use include_dir::{include_dir, Dir, DirEntry, File};
 use serde::{Deserialize, Serialize};
 
-pub static PLUGIN_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../plugins/heal");
+pub static PLUGIN_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/plugins/heal");
 
 /// Filename of the install metadata, stored at the plugin root.
 pub const INSTALL_MANIFEST: &str = ".heal-install.json";

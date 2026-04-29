@@ -20,25 +20,28 @@ For the user-facing overview see [`README.md`](./README.md).
 
 ```
 crates/
-  cli/        # heal-cli  — CLI binary `heal`, command dispatch, plugin embed
-  core/       # heal-core — config, eventlog, snapshot, state, paths, error types
-  observer/   # heal-observer — metric collectors
-plugins/
-  heal/       # Claude Code plugin tree (NOT a Rust crate)
-              # Embedded into heal-cli at build time via include_dir!.
-              # `heal skills install` materialises it into .claude/plugins/heal/
+  cli/                       # heal-cli — the only Rust crate; published to crates.io
+    src/
+      main.rs                # thin entrypoint: parse + dispatch
+      lib.rs                 # internal pub modules — exposed only so tests/ can reach them
+      cli.rs                 # clap definitions
+      commands/              # one file per subcommand
+      core/                  # config, eventlog, snapshot, state, paths, error types
+      observer/              # LOC, complexity (CCN/Cognitive), churn, coupling,
+                             # duplication, hotspot composition
+    plugins/heal/            # Claude Code plugin tree, embedded via include_dir!
+    queries/                 # tree-sitter queries (rust/, typescript/) read via include_str!
+plugins → crates/cli/plugins # top-level convenience symlink
 ```
 
-Crate responsibilities are strict:
-
-- **`heal-core`**: pure data types and on-disk formats. No CLI, no agent
-  invocation, no observer logic. The library API is what external users
-  build against.
-- **`heal-observer`**: metric collection only. Stateless. Reads the
-  project tree and emits structured payloads. The trait surface is in
-  `crates/observer/src/lib.rs`.
-- **`heal-cli`**: argument parsing, command dispatch, hook entrypoints,
-  plugin extraction. Thin wrapper over `heal-core` and `heal-observer`.
+The workspace is intentionally a single crate. The original three-crate
+split (`heal-core` / `heal-observer` / `heal-cli`) was inlined so
+`cargo install heal-cli` is the one supported install path; internal
+modules are not separately published to crates.io. Module shape is
+preserved (`crate::core::*`, `crate::observer::*`) so call sites read the
+same as before. The `lib.rs` is `#[doc(hidden)]` and treated as
+unstable internal API — the public contract is the `heal` CLI surface
+documented in `README.md`.
 
 ## Toolchain & commands
 
@@ -58,12 +61,12 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
 ## Conventions and invariants
 
 ### Error handling
-- `heal-core` returns `crate::Result<T>` (alias for
-  `Result<T, heal_core::Error>`). All `Error` variants except the
+- `crate::core` returns `core::Result<T>` (alias for
+  `Result<T, crate::core::Error>`). All `Error` variants except the
   catch-all carry a `path: PathBuf` so users can locate the failure.
   Don't add path-less variants.
-- `heal-cli` returns `anyhow::Result<()>` from each command and lets `?`
-  bridge the two error types.
+- Top-level commands return `anyhow::Result<()>` and let `?` bridge the
+  two error types via `From<core::Error> for anyhow::Error`.
 - `serde_json::to_string` on owned structs (`Snapshot`, `State`) is
   treated as infallible — use `.expect("… serialization is infallible")`
   rather than propagating an unreachable error.
@@ -119,10 +122,12 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
   after a `rustc` upgrade.
 
 ### Claude plugin
-- Source of truth lives at `plugins/heal/`. **Do not** copy plugin
-  assets into a Rust crate.
+- Source of truth lives at `crates/cli/plugins/heal/`. The tree sits
+  inside the `heal-cli` crate directory so `cargo publish` includes it
+  in the published tarball — `include_dir!` is a compile-time read and
+  Cargo only packages files inside the crate dir.
 - `heal-cli` embeds the directory at build time via
-  `include_dir!("$CARGO_MANIFEST_DIR/../../plugins/heal")`.
+  `include_dir!("$CARGO_MANIFEST_DIR/plugins/heal")`.
 - `heal skills install` extracts the embedded tree to
   `.claude/plugins/heal/` and chmods `*.sh` to `0755` on Unix. Each
   extracted file's fingerprint is recorded in `.heal-install.json` for

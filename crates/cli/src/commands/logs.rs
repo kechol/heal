@@ -5,10 +5,10 @@
 
 use std::path::Path;
 
+use crate::core::eventlog::{Event, EventLog};
+use crate::core::HealPaths;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use heal_core::eventlog::{Event, EventLog};
-use heal_core::HealPaths;
 use serde_json::Value;
 
 use crate::cli::LogsArgs;

@@ -25,7 +25,7 @@ const SKILLS_DIR_REL: &str = ".claude/plugins/heal/skills";
 pub fn run(project: &Path, args: &CheckArgs) -> Result<()> {
     ensure_plugin_installed(project, args.skill)?;
 
-    let cfg = heal_core::config::load_from_project(project).ok();
+    let cfg = crate::core::config::load_from_project(project).ok();
     let language = cfg
         .as_ref()
         .and_then(|c| c.project.response_language.as_deref());

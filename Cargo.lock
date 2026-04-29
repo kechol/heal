@@ -593,41 +593,16 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "heal-core",
- "heal-observer",
+ "flate2",
+ "git2",
+ "ignore",
  "include_dir",
  "serde",
  "serde_json",
  "tempfile",
-]
-
-[[package]]
-name = "heal-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "flate2",
- "serde",
- "serde_json",
- "tempfile",
  "thiserror",
- "toml",
-]
-
-[[package]]
-name = "heal-observer"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "git2",
- "heal-core",
- "ignore",
- "serde",
- "serde_json",
- "tempfile",
  "tokei",
+ "toml",
  "tree-sitter",
  "tree-sitter-rust",
  "tree-sitter-typescript",

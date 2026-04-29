@@ -4,13 +4,13 @@
 
 use std::path::Path;
 
-use heal_core::config::Config;
-use heal_observer::change_coupling::{ChangeCouplingObserver, ChangeCouplingReport};
-use heal_observer::churn::{ChurnObserver, ChurnReport};
-use heal_observer::complexity::{ComplexityObserver, ComplexityReport};
-use heal_observer::duplication::{DuplicationObserver, DuplicationReport};
-use heal_observer::hotspot::{compose as compose_hotspot, HotspotReport, HotspotWeights};
-use heal_observer::loc::{LocObserver, LocReport};
+use crate::core::config::Config;
+use crate::observer::change_coupling::{ChangeCouplingObserver, ChangeCouplingReport};
+use crate::observer::churn::{ChurnObserver, ChurnReport};
+use crate::observer::complexity::{ComplexityObserver, ComplexityReport};
+use crate::observer::duplication::{DuplicationObserver, DuplicationReport};
+use crate::observer::hotspot::{compose as compose_hotspot, HotspotReport, HotspotWeights};
+use crate::observer::loc::{LocObserver, LocReport};
 
 use crate::cli::StatusMetric;
 

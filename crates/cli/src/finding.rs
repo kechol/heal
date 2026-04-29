@@ -9,8 +9,8 @@
 //! `MetricsSnapshot.delta` is the only input — see `heal-core::snapshot`
 //! for the typed shape.
 
-use heal_core::config::Config;
-use heal_core::snapshot::{MetricsSnapshot, SnapshotDelta};
+use crate::core::config::Config;
+use crate::core::snapshot::{MetricsSnapshot, SnapshotDelta};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Severity {
@@ -153,8 +153,8 @@ fn current_max_ccn(snapshot: &MetricsSnapshot) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use heal_core::config::{CcnConfig, Config, MetricsConfig};
-    use heal_core::snapshot::{
+    use crate::core::config::{CcnConfig, Config, MetricsConfig};
+    use crate::core::snapshot::{
         ComplexityDelta, DuplicationDelta, HotspotDelta, MetricsSnapshot, SnapshotDelta,
     };
     use serde_json::json;

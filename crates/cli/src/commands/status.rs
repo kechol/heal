@@ -1,17 +1,17 @@
 use std::path::Path;
 
+use crate::core::config::load_from_project;
+use crate::core::config::MetricsConfig;
+use crate::core::eventlog::{Event, EventLog};
+use crate::core::snapshot::{MetricsSnapshot, SnapshotDelta};
+use crate::core::HealPaths;
+use crate::observer::change_coupling::ChangeCouplingReport;
+use crate::observer::churn::ChurnReport;
+use crate::observer::complexity::{ComplexityMetric, ComplexityObserver, ComplexityReport};
+use crate::observer::duplication::DuplicationReport;
+use crate::observer::hotspot::HotspotReport;
+use crate::observer::loc::LocReport;
 use anyhow::Result;
-use heal_core::config::load_from_project;
-use heal_core::config::MetricsConfig;
-use heal_core::eventlog::{Event, EventLog};
-use heal_core::snapshot::{MetricsSnapshot, SnapshotDelta};
-use heal_core::HealPaths;
-use heal_observer::change_coupling::ChangeCouplingReport;
-use heal_observer::churn::ChurnReport;
-use heal_observer::complexity::{ComplexityMetric, ComplexityObserver, ComplexityReport};
-use heal_observer::duplication::DuplicationReport;
-use heal_observer::hotspot::HotspotReport;
-use heal_observer::loc::LocReport;
 use serde_json::json;
 
 use crate::cli::StatusMetric;

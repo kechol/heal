@@ -4,19 +4,19 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use anyhow::Result;
-use heal_core::config::{load_from_project, MetricsConfig};
-use heal_core::eventlog::EventLog;
-use heal_core::snapshot::{
+use crate::core::config::{load_from_project, MetricsConfig};
+use crate::core::eventlog::EventLog;
+use crate::core::snapshot::{
     ChangeCouplingDelta, ChurnDelta, ComplexityDelta, DuplicationDelta, HotspotDelta,
     MetricsSnapshot, SnapshotDelta, METRICS_SNAPSHOT_VERSION,
 };
-use heal_core::HealPaths;
-use heal_observer::change_coupling::ChangeCouplingReport;
-use heal_observer::churn::ChurnReport;
-use heal_observer::complexity::{ComplexityMetric, ComplexityReport};
-use heal_observer::duplication::DuplicationReport;
-use heal_observer::hotspot::HotspotReport;
+use crate::core::HealPaths;
+use crate::observer::change_coupling::ChangeCouplingReport;
+use crate::observer::churn::ChurnReport;
+use crate::observer::complexity::{ComplexityMetric, ComplexityReport};
+use crate::observer::duplication::DuplicationReport;
+use crate::observer::hotspot::HotspotReport;
+use anyhow::Result;
 
 use crate::observers::{run_all, ObserverReports};
 
@@ -36,7 +36,7 @@ pub(crate) fn capture_value(project: &Path) -> Result<serde_json::Value> {
 pub(crate) fn capture(project: &Path) -> Result<MetricsSnapshot> {
     let cfg = match load_from_project(project) {
         Ok(c) => c,
-        Err(heal_core::Error::ConfigMissing(_)) => return Ok(MetricsSnapshot::default()),
+        Err(crate::core::Error::ConfigMissing(_)) => return Ok(MetricsSnapshot::default()),
         Err(e) => return Err(e.into()),
     };
     let paths = HealPaths::new(project);
@@ -58,7 +58,7 @@ pub(crate) fn capture(project: &Path) -> Result<MetricsSnapshot> {
 fn pack(project: &Path, reports: &ObserverReports) -> MetricsSnapshot {
     MetricsSnapshot {
         version: METRICS_SNAPSHOT_VERSION,
-        git_sha: heal_observer::git::head_sha(project),
+        git_sha: crate::observer::git::head_sha(project),
         loc: Some(to_value(&reports.loc)),
         complexity: Some(to_value(&reports.complexity)),
         churn: reports.churn.as_ref().map(to_value),
@@ -212,9 +212,9 @@ fn change_coupling_delta(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use heal_observer::churn::{ChurnTotals, FileChurn};
-    use heal_observer::complexity::{ComplexityTotals, FileComplexity, FunctionMetric};
-    use heal_observer::hotspot::{HotspotEntry, HotspotTotals};
+    use crate::observer::churn::{ChurnTotals, FileChurn};
+    use crate::observer::complexity::{ComplexityTotals, FileComplexity, FunctionMetric};
+    use crate::observer::hotspot::{HotspotEntry, HotspotTotals};
 
     fn complexity_with(max_ccn: u32, max_cog: u32, functions: usize) -> ComplexityReport {
         ComplexityReport {

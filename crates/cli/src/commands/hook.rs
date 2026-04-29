@@ -16,13 +16,13 @@
 use std::io::{IsTerminal, Read, Write};
 use std::path::Path;
 
+use crate::core::config::{Config, PolicyConfig};
+use crate::core::eventlog::{Event, EventLog};
+use crate::core::snapshot::MetricsSnapshot;
+use crate::core::state::State;
+use crate::core::HealPaths;
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
-use heal_core::config::{Config, PolicyConfig};
-use heal_core::eventlog::{Event, EventLog};
-use heal_core::snapshot::MetricsSnapshot;
-use heal_core::state::State;
-use heal_core::HealPaths;
 
 use crate::cli::{CheckSkill, HookEvent};
 use crate::finding::{derive_findings, Finding, Severity};
@@ -78,9 +78,9 @@ fn run_session_start(
     // A missing config is a normal state during `heal init` first-run, and
     // a missing snapshot dir means no commit has happened yet — both are
     // silent (return early). The nudge is best-effort.
-    let cfg = match heal_core::config::load_from_project(project) {
+    let cfg = match crate::core::config::load_from_project(project) {
         Ok(c) => c,
-        Err(heal_core::Error::ConfigMissing(_)) => return Ok(()),
+        Err(crate::core::Error::ConfigMissing(_)) => return Ok(()),
         Err(e) => return Err(e.into()),
     };
     let snap_log = EventLog::new(paths.snapshots_dir());
@@ -172,7 +172,7 @@ fn drilldown_skills(findings: &[Finding]) -> Vec<&'static str> {
 /// payload lives in `snapshots/`. A failed lookup is logged to stderr but
 /// returns `Value::Null` so the post-commit hook never aborts the commit.
 fn commit_log_payload(project: &Path) -> serde_json::Value {
-    let Some(info) = heal_observer::git::head_commit_info(project) else {
+    let Some(info) = crate::observer::git::head_commit_info(project) else {
         eprintln!("heal: commit metadata unavailable (HEAD missing or not a git repo)");
         return serde_json::Value::Null;
     };
@@ -241,7 +241,7 @@ mod tests {
         let log_events = read_log_events(&paths);
         assert_eq!(log_events.len(), 1);
         assert_eq!(log_events[0].event, HookEvent::Commit.as_str());
-        let info: heal_observer::git::CommitInfo =
+        let info: crate::observer::git::CommitInfo =
             serde_json::from_value(log_events[0].data.clone()).unwrap();
         assert_eq!(info.author_email.as_deref(), Some("alice@example.com"));
         assert_eq!(info.message_summary, "feat: add ok");
@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn session_start_emits_nudge_for_fresh_findings() {
-        use heal_core::snapshot::{HotspotDelta, SnapshotDelta};
+        use crate::core::snapshot::{HotspotDelta, SnapshotDelta};
 
         let dir = TempDir::new().unwrap();
         let paths = HealPaths::new(dir.path());
@@ -351,7 +351,7 @@ mod tests {
 
     #[test]
     fn session_start_respects_cooldown() {
-        use heal_core::snapshot::{HotspotDelta, SnapshotDelta};
+        use crate::core::snapshot::{HotspotDelta, SnapshotDelta};
 
         let dir = TempDir::new().unwrap();
         let paths = HealPaths::new(dir.path());

@@ -13,12 +13,12 @@
 use std::fmt;
 use std::path::Path;
 
+use crate::core::config::Config;
+use crate::core::eventlog::{Event, EventLog};
+use crate::core::HealPaths;
+use crate::observer::git;
+use crate::observer::loc::LocObserver;
 use anyhow::{Context, Result};
-use heal_core::config::Config;
-use heal_core::eventlog::{Event, EventLog};
-use heal_core::HealPaths;
-use heal_observer::git;
-use heal_observer::loc::LocObserver;
 
 use crate::snapshot;
 
