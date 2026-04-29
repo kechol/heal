@@ -272,11 +272,24 @@ jobs:
           ANNOUNCEMENT_TITLE: "${{ fromJson(steps.host.outputs.manifest).announcement_title }}"
           ANNOUNCEMENT_BODY: "${{ fromJson(steps.host.outputs.manifest).announcement_github_body }}"
           RELEASE_COMMIT: "${{ github.sha }}"
+          TAG: "${{ needs.plan.outputs.tag }}"
+          REPO: "${{ github.repository }}"
         run: |
-          # Write and read notes from a file to avoid quoting breaking things
-          echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
+          # Compose the release body:
+          #   1. cargo-dist's announcement (install hint + download table).
+          #   2. GitHub-generated changelog (commits + PRs since the previous
+          #      release, computed server-side — no full git history needed).
+          # `generate-notes` succeeds even when there is no previous release
+          # (returns commits since repo init), so the first run still works.
+          AUTO_NOTES=$(gh api "repos/${REPO}/releases/generate-notes" \
+            -f tag_name="${TAG}" --jq .body)
+          {
+            echo "$ANNOUNCEMENT_BODY"
+            echo ""
+            echo "$AUTO_NOTES"
+          } > "$RUNNER_TEMP/notes.txt"
 
-          gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
+          gh release create "${TAG}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
 
   publish-homebrew-formula:
     needs:
