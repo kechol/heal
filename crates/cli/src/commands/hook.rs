@@ -24,7 +24,7 @@ use heal_core::snapshot::MetricsSnapshot;
 use heal_core::state::State;
 use heal_core::HealPaths;
 
-use crate::cli::HookEvent;
+use crate::cli::{CheckSkill, HookEvent};
 use crate::finding::{derive_findings, Finding, Severity};
 use crate::snapshot;
 
@@ -137,11 +137,34 @@ fn write_nudge(out: &mut dyn Write, findings: &[Finding]) -> Result<()> {
         };
         writeln!(out, "  [{badge}] {}", f.message)?;
     }
+    writeln!(out)?;
     writeln!(
         out,
-        "Run `heal status` for details (auto-fix arrives in v0.2)."
+        "Run `heal check` for synthesis with refactor proposals."
     )?;
+    let drilldowns = drilldown_skills(findings);
+    if !drilldowns.is_empty() {
+        let cmds: Vec<String> = drilldowns
+            .iter()
+            .map(|s| format!("`heal check {s}`"))
+            .collect();
+        writeln!(out, "Drill in: {}.", cmds.join(", "))?;
+    }
     Ok(())
+}
+
+/// Map the rule ids surfaced this turn onto the relevant per-metric
+/// `check-*` short names. Returns the unique set in a stable order so
+/// the nudge output is deterministic across runs.
+fn drilldown_skills(findings: &[Finding]) -> Vec<&'static str> {
+    use std::collections::BTreeSet;
+    let mut skills = BTreeSet::new();
+    for f in findings {
+        if let Some(s) = CheckSkill::for_rule(&f.rule_id) {
+            skills.insert(s.short_name());
+        }
+    }
+    skills.into_iter().collect()
 }
 
 /// Lightweight snapshot of the just-recorded commit (sha, parent, author,

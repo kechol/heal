@@ -32,6 +32,12 @@ pub struct Config {
 pub struct ProjectConfig {
     #[serde(default)]
     pub primary_language: Option<String>,
+    /// Natural language for AI-generated explanations (`heal check`
+    /// output, future `run-*` proposals). Free-form so users can write
+    /// `"Japanese"`, `"日本語"`, `"ja"`, `"français"` — the value is
+    /// passed verbatim to the model. `None` keeps the model default.
+    #[serde(default)]
+    pub response_language: Option<String>,
     #[serde(default = "default_docs_dir")]
     pub docs_dir: String,
 }
@@ -40,6 +46,7 @@ impl Default for ProjectConfig {
     fn default() -> Self {
         Self {
             primary_language: None,
+            response_language: None,
             docs_dir: default_docs_dir(),
         }
     }

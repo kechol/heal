@@ -70,6 +70,24 @@ A function high in **both** is the strongest candidate: lots of paths
 8. Close: "want me to draft a refactor diff for any of these?
    v0.2 `run-code-complexity` will automate this."
 
+## Output format
+
+Cap at **~20 lines** for the default top-3 view.
+
+- One short opener (1 sentence): totals (max CCN, max Cognitive,
+  function count) + whether any function tops both rankings.
+- Per-function block, exactly **4 lines**:
+  - L1: `file:line  function-name  CCN=N  Cog=M`
+  - L2: one-sentence summary (read it, paraphrase what it does)
+  - L3: one-sentence diagnosis (nested control flow / flat dispatch /
+    flag-driven branches / mixed responsibilities)
+  - L4: `→ <Refactor pattern> on <specific scope or line range>`
+- If `complexity.spike` triggered, add one line about it.
+- Closing offer (1 line).
+
+Skip the threshold table and McCabe / Sonar references — they live in
+this skill's body. The user wants the verdict, not the bibliography.
+
 ## When NOT to act
 
 - Generated code (parser tables, AST visitors, code-gen output): high

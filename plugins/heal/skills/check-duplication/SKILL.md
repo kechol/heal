@@ -61,6 +61,26 @@ by default — SonarQube/PMD's standard threshold). It does not detect:
 7. Close: "want me to draft the helper signature and call-site diffs?
    `run-code-dedupe` (v0.2) will automate this."
 
+## Output format
+
+Cap at **~20 lines** for the default top-3 view.
+
+- One short opener (1 sentence): block count, files affected, total
+  duplicate tokens.
+- Per-block, exactly **4 lines**:
+  - L1: `<token_count> tokens × <N> locations`
+  - L2: bullet list of `path:start-end` for each location (compact;
+    if many locations, show first 3 + `…`)
+  - L3: one-sentence intent ("both sites encode the same input
+    validation rule")
+  - L4: `→ <Refactor pattern> as <helper signature sketch>`
+- If `delta.duplication.duplicate_blocks > 0`, lead with the new
+  blocks before the existing ones.
+- Closing offer (1 line).
+
+Skip recapping DRY / Rule of Three / Type-1 limitations — they live
+in this skill's body.
+
 ## When NOT to act
 
 - Test fixtures (snapshot, golden, mock data): repetitive on purpose.

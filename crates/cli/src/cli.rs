@@ -43,7 +43,9 @@ pub enum Command {
     /// metric series persisted in `.heal/snapshots/`.
     Logs(LogsArgs),
     /// Launch Claude Code (`claude -p`) with the read-only check-* skills.
-    Check,
+    /// Anything after `--` is forwarded verbatim to `claude` (e.g.
+    /// `heal check hotspots -- --model claude-opus-4-7`).
+    Check(CheckArgs),
     /// Manage the bundled Claude plugin.
     Skills {
         #[command(subcommand)]
@@ -86,6 +88,73 @@ impl StatusMetric {
     }
 }
 
+/// Output format hint passed to `claude -p` via the prompt body. The
+/// model still decides on the final shape, but the hint nudges it
+/// toward the renderer the user will actually see.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum OutputFormat {
+    /// TTY → plain; pipe → markdown.
+    Auto,
+    /// Strip markdown affordances (`**bold**`, `# headers`, nested
+    /// bullets) — terminal-friendly.
+    Plain,
+    /// Let the model use its default markdown.
+    Markdown,
+}
+
+/// Read-only Claude skill to invoke from `heal check`. The variants map
+/// 1:1 to the bundled `plugins/heal/skills/check-*` directories.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum CheckSkill {
+    Overview,
+    Hotspots,
+    Complexity,
+    Duplication,
+    Coupling,
+}
+
+impl CheckSkill {
+    /// Full skill identifier as it appears on disk and in `plugin.json`.
+    #[must_use]
+    pub fn skill_name(self) -> &'static str {
+        match self {
+            Self::Overview => "check-overview",
+            Self::Hotspots => "check-hotspots",
+            Self::Complexity => "check-complexity",
+            Self::Duplication => "check-duplication",
+            Self::Coupling => "check-coupling",
+        }
+    }
+
+    /// Short name used as the CLI argument (`heal check hotspots`) and
+    /// in nudge output (`heal check hotspots`).
+    #[must_use]
+    pub fn short_name(self) -> &'static str {
+        match self {
+            Self::Overview => "overview",
+            Self::Hotspots => "hotspots",
+            Self::Complexity => "complexity",
+            Self::Duplication => "duplication",
+            Self::Coupling => "coupling",
+        }
+    }
+
+    /// Map a finding's `rule_id` to the relevant drilldown skill, e.g.
+    /// `hotspot.new_top` → [`Self::Hotspots`]. Returns `None` for rule
+    /// prefixes that don't match a per-metric skill (the overview hub
+    /// is always offered separately, regardless of rule type).
+    #[must_use]
+    pub fn for_rule(rule_id: &str) -> Option<Self> {
+        match rule_id.split('.').next()? {
+            "hotspot" => Some(Self::Hotspots),
+            "complexity" => Some(Self::Complexity),
+            "duplication" => Some(Self::Duplication),
+            "change_coupling" => Some(Self::Coupling),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Subcommand)]
 pub enum HookEvent {
     /// Post-commit hook (git).
@@ -110,6 +179,33 @@ impl HookEvent {
             Self::SessionStart => "session-start",
         }
     }
+}
+
+#[derive(Debug, clap::Args)]
+pub struct CheckArgs {
+    /// Which check-* skill to run. Defaults to the overview hub.
+    #[arg(value_enum, default_value_t = CheckSkill::Overview)]
+    pub skill: CheckSkill,
+    /// Output format for the response body. `auto` (default) probes
+    /// stdout: a TTY gets `plain`, a pipe gets `markdown`. `plain`
+    /// strips markdown affordances so headings/bold don't show as
+    /// raw `**` / `#` in a terminal; `markdown` lets the model use
+    /// its default formatting.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Auto)]
+    pub format: OutputFormat,
+    /// Suppress per-tool progress lines on stderr. The final synthesis
+    /// still prints to stdout.
+    #[arg(long, conflicts_with = "raw")]
+    pub quiet: bool,
+    /// Forward `claude -p` output verbatim instead of parsing
+    /// stream-json into progress lines. Useful for piping to your own
+    /// parser or for debugging.
+    #[arg(long, conflicts_with = "quiet")]
+    pub raw: bool,
+    /// Pass-through arguments to the underlying `claude` invocation.
+    /// e.g. `heal check hotspots -- --model claude-haiku-4-5 --effort low`.
+    #[arg(last = true, allow_hyphen_values = true)]
+    pub claude_args: Vec<String>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -158,7 +254,7 @@ impl Cli {
             Command::Hook { event } => commands::hook::run(&project, event),
             Command::Status { json, metric } => commands::status::run(&project, json, metric),
             Command::Logs(args) => commands::logs::run(&project, &args),
-            Command::Check => commands::check::run(&project),
+            Command::Check(args) => commands::check::run(&project, &args),
             Command::Skills { action } => commands::skills::run(&project, action),
         }
     }

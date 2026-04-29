@@ -60,6 +60,24 @@ A file high in **only one** axis is usually fine:
 6. Close with: "want me to draft any of these as a diff? `run-code-*`
    skills will automate this in v0.2."
 
+## Output format
+
+Cap output at **~20 lines** for the default top-3 view.
+
+- One short opener (1 sentence): how many files entered hotspot scope,
+  whether `delta.hotspot.top_files_added` has fresh entries.
+- Per-entry block, exactly **4 lines**:
+  - L1: `path  (score, ccn_sum=N, churn=M)`
+  - L2: one-sentence file summary (read it, paraphrase what it does)
+  - L3: one-sentence diagnosis (kitchen sink / cross-cutting leak /
+    untamed conditional / etc.)
+  - L4: `→ <Refactor pattern> on <specific location, with line range>`
+- Closing offer (1 line): "Want me to draft the refactor diff?
+  `run-code-*` (v0.2)."
+
+Skip recapping Tornhill or the threshold table — they're already in
+this skill's body. Lead with intent, not score.
+
 ## When NOT to act
 
 - Generated code (parsers, schema-derived types, vendored deps): high

@@ -73,13 +73,31 @@ If `snapshots: 0` and `snapshot_segments: 0`, the user hasn't committed
 since `heal init`. Say so plainly: "no snapshot data yet — make a
 commit and the post-commit hook will produce the first record."
 
+## Output format
+
+Cap the synthesis at **~25 lines** (slightly larger than per-metric
+skills' ~20 because this hub spans every metric). Structure:
+
+- **At a glance** — one sentence (language, LOC, file count, snapshot
+  status). No second sentence.
+- **Top 3 concerns** — each concern is exactly **3 lines**:
+  - L1: file path / function / pair + the dominant metric value
+  - L2: one-sentence impact in plain language ("this file accumulates
+    bug fixes because every feature touches it")
+  - L3: `→ <Refactor pattern name> on <specific location>`
+- **First step** — 3–4 lines describing one concrete action with file
+  path and line numbers.
+- Closing — two lines: drilldown skill names, then `run-*` mention.
+
+Skip in-text literature citations (Tornhill / Sonar / Fowler are
+already established in this skill's "What the metrics tell you"
+section — no need to name-drop in every output). Keep numbers in
+parentheses, not as the headline.
+
 ## Constraints
 
 - Read-only at the file level. You may **read** any flagged file to
   ground your explanation; do not edit.
-- Plain language before numbers. "This file accumulates bug fixes
-  because every feature touches it" is more useful than "score 630.0".
-- Cap at ~30 lines synthesis. Detailed drill-down belongs in the
-  per-metric `check-*` skills — name them and offer to invoke.
+- Plain language before numbers — intent before score.
 - Do not duplicate the per-metric skills' deep analysis; this is the
   hub, not the destination.

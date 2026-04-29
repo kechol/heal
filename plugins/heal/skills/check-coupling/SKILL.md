@@ -67,6 +67,24 @@ Common patterns and what they imply:
 7. Close: "want me to sketch the extraction? v0.2+ skills will
    automate it."
 
+## Output format
+
+Cap at **~20 lines** for the default top-3 pairs.
+
+- One short opener (1 sentence): pair count, files involved,
+  `min_coupling` threshold in use, scanned-commit count.
+- Per-pair, exactly **3 lines**:
+  - L1: `<count>  pathA  ↔  pathB`
+  - L2: one-sentence classification using the table above
+    (`test↔impl` / sibling / cross-module / hub).
+  - L3: either `→ none, expected coupling` (for benign cases) or
+    `→ <Refactor pattern> on <specific seam>`.
+- If `worst.files` shows a single file dominating multiple pairs,
+  add one line calling it out as a structural hub.
+- Closing offer (1 line).
+
+Skip recapping Gall / Tornhill — they live in this skill's body.
+
 ## When NOT to act
 
 - Test ↔ implementation pairs: expected.
