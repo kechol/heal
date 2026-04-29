@@ -5,19 +5,30 @@ description: The heal subcommand surface, with examples for everyday operations.
 
 `heal` is a single binary. Every interaction goes through one of the
 subcommands below. Run `heal --help` or `heal <subcommand> --help`
-for the full argument list. This page covers the commands used in
-day-to-day operations.
+for the full argument list.
 
-## Quick reference
+## User commands
 
-| Command       | Purpose                                                                                |
-| ------------- | -------------------------------------------------------------------------------------- |
-| `heal init`   | Set up `.heal/` and the post-commit hook in the current repository. Run once.          |
-| `heal status` | Show the latest metrics and the delta since the previous commit.                       |
-| `heal logs`   | Stream the event log (commits, Claude edits, session starts).                          |
-| `heal check`  | Invoke Claude Code to read the metrics and explain them.                               |
-| `heal skills` | Install, update, or remove the bundled Claude plugin.                                  |
-| `heal hook`   | Internal entrypoint called by git and the Claude plugin. Not normally invoked by hand. |
+These are the commands you run directly in a terminal.
+
+| Command       | Purpose                                                             |
+| ------------- | ------------------------------------------------------------------- |
+| `heal init`   | Set up `.heal/` and the post-commit hook in the current repository. |
+| `heal status` | Show the latest metrics and the delta since the previous commit.    |
+| `heal logs`   | Stream the event log (commits, Claude edits, session starts).       |
+| `heal check`  | Invoke Claude Code to read the metrics and explain them.            |
+| `heal skills` | Install, update, or remove the bundled Claude plugin.               |
+
+## Automation commands
+
+These are invoked automatically by the git post-commit hook and the
+Claude plugin. You do not normally call them by hand.
+
+| Command     | Called by                 | Purpose                                      |
+| ----------- | ------------------------- | -------------------------------------------- |
+| `heal hook` | git and the Claude plugin | Run observers, write snapshots, emit nudges. |
+
+---
 
 ## `heal init`
 
@@ -127,23 +138,26 @@ The plugin tree is embedded in the `heal` binary at compile time, so
 in use. `update` is drift-aware: files that have been hand-edited are
 left in place (use `--force` to overwrite anyway).
 
-## `heal hook`
+---
 
-This command is invoked automatically by `heal init` (post-commit
-hook) and `heal skills install` (Claude hooks). It exists as a single
-entrypoint shared by both:
+## `heal hook` (automation)
+
+This command is invoked automatically by the git post-commit hook and
+the Claude plugin hooks. It is not intended for regular use, but
+manual invocation can be useful when debugging.
 
 ```sh
 heal hook commit          # post-commit: run observers, write a snapshot
-heal hook edit            # Claude PostToolUse: log only, no scan
-heal hook stop            # Claude Stop: log only
+heal hook edit            # Claude PostToolUse: log file edit
+heal hook stop            # Claude Stop: log session end
 heal hook session-start   # Claude SessionStart: emit threshold nudge
 ```
 
-Manual invocation is occasionally useful when debugging — for
-example, running `heal hook session-start` with an empty JSON
-payload reveals which rules would fire from the current snapshot
-delta.
+For example, running `heal hook session-start` with an empty JSON
+payload from a terminal shows which rules would fire from the current
+snapshot delta, without opening a real Claude session.
+
+---
 
 ## Tips
 

@@ -39,8 +39,8 @@ crossed a threshold the next time a session opens.
     daemon, no scheduler.
   </Card>
   <Card title="Read-only by default" icon="approve-check">
-    In v0.1, `heal` only reads the repository. Automated repair arrives in v0.2 behind an explicit
-    policy opt-in.
+    By default `heal` only reads the repository. Automated repair is gated behind an explicit policy
+    opt-in.
   </Card>
   <Card title="Single binary" icon="rocket">
     `cargo install heal-cli` installs the CLI. The Claude plugin is bundled in the binary and
@@ -48,7 +48,7 @@ crossed a threshold the next time a session opens.
   </Card>
 </CardGrid>
 
-:::caution[Status: v0.1]
-macOS and Linux only. The CLI surface and on-disk schemas may change
-before v0.2. Feedback is welcome; expect rough edges.
+:::caution[Early-stage project]
+macOS and Linux only. The CLI surface and on-disk schemas may still
+change. Feedback is welcome; expect rough edges.
 :::

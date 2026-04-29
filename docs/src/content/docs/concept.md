@@ -41,35 +41,81 @@ in the project; consider refactoring."_
 
 ## The loop
 
-Long-term, heal is structured around a three-step loop:
+heal is structured around three steps:
 
 1. **Observe** — collect health metrics on every commit.
-2. **Nudge** — surface meaningful changes to the human and agent at
-   the relevant moment (session start).
-3. **Repair** — allow the agent to open a PR that addresses the
-   highlighted issue, with policy gates governing what may merge.
+2. **Nudge** — surface meaningful changes to the agent at the right moment.
+3. **Repair** — allow the agent to open a pull request addressing the highlighted issue, with policy gates governing what may merge.
 
-**v0.1 ships steps 1 and 2.** Step 3 — the autonomous repair half —
-arrives in v0.2 behind an opt-in policy. See
-[Architecture](/heal/architecture/) for details.
+Here is how the first two steps play out in practice:
+
+```
+Every commit
+─────────────────────────────────────────────────
+
+git commit
+    │
+    ▼
+post-commit hook ──► heal hook commit
+                          │
+                          ├─ run observers (LOC, complexity, churn, …)
+                          │
+                          └─ write snapshot ──► .heal/snapshots/
+
+                    (snapshot stored, waiting)
+
+
+Next Claude Code session
+─────────────────────────────────────────────────
+
+claude opens
+    │
+    ▼
+SessionStart hook ──► heal hook session-start
+                           │
+                           ├─ load latest snapshot + delta
+                           ├─ check thresholds and cool-down
+                           │
+                           ├─ threshold crossed ──► print nudge to Claude
+                           └─ below threshold   ──► silent
+```
+
+**Cool-down** prevents the same notice from flooding every session.
+After a rule fires, heal suppresses it for `cooldown_hours` (default
+24 hours). The rule fires again if the threshold is still crossed once
+the cool-down expires.
+
+In practice, a cycle looks like this:
+
+1. You commit a change; heal records a snapshot silently in the background.
+2. You open Claude Code to continue working.
+3. heal compares the new snapshot to the previous one.
+4. If a hotspot file changed or complexity spiked, a brief notice
+   appears at the top of Claude's context.
+5. Claude can address it immediately, run `heal check` for details, or
+   you can defer it.
+
+The **Repair** step extends the loop further: rather than only
+surfacing a notice, heal can open a pull request that addresses the
+issue — gated by an explicit policy you control.
 
 ## Read-only by default
 
-heal does not modify source files in v0.1. Every command either reads
-metrics or hands them to Claude for explanation. The only files heal
-writes are:
+heal does not modify source files unless you enable a repair policy.
+Every command either reads metrics or hands them to Claude for
+explanation. The only files heal writes are:
 
 - `.heal/` — its own data directory
 - `.git/hooks/post-commit` — a single hook line, installed once
 - `.claude/plugins/heal/` — opt-in, via `heal skills install`
 
-The `propose` and `execute` rungs of the policy ladder activate in
-v0.2. Until then, every change is a human decision informed by what
-heal surfaced.
+Automated repair is gated behind an explicit `policy.action = execute`
+setting. Until you set that, every change remains a human decision
+informed by what heal surfaced.
 
 ## Why metrics
 
-Six metrics ship in v0.1:
+Six metrics ship with heal:
 
 - **LOC** — language composition of the project
 - **Complexity (CCN + Cognitive)** — functions that are difficult to
@@ -109,8 +155,8 @@ process to manage.
 - **Not a CI gate.** The post-commit hook fires after a commit lands.
   heal tracks the long-term trajectory of the codebase rather than
   blocking individual PRs.
-- **Not multi-agent (yet).** v0.1 supports Claude Code only. A
-  provider abstraction lands in v0.5.
+- **Not a replacement for tests.** heal surfaces structural complexity;
+  correctness is still your test suite's job.
 
 ## Further reading
 

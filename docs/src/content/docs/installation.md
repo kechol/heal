@@ -9,8 +9,8 @@ environment.
 
 ## Requirements
 
-- **OS**: macOS or Linux. Windows is not supported in v0.1; the hook
-  scripts and path handling assume a POSIX shell.
+- **OS**: macOS or Linux. Windows is not supported; the hook scripts
+  and path handling assume a POSIX shell.
 - **Git**: any modern release. heal uses libgit2 internally, but you
   also need a working `git` CLI for the post-commit hook to fire.
 

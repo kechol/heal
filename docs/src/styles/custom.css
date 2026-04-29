@@ -44,6 +44,10 @@
   --sl-color-accent-high: #2d5a30;
   --heal-shadow-soft: 0 1px 2px hsl(140 12% 12% / 4%), 0 4px 16px hsl(140 12% 12% / 6%);
   --heal-shadow-lift: 0 2px 4px hsl(140 12% 12% / 6%), 0 8px 24px hsl(140 12% 12% / 10%);
+
+  /* Soft near-black for headings and prominent footer links — pure
+   * #000 looks too heavy on white, especially with bold weights. */
+  --heal-text-strong: #2c3338;
 }
 
 :root[data-theme='dark'] {
@@ -52,6 +56,9 @@
   --sl-color-accent-high: #cee0ce;
   --heal-shadow-soft: 0 1px 2px hsl(0 0% 0% / 30%), 0 4px 16px hsl(0 0% 0% / 25%);
   --heal-shadow-lift: 0 2px 4px hsl(0 0% 0% / 35%), 0 8px 24px hsl(0 0% 0% / 35%);
+
+  /* In dark mode the high-contrast token is already light; keep Starlight's default. */
+  --heal-text-strong: var(--sl-color-white);
 }
 
 /* ----------------------------------------------------------------
@@ -67,12 +74,21 @@
   line-height: 1.7;
 }
 
-.sl-markdown-content h1,
-.sl-markdown-content h2,
-.sl-markdown-content h3,
-.sl-markdown-content h4 {
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) {
   font-weight: 600;
   letter-spacing: -0.01em;
+  color: var(--heal-text-strong);
+}
+
+/* Page title (the top-of-page H1 outside `.sl-markdown-content`) */
+.content-panel h1 {
+  color: var(--heal-text-strong);
+}
+
+/* Footer prev/next pagination titles + the "edit page" link */
+.pagination-links a .link-title,
+footer.sl-flex .meta a {
+  color: var(--heal-text-strong);
 }
 
 .sl-markdown-content a:not(:hover) {
@@ -185,9 +201,47 @@ nav.sidebar a {
 }
 
 .sl-markdown-content table {
+  /* Starlight forces `display: block; overflow: auto` to enable
+   * horizontal scrolling on narrow viewports. That breaks CSS table
+   * layout — anonymous table boxes get generated and cause stray
+   * gaps between thead/tbody plus mismatched widths. Force the
+   * proper table display back. */
+  display: table;
+  width: 100%;
+  /* `separate` (not collapse) is required so the table's own border
+   * renders on top of the rounded corners; `collapse` lets cell
+   * borders win and the outer border drops out. */
+  border-collapse: separate;
+  border-spacing: 0;
   border-radius: var(--heal-radius-sm);
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--sl-color-gray-3) 30%, transparent);
+  border: 1px solid var(--sl-color-gray-5);
+}
+
+.sl-markdown-content table :is(th, td) {
+  padding-block: 0.6rem;
+  padding-inline: 1rem;
+  line-height: 1.55;
+  vertical-align: top;
+}
+
+/* Starlight strips `padding-inline-start` from first-column cells so
+ * unboxed tables align with surrounding prose. Our table has a frame,
+ * so put the inline padding back. */
+.sl-markdown-content table :is(th:first-child, td:first-child) {
+  padding-inline-start: 1rem;
+}
+
+.sl-markdown-content table thead th {
+  background: color-mix(in srgb, var(--sl-color-accent-low) 35%, transparent);
+  font-weight: 600;
+}
+
+/* Keep file paths and short identifiers from wrapping inside cells —
+ * tables in the architecture / configuration pages have inline code
+ * like `.heal/snapshots/YYYY-MM.jsonl` that breaks awkwardly otherwise. */
+.sl-markdown-content table :is(th, td) > code {
+  white-space: nowrap;
 }
 
 starlight-tabs [role='tabpanel'] {

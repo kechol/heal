@@ -1,0 +1,55 @@
+---
+title: heal
+description: コミットごとにコードベースを計測し、関連する変化を AI エージェントに伝えるコードヘルス・ハーネス。
+---
+
+import { Card, CardGrid, LinkButton } from '@astrojs/starlight/components';
+
+`heal` はコミットごとにコードベースを計測し、関連する変化を次の
+Claude Code セッションに渡します。
+
+<LinkButton href="/heal/ja/quick-start/" icon="right-arrow">
+  クイックスタート（5 分）
+</LinkButton>
+<LinkButton href="/heal/ja/concept/" variant="secondary" icon="open-book">
+  設計思想を読む
+</LinkButton>
+
+## なぜ heal なのか
+
+AI コーディングエージェントは、依頼された次の変更を生み出すのは得意
+です。一方でコードベースは継続的に変化していきます。複雑度が積み重
+なり、同じファイルが何度も触られ、重複したコードが少しずつ増えてい
+く。エージェントはこうした長期的な変化を観測しません。外部からのシ
+グナルがなければ、それを追えるのは人間だけです。
+
+`heal` はそのギャップを埋めます。git の post-commit フックがコミッ
+トごとにメトリクスのスナップショットを記録し、Claude の SessionStart
+フックが次のセッション開始時にしきい値を超えた変化を提示します。
+
+## 概要
+
+<CardGrid>
+  <Card title="6 つの標準メトリクス" icon="seti:rust">
+    LOC、複雑度、Churn、Change Coupling、Duplication、合成された Hotspot スコア —
+    すべてコミットごとに自動計算されます。
+  </Card>
+  <Card title="フック駆動" icon="puzzle">
+    git の post-commit フックがスナップショットを書き、Claude の SessionStart
+    フックが変化を提示します。デーモンもスケジューラもありません。
+  </Card>
+  <Card title="デフォルトはリードオンリー" icon="approve-check">
+    `heal` はデフォルトではリポジトリを読むだけです。自動修復は明示的なポリシー
+    のオプトインで初めて有効になります。
+  </Card>
+  <Card title="単一バイナリ" icon="rocket">
+    `cargo install heal-cli` で CLI が入ります。Claude プラグインはバイナリに 同梱されており、`heal
+    skills install` で展開します。
+  </Card>
+</CardGrid>
+
+:::caution[早期段階のプロジェクト]
+macOS と Linux のみ対応。CLI のインタフェースとオンディスクのスキー
+マは今後変更される可能性があります。フィードバック歓迎、ただし粗さ
+があることはご了承ください。
+:::

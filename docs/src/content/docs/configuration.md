@@ -16,22 +16,29 @@ the file only to override defaults for the project.
 The configuration is per-repository; there is no global config. heal
 re-reads the file on every invocation — no daemon to restart.
 
-## Example configuration
+## Recommended starting point
+
+For most projects, the following configuration is a good starting
+point. It enables the most informative metrics, filters out generated
+files, and sets a 90-day lookback window:
 
 ```toml
 [project]
+# Remove this line if you want Claude to respond in English (the default).
 response_language = "Japanese"
 
 [git]
 since_days = 90
-exclude_paths = ["dist/", "vendor/", "node_modules/"]
+exclude_paths = ["dist/", "vendor/", "node_modules/", ".cache/"]
 
 [metrics]
 top_n = 5
 
-[metrics.duplication]
+[metrics.cognitive]
 enabled = true
-min_tokens = 60
+
+[metrics.churn]
+enabled = true
 
 [metrics.hotspot]
 enabled = true
@@ -42,8 +49,11 @@ weight_complexity = 1.5
 cooldown_hours = 24
 ```
 
-Only the overridden values need to be written; the rest falls back
-to defaults.
+This gives you hotspot rankings, churn, and cognitive complexity — the
+three most actionable signals for day-to-day AI-assisted development.
+Duplication and change coupling are off by default; enable them when
+the project is large enough that copy-paste drift or surprising file
+co-changes become a concern.
 
 ## Defaults
 
@@ -70,10 +80,10 @@ Project-level metadata.
 response_language = "Japanese"
 ```
 
-- `response_language` — free-form language hint passed to `heal
-check`. Any value Claude understands is acceptable: `"Japanese"`,
-  `"日本語"`, `"français"`, `"plain English"`. Optional; when unset,
-  Claude uses its default.
+- `response_language` — free-form language hint passed to `heal check`.
+  Any value Claude understands is acceptable: `"Japanese"`, `"日本語"`,
+  `"français"`, `"plain English"`. Optional; when unset, Claude uses
+  its default.
 
 ## `[git]`
 
@@ -202,8 +212,8 @@ threshold = { ccn = 15, delta_pct = 20 }
 ```
 
 - `action` — one of `report-only`, `notify`, `propose`, `execute`.
-  In v0.1 only `report-only` is active; the other actions become
-  meaningful in v0.2 alongside `heal run`.
+  `report-only` prints a notice to Claude's context. Higher action
+  levels enable automated responses.
 - `cooldown_hours` (default `24`) — minimum hours between two firings
   of the same rule.
 - `threshold` — rule-specific thresholds. Keys depend on the rule.

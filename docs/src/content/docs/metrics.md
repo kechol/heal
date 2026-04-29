@@ -71,8 +71,8 @@ Two per-function metrics, computed in a single tree-sitter walk:
 Both metrics are useful: CCN is the classical branching count;
 Cognitive is closer to a perceived-cost measure.
 
-**Languages**: TypeScript and Rust in v0.1. JavaScript, Python, and
-others arrive in later releases.
+**Languages**: TypeScript and Rust. Additional languages arrive in
+later releases.
 
 ## Churn — how often a file changes
 
@@ -87,8 +87,8 @@ A high-churn file is not inherently problematic — `package.json`
 and similar boilerplate change frequently. Churn becomes meaningful
 when crossed with complexity (see [Hotspot](#hotspot--churn--complexity)).
 
-**Caveats**: rename detection is disabled in v0.1, so a file renamed
-mid-window appears as two entries. Bulk reformats inflate
+**Caveats**: rename detection is currently disabled, so a file
+renamed mid-window appears as two entries. Bulk reformats inflate
 `lines_added` and `lines_deleted`; trust the commit count when raw
 line totals look misleading.
 

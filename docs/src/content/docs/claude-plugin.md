@@ -42,8 +42,8 @@ the version installed always matches the binary. After upgrading
 
 ## What the hooks do
 
-Three hooks ship in v0.1. All three call back into the same `heal
-hook` entrypoint.
+Three hooks ship with the plugin. All three call back into the same
+`heal hook` entrypoint.
 
 | Hook event     | Behaviour                                                                  |
 | -------------- | -------------------------------------------------------------------------- |
@@ -59,8 +59,8 @@ session opens it:
 
 1. Loads the latest `MetricsSnapshot` from `.heal/snapshots/`.
 2. Compares it to the previous snapshot.
-3. Evaluates five v0.1 rules (new top hotspot, new top CCN function,
-   new top Cognitive function, CCN spike, duplication growth).
+3. Evaluates five rules (new top hotspot, new top CCN function, new
+   top Cognitive function, CCN spike, duplication growth).
 4. For any rule that fires and whose cool-down (default 24 hours)
    has expired, prints a markdown notice that Claude sees at the top
    of the session.
@@ -91,7 +91,8 @@ Two ways to invoke a skill:
   `check-hotspots` skill.
 
 All five skills are read-only — they may run `heal status` but cannot
-modify source files. The `run-*` repair skills land in v0.2.
+modify source files. Repair skills (`run-*`) are planned as a future
+addition.
 
 ## Updating the plugin
 
@@ -126,8 +127,8 @@ Removes `.claude/plugins/heal/` and nothing else. Project data under
 
 A single distribution channel — `cargo install heal-cli` — provides
 both the CLI and the matching plugin. Lock-step versioning prevents
-accidentally pairing a v0.2 plugin with a v0.1 binary or vice versa.
-The trade-off is that the plugin is exactly as fresh as the `heal`
+accidentally pairing mismatched plugin and binary versions. The
+trade-off is that the plugin is exactly as fresh as the `heal`
 binary; to revise skill prompts independently, hand-edit
 `.claude/plugins/heal/`, with the understanding that `heal skills
 update` will then mark those files as drifted.

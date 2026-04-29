@@ -1,0 +1,176 @@
+---
+title: クイックスタート
+description: heal をインストールし、git リポジトリで実行して最初のメトリクスを読むまでを 5 分で。
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+このウォークスルーを終えると、次の状態になります。
+
+- お手元の git リポジトリのいずれかで heal が動いている
+- 最初のメトリクス — コードベースのスナップショット — が画面に出ている
+- （任意）Claude がそのメトリクスを読み、注目すべきポイントを指摘する
+
+ソースコードのクローンや手動ビルドは不要です。所要時間は約 5 分です。
+
+## 必要なもの
+
+- macOS または Linux
+- 計測対象の git リポジトリ — ご自身のものでも、任意の OSS のクローンでも構いません
+- （任意）[Claude Code](https://claude.com/code) CLI — メトリクス解説のステップに使います
+
+## 1. `heal` をインストール
+
+環境に合った方法を選んでください。
+
+<Tabs syncKey="installer">
+  <TabItem label="Homebrew">
+
+```sh
+brew install kechol/tap/heal-cli
+```
+
+macOS と Linux で利用可能です。各リリースに同梱されるビルド済みバイ
+ナリと同じものが入ります。
+
+  </TabItem>
+  <TabItem label="Cargo">
+
+```sh
+cargo install heal-cli
+```
+
+Rust ツールチェーン（1.85 以上）がすでに `PATH` にある場合に使いま
+す。crates.io からビルドが取得されます。
+
+  </TabItem>
+  <TabItem label="Shell">
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/kechol/heal/releases/latest/download/heal-cli-installer.sh | sh
+```
+
+ビルド済みバイナリを `~/.cargo/bin` 以下にインストールします。Rust
+も Homebrew も使えない環境で便利です。
+
+  </TabItem>
+</Tabs>
+
+インストールを確認します。
+
+```sh
+heal --version
+```
+
+コマンドが見つからない場合は `~/.cargo/bin` が `PATH` に含まれてい
+るか確認してください。各方法の詳細は[インストール](/heal/ja/installation/)
+を参照。
+
+## 2. リポジトリをセットアップ
+
+git リポジトリの中で実行します。
+
+```sh
+heal init
+```
+
+このコマンドは次の処理を行います。
+
+- メトリクスを保存する `.heal/` ディレクトリを作成
+- `.git/hooks/post-commit` フックをインストール
+- 最初のスナップショットを取得
+
+このコマンドは何度実行しても安全です。`--force` を渡さない限り、設
+定ファイルや既存のフックはそのまま残ります。
+
+## 3. 最初のメトリクスを読む
+
+```sh
+heal status
+```
+
+出力例:
+
+```
+Primary language: Rust
+
+LOC (top languages)
+  Rust         18421 code   2891 comments
+  TypeScript    4920 code    612 comments
+
+Complexity (max CCN: 14, max Cognitive: 22)
+  worst CCN:        run            crates/cli/src/commands/init.rs:78    14
+  worst Cognitive:  collect        crates/cli/src/observer/churn.rs:42   22
+
+Hotspots (top 3)
+  crates/cli/src/commands/init.rs        score 482
+  crates/cli/src/observer/loc.rs         score 213
+  crates/cli/src/core/eventlog.rs        score 187
+
+Δ since last commit
+  max_ccn       +2  (run)
+  hotspot top   unchanged
+```
+
+要点:
+
+- **Primary language** は `tokei` によって検出されます。
+- **Hotspot** は単独メトリクスとしてもっとも実用的 — 注目すべきファ
+  イルを `commits × ccn_sum` でスコア化したものです。
+- **Δ since last commit** は差分ブロックです。差分が変化していなけ
+  れば直近のコミットで追跡対象メトリクスが上昇していないことを示し、
+  差分が増えていれば早期警報になります。
+
+これがコアのフィードバックループです。コミット → `heal status` →
+差分の確認、を繰り返します。
+
+## 4. Claude に解説させる（任意）
+
+Claude Code がインストール済みであれば:
+
+```sh
+heal check
+```
+
+Claude をヘッドレスモードで起動し、リードオンリーのスキルでメトリ
+クスを平易な言葉で解説します — どのファイルが熱いか、どこに重複が
+あるか、どの関数がリファクタ候補か。
+
+特定の観点だけ確認したい場合:
+
+```sh
+heal check hotspots       # ホットスポットのランキング
+heal check complexity     # CCN と Cognitive の worst-N
+heal check duplication    # 重複ブロック
+heal check coupling       # 一緒に変更されるファイル
+```
+
+`heal check` はメトリクスを読むだけで、ソースファイルは変更しません。
+
+## 5. 自動でナッジを受け取る（任意）
+
+ステップ 1〜4 はオンデマンドです。閾値を超えた変化を毎回 Claude セッ
+ション開始時に自動で受け取りたい場合は、同梱プラグインを一度インス
+トールします。
+
+```sh
+heal skills install
+```
+
+これ以降、メトリクスがしきい値を越えた（新しいトップホットスポット、
+CCN の急上昇、重複の増加など）タイミングで、次の Claude セッション
+に通知が表示されます — 明示的なコマンド実行は不要です。
+
+プラグインは `heal skills <subcommand>` でインストール、更新、確認、
+削除ができます。フックの挙動については[Claude プラグイン](/heal/ja/claude-plugin/)
+を参照。
+
+## さらに読む
+
+- [設計思想](/heal/ja/concept/) — 設計のアイデアを 3 分で。
+- [メトリクス](/heal/ja/metrics/) — 各メトリクスの意味。
+- [CLI](/heal/ja/cli/) — 全サブコマンドと使用例。
+- [設定](/heal/ja/configuration/) — しきい値と切り替え。
+
+ドキュメント通りに動かない箇所があれば、[Issue を立てて](https://github.com/kechol/heal/issues)ください。
