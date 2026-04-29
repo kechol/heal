@@ -60,7 +60,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p heal-observer --no-default-features --features "$FEATURE" --locked
+      - run: cargo test -p heal-cli --no-default-features --features "$FEATURE" --locked
 
   deny:
     name: cargo-deny
