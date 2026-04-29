@@ -1,63 +1,68 @@
 /*
- * heal docs theme — clean minimal layout with soft green accents.
+ * heal docs theme — soft sage accents on Starlight's neutral grays,
+ * with gentle rounded corners and subtle gradients.
  *
- * Overrides Starlight's CSS custom properties. The accent palette is
- * a calm sage tuned to feel restful (the "healing" association in the
- * name) while staying legible against the white-default neutral grays.
+ * Important: Starlight inverts the semantic meaning of `--sl-color-white`,
+ * `--sl-color-black`, and `--sl-color-gray-1..6` between light and dark
+ * themes (in light mode `--sl-color-white` is a dark text colour, etc.).
+ * Overriding the neutral grays therefore needs to flip per theme. To
+ * keep the page legible in both modes, this file leaves the neutrals
+ * alone and only overrides the accent palette plus typography and
+ * component shapes.
  */
 
+/* ----------------------------------------------------------------
+ * Shared tokens (typography, radii, shadows)
+ * ---------------------------------------------------------------- */
+
 :root {
-  /* Accent — soft sage green */
-  --sl-color-accent-low: #e3eee4;
-  --sl-color-accent: #5d8a5e;
-  --sl-color-accent-high: #2d5a30;
-
-  /* Neutrals — slightly warm, low-contrast */
-  --sl-color-white: #ffffff;
-  --sl-color-gray-1: #f7f8f7;
-  --sl-color-gray-2: #e6eae6;
-  --sl-color-gray-3: #b6beb6;
-  --sl-color-gray-4: #6c736c;
-  --sl-color-gray-5: #494d49;
-  --sl-color-gray-6: #2b2e2c;
-  --sl-color-black: #1a1c1a;
-
-  /* Typography — a clean modern sans + monospace stack */
-  --sl-font: 'Inter var', 'Inter', ui-sans-serif, system-ui, -apple-system,
-    BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --sl-font:
+    'Inter var', 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, 'Helvetica Neue', Arial, sans-serif;
   --sl-font-system: var(--sl-font);
-  --sl-font-mono: ui-monospace, 'SFMono-Regular', Menlo, Monaco, 'JetBrains Mono',
-    'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+  --sl-font-mono:
+    ui-monospace, 'SFMono-Regular', Menlo, Monaco, 'JetBrains Mono', 'Cascadia Code', 'Roboto Mono',
+    Consolas, monospace;
   --sl-font-system-mono: var(--sl-font-mono);
 
-  /* Slightly tighter heading rhythm for a more modern feel */
   --sl-text-h1: 2rem;
   --sl-text-h2: 1.5rem;
   --sl-text-h3: 1.25rem;
+
+  --heal-radius-sm: 8px;
+  --heal-radius-md: 12px;
+  --heal-radius-lg: 16px;
+}
+
+/* ----------------------------------------------------------------
+ * Accent palette — sage green
+ * ---------------------------------------------------------------- */
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #e3eee4;
+  --sl-color-accent: #5d8a5e;
+  --sl-color-accent-high: #2d5a30;
+  --heal-shadow-soft: 0 1px 2px hsl(140 12% 12% / 4%), 0 4px 16px hsl(140 12% 12% / 6%);
+  --heal-shadow-lift: 0 2px 4px hsl(140 12% 12% / 6%), 0 8px 24px hsl(140 12% 12% / 10%);
 }
 
 :root[data-theme='dark'] {
   --sl-color-accent-low: #1a2a1c;
   --sl-color-accent: #8ab48b;
   --sl-color-accent-high: #cee0ce;
-
-  --sl-color-white: #f5f7f5;
-  --sl-color-gray-1: #e6eae6;
-  --sl-color-gray-2: #b6beb6;
-  --sl-color-gray-3: #6c736c;
-  --sl-color-gray-4: #494d49;
-  --sl-color-gray-5: #2b2e2c;
-  --sl-color-gray-6: #1a1c1a;
-  --sl-color-black: #0e100f;
+  --heal-shadow-soft: 0 1px 2px hsl(0 0% 0% / 30%), 0 4px 16px hsl(0 0% 0% / 25%);
+  --heal-shadow-lift: 0 2px 4px hsl(0 0% 0% / 35%), 0 8px 24px hsl(0 0% 0% / 35%);
 }
 
-/* Site title — keep it understated to match the lowercase brand */
+/* ----------------------------------------------------------------
+ * Page-wide polish
+ * ---------------------------------------------------------------- */
+
 .site-title {
   font-weight: 500;
   letter-spacing: -0.01em;
 }
 
-/* Calmer prose: slightly more line-height, lighter heading weight */
 .sl-markdown-content {
   line-height: 1.7;
 }
@@ -70,14 +75,121 @@
   letter-spacing: -0.01em;
 }
 
-/* Soften the default link underline so green stays the visual signal */
 .sl-markdown-content a:not(:hover) {
   text-decoration-color: var(--sl-color-accent-low);
   text-decoration-thickness: 1.5px;
   text-underline-offset: 0.2em;
 }
 
-/* Minimal hero buttons used on index.mdx (LinkButton component) */
-:root {
-  --sl-color-bg-nav: var(--sl-color-bg);
+/* Very subtle radial wash near the top of the page — adds a hint of
+ * sage warmth without recolouring the page background. */
+:root[data-theme='light'] body {
+  background-image: radial-gradient(
+    ellipse 1200px 600px at 50% -200px,
+    color-mix(in srgb, var(--sl-color-accent) 8%, transparent),
+    transparent 60%
+  );
+  background-color: var(--sl-color-bg);
+  background-repeat: no-repeat;
+}
+
+:root[data-theme='dark'] body {
+  background-image: radial-gradient(
+    ellipse 1200px 600px at 50% -200px,
+    color-mix(in srgb, var(--sl-color-accent) 6%, transparent),
+    transparent 60%
+  );
+  background-color: var(--sl-color-bg);
+  background-repeat: no-repeat;
+}
+
+/* ----------------------------------------------------------------
+ * Component overrides — rounded corners + soft gradients
+ * ---------------------------------------------------------------- */
+
+.sl-link-button {
+  border-radius: var(--heal-radius-sm);
+  font-weight: 500;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    filter 0.15s ease;
+}
+
+.sl-link-button.primary {
+  background-image: linear-gradient(
+    135deg,
+    var(--sl-color-accent) 0%,
+    color-mix(in srgb, var(--sl-color-accent) 75%, var(--sl-color-accent-high)) 100%
+  );
+  border-color: transparent;
+  box-shadow: var(--heal-shadow-soft);
+}
+
+.sl-link-button.primary:hover {
+  filter: brightness(1.05);
+  box-shadow: var(--heal-shadow-lift);
+  transform: translateY(-1px);
+}
+
+.sl-link-button.secondary {
+  border-radius: var(--heal-radius-sm);
+}
+
+.card {
+  border-radius: var(--heal-radius-md);
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--sl-color-accent-low) 35%, var(--sl-color-bg)) 0%,
+    var(--sl-color-bg) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--sl-color-gray-3) 40%, transparent);
+  box-shadow: var(--heal-shadow-soft);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--heal-shadow-lift);
+}
+
+.expressive-code .frame,
+.expressive-code .frame pre {
+  border-radius: var(--heal-radius-md) !important;
+}
+
+.expressive-code .frame {
+  box-shadow: var(--heal-shadow-soft);
+}
+
+.sl-markdown-content code:not(pre code) {
+  border-radius: 4px;
+}
+
+.starlight-aside {
+  border-radius: var(--heal-radius-md);
+  border-left-width: 3px;
+}
+
+.sl-flex input[type='search'],
+[name='search'] {
+  border-radius: var(--heal-radius-sm);
+}
+
+.sidebar-content nav ul li a,
+.sidebar-content nav ul li > details > summary,
+nav.sidebar a {
+  border-radius: 6px;
+}
+
+.sl-markdown-content table {
+  border-radius: var(--heal-radius-sm);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--sl-color-gray-3) 30%, transparent);
+}
+
+starlight-tabs [role='tabpanel'] {
+  border-radius: var(--heal-radius-sm);
 }

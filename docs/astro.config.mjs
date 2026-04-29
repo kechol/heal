@@ -15,6 +15,13 @@ export default defineConfig({
       logo: { src: './src/assets/logo.svg', replacesTitle: false },
       favicon: '/favicon.svg',
       customCss: ['./src/styles/custom.css'],
+      // Drop the macOS-style terminal header (three traffic-light dots)
+      // that Expressive Code adds to sh / bash code blocks by default.
+      // `frame: 'code'` keeps the rounded code box but removes the
+      // window chrome.
+      expressiveCode: {
+        defaultProps: { frame: 'code' },
+      },
       defaultLocale: 'root',
       locales: {
         root: { label: 'English', lang: 'en' },
