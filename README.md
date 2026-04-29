@@ -13,6 +13,8 @@ expose them through `heal status` / `heal check`, and surface threshold
 breaches to Claude Code as a session-start nudge. Autonomous repair
 (`heal run`, PR generation) lands later.
 
+Documentation: <https://kechol.github.io/heal/>
+
 > ⚠️ **Status: v0.1.** macOS / Linux only. API may shift before v0.2.
 
 ## What it measures

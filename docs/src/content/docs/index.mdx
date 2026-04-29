@@ -1,0 +1,51 @@
+---
+title: HEAL
+description: Hook-driven Evaluation & Autonomous Loop — a code-health harness that turns codebase decay signals into work for AI coding agents.
+template: splash
+hero:
+  tagline: Hook-driven Evaluation & Autonomous Loop. Turn codebase decay signals into work for AI coding agents.
+  actions:
+    - text: Get started
+      link: /heal/getting-started/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/kechol/heal
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+LLM coding agents are usually reactive: a human files a task before the agent
+moves. Codebases, meanwhile, decay continuously — complexity creeps, hotspots
+shift, duplicates accumulate. HEAL closes that gap by turning **codebase
+state changes** into **agent triggers**.
+
+v0.1 is the **observe** half of the loop: collect metrics on every commit,
+expose them through `heal status` / `heal check`, and surface threshold
+breaches to Claude Code as a session-start nudge. Autonomous repair (`heal
+run`, PR generation) lands later.
+
+<CardGrid>
+  <Card title="Six observers" icon="seti:rust">
+    LOC, CCN, Cognitive Complexity, churn, change coupling, duplication, and a composed hotspot
+    score — computed on every git commit.
+  </Card>
+  <Card title="Hook-driven" icon="puzzle">
+    A post-commit hook persists snapshots; Claude Code SessionStart hooks surface threshold breaches
+    with cool-down-aware nudges.
+  </Card>
+  <Card title="Read-only by default" icon="approve-check">
+    v0.1 ships with `report-only` policy. The `propose` and `execute` rungs of the action ladder
+    become meaningful when `heal run` lands in v0.2.
+  </Card>
+  <Card title="Single binary" icon="rocket">
+    `cargo install heal-cli` produces the `heal` binary. macOS / Linux for v0.1; the bundled Claude
+    plugin extracts via `heal skills install`.
+  </Card>
+</CardGrid>
+
+:::caution[Status: v0.1]
+macOS / Linux only. The CLI surface and on-disk schemas may shift before
+v0.2 lands.
+:::

@@ -23,3 +23,15 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+
+  # npm — Astro / Starlight stack for the docs site under docs/.
+  - package-ecosystem: npm
+    directory: /docs
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      patch-and-minor:
+        update-types:
+          - patch
+          - minor

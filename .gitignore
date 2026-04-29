@@ -22,3 +22,8 @@ Cargo.lock.bk
 
 # Claude Code local settings (per-machine permissions etc.)
 /.claude/
+
+# docs/ Starlight site — node_modules + build output should not be tracked
+docs/node_modules/
+docs/dist/
+docs/.astro/
