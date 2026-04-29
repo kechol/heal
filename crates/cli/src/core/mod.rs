@@ -3,6 +3,7 @@
 pub mod config;
 pub mod error;
 pub mod eventlog;
+pub mod finding;
 pub mod paths;
 pub mod snapshot;
 pub mod state;

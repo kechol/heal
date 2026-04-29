@@ -19,7 +19,6 @@
 pub mod cli;
 pub mod commands;
 pub mod core;
-pub mod finding;
 pub mod observer;
 pub mod observers;
 pub mod plugin_assets;

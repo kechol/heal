@@ -19,12 +19,14 @@
 //! - Parallel scanning. The walker is single-threaded.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use tree_sitter::TreeCursor;
 
 use crate::core::config::Config;
+use crate::core::finding::{Finding, IntoFindings, Location};
 
 use crate::observer::complexity::{parse, ParsedFile};
 use crate::observer::lang::Language;
@@ -210,6 +212,47 @@ impl Observer for DuplicationObserver {
 
     fn observe(&self, project_root: &Path) -> anyhow::Result<Self::Output> {
         Ok(self.scan(project_root))
+    }
+}
+
+impl IntoFindings for DuplicationReport {
+    /// The first location (already canonical-sorted by `(path,
+    /// start_line)` at scan time) becomes `location`; the rest land in
+    /// `locations`. The content seed mixes every site's
+    /// `path:start_line` plus `token_count`, so the same block
+    /// re-detected on a later commit reuses its id.
+    fn into_findings(&self) -> Vec<Finding> {
+        self.blocks
+            .iter()
+            .map(|block| {
+                let (head, rest) = block
+                    .locations
+                    .split_first()
+                    .expect("DuplicateBlock always has ≥2 locations");
+                let primary = Location {
+                    file: head.path.clone(),
+                    line: Some(head.start_line),
+                    symbol: None,
+                };
+                let mut seed = format!("dup:{}:", block.token_count);
+                let _ = write!(seed, "{}:{};", head.path.to_string_lossy(), head.start_line);
+                let mut extras: Vec<Location> = Vec::with_capacity(rest.len());
+                for l in rest {
+                    let _ = write!(seed, "{}:{};", l.path.to_string_lossy(), l.start_line);
+                    extras.push(Location {
+                        file: l.path.clone(),
+                        line: Some(l.start_line),
+                        symbol: None,
+                    });
+                }
+                let summary = format!(
+                    "{} tokens duplicated across {} sites",
+                    block.token_count,
+                    1 + extras.len()
+                );
+                Finding::new("duplication", primary, summary, &seed).with_locations(extras)
+            })
+            .collect()
     }
 }
 

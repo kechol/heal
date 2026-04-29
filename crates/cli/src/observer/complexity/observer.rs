@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::core::config::Config;
+use crate::core::finding::{Finding, IntoFindings, Location};
 
 use crate::observer::complexity::{analyze, parse, FunctionMetric};
 use crate::observer::lang::Language;
@@ -163,5 +164,46 @@ impl Observer for ComplexityObserver {
 
     fn observe(&self, project_root: &Path) -> anyhow::Result<Self::Output> {
         Ok(self.scan(project_root))
+    }
+}
+
+impl IntoFindings for ComplexityReport {
+    /// CCN and Cognitive are calibrated as separate metrics (TODO
+    /// §Severity), so each function above zero on either axis becomes
+    /// its own finding. The content seed is the function span size, so
+    /// a function moved to a different line still hashes the same as
+    /// long as its size is unchanged.
+    fn into_findings(&self) -> Vec<Finding> {
+        let mut out = Vec::with_capacity(self.totals.functions);
+        for file in &self.files {
+            for fun in &file.functions {
+                let span = fun.end_line.saturating_sub(fun.start_line);
+                let location = Location {
+                    file: file.path.clone(),
+                    line: Some(fun.start_line),
+                    symbol: Some(fun.name.clone()),
+                };
+                if fun.ccn > 0 {
+                    out.push(Finding::new(
+                        "ccn",
+                        location.clone(),
+                        format!("CCN={} {} ({})", fun.ccn, fun.name, file.language),
+                        &format!("ccn:{span}"),
+                    ));
+                }
+                if fun.cognitive > 0 {
+                    out.push(Finding::new(
+                        "cognitive",
+                        location,
+                        format!(
+                            "Cognitive={} {} ({})",
+                            fun.cognitive, fun.name, file.language
+                        ),
+                        &format!("cognitive:{span}"),
+                    ));
+                }
+            }
+        }
+        out
     }
 }

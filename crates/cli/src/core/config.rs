@@ -361,12 +361,6 @@ pub struct PolicyConfig {
     pub threshold: BTreeMap<String, toml::Value>,
     #[serde(default)]
     pub trigger: Option<String>,
-    #[serde(default = "default_cooldown_hours")]
-    pub cooldown_hours: u32,
-}
-
-fn default_cooldown_hours() -> u32 {
-    24
 }
 
 impl Config {

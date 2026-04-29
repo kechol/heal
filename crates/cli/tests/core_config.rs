@@ -102,7 +102,6 @@ fn policy_action_is_kebab_case() {
     let parsed = Config::from_toml_str(cfg).unwrap();
     let policy = &parsed.policy["high_complexity_new_function"];
     assert!(matches!(policy.action, PolicyAction::ReportOnly));
-    assert_eq!(policy.cooldown_hours, 24);
 }
 
 #[test]

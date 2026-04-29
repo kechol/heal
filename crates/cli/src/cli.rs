@@ -126,8 +126,7 @@ impl CheckSkill {
         }
     }
 
-    /// Short name used as the CLI argument (`heal check hotspots`) and
-    /// in nudge output (`heal check hotspots`).
+    /// Short name used as the CLI argument (`heal check hotspots`).
     #[must_use]
     pub fn short_name(self) -> &'static str {
         match self {
@@ -136,21 +135,6 @@ impl CheckSkill {
             Self::Complexity => "complexity",
             Self::Duplication => "duplication",
             Self::Coupling => "coupling",
-        }
-    }
-
-    /// Map a finding's `rule_id` to the relevant drilldown skill, e.g.
-    /// `hotspot.new_top` → [`Self::Hotspots`]. Returns `None` for rule
-    /// prefixes that don't match a per-metric skill (the overview hub
-    /// is always offered separately, regardless of rule type).
-    #[must_use]
-    pub fn for_rule(rule_id: &str) -> Option<Self> {
-        match rule_id.split('.').next()? {
-            "hotspot" => Some(Self::Hotspots),
-            "complexity" => Some(Self::Complexity),
-            "duplication" => Some(Self::Duplication),
-            "change_coupling" => Some(Self::Coupling),
-            _ => None,
         }
     }
 }
@@ -163,8 +147,6 @@ pub enum HookEvent {
     Edit,
     /// Stop hook (Claude plugin) — log only, no nudge.
     Stop,
-    /// `SessionStart` hook (Claude plugin) — emits the cool-down-aware nudge.
-    SessionStart,
 }
 
 impl HookEvent {
@@ -176,7 +158,6 @@ impl HookEvent {
             Self::Commit => "commit",
             Self::Edit => "edit",
             Self::Stop => "stop",
-            Self::SessionStart => "session-start",
         }
     }
 }

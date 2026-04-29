@@ -1,7 +1,10 @@
-//! `.heal/state.json` — `last_fired` tracking and `open_proposals`.
+//! `.heal/state.json` — runtime state (currently `open_proposals`).
 //!
-//! Kept intentionally small in v0.1; richer trigger/proposal lifecycle lives
-//! behind v0.2 once `policy.action = execute` lands.
+//! v0.2 retired the `last_fired` cool-down map together with the
+//! `SessionStart` nudge. The struct is kept around so v0.2's
+//! `policy.action = execute` path (TODO) has a place to land
+//! `open_proposals`; full state.json removal lives behind that work
+//! (TODO §state.json 撤去).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -12,12 +15,9 @@ use serde::{Deserialize, Serialize};
 use crate::core::error::{Error, Result};
 
 /// Runtime state. Forward-compatible by design — unknown fields are tolerated
-/// so an older binary never fails to read a state file written by a newer one
-/// (the worst case is a re-fired nudge while the new field is unrecognised).
+/// so an older binary never fails to read a state file written by a newer one.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct State {
-    #[serde(default)]
-    pub last_fired: BTreeMap<String, DateTime<Utc>>,
     #[serde(default)]
     pub open_proposals: BTreeMap<String, OpenProposal>,
 }
@@ -46,8 +46,8 @@ impl State {
 
     /// Atomic write: serialize, write to a sibling temp file, then rename.
     /// Avoids leaving a half-written `state.json` behind after SIGINT — a
-    /// truncated file would otherwise make every subsequent `heal hook
-    /// session-start` invocation hard-error on parse until the user deletes it.
+    /// truncated file would otherwise make every subsequent `State::load`
+    /// invocation hard-error on parse until the user deletes it.
     pub fn save(&self, path: &Path) -> Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| Error::Io {

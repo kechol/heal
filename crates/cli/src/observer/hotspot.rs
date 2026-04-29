@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::core::config::Config;
+use crate::core::finding::{Finding, IntoFindings, Location};
 
 use crate::observer::churn::{ChurnObserver, ChurnReport, FileChurn};
 use crate::observer::complexity::{ComplexityObserver, ComplexityReport, FileComplexity};
@@ -175,5 +176,26 @@ impl Observer for HotspotObserver {
 
     fn observe(&self, project_root: &Path) -> anyhow::Result<Self::Output> {
         Ok(self.scan(project_root))
+    }
+}
+
+impl IntoFindings for HotspotReport {
+    /// `hotspot` flag stays `false`; Calibration's percentile pass
+    /// (TODO §Hotspot) toggles it on the top 10%.
+    fn into_findings(&self) -> Vec<Finding> {
+        self.entries
+            .iter()
+            .map(|entry| {
+                Finding::new(
+                    "hotspot",
+                    Location::file(entry.path.clone()),
+                    format!(
+                        "hotspot score={:.0} (ccn_sum={}, churn={})",
+                        entry.score, entry.ccn_sum, entry.churn_commits
+                    ),
+                    "",
+                )
+            })
+            .collect()
     }
 }

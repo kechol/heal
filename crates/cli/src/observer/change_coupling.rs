@@ -19,6 +19,7 @@ use git2::{Repository, Sort};
 use serde::{Deserialize, Serialize};
 
 use crate::core::config::Config;
+use crate::core::finding::{Finding, IntoFindings, Location};
 
 use crate::observer::walk::{is_path_excluded, since_cutoff};
 use crate::observer::{ObservationMeta, Observer};
@@ -212,6 +213,40 @@ impl Observer for ChangeCouplingObserver {
 
     fn observe(&self, project_root: &Path) -> anyhow::Result<Self::Output> {
         Ok(self.scan(project_root))
+    }
+}
+
+impl IntoFindings for ChangeCouplingReport {
+    /// `a` (lex-smaller, already canonical) is the primary
+    /// `location.file`; the partner `b` is the primary's `symbol` (so
+    /// a → b and a → c distinguish in `id`) and also a secondary entry
+    /// in `locations`. Calibration's symmetric / directional split
+    /// (TODO §双方向 Change Coupling) lands later.
+    fn into_findings(&self) -> Vec<Finding> {
+        self.pairs
+            .iter()
+            .map(|pair| {
+                let b_str = pair.b.to_string_lossy().into_owned();
+                let primary = Location {
+                    file: pair.a.clone(),
+                    line: None,
+                    symbol: Some(b_str.clone()),
+                };
+                let summary = format!(
+                    "co-changed {} times: {} ↔ {}",
+                    pair.count,
+                    pair.a.display(),
+                    b_str,
+                );
+                Finding::new(
+                    "change_coupling",
+                    primary,
+                    summary,
+                    &format!("count:{}", pair.count),
+                )
+                .with_locations(vec![Location::file(pair.b.clone())])
+            })
+            .collect()
     }
 }
 
