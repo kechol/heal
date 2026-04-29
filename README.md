@@ -37,7 +37,8 @@ parsers compile in; the default build enables both.
 
 ## Install
 
-Pick whichever fits your environment. macOS and Linux only for v0.1.
+Choose whichever method suits the environment. macOS and Linux are
+supported for v0.1.
 
 ### Homebrew
 
@@ -58,20 +59,20 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/kechol/heal/releases/latest/download/heal-cli-installer.sh | sh
 ```
 
-Verify:
+Verify the install:
 
 ```sh
 heal --version
 ```
 
-## Quickstart
+## Quick Start
 
 Inside any git repository:
 
 ```sh
 heal init                # create .heal/ and install the post-commit hook
-heal status              # see the first metric snapshot
-heal check               # ask Claude to walk through it (needs Claude Code)
+heal status              # read the first metric snapshot
+heal check               # have Claude walk through it (requires Claude Code)
 heal skills install      # optional: ongoing nudges via the Claude plugin
 ```
 
@@ -85,7 +86,7 @@ plus a `CommitInfo` (sha, parent, author, subject, file/line counts) to
 a generic append-only month-rotated JSONL format, with transparent reads
 over `.gz` once compaction lands.
 
-The full walkthrough lives at <https://kechol.github.io/heal/getting-started/>.
+The full walkthrough is at <https://kechol.github.io/heal/quick-start/>.
 
 ## CLI
 

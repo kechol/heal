@@ -31,9 +31,9 @@ export default defineConfig({
           translations: { ja: 'はじめに' },
           items: [
             {
-              label: 'Getting Started',
+              label: 'Quick Start',
               translations: { ja: 'クイックスタート' },
-              slug: 'getting-started',
+              slug: 'quick-start',
             },
             {
               label: 'Concept',

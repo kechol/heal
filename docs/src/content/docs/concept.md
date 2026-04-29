@@ -1,117 +1,122 @@
 ---
 title: Concept
-description: Why HEAL exists, what problem it solves, and how it thinks about your codebase.
+description: Why HEAL exists, what problem it solves, and how it approaches your codebase.
 ---
 
-This page explains the _why_ behind HEAL. If you just want to start
-using it, jump to [Getting Started](/heal/getting-started/) — you can
-come back later.
+This page describes the design rationale behind HEAL. To start using
+it directly, see [Quick Start](/heal/quick-start/) and return here
+later.
 
 ## The problem
 
-AI coding agents like Claude Code are great at writing the next thing
-you tell them to write. But your codebase is always changing too: every
-time you fix a bug or add a feature, complexity creeps in, hot files
-get hotter, and copy-pasted blocks pile up. **The agent does not know
-that. It waits for you to notice.**
+AI coding agents such as Claude Code are effective at producing the
+next requested change. The codebase, meanwhile, evolves continuously:
+each bug fix or feature accumulates complexity, the same files are
+touched repeatedly, and duplicated blocks gradually appear. The agent
+does not observe these long-term shifts — without an external signal,
+the human is the only one tracking them.
 
-That is fine for a small project. On a real codebase, you end up
-firefighting — by the time you remember "wait, that file got messy
-six months ago", the mess is already in production.
+For a small project, that is workable. On a real codebase the result
+is reactive maintenance: by the time someone notices that a file has
+become difficult to work with, the regressions are already in
+production.
 
 ## The HEAL idea
 
 > **Turn codebase health signals into agent triggers.**
 
-HEAL watches your codebase the same way a CI system watches your
-tests:
+HEAL observes the codebase in the same way a CI system observes test
+runs:
 
-- Every commit, it measures the codebase (complexity, churn,
+- On every commit, it measures the codebase (complexity, churn,
   duplication, hotspots).
 - It writes a small snapshot to `.heal/snapshots/`.
-- The next time you open a Claude Code session, HEAL surfaces what
-  changed — _if_ something crossed a threshold worth your attention.
+- When the next Claude Code session opens, HEAL surfaces what changed
+  — provided something crossed a threshold worth attention.
 
-So instead of you remembering to run a linter, the agent gets a
-heads-up: _"the function you just touched in `init.rs` is now the
-worst CCN in the project — want to do something about it?"_
+The result: rather than relying on the human to remember to run a
+linter, the agent receives a structured notice — for example,
+_"the function recently modified in `init.rs` is now the highest CCN
+in the project; consider refactoring."_
 
 ## The loop
 
-Long-term, HEAL is built around a three-step loop:
+Long-term, HEAL is structured around a three-step loop:
 
 1. **Observe** — collect health metrics on every commit.
-2. **Nudge** — surface meaningful changes to the human + agent at the
-   right moment (session start).
-3. **Repair** — let the agent open a PR that fixes the highlighted
-   issue, with policy gates on what is allowed to merge.
+2. **Nudge** — surface meaningful changes to the human and agent at
+   the relevant moment (session start).
+3. **Repair** — allow the agent to open a PR that addresses the
+   highlighted issue, with policy gates governing what may merge.
 
-**v0.1 (where you are now) ships steps 1 and 2.** Step 3 — the
-"autonomous repair" half — lands in v0.2 behind opt-in policy. You can
-read more under [Architecture](/heal/architecture/).
+**v0.1 ships steps 1 and 2.** Step 3 — the autonomous repair half —
+arrives in v0.2 behind an opt-in policy. See
+[Architecture](/heal/architecture/) for details.
 
 ## Read-only by default
 
-HEAL is **not** going to silently rewrite your code. Every command in
-v0.1 either reads metrics or pipes them to Claude for explanation. The
-only files HEAL writes are:
+HEAL does not modify source files in v0.1. Every command either reads
+metrics or hands them to Claude for explanation. The only files HEAL
+writes are:
 
 - `.heal/` — its own data directory
-- `.git/hooks/post-commit` — a one-line shim, installed once
-- `.claude/plugins/heal/` — when you opt in via `heal skills install`
+- `.git/hooks/post-commit` — a single hook line, installed once
+- `.claude/plugins/heal/` — opt-in, via `heal skills install`
 
-The `propose` and `execute` rungs of the policy ladder become
-meaningful in v0.2; until then, every fix is a human decision after
-reading what HEAL surfaced.
+The `propose` and `execute` rungs of the policy ladder activate in
+v0.2. Until then, every change is a human decision informed by what
+HEAL surfaced.
 
-## Why metrics, not vibes
+## Why metrics
 
 Six metrics ship in v0.1:
 
-- **LOC** — what languages dominate the project
-- **Complexity (CCN + Cognitive)** — which functions are hard to follow
-- **Churn** — which files change a lot
-- **Change Coupling** — which files always change together
-- **Duplication** — which code blocks got copy-pasted
-- **Hotspot** — churn × complexity, the classic "code as a crime
-  scene" view
+- **LOC** — language composition of the project
+- **Complexity (CCN + Cognitive)** — functions that are difficult to
+  follow
+- **Churn** — files that change frequently
+- **Change Coupling** — files that change together
+- **Duplication** — code blocks that have been copied
+- **Hotspot** — churn × complexity, the "code as a crime scene" view
 
-Each one is a _boring_, well-studied number. None of them are AI-
-specific. The point of HEAL is not the metrics themselves — they
-have been around for decades — but **using them as triggers for the
-agent loop**, so the human does not have to remember to check.
+Each is a long-standing, well-studied metric. None are AI-specific.
+HEAL's contribution is not the metrics themselves — they have existed
+for decades — but the use of them as triggers for the agent loop,
+removing the human from the polling path.
 
-For the math behind each metric, see [Metrics](/heal/metrics/).
+For the formulas behind each metric, see [Metrics](/heal/metrics/).
 
 ## Why hook-driven
 
-Agents are smart at generating code, but bad at remembering to look
-around. Hooks make the codebase _talk back_:
+Agents produce code well but do not consistently inspect the
+surrounding state. Hooks let the codebase emit signals on its own:
 
-- The **git post-commit hook** writes a snapshot the moment a commit
-  lands. No daemon, no schedule, no polling.
-- The **Claude Code SessionStart hook** reads the latest snapshot the
-  moment a session opens. The agent gets the signal exactly when it
-  is about to act.
+- The **git post-commit hook** writes a snapshot when a commit lands.
+  No daemon, no schedule, no polling.
+- The **Claude Code SessionStart hook** reads the latest snapshot when
+  a session opens. The agent receives the signal at the moment it is
+  about to act.
 
-Both hooks call the same `heal` binary. There is no background
-process and nothing to manage.
+Both hooks invoke the same `heal` binary. There is no background
+process to manage.
 
-## What HEAL is _not_
+## What HEAL is not
 
-- **Not a linter.** Linters say "this line is bad". HEAL says "this
-  _file_ is interesting".
-- **Not a code reviewer.** That is Claude's job; HEAL shapes the
-  prompt.
-- **Not a CI gate.** The post-commit hook fires _after_ you commit.
-  HEAL is about the long-term arc of the codebase, not blocking a PR.
-- **Not multi-agent (yet).** v0.1 is Claude Code only. A provider
-  abstraction lands in v0.5.
+- **Not a linter.** Linters report on individual lines. HEAL reports
+  on which files warrant attention.
+- **Not a code reviewer.** That role belongs to Claude; HEAL shapes
+  the prompt.
+- **Not a CI gate.** The post-commit hook fires after a commit lands.
+  HEAL tracks the long-term trajectory of the codebase rather than
+  blocking individual PRs.
+- **Not multi-agent (yet).** v0.1 supports Claude Code only. A
+  provider abstraction lands in v0.5.
 
-## Where to go next
+## Further reading
 
-- [Getting Started](/heal/getting-started/) — install and try it on a
-  real repo
-- [Metrics](/heal/metrics/) — what each number means
-- [CLI](/heal/cli/) — every command you will use
-- [Architecture](/heal/architecture/) — how the pieces fit together
+- [Quick Start](/heal/quick-start/) — install and try it on a real
+  repository
+- [Metrics](/heal/metrics/) — what each metric means
+- [CLI](/heal/cli/) — the full command surface
+- [Architecture](/heal/architecture/) — how the components fit
+  together

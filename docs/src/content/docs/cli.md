@@ -1,23 +1,23 @@
 ---
 title: CLI
-description: Every heal subcommand you will actually use, with examples.
+description: The heal subcommand surface, with examples for everyday operations.
 ---
 
 `heal` is a single binary. Every interaction goes through one of the
 subcommands below. Run `heal --help` or `heal <subcommand> --help`
-any time for the full argument list — this page covers the parts you
-will use day to day.
+for the full argument list. This page covers the commands used in
+day-to-day operations.
 
 ## Quick reference
 
-| Command       | What it does                                                                                  |
-| ------------- | --------------------------------------------------------------------------------------------- |
-| `heal init`   | Set up `.heal/` and the post-commit hook in the current repo. Run once.                       |
-| `heal status` | Show the latest metrics and what changed since last commit.                                   |
-| `heal logs`   | Stream the event log (commits, Claude edits, session starts).                                 |
-| `heal check`  | Ask Claude Code to read the metrics and explain them.                                         |
-| `heal skills` | Install / update / remove the bundled Claude plugin.                                          |
-| `heal hook`   | Internal entrypoint called by git and the Claude plugin. You usually do not run this by hand. |
+| Command       | Purpose                                                                                |
+| ------------- | -------------------------------------------------------------------------------------- |
+| `heal init`   | Set up `.heal/` and the post-commit hook in the current repository. Run once.          |
+| `heal status` | Show the latest metrics and the delta since the previous commit.                       |
+| `heal logs`   | Stream the event log (commits, Claude edits, session starts).                          |
+| `heal check`  | Invoke Claude Code to read the metrics and explain them.                               |
+| `heal skills` | Install, update, or remove the bundled Claude plugin.                                  |
+| `heal hook`   | Internal entrypoint called by git and the Claude plugin. Not normally invoked by hand. |
 
 ## `heal init`
 
@@ -27,19 +27,18 @@ Bootstraps HEAL inside a git repository:
 heal init
 ```
 
-This creates `.heal/` (with `config.toml`, `snapshots/`, `logs/`),
-installs `.git/hooks/post-commit`, and captures one initial snapshot.
-It is **safe to re-run** — it will leave your config alone unless
-you pass `--force`. The post-commit hook is marked with a comment so
-re-installs never duplicate it.
+This command creates `.heal/` (with `config.toml`, `snapshots/`,
+`logs/`), installs `.git/hooks/post-commit`, and captures one initial
+snapshot. It is safe to re-run: the config is left in place unless
+`--force` is passed, and the post-commit hook is marked with a comment
+so re-installation never duplicates the line.
 
-If you already have a `post-commit` hook of your own, `heal init`
-notices and refuses to overwrite. Pass `--force` if you actually want
-to.
+If a `post-commit` hook already exists, `heal init` does not overwrite
+it. Pass `--force` to replace the existing hook.
 
 ## `heal status`
 
-Your everyday command:
+The primary status command:
 
 ```sh
 heal status
@@ -47,17 +46,18 @@ heal status --json
 heal status --metric complexity
 ```
 
-It prints a summary of every enabled metric — primary language,
-worst-N complex functions, top hotspots, and so on — plus a "delta"
-block showing what moved since the previous commit's snapshot.
+Prints a summary of every enabled metric — primary language, worst-N
+complex functions, top hotspots — together with a delta block showing
+movement since the previous commit.
 
 `--metric <name>` scopes the output to a single metric. Valid names:
 `loc`, `complexity`, `churn`, `change-coupling`, `duplication`,
-`hotspot`. `--json` is the same data as machine-parseable JSON for
-piping into `jq`.
+`hotspot`. `--json` produces the same data as machine-readable JSON,
+suitable for piping into `jq`.
 
-If `.heal/snapshots/` is empty (you ran `heal init` but have not
-committed yet), `heal status` will tell you so.
+If `.heal/snapshots/` is empty (for example, immediately after
+`heal init` and before the first commit), the command reports that
+no snapshots are available.
 
 ## `heal logs`
 
@@ -70,7 +70,7 @@ heal logs --since 2026-04-01T00:00:00Z
 heal logs --json
 ```
 
-Every record is one line of JSON. There are five event types:
+Each record is a single line of JSON. Five event types are produced:
 
 - `init` — written once by `heal init`
 - `commit` — written by the git post-commit hook
@@ -79,76 +79,79 @@ Every record is one line of JSON. There are five event types:
 - `session-start` — written when a Claude session opens
 
 `heal status` reads `snapshots/` (the heavy metric payloads); `heal
-logs` reads `logs/` (the lightweight event timeline). They are
+logs` reads `logs/` (the lightweight event timeline). The two are
 complementary.
 
 ## `heal check`
 
-Hands the latest metrics to Claude Code with a read-only prompt:
+Passes the latest metrics to Claude Code with a read-only prompt:
 
 ```sh
-heal check                    # default: an overview of everything
-heal check hotspots           # drill into hotspot ranking
-heal check complexity         # CCN + Cognitive walkthrough
+heal check                    # default: an overview of every metric
+heal check hotspots           # hotspot ranking
+heal check complexity         # CCN and Cognitive walkthrough
 heal check duplication
 heal check coupling
 ```
 
-Each variant calls `claude -p` (Claude in headless mode) with a small
-"check-\*" skill that knows which metric to focus on. The skill
-files are part of the bundled plugin — see [Claude plugin](/heal/claude-plugin/).
+Each variant invokes `claude -p` (Claude in headless mode) with a
+small `check-*` skill that scopes the prompt to the relevant metric.
+The skill files are part of the bundled plugin — see
+[Claude plugin](/heal/claude-plugin/).
 
-You can pass arguments straight through to `claude`:
+Arguments after `--` are forwarded verbatim to `claude`:
 
 ```sh
 heal check overview -- --model sonnet --effort medium
 ```
 
-Anything after the `--` goes verbatim to `claude`, so use it for
-`--model`, `--effort`, `--no-cache`, etc.
+This is useful for `--model`, `--effort`, `--no-cache`, and similar
+flags.
 
-`heal check` does not modify your code. It is a "explain to me what
-HEAL just measured" command.
+`heal check` is the explanatory counterpart to `heal status`; it does
+not modify source files.
 
 ## `heal skills`
 
 Manages the bundled Claude plugin under `.claude/plugins/heal/`:
 
 ```sh
-heal skills install     # extract the plugin (run once per repo)
+heal skills install     # extract the plugin (run once per repository)
 heal skills update      # refresh after upgrading the heal binary
-heal skills status      # what is installed vs. what is bundled
+heal skills status      # compare installed vs. bundled
 heal skills uninstall   # remove .claude/plugins/heal/
 ```
 
-The plugin tree is **embedded in the heal binary** at compile time,
-so a fresh `heal skills install` always matches the version of `heal`
-you are running. `update` is drift-aware: it leaves files you have
-hand-edited alone (use `--force` to overwrite anyway).
+The plugin tree is embedded in the `heal` binary at compile time, so
+`heal skills install` always extracts the version matching the binary
+in use. `update` is drift-aware: files that have been hand-edited are
+left in place (use `--force` to overwrite anyway).
 
 ## `heal hook`
 
-You almost never call this yourself — `heal init` and `heal skills
-install` wire it up automatically. It exists as a single entrypoint
-the various hooks share:
+This command is invoked automatically by `heal init` (post-commit
+hook) and `heal skills install` (Claude hooks). It exists as a single
+entrypoint shared by both:
 
 ```sh
 heal hook commit          # post-commit: run observers, write a snapshot
 heal hook edit            # Claude PostToolUse: log only, no scan
 heal hook stop            # Claude Stop: log only
-heal hook session-start   # Claude SessionStart: emit the threshold nudge
+heal hook session-start   # Claude SessionStart: emit threshold nudge
 ```
 
-The only one you might call by hand is `heal hook session-start`
-when debugging a missing nudge — pipe an empty JSON object in and see
-what the snapshot delta would have produced.
+Manual invocation is occasionally useful when debugging — for
+example, running `heal hook session-start` with an empty JSON
+payload reveals which rules would fire from the current snapshot
+delta.
 
 ## Tips
 
-- **Run `heal status` after every interesting commit.** It is fast
-  and it gives you a reality check before opening a Claude session.
-- **`heal check` is the friendly version of `heal status`.** When the
-  numbers are confusing, ask Claude. The check skills are just
-  prompts that pass `heal status --metric <X>` through.
-- **Keep the post-commit hook.** Removing it breaks the snapshot
-  chain — `heal status` will keep showing the same delta forever.
+- **Run `heal status` after meaningful commits.** It is fast and
+  serves as a sanity check before opening a Claude session.
+- **`heal check` is the prose form of `heal status`.** Use it when
+  the numbers need interpretation; the check skills wrap
+  `heal status --metric <X>` with a focused prompt.
+- **Preserve the post-commit hook.** Removing it stops new snapshots
+  from being recorded, and `heal status` will continue showing the
+  previous delta.

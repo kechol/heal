@@ -1,12 +1,12 @@
 ---
 title: HEAL
-description: A small tool that watches your codebase health and quietly tells your AI agent when something needs attention.
+description: A code-health harness that measures your codebase on every commit and surfaces relevant changes to your AI agent.
 template: splash
 hero:
-  tagline: A small tool that watches your codebase health and quietly tells your AI agent when something needs attention.
+  tagline: A code-health harness that measures your codebase on every commit and surfaces relevant changes to your AI agent.
   actions:
-    - text: Get started in 5 min
-      link: /heal/getting-started/
+    - text: Quick Start (5 minutes)
+      link: /heal/quick-start/
       icon: right-arrow
       variant: primary
     - text: Read the concept
@@ -19,45 +19,44 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-AI coding agents are great at writing the _next_ thing you ask for.
-But your codebase keeps changing on its own — complexity creeps in,
-the same file gets touched again and again, copy-paste piles up.
-**The agent does not notice. You have to remember.**
+AI coding agents are good at producing the next change you request.
+Codebases, however, evolve continuously: complexity accumulates, the
+same files get touched repeatedly, and duplicated blocks drift in.
+The agent does not observe these changes — without an external signal,
+the human is the only one tracking them.
 
-HEAL is the bit in the middle: it measures your codebase every commit
-and quietly tells your next Claude session when something deserves a
-look.
+HEAL fills that gap. It measures the codebase on every commit and
+surfaces the relevant changes to the next Claude Code session.
 
 <CardGrid>
-  <Card title="Six boring metrics" icon="seti:rust">
-    Lines of code, complexity, churn, change coupling, duplication, and a composed hotspot score.
-    Computed automatically every commit.
+  <Card title="Six standard metrics" icon="seti:rust">
+    Lines of code, complexity, churn, change coupling, duplication, and a composed hotspot score —
+    computed automatically on every commit.
   </Card>
   <Card title="Hook-driven" icon="puzzle">
     A git post-commit hook writes the snapshot. A Claude SessionStart hook surfaces what changed. No
-    daemon, no scheduler, nothing to babysit.
+    daemon, no scheduler.
   </Card>
   <Card title="Read-only by default" icon="approve-check">
-    v0.1 only reads your codebase. Auto-fix lands in v0.2 behind an explicit policy opt-in. Your
-    code is safe.
+    In v0.1, HEAL only reads the repository. Automated repair arrives in v0.2 behind an explicit
+    policy opt-in.
   </Card>
-  <Card title="One small binary" icon="rocket">
-    `cargo install heal-cli` and you are done. The Claude plugin ships inside the binary; `heal
-    skills install` extracts it.
+  <Card title="Single binary" icon="rocket">
+    `cargo install heal-cli` installs the CLI. The Claude plugin is bundled in the binary and
+    extracted by `heal skills install`.
   </Card>
 </CardGrid>
 
 :::caution[Status: v0.1]
-macOS / Linux only. The CLI and on-disk schemas may shift before
-v0.2 lands. Try it, give feedback, expect rough edges.
+macOS and Linux only. The CLI surface and on-disk schemas may change
+before v0.2. Feedback is welcome; expect rough edges.
 :::
 
 ## Where to start
 
-- New here? [Read the concept](/heal/concept/) — three minutes on
-  what HEAL is for.
-- Just want to try it? [Getting started](/heal/getting-started/) —
-  five-minute install + first snapshot.
-- Already running it? [CLI](/heal/cli/) and
-  [Configuration](/heal/configuration/) cover everything you will
-  reach for.
+- For background, read the [concept](/heal/concept/) — a three-minute
+  overview of what HEAL is for.
+- To try it, follow [Quick Start](/heal/quick-start/) — a
+  five-minute install and first snapshot.
+- For day-to-day use, [CLI](/heal/cli/) and
+  [Configuration](/heal/configuration/) cover the common operations.

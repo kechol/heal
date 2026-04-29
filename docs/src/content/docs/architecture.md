@@ -3,10 +3,10 @@ title: Architecture
 description: Where HEAL stores data, how the event log and snapshots work, and how the pieces fit together.
 ---
 
-This page is for when you want to understand what HEAL is doing
-under the hood — debugging a missing nudge, scripting against the
-JSON output, or just curious. You do not need to read this to use
-HEAL day to day.
+This page describes HEAL's internals — useful when debugging a
+missing nudge, scripting against the JSON output, or wanting an
+overview of how the components fit together. It is not required
+reading for day-to-day use.
 
 ## The big picture
 
@@ -92,7 +92,7 @@ The two streams are deliberately split:
 
 - **`snapshots/`** holds the heavy `MetricsSnapshot` payload — the
   full per-metric report from every observer. `heal status` reads
-  these. Big and slow to scroll.
+  these. Larger and slower to scan than the log stream.
 - **`logs/`** holds lightweight events:
   - `commit` — `CommitInfo` (sha, parent, author email, message
     summary, files_changed, insertions, deletions). Mirrors a
@@ -106,8 +106,9 @@ The two streams are deliberately split:
 
   `heal logs` reads these.
 
-You can grep both with regular Unix tools, but `jq` is the friendliest
-fit since each line is a complete JSON object.
+Both streams can be inspected with standard Unix tools; `jq` is
+particularly well-suited because each line is a complete JSON
+object.
 
 ## Snapshots
 
@@ -204,23 +205,24 @@ The Claude plugin tree (`crates/cli/plugins/heal/`) is embedded at
 compile time via `include_dir!` so `cargo install heal-cli` ships
 both the CLI and the plugin in one tarball.
 
-## Why this shape
+## Design rationale
 
-A few load-bearing decisions worth surfacing:
+Key decisions:
 
-- **Per-commit snapshots** — observers run on the post-commit hook,
-  not in CI. That keeps the data flowing without a CI integration to
-  configure.
+- **Per-commit snapshots** — observers run on the post-commit hook
+  rather than in CI. The data continues to flow without requiring a
+  separate CI integration.
 - **Append-only JSONL** — easy to read with shell tools, easy to
-  truncate / rotate, no schema-migration headaches early in the
-  project's life.
-- **Snapshots ≠ logs** — splitting the two means `heal logs` stays
-  fast even when snapshots get big.
-- **Atomic state writes** — the only mutable file is
-  `state.json`; everything else is append-only or rewritten in full.
-- **No daemon** — the post-commit hook + the SessionStart hook cover
-  the entire input surface. Nothing to start, nothing to monitor.
+  rotate, and avoids schema-migration overhead during early
+  development.
+- **Snapshots separate from logs** — splitting the two streams keeps
+  `heal logs` fast even as the snapshot store grows.
+- **Atomic state writes** — `state.json` is the only mutable file;
+  everything else is append-only or rewritten in full.
+- **No daemon** — the post-commit hook and the SessionStart hook
+  together cover the entire input surface. There is nothing to
+  start or monitor.
 
-When you outgrow this — for projects with millions of commits, say —
-HEAL will need a more efficient store (SQLite is on the v0.2 list).
-For v0.1 the simplicity is the feature.
+For very large projects (on the order of millions of commits), HEAL
+will need a more efficient store; SQLite is on the v0.2 list. In
+v0.1, simplicity is intentional.

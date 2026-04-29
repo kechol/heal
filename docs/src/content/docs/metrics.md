@@ -1,38 +1,41 @@
 ---
 title: Metrics
-description: The six metrics HEAL collects on every commit, what each one means, and when to look at it.
+description: The six metrics HEAL collects on every commit, what each one means, and when to use it.
 ---
 
-HEAL ships with six metrics. None of them are AI-specific — they are
-all "boring" code-health numbers that have been around for decades.
-What is new is **using them as triggers**: HEAL collects them every
-commit and feeds threshold breaches to your next Claude session.
+HEAL ships with six metrics. None are AI-specific; each is a
+long-standing code-health metric that has been in use for decades.
+HEAL's contribution is using them as triggers: it collects the
+metrics on every commit and surfaces threshold breaches to the next
+Claude session.
 
-This page explains what each metric means in plain terms. For knobs,
-see [Configuration](/heal/configuration/).
+This page summarises each metric. For configuration knobs, see
+[Configuration](/heal/configuration/).
 
-## When to enable what
+## Recommended adoption order
 
-If you are just starting:
+When starting out:
 
-1. **LOC** is always on. No work.
-2. Leave **Cognitive** on. CCN is off but enabling it is a one-liner.
-3. **Churn** is on. Once you have ~10 commits it starts being useful.
-4. Once those look right, turn on **Hotspot** — it is the most
-   actionable single number.
-5. **Duplication** and **Change Coupling** are diagnostic; turn them
-   on when you are actually investigating, not always.
+1. **LOC** is always enabled — no action required.
+2. Leave **Cognitive** enabled. **CCN** is disabled by default;
+   enable it when you want classical Cyclomatic numbers as well.
+3. **Churn** is enabled. It becomes informative after roughly ten
+   commits in the lookback window.
+4. Once those look reasonable, enable **Hotspot** — the most
+   actionable single metric.
+5. **Duplication** and **Change Coupling** are diagnostic. Enable
+   them when investigating; otherwise leave them off.
 
 ## LOC — Lines of Code
 
-> _"What does this codebase actually consist of?"_
+> _"What does this codebase consist of?"_
 
 Counts code, comment, and blank lines per language using
-[`tokei`](https://github.com/XAMPPRocky/tokei). It is the foundation:
-other metrics use the language list (e.g. complexity only runs on
-languages it can parse, hotspot weights commits by complexity).
+[`tokei`](https://github.com/XAMPPRocky/tokei). LOC is foundational:
+other metrics depend on its language detection (complexity only runs
+on languages it can parse, hotspot weights commits by complexity).
 
-A representative output:
+Sample output:
 
 ```
 Primary: Rust
@@ -42,86 +45,87 @@ Primary: Rust
 ```
 
 The "primary language" is the non-literate language with the most
-code lines. Markdown / Org are deliberately skipped so a docs-heavy
-repo still picks the implementation language.
+code lines. Markdown and Org are deliberately excluded so a
+documentation-heavy repository still resolves to its implementation
+language.
 
-LOC is always on; there is no toggle. Cost is negligible — `tokei`
-caches per file.
+LOC is always enabled; there is no toggle. The cost is negligible
+because `tokei` caches per file.
 
 ## Complexity — CCN and Cognitive
 
-> _"Which functions are hard to follow?"_
+> _"Which functions are difficult to follow?"_
 
-Two per-function numbers, computed in the same tree-sitter walk:
+Two per-function metrics, computed in a single tree-sitter walk:
 
 - **CCN** (Cyclomatic Complexity) — the McCabe count of branches.
-  Every `if`, `for`, `while`, `case`, `&&`, `||`, `?` adds one.
-  A 10+ CCN function is starting to be hairy; 20+ is usually a
-  refactor candidate.
+  Each `if`, `for`, `while`, `case`, `&&`, `||`, `?` adds one.
+  Functions above 10 are typically borderline; above 20 they are
+  refactor candidates.
 - **Cognitive Complexity** — Sonar's readability metric. It
-  penalises **nesting depth** (each level adds more) and collapses
-  chained logical operators into a single increment. It correlates
-  better with the subjective _"this is hard to read"_ feeling.
+  penalises **nesting depth** (each level adds increasingly more)
+  and collapses chained logical operators into a single increment.
+  It correlates more closely with the subjective "hard to read"
+  judgement.
 
-Both numbers are useful: CCN is the classical branching count;
-Cognitive is closer to "human cost".
+Both metrics are useful: CCN is the classical branching count;
+Cognitive is closer to a perceived-cost measure.
 
 **Languages**: TypeScript and Rust in v0.1. JavaScript, Python, and
-others come later.
+others arrive in later releases.
 
 ## Churn — how often a file changes
 
 > _"What is moving?"_
 
-For each file in the repo, how many commits in the last
-`since_days` (default 90) touched it, plus the total lines added
-and deleted. Walks first-parent history so merge commits are not
-double-counted.
+For each file in the repository, churn reports the number of commits
+in the last `since_days` window (default 90) that touched it,
+together with total lines added and deleted. The walk uses
+first-parent history so merge commits are not double-counted.
 
-A high-churn file is not necessarily bad — `package.json` and
-boilerplate update often. Churn becomes interesting when **crossed
-with complexity**: see [Hotspot](#hotspot--churn--complexity).
+A high-churn file is not inherently problematic — `package.json`
+and similar boilerplate change frequently. Churn becomes meaningful
+when crossed with complexity (see [Hotspot](#hotspot--churn--complexity)).
 
-**Caveats**: rename detection is off in v0.1, so a file renamed
+**Caveats**: rename detection is disabled in v0.1, so a file renamed
 mid-window appears as two entries. Bulk reformats inflate
 `lines_added` and `lines_deleted`; trust the commit count when raw
-line totals look wrong.
+line totals look misleading.
 
 ## Change Coupling — files that move together
 
-> _"What secretly depends on what?"_
+> _"Which files depend on which, implicitly?"_
 
-For every commit, look at the set of files it touched. For every
-pair of files in that set, increment a counter. After enough
-commits, the highest counters reveal hidden dependencies — the
-files that _always_ change together, even though the import graph
-does not connect them.
+For each commit, change coupling examines the set of files it
+touched. For every pair of files in that set, a counter is
+incremented. After enough commits, the highest counters reveal
+implicit dependencies — files that consistently change together
+even though the import graph does not connect them.
 
-Example output:
+Sample output:
 
 ```
 init.rs  ↔  paths.rs       co-changed 11×
 status.rs ↔ snapshot.rs    co-changed  9×
 ```
 
-This is a _diagnostic_ metric. The honest first reaction to a
-high-coupling pair is "wait, why?" — it often points at a missing
-abstraction.
+This is a diagnostic metric. A high-coupling pair often indicates
+that an abstraction is missing between the two files.
 
 **Bulk-commit cap**: commits touching more than 50 files (mass
 reformats, dependency bumps) are skipped entirely so they cannot
 fabricate coupling between unrelated files.
 
-## Duplication — copy-pasted blocks
+## Duplication — copied blocks
 
-> _"Where did I copy-paste from?"_
+> _"Where are the duplicates?"_
 
-Finds long runs of identical tokens (Type-1 clones) by walking
-the tree-sitter parse tree and matching token windows of size
-`min_tokens` (default 50). Reformatting and whitespace changes
-do not hide a clone; renaming a variable does.
+Finds long runs of identical tokens (Type-1 clones) by walking the
+tree-sitter parse tree and matching token windows of size
+`min_tokens` (default 50). Reformatting and whitespace changes do
+not hide a clone; renaming a variable does.
 
-A representative output:
+Sample output:
 
 ```
 92 tokens duplicated in:
@@ -129,45 +133,45 @@ A representative output:
   - check.rs:2811–3902
 ```
 
-Long blocks usually mean an abstraction wants to be extracted.
-Short ones (close to `min_tokens`) might just be similar-shaped
+Long blocks usually indicate that an abstraction can be extracted.
+Short blocks (near `min_tokens`) may simply be similar-shaped
 boilerplate. Tune `min_tokens` per project.
 
 **Languages**: same as complexity (TypeScript, Rust).
 
 ## Hotspot — churn × complexity
 
-> _"Where do bugs concentrate?"_
+> _"Where do regressions concentrate?"_
 
-The classic "code as a crime scene" view, popularised by Adam
-Tornhill. Multiplies a file's commit count (churn) by the sum of
-its functions' CCN (complexity):
+The "code as a crime scene" view, popularised by Adam Tornhill.
+Hotspot multiplies a file's commit count (churn) by the sum of its
+functions' CCN (complexity):
 
 ```
 score = (weight_complexity × ccn_sum) × (weight_churn × commits)
 ```
 
-Files that score high are _both_ changed often _and_ hard to
-read — historically where regressions concentrate. If you only
-look at one number weekly, look at this one.
+Files with a high score are both changed frequently and difficult
+to read — historically where regressions concentrate. If only one
+metric is reviewed weekly, this is the recommended one.
 
-The weights default to `1.0`. Bias them if your project has, say,
-heavy churn but mild complexity (set `weight_complexity` higher to
-not let "many small commits" dominate).
+The weights default to `1.0`. Adjust them for projects with
+asymmetric profiles — for example, raise `weight_complexity` to
+prevent "many small commits" from dominating the score.
 
-Because the formula is multiplicative, a file with great complexity
-but no recent commits scores zero — that is intentional. Hotspot is
-about _active_ trouble, not historical debt.
+The formula is multiplicative, so a file with high complexity but no
+recent commits scores zero. This is intentional: hotspot is meant to
+identify _active_ trouble, not historical debt.
 
 ## How HEAL uses these
 
-Every commit, HEAL writes a `MetricsSnapshot` to
-`.heal/snapshots/`. `heal status` prints a summary; `heal check`
-hands the data to Claude with a focused prompt. When a threshold
-trips between snapshots, the SessionStart hook surfaces it as a
-nudge in your next Claude session — see
-[Claude plugin](/heal/claude-plugin/) for the rules.
+Every commit, HEAL writes a `MetricsSnapshot` to `.heal/snapshots/`.
+`heal status` prints the summary; `heal check` hands the data to
+Claude with a focused prompt. When a threshold is crossed between
+snapshots, the SessionStart hook surfaces it as a notice in the next
+Claude session — see [Claude plugin](/heal/claude-plugin/) for the
+rule list.
 
-The actual numbers and JSON shapes are in
-[Architecture › Snapshots](/heal/architecture/#snapshots) for when you
-want to script against them.
+The exact JSON shapes and storage details are documented in
+[Architecture › Snapshots](/heal/architecture/#snapshots) for
+scripting.

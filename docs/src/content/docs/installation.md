@@ -3,8 +3,9 @@ title: Installation
 description: Three ways to install the heal CLI — Homebrew, Cargo, or the shell installer.
 ---
 
-HEAL is a single binary called `heal`. Pick whichever install method
-fits your environment — they all give you the same binary.
+HEAL is a single binary named `heal`. The three install methods
+below produce the same binary; choose whichever suits the
+environment.
 
 ## Requirements
 
@@ -36,18 +37,18 @@ cargo install heal-cli
 
 ## Shell installer (pre-built binary)
 
-For one-off installs without Homebrew or Rust:
+For installations without Homebrew or Rust:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/kechol/heal/releases/latest/download/heal-cli-installer.sh | sh
 ```
 
-The script downloads the right pre-built binary for your platform
-from the [latest GitHub release](https://github.com/kechol/heal/releases/latest)
+The script downloads the appropriate pre-built binary for the host
+platform from the [latest GitHub release](https://github.com/kechol/heal/releases/latest)
 and installs it under `$CARGO_HOME/bin` (defaults to `~/.cargo/bin`).
-It is the same artifact Homebrew uses — just delivered without the
-`brew` ceremony.
+The artifact is identical to the one Homebrew uses, delivered
+without the `brew` workflow.
 
 ## Verify the install
 
@@ -56,9 +57,9 @@ heal --version
 heal --help
 ```
 
-`heal --help` lists every subcommand. If the binary is missing,
-double check that `~/.cargo/bin` (or your custom `CARGO_HOME/bin`)
-is on your shell `PATH`.
+`heal --help` lists every subcommand. If the command is not found,
+verify that `~/.cargo/bin` (or a custom `CARGO_HOME/bin`) is on the
+shell `PATH`.
 
 ## Updating
 
@@ -81,5 +82,5 @@ the binary.
 | Shell          | `rm ~/.cargo/bin/heal`     |
 
 `heal` writes only inside `.heal/` and the `.git/hooks/post-commit`
-hook of repositories where you ran `heal init`. Remove those by hand
-if you want a clean slate.
+hook of repositories where `heal init` was run. Remove these
+manually for a clean slate.

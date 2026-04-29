@@ -1,0 +1,179 @@
+---
+title: Quick Start
+description: Install HEAL, run it inside a git repository, and read the first metrics — in five minutes.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+After completing this walkthrough you will have:
+
+- HEAL running inside one of your git repositories
+- The first metrics on screen — a snapshot of the codebase
+- (Optional) Claude reading those metrics and pointing out where to
+  focus
+
+No source clone or manual build is required. The walkthrough takes
+about five minutes.
+
+## Requirements
+
+- macOS or Linux
+- A git repository to evaluate — your own or any open-source clone
+- (Optional) the [Claude Code](https://claude.com/code) CLI, for the
+  metric-explanation step
+
+## 1. Install `heal`
+
+Choose whichever method suits your environment:
+
+<Tabs syncKey="installer">
+  <TabItem label="Homebrew">
+
+```sh
+brew install kechol/tap/heal-cli
+```
+
+Available on macOS and Linux. Same prebuilt binary that ships with
+each release.
+
+  </TabItem>
+  <TabItem label="Cargo">
+
+```sh
+cargo install heal-cli
+```
+
+Use this when a Rust toolchain (1.85 or newer) is already on the
+`PATH`. The build is fetched from crates.io.
+
+  </TabItem>
+  <TabItem label="Shell">
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/kechol/heal/releases/latest/download/heal-cli-installer.sh | sh
+```
+
+Installs the prebuilt binary under `~/.cargo/bin`. Useful when
+neither Rust nor Homebrew is available.
+
+  </TabItem>
+</Tabs>
+
+Verify the install:
+
+```sh
+heal --version
+```
+
+If the command is not found, ensure `~/.cargo/bin` is on the
+`PATH`. See [Installation](/heal/installation/) for details on each
+method.
+
+## 2. Set up your repository
+
+Inside a git repository, run:
+
+```sh
+heal init
+```
+
+This command:
+
+- Creates the `.heal/` directory used to store metrics
+- Installs a `.git/hooks/post-commit` hook
+- Captures the first snapshot
+
+The command is safe to re-run. The config file and any existing hooks
+are left in place unless `--force` is passed.
+
+## 3. Read the first metrics
+
+```sh
+heal status
+```
+
+Sample output:
+
+```
+Primary language: Rust
+
+LOC (top languages)
+  Rust         18421 code   2891 comments
+  TypeScript    4920 code    612 comments
+
+Complexity (max CCN: 14, max Cognitive: 22)
+  worst CCN:        run            crates/cli/src/commands/init.rs:78    14
+  worst Cognitive:  collect        crates/cli/src/observer/churn.rs:42   22
+
+Hotspots (top 3)
+  crates/cli/src/commands/init.rs        score 482
+  crates/cli/src/observer/loc.rs         score 213
+  crates/cli/src/core/eventlog.rs        score 187
+
+Δ since last commit
+  max_ccn       +2  (run)
+  hotspot top   unchanged
+```
+
+Key points:
+
+- **Primary language** is detected by `tokei`.
+- **Hotspot** is the most actionable single metric — the file most
+  worth attention, scored as `commits × ccn_sum`.
+- **Δ since last commit** is the delta block. An unchanged delta
+  indicates the latest commit did not raise any tracked metric. A
+  growing delta is an early warning.
+
+This is the core feedback loop: commit, run `heal status`, review the
+delta.
+
+## 4. Ask Claude to explain the result (optional)
+
+With Claude Code installed:
+
+```sh
+heal check
+```
+
+Runs Claude in headless mode with a read-only skill that walks
+through the metrics in plain language — which files are hot, where
+duplicates appear, and which functions are candidates for refactor.
+
+For a focused investigation:
+
+```sh
+heal check hotspots       # hotspot ranking
+heal check complexity     # CCN and Cognitive worst-N
+heal check duplication    # duplicate blocks
+heal check coupling       # files that change together
+```
+
+`heal check` only reads metrics; it does not modify source files.
+
+## 5. Receive nudges automatically (optional)
+
+Steps 1–4 are on-demand. To have HEAL surface threshold breaches at
+the start of every Claude session automatically, install the bundled
+plugin once:
+
+```sh
+heal skills install
+```
+
+From this point on, when a metric crosses a threshold (a new top
+hotspot, a CCN spike, growing duplication), the next Claude session
+opens with a notice at the top — without an explicit command.
+
+The plugin can be installed, updated, inspected, or removed via
+`heal skills <subcommand>`. See [Claude plugin](/heal/claude-plugin/)
+for hook behaviour.
+
+## Further reading
+
+- [Concept](/heal/concept/) — the design idea, in three minutes.
+- [Metrics](/heal/metrics/) — what each metric means.
+- [CLI](/heal/cli/) — every subcommand with examples.
+- [Configuration](/heal/configuration/) — thresholds and toggles.
+
+If a step does not behave as documented, please [file an issue](https://github.com/kechol/heal/issues).
