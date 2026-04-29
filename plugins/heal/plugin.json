@@ -9,12 +9,17 @@
     "PostToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",
-        "command": "hooks/post-edit.sh"
+        "command": "${CLAUDE_PLUGIN_ROOT}/hooks/claude-post-tool-use.sh"
       }
     ],
     "Stop": [
       {
-        "command": "hooks/on-stop.sh"
+        "command": "${CLAUDE_PLUGIN_ROOT}/hooks/claude-stop.sh"
+      }
+    ],
+    "SessionStart": [
+      {
+        "command": "${CLAUDE_PLUGIN_ROOT}/hooks/claude-session-start.sh"
       }
     ]
   },

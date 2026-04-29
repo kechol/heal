@@ -5,8 +5,8 @@ description: Read-only review of code health metrics (hotspot, complexity, dupli
 
 # check-code
 
-Read `.heal/history/*.jsonl` (latest snapshot) and `.heal/state.json`, then
-report the top findings by **hotspot score = churn × complexity**.
+Read `.heal/snapshots/*.jsonl` (latest snapshot) via `heal status --json`
+and report the top findings by **hotspot score = churn × complexity**.
 
 ## Procedure
 

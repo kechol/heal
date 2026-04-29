@@ -51,10 +51,12 @@ pub enum Command {
 pub enum HookEvent {
     /// Post-commit hook (git).
     Commit,
-    /// PostToolUse(Edit|Write) hook (Claude plugin).
+    /// PostToolUse(Edit|Write|MultiEdit) hook (Claude plugin).
     Edit,
-    /// Stop hook (Claude plugin).
+    /// Stop hook (Claude plugin) — log only, no nudge.
     Stop,
+    /// `SessionStart` hook (Claude plugin) — emits the cool-down-aware nudge.
+    SessionStart,
 }
 
 impl HookEvent {
@@ -66,6 +68,7 @@ impl HookEvent {
             Self::Commit => "commit",
             Self::Edit => "edit",
             Self::Stop => "stop",
+            Self::SessionStart => "session-start",
         }
     }
 }
@@ -90,12 +93,17 @@ pub struct LogsArgs {
 pub enum SkillsAction {
     /// Extract the bundled plugin into `.claude/plugins/heal/`.
     Install {
+        /// Overwrite existing assets even if they were edited locally.
         #[arg(long)]
         force: bool,
     },
-    /// Refresh plugin assets after a binary upgrade.
-    Update,
-    /// Show installed plugin status.
+    /// Refresh plugin assets after a binary upgrade. Skips files the user
+    /// has edited locally; pass `--force` to overwrite them too.
+    Update {
+        #[arg(long)]
+        force: bool,
+    },
+    /// Show installed plugin version, bundled version, and any drift.
     Status,
     /// Remove the plugin from `.claude/plugins/heal/`.
     Uninstall,

@@ -3,6 +3,7 @@ use clap::Parser;
 
 mod cli;
 mod commands;
+mod finding;
 mod observers;
 mod plugin_assets;
 mod snapshot;

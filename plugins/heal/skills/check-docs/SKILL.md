@@ -5,7 +5,7 @@ description: Read-only audit of documentation coverage and freshness. Trigger wh
 
 # check-docs
 
-Read `.heal/history/*.jsonl` for the latest doc-coverage and doc-update-skew
+Read `.heal/snapshots/*.jsonl` for the latest doc-coverage and doc-update-skew
 observations and report which docs are stale or missing.
 
 ## Procedure

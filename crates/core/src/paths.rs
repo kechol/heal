@@ -26,9 +26,17 @@ impl HealPaths {
         self.root.join("config.toml")
     }
 
+    /// Cool-down / proposal state. Lives under `runtime/` to signal "do
+    /// not hand-edit"; `State::load` falls back to defaults if a user
+    /// corrupts the file, so the worst case is a single nudge re-firing.
     #[must_use]
     pub fn state(&self) -> PathBuf {
-        self.root.join("state.json")
+        self.runtime_dir().join("state.json")
+    }
+
+    #[must_use]
+    pub fn runtime_dir(&self) -> PathBuf {
+        self.root.join("runtime")
     }
 
     #[must_use]
@@ -55,6 +63,7 @@ impl HealPaths {
     pub fn ensure(&self) -> std::io::Result<()> {
         for dir in [
             self.root.as_path(),
+            &self.runtime_dir(),
             &self.snapshots_dir(),
             &self.logs_dir(),
             &self.docs_dir(),
