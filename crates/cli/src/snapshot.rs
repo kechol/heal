@@ -40,7 +40,7 @@ pub(crate) fn capture(project: &Path) -> Result<MetricsSnapshot> {
         Err(e) => return Err(e.into()),
     };
     let paths = HealPaths::new(project);
-    let reports = run_all(project, &cfg);
+    let reports = run_all(project, &cfg, None);
     let mut snap = pack(project, &reports);
 
     // Best-effort delta against the previous snapshot. Failures here are

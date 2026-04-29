@@ -33,6 +33,10 @@ pub enum Command {
     Status {
         #[arg(long)]
         json: bool,
+        /// Restrict output to a single metric. Drives the per-metric
+        /// `check-*` skills under `.claude/plugins/heal/`.
+        #[arg(long, value_enum)]
+        metric: Option<StatusMetric>,
     },
     /// Browse `.heal/logs/` event entries (commit/edit/stop hook records).
     /// Commit entries hold metadata only — see `heal status` for the
@@ -45,6 +49,41 @@ pub enum Command {
         #[command(subcommand)]
         action: SkillsAction,
     },
+}
+
+/// Metric filter for `heal status --metric`. clap renders these in
+/// kebab-case for the CLI flag (e.g. `--metric change-coupling`), and
+/// [`Self::json_key`] returns the `snake_case` form that matches the
+/// JSON object key under which the same metric's data is keyed
+/// (`change_coupling`). The two forms are deliberately distinct: the
+/// CLI follows shell convention, the JSON follows the rest of the
+/// payload's `snake_case` keys, so a skill can do `payload[payload.metric]`
+/// without translation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum StatusMetric {
+    Loc,
+    Complexity,
+    Churn,
+    ChangeCoupling,
+    Duplication,
+    Hotspot,
+}
+
+impl StatusMetric {
+    /// JSON object key matching this metric's data section. Identical
+    /// to the field names used in `MetricsConfig` and `SnapshotDelta`,
+    /// so skills can index `payload[payload.metric]`.
+    #[must_use]
+    pub fn json_key(self) -> &'static str {
+        match self {
+            Self::Loc => "loc",
+            Self::Complexity => "complexity",
+            Self::Churn => "churn",
+            Self::ChangeCoupling => "change_coupling",
+            Self::Duplication => "duplication",
+            Self::Hotspot => "hotspot",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Subcommand)]
@@ -117,7 +156,7 @@ impl Cli {
         match self.command {
             Command::Init { force } => commands::init::run(&project, force),
             Command::Hook { event } => commands::hook::run(&project, event),
-            Command::Status { json } => commands::status::run(&project, json),
+            Command::Status { json, metric } => commands::status::run(&project, json, metric),
             Command::Logs(args) => commands::logs::run(&project, &args),
             Command::Check => commands::check::run(&project),
             Command::Skills { action } => commands::skills::run(&project, action),
