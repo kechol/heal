@@ -1,0 +1,25 @@
+version: 2
+
+updates:
+  # Cargo crates — keeps third-party Rust deps current and surfaces
+  # security advisories as PRs that the cargo-deny CI gate will validate.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Roll routine patch / minor bumps into one PR to reduce noise.
+      patch-and-minor:
+        update-types:
+          - patch
+          - minor
+
+  # GitHub Actions — keeps the SHA-pinned action references fresh.
+  # Without this, the SHA pins in ci.yml / release.yml would silently
+  # drift behind upstream security and feature releases.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

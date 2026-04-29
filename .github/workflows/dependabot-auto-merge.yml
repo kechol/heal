@@ -1,0 +1,42 @@
+name: Dependabot auto-merge
+
+# Auto-merge low-risk Dependabot PRs once required status checks pass.
+# Major-version bumps still require manual review (often have breaking
+# changes). Security updates always auto-merge regardless of semver bump.
+#
+# Prerequisites:
+#   - Settings -> General -> Pull Requests -> "Allow auto-merge" enabled.
+#   - Branch protection on main requires the CI status checks listed in
+#     ci.yml; auto-merge waits for them.
+
+on: pull_request_target
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: ${{ github.actor == 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2.5.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge for safe updates
+        # Auto-merge when:
+        #   - the bump is patch or minor, OR
+        #   - the alert was raised by Dependabot security updates.
+        # Major bumps fall through to a human reviewer.
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-patch'
+          || steps.metadata.outputs.update-type == 'version-update:semver-minor'
+          || steps.metadata.outputs.dependency-type == 'direct:production'
+            && steps.metadata.outputs.alert-state == 'AUTO_DISMISSED'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash "$PR_URL"
