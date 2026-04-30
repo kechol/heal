@@ -82,7 +82,7 @@ After `heal init`:
 | `.heal/logs/YYYY-MM.jsonl`       | post-commit + Claude PostToolUse / Stop     | On every commit and Claude tool event.        |
 | `.heal/checks/YYYY-MM.jsonl`     | `heal check`                                | Each fresh `heal check` (cache-miss path).    |
 | `.heal/checks/latest.json`       | `heal check`                                | Atomic mirror; refreshed on every fresh run.  |
-| `.heal/checks/fixed.jsonl`       | `heal cache mark-fixed` (called by `/heal-fix`) | Each commit `/heal-fix` lands.            |
+| `.heal/checks/fixed.jsonl`       | `heal fix mark` (called by `/heal-fix`)     | Each commit `/heal-fix` lands.                |
 | `.heal/checks/regressed.jsonl`   | `heal check` (reconcile pass)               | When a fixed finding is re-detected.          |
 | `.claude/plugins/heal/`          | `heal skills install`                       | Once; updated with `heal skills update`.      |
 
@@ -141,7 +141,7 @@ current `Finding` set against `calibration.toml`.
 
 ### `logs/` — event timeline
 
-Lightweight records, no metric payloads. `heal logs` reads them.
+Lightweight records, no metric payloads. `heal logs` walks them.
 
 | Event type | Written when                                 |
 | ---------- | -------------------------------------------- |
@@ -187,17 +187,20 @@ When a previously-fixed `finding_id` re-appears in a new `heal check`,
 the entry moves from `fixed.jsonl` to `regressed.jsonl` and the
 renderer warns.
 
-You can inspect any of these streams with standard Unix tools:
+You can inspect any of these streams with the matching browser:
 
 ```sh
 # last 5 commit events from logs/
 heal logs --filter commit --limit 5
 
-# walk every CheckRecord
-heal cache log --json | jq '.[].check_id'
+# every MetricsSnapshot + calibrate event
+heal snapshots --json --limit 20
 
-# raw cache record by id
-heal cache show <check_id> --json
+# every CheckRecord summary
+heal checks --json | jq '.[].check_id'
+
+# raw CheckRecord by id (full Findings list)
+heal fix show <check_id> --json
 ```
 
 ## Calibration

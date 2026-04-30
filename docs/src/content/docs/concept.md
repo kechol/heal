@@ -116,9 +116,9 @@ through the bundled `/heal-fix` Claude skill, which:
 - never pushes,
 - never amends.
 
-`heal cache mark-fixed` is the single CLI subcommand that mutates
-state — it appends a line to `fixed.jsonl` and is meant to be called
-by `/heal-fix` after each commit.
+`heal fix mark` is the single CLI subcommand that mutates state — it
+appends a line to `fixed.jsonl` and is meant to be called by
+`/heal-fix` after each commit.
 
 ## Why metrics
 
@@ -174,7 +174,7 @@ manage.
 - [Metrics](/heal/metrics/) — what each metric measures and how
   Severity is assigned
 - [CLI](/heal/cli/) — the full command surface (`heal check`,
-  `heal cache`, `heal calibrate`)
+  `heal fix`, `heal calibrate`)
 - [Configuration](/heal/configuration/) — `.heal/config.toml` and
   `.heal/calibration.toml` reference
 - [Architecture](/heal/architecture/) — on-disk layout, event

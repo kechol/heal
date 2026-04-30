@@ -1,9 +1,10 @@
 //! `.heal/checks/` — the result cache for `heal check`.
 //!
-//! `heal check` is the **single writer**: every run produces a
-//! [`CheckRecord`] which is appended to `<root>/.heal/checks/YYYY-MM.jsonl`
-//! and mirrored atomically into `latest.json`. Skill workflows and
-//! `heal cache *` are readers; they never mutate the cache.
+//! `heal check` is the **single writer** of `<root>/.heal/checks/YYYY-MM.jsonl`
+//! and `latest.json`: every run produces a [`CheckRecord`] which is
+//! appended to the segment and mirrored atomically into `latest.json`.
+//! `heal checks` and `heal fix show|diff` are pure readers. The only
+//! other writer is `heal fix mark`, which appends to `fixed.jsonl`.
 //!
 //! The cache models a TODO list: each `Finding.id` is decision-stable
 //! (see `crate::core::finding`), so the *same* unfixed problem keeps the
@@ -53,8 +54,8 @@ use crate::core::snapshot::SeverityCounts;
 pub const CHECK_RECORD_VERSION: u32 = 1;
 
 /// One execution of `heal check`. The unit of read in the cache:
-/// `heal cache log` enumerates records, `heal cache show <id>` retrieves
-/// one, `heal cache diff <a> <b>` compares two.
+/// `heal checks` enumerates records, `heal fix show <id>` retrieves
+/// one, `heal fix diff <a> <b>` compares two.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CheckRecord {
     pub version: u32,

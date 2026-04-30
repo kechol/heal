@@ -15,9 +15,11 @@ These are the commands you run directly in a terminal.
 | ---------------- | --------------------------------------------------------------------------------------------- |
 | `heal init`      | Set up `.heal/`, calibrate, and install the post-commit hook in the current repository.        |
 | `heal status`    | Per-metric summary plus the delta since the previous snapshot.                                |
-| `heal logs`      | Stream the raw hook event log.                                                                |
-| `heal check`     | Run every observer, classify findings by Severity, and refresh `.heal/checks/latest.json`.    |
-| `heal cache`     | Read-only views of the `.heal/checks/` cache (`log` / `show` / `diff`) plus `mark-fixed`.     |
+| `heal logs`      | Stream the raw hook event log (`.heal/logs/`).                                                |
+| `heal snapshots` | Stream the metric/calibration event timeline (`.heal/snapshots/`).                            |
+| `heal checks`    | Newest-first list of every `CheckRecord` ever written to `.heal/checks/`.                     |
+| `heal check`     | Render the cached `CheckRecord` from `.heal/checks/latest.json` (or refresh it).              |
+| `heal fix`       | Update the fix-tracking state — `show <id>`, `diff`, `mark --finding-id … --commit-sha …`.    |
 | `heal calibrate` | Recalibrate codebase-relative Severity thresholds.                                            |
 | `heal skills`    | Install, update, or remove the bundled Claude plugin.                                         |
 
@@ -77,27 +79,32 @@ If `.heal/snapshots/` is empty (for example, immediately after
 `heal init` and before the first commit), the command reports that no
 snapshots are available.
 
-## `heal logs`
+## `heal logs` / `heal snapshots` / `heal checks`
+
+Three sibling browsers over the append-only stores under `.heal/`.
+They share the same `--since` / `--limit` / `--json` surface; `heal
+logs` and `heal snapshots` additionally accept `--filter <event>`.
 
 ```sh
-heal logs
-heal logs --filter commit --limit 10
+heal logs --filter commit --limit 10        # hook events: commit / edit / stop
 heal logs --since 2026-04-01T00:00:00Z
-heal logs --json
+
+heal snapshots --filter calibrate            # MetricsSnapshot + calibrate events
+heal snapshots --json --limit 5
+
+heal checks                                  # newest-first CheckRecord summary
+heal checks --json --limit 20                # JSON list of {check_id, started_at, head_sha, severity_counts, …}
 ```
 
-Each record is a single JSON line. Three event types are produced
-under `.heal/logs/`:
+| Source                | Records                                                                       | Reader command  |
+| --------------------- | ----------------------------------------------------------------------------- | --------------- |
+| `.heal/logs/`         | `commit` / `edit` / `stop` hook events (lightweight metadata).                | `heal logs`     |
+| `.heal/snapshots/`    | `commit` (`MetricsSnapshot`) + `calibrate` (`CalibrationEvent`) timeline.     | `heal snapshots`|
+| `.heal/checks/`       | `CheckRecord` history written by `heal check`.                                | `heal checks`   |
 
-- `commit` — written by the git post-commit hook (sha, parent,
-  author, message summary, file/line counts).
-- `edit` — written when Claude edits a file (PostToolUse hook).
-- `stop` — written when a Claude turn ends (Stop hook).
-
-`heal status` reads `snapshots/` (the heavy metric payloads); `heal
-logs` reads `logs/` (the lightweight event timeline). The two are
-complementary. The pre-v0.2 `session-start` event was retired along
-with the SessionStart nudge.
+`heal status` is the synthesised view over snapshots; `heal snapshots`
+is the raw timeline. The pre-v0.2 `session-start` event was retired
+along with the SessionStart nudge.
 
 ## `heal check`
 
@@ -130,29 +137,29 @@ extra "Ok / Medium 🔥 (low Severity, top-10% hotspot)" section
 surfaces files that aren't classified as a problem yet but get touched
 often enough to be worth a look.
 
-## `heal cache`
+## `heal fix`
 
-Read-only inspection of `.heal/checks/`, plus the one mutating
-sub-command (`mark-fixed`) used by `/heal-fix`:
+Per-record / per-finding operations on `.heal/checks/`. Browsing lives
+under `heal checks`; `heal fix` is the verb for "I'm working through
+the TODO list":
 
 ```sh
-heal cache log                          # newest-first list of CheckRecords
-heal cache log --json --limit 20
+heal fix show <check_id>              # render one record
+heal fix show <check_id> --json       # stable shape (same as `heal check --json`)
 
-heal cache show <check_id>              # render one record
-heal cache show <check_id> --json       # stable shape
+heal fix diff                         # latest two records
+heal fix diff <from> <to>             # explicit pair
+heal fix diff --worktree              # live tree vs latest cache, no write
+heal fix diff --all --json            # show Improved/Unchanged + JSON
 
-heal cache diff                         # latest two records
-heal cache diff <from> <to>             # explicit pair
-heal cache diff --worktree              # live tree vs latest cache, no write
-heal cache diff --all --json            # show Improved/Unchanged + JSON
-
-heal cache mark-fixed --finding-id <id> --commit-sha <sha>
+heal fix mark --finding-id <id> --commit-sha <sha>   # used by /heal-fix
 ```
 
-`heal check` is the single writer of `.heal/checks/`. `heal cache *`
-never mutates state except for `mark-fixed`, which appends a single
-`FixedFinding` line to `fixed.jsonl`.
+`heal check` is the single writer of `.heal/checks/<segment>.jsonl`
+(scan results) and `latest.json` (atomic mirror). `heal fix mark` is
+the only other writer; it appends a single `FixedFinding` line to
+`fixed.jsonl`. `heal fix show` / `heal fix diff` and `heal checks`
+are pure readers.
 
 ## `heal calibrate`
 
@@ -228,8 +235,8 @@ it's fixed — that's the point.
 - **`heal check` is the canonical workflow.** After a meaningful
   commit, run it to refresh the cache and see what's still on the
   TODO list.
-- **`heal cache diff --worktree`** lets you verify progress mid-session
+- **`heal fix diff --worktree`** lets you verify progress mid-session
   without polluting `.heal/checks/` with extra records.
 - **Preserve the post-commit hook.** Removing it stops new snapshots
-  from being recorded, and `heal status` / `heal cache log` will keep
+  from being recorded, and `heal status` / `heal checks` will keep
   showing the previous delta.

@@ -82,7 +82,7 @@ heal check  ──►  calibration.toml で Finding を分類
 | `.heal/logs/YYYY-MM.jsonl`       | post-commit + Claude PostToolUse / Stop          | コミットおよび Claude ツールイベントごと。       |
 | `.heal/checks/YYYY-MM.jsonl`     | `heal check`                                     | 新規 `heal check`（キャッシュミス経路）ごと。    |
 | `.heal/checks/latest.json`       | `heal check`                                     | アトミックミラー；新規実行ごとにリフレッシュ。   |
-| `.heal/checks/fixed.jsonl`       | `heal cache mark-fixed`（`/heal-fix` から呼出）  | `/heal-fix` のコミット着地ごと。                 |
+| `.heal/checks/fixed.jsonl`       | `heal fix mark`（`/heal-fix` から呼出）          | `/heal-fix` のコミット着地ごと。                 |
 | `.heal/checks/regressed.jsonl`   | `heal check`（整合パス）                         | 修正済み Finding が再検出されたとき。            |
 | `.claude/plugins/heal/`          | `heal skills install`                            | 一度だけ。`heal skills update` で更新。          |
 
@@ -189,17 +189,20 @@ writer です。
 エントリは `fixed.jsonl` から `regressed.jsonl` に移動し、レンダラー
 が警告を出します。
 
-これらのストリームは標準的な Unix ツールで直接調査できます。
+これらのストリームは対応するブラウザコマンドで覗けます。
 
 ```sh
 # logs/ 直近 5 件のコミットイベント
 heal logs --filter commit --limit 5
 
-# 全 CheckRecord を辿る
-heal cache log --json | jq '.[].check_id'
+# MetricsSnapshot + calibrate イベント
+heal snapshots --json --limit 20
 
-# id でキャッシュレコードを取得
-heal cache show <check_id> --json
+# 全 CheckRecord のサマリ
+heal checks --json | jq '.[].check_id'
+
+# id でキャッシュレコードを取得（フル Findings 付き）
+heal fix show <check_id> --json
 ```
 
 ## Calibration

@@ -23,7 +23,7 @@ The loop is observe → calibrate → check → fix:
 Documentation: <https://kechol.github.io/heal/>
 
 > ⚠️ **Status: v0.2 in progress.** macOS / Linux only. The
-> `.heal/checks/` schema and the `heal check` / `heal cache` surfaces
+> `.heal/checks/` schema and the `heal check` / `heal fix` surfaces
 > stabilised in v0.2; some doc / coverage features land in v0.3.
 
 ## What it measures
@@ -108,13 +108,14 @@ The full walkthrough is at <https://kechol.github.io/heal/quick-start/>.
 |---------|---------|
 | `heal init [--force]` | Create `.heal/`, calibrate from the initial scan, write `config.toml` + `calibration.toml`, install the post-commit hook, capture the first snapshot. |
 | `heal status [--json] [--metric <name>]` | Metric series + delta from the most recent snapshot. `--metric` scopes output to one observer (`loc` / `complexity` / `churn` / `change-coupling` / `duplication` / `hotspot` / `lcom`). |
-| `heal logs [--since <RFC3339>] [--filter <event>] [--limit N] [--json]` | Stream `.heal/logs/` (raw hook events). |
-| `heal check [--metric <name>] [--severity <level>] [--feature <prefix>] [--all] [--hotspot] [--top N] [--json] [--since-cache]` | Run every observer, classify by Severity, render the per-file Critical / High / Medium view, and refresh `.heal/checks/latest.json`. The single source of truth `/heal-fix` consumes. |
-| `heal cache log [--json] [--limit N]` | Newest-first list of `CheckRecord`s. |
-| `heal cache show <check_id> [--json]` | Render one cached record (use `--json` for the stable shape). |
-| `heal cache diff [<from>] [<to>] [--worktree] [--all] [--json]` | Bucket findings into Resolved / Regressed / Improved / New / Unchanged across two records, with progress %. `--worktree` scans the live tree without writing a record. |
-| `heal cache mark-fixed --finding-id <id> --commit-sha <sha>` | Append a `FixedFinding` line; called by `/heal-fix` after each commit. |
-| `heal calibrate [--reason <text>] [--check]` | Recalibrate codebase-relative Severity thresholds. `--check` evaluates auto-detect triggers (90-day age, ±20% file count, 30 days zero-Critical) without writing. |
+| `heal logs [--since <RFC3339>] [--filter <event>] [--limit N] [--json]` | Stream `.heal/logs/` (commit / edit / stop hook events). |
+| `heal snapshots [--since <RFC3339>] [--filter <event>] [--limit N] [--json]` | Stream `.heal/snapshots/` (`MetricsSnapshot` + `calibrate` events). |
+| `heal checks [--since <RFC3339>] [--limit N] [--json]` | Newest-first summary of every `CheckRecord` in `.heal/checks/`. |
+| `heal check [--metric <name>] [--severity <level>] [--feature <prefix>] [--all] [--top N] [--json] [--refresh]` | Render the cached `CheckRecord` from `.heal/checks/latest.json`. Re-scans only on a missing cache or `--refresh`; that path is the single writer of `.heal/checks/`. |
+| `heal fix show <check_id> [--json]` | Detail-render one cached record (use `--json` for the stable shape). |
+| `heal fix diff [<from>] [<to>] [--worktree] [--all] [--json]` | Bucket findings into Resolved / Regressed / Improved / New / Unchanged across two records, with progress %. `--worktree` scans the live tree without writing a record. |
+| `heal fix mark --finding-id <id> --commit-sha <sha>` | Append a `FixedFinding` line; called by `/heal-fix` after each commit. |
+| `heal calibrate [--force]` | Calibrate codebase-relative Severity thresholds. Default reads `.heal/calibration.toml` and reports drift triggers; `--force` rescans and overwrites. |
 | `heal hook <commit\|edit\|stop>` | Hook entrypoint invoked by git or the Claude plugin. Not for direct use. |
 | `heal skills <install\|update\|status\|uninstall>` | Manage the bundled Claude plugin under `.claude/plugins/heal/`. |
 

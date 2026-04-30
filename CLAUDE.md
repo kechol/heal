@@ -10,10 +10,11 @@ HEAL is a Rust CLI (binary: `heal`) that turns code-health signals into
 work for AI coding agents. v0.1 ships the **observe** half of the loop:
 six metric observers (LOC, CCN, Cognitive, Churn, Change Coupling,
 Duplication, Hotspot composition), the post-commit and Claude plugin
-hooks that drive them, and `heal status` / `heal check` / `heal cache`
+hooks that drive them, and `heal status` / `heal check` / `heal fix`
 for surfacing findings. `heal check` runs the analyzer, classifies by
-Severity, and writes `.heal/checks/`; `heal cache *` reads it. The
-autonomous repair loop (`heal run`, PR generation) lands in v0.2+.
+Severity, and writes `.heal/checks/`; `heal checks` (top-level
+browser) and `heal fix show|diff` read it. The autonomous repair loop
+(`heal run`, PR generation) lands in v0.2+.
 
 For the user-facing overview see [`README.md`](./README.md).
 
@@ -111,10 +112,12 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
   directory. Use it.
 
 ### Result cache (`.heal/checks/`)
-- `heal check` is the **only writer**; `heal cache *` and skill
-  workflows are readers. The cache models a TODO list — every Finding
-  has a deterministic id (`<metric>:<file>:<symbol>:<fnv1a>`) so an
-  unfixed problem reappears under the same id on the next run.
+- `heal check` is the **only writer** of `.heal/checks/<segment>.jsonl`
+  and `latest.json`. `heal checks` and `heal fix show|diff` are pure
+  readers. `heal fix mark` is a second writer scoped to `fixed.jsonl`.
+  The cache models a TODO list — every Finding has a deterministic id
+  (`<metric>:<file>:<symbol>:<fnv1a>`) so an unfixed problem reappears
+  under the same id on the next run.
 - `checks/YYYY-MM.jsonl` (append-only) plus three side files:
   `latest.json` (atomic mirror of the most recent record),
   `fixed.jsonl` (skill committed a fix), `regressed.jsonl` (a fix

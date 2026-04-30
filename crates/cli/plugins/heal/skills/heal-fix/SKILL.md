@@ -29,7 +29,7 @@ the loop is self-correcting: a botched fix surfaces on the next round.
    shown, stop and tell the user to commit or stash first. You cannot
    distinguish your changes from theirs once you start editing, and a
    commit-per-finding flow assumes a clean baseline. The cache also
-   carries `worktree_clean=false` in this case — `heal cache log` will
+   carries `worktree_clean=false` in this case — `heal checks` will
    show it.
 2. **Cache exists.** Run `heal check --json` and capture the
    `CheckRecord`. The default flow reads `.heal/checks/latest.json`
@@ -48,7 +48,7 @@ while there are non-Ok findings in the cache:
     apply the change
     run tests / type-check / linter (best effort, see "Verification")
     git add -p / git add <file>; git commit -m "<conventional message>"
-    heal cache mark-fixed --finding-id <id> --commit-sha <new SHA>
+    heal fix mark --finding-id <id> --commit-sha <new SHA>
     heal check --refresh --json   # re-scan and overwrite latest.json
     if the finding is back (regressed warning):
         leave it for now; record in session notes; continue with next finding
@@ -151,7 +151,7 @@ movement. Trailer: `Refs: F#<finding_id>` (the full id from cache JSON).
 After the commit succeeds:
 
 ```
-heal cache mark-fixed \
+heal fix mark \
   --finding-id "<finding_id from cache JSON>" \
   --commit-sha "$(git rev-parse HEAD)"
 ```
@@ -202,7 +202,7 @@ record them anywhere persistent.
 
 - One finding = one commit. Don't squash multiple findings into a
   single commit even when they share a file — the audit trail matters
-  for `heal cache diff`.
+  for `heal fix diff`.
 - **Never push.** The skill commits locally; the user runs
   `git push` / `gh pr create` themselves.
 - **Never amend.** A new commit per finding is the contract — amending

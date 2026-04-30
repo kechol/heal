@@ -117,9 +117,9 @@ claude /heal-fix
 - push しない、
 - amend しない。
 
-`heal cache mark-fixed` が状態を mutate する唯一の CLI サブコマン
-ドで、`fixed.jsonl` に 1 行追記します。`/heal-fix` がコミット後に
-呼ぶことを想定しています。
+`heal fix mark` が状態を mutate する唯一の CLI サブコマンドで、
+`fixed.jsonl` に 1 行追記します。`/heal-fix` がコミット後に呼ぶこ
+とを想定しています。
 
 ## なぜメトリクスなのか
 
@@ -180,7 +180,7 @@ heal には 7 つのメトリクスが付属しています。
   ンストールから動作確認まで
 - [メトリクス](/heal/ja/metrics/) — 各メトリクスの中身と Severity
   の付け方
-- [CLI](/heal/ja/cli/) — 全コマンド（`heal check`、`heal cache`、
+- [CLI](/heal/ja/cli/) — 全コマンド（`heal check`、`heal fix`、
   `heal calibrate`）
 - [設定](/heal/ja/configuration/) — `.heal/config.toml` と
   `.heal/calibration.toml` のリファレンス

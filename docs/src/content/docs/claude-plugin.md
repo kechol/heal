@@ -106,8 +106,8 @@ while there are non-Ok findings in the cache:
     apply the change
     run tests / type-check / linter (best effort)
     git add ...; git commit -m "<conventional message + Refs: F#<id>>"
-    heal cache mark-fixed --finding-id <id> --commit-sha <sha>
-    heal check --json   # re-scan; reconcile fixed.jsonl ↔ regressed.jsonl
+    heal fix mark --finding-id <id> --commit-sha <sha>
+    heal check --refresh --json   # re-scan; reconcile fixed.jsonl ↔ regressed.jsonl
     if the finding regressed: leave it for now, continue with the next
     else: continue
 ```

@@ -1,17 +1,17 @@
-//! `heal cache *` — read-only views of `.heal/checks/`, plus the
-//! single mutating sub-command `mark-fixed` used by `/heal-fix` to
-//! claim a commit as resolving a finding.
+//! `heal fix *` — operations on the fix-tracking state attached to
+//! `.heal/checks/`. Read-only browsing of the record stream lives at
+//! `heal checks`; this command surface focuses on the per-record /
+//! per-finding actions a fix workflow needs.
 //!
 //! Sub-commands:
-//! - `cache log`        — newest-first list of `CheckRecord`s
-//! - `cache show`       — detailed render of one record (unstable
-//!   view; use `--json` for the stable shape)
-//! - `cache diff`       — bucket findings into Resolved / Regressed /
+//! - `fix show <id>`  — detailed render of one record (unstable view;
+//!   use `--json` for the stable shape).
+//! - `fix diff`       — bucket findings into Resolved / Regressed /
 //!   Improved / New / Unchanged across two records. With `--worktree`,
 //!   compares the live tree to the latest cached record without
 //!   writing anything.
-//! - `cache mark-fixed` — append a `FixedFinding` line to
-//!   `.heal/checks/fixed.jsonl` (the only `cache` command that writes).
+//! - `fix mark`       — append a `FixedFinding` line to
+//!   `.heal/checks/fixed.jsonl` (the only `fix` command that writes).
 
 use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
@@ -21,7 +21,7 @@ use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use serde::Serialize;
 
-use crate::cli::CacheAction;
+use crate::cli::FixAction;
 use crate::commands::check::{render, Filters};
 use crate::core::calibration::Calibration;
 use crate::core::check_cache::{
@@ -34,12 +34,11 @@ use crate::core::snapshot::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YEL
 use crate::core::HealPaths;
 use crate::observer::git;
 
-pub fn run(project: &Path, action: CacheAction) -> Result<()> {
+pub fn run(project: &Path, action: FixAction) -> Result<()> {
     let paths = HealPaths::new(project);
     match action {
-        CacheAction::Log { json, limit } => run_log(&paths, json, limit),
-        CacheAction::Show { check_id, json } => run_show(&paths, &check_id, json),
-        CacheAction::Diff {
+        FixAction::Show { check_id, json } => run_show(&paths, &check_id, json),
+        FixAction::Diff {
             from,
             to,
             worktree,
@@ -54,14 +53,14 @@ pub fn run(project: &Path, action: CacheAction) -> Result<()> {
             all,
             json,
         ),
-        CacheAction::MarkFixed {
+        FixAction::Mark {
             finding_id,
             commit_sha,
-        } => run_mark_fixed(&paths, &finding_id, &commit_sha),
+        } => run_mark(&paths, &finding_id, &commit_sha),
     }
 }
 
-fn run_mark_fixed(paths: &HealPaths, finding_id: &str, commit_sha: &str) -> Result<()> {
+fn run_mark(paths: &HealPaths, finding_id: &str, commit_sha: &str) -> Result<()> {
     let entry = FixedFinding {
         finding_id: finding_id.to_owned(),
         commit_sha: commit_sha.to_owned(),
@@ -72,49 +71,6 @@ fn run_mark_fixed(paths: &HealPaths, finding_id: &str, commit_sha: &str) -> Resu
         "marked {finding_id} as fixed by {commit_sha} (logged to {})",
         paths.checks_fixed_log().display(),
     );
-    Ok(())
-}
-
-fn run_log(paths: &HealPaths, as_json: bool, limit: Option<usize>) -> Result<()> {
-    let mut records = iter_records(&paths.checks_dir())?;
-    if let Some(n) = limit {
-        records.truncate(n);
-    }
-    if as_json {
-        let payload: Vec<LogEntry> = records.iter().map(|(_, r)| LogEntry::from(r)).collect();
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&payload).expect("LogEntry serialization is infallible")
-        );
-        return Ok(());
-    }
-    let mut stdout = std::io::stdout();
-    let colorize = stdout.is_terminal();
-    if records.is_empty() {
-        writeln!(
-            stdout,
-            "no cache yet at {} — run `heal check`",
-            paths.checks_dir().display(),
-        )?;
-        return Ok(());
-    }
-    for (_, rec) in &records {
-        let counts = &rec.severity_counts;
-        writeln!(
-            stdout,
-            "{}  {}  head={}  findings={}  {} {}  {} {}  {} {}",
-            rec.check_id,
-            rec.started_at.format("%Y-%m-%d %H:%M"),
-            rec.head_sha.as_deref().unwrap_or("∅"),
-            rec.findings.len(),
-            ansi_wrap(ANSI_RED, "C", colorize),
-            counts.critical,
-            ansi_wrap(ANSI_YELLOW, "H", colorize),
-            counts.high,
-            ansi_wrap(ANSI_CYAN, "M", colorize),
-            counts.medium,
-        )?;
-    }
     Ok(())
 }
 
@@ -133,7 +89,7 @@ fn run_show(paths: &HealPaths, check_id: &str, as_json: bool) -> Result<()> {
         return Ok(());
     }
     eprintln!(
-        "warning: `heal cache show` rendering is unstable; use `--json` for a stable contract.",
+        "warning: `heal fix show` rendering is unstable; use `--json` for a stable contract.",
     );
     let mut stdout = std::io::stdout();
     let colorize = stdout.is_terminal();
@@ -221,7 +177,7 @@ fn run_diff(
     if as_json {
         println!(
             "{}",
-            serde_json::to_string_pretty(&diff).expect("CacheDiff serialization is infallible")
+            serde_json::to_string_pretty(&diff).expect("FixDiff serialization is infallible")
         );
         return Ok(());
     }
@@ -239,31 +195,8 @@ fn run_diff(
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize)]
-struct LogEntry {
-    check_id: String,
-    started_at: chrono::DateTime<chrono::Utc>,
-    head_sha: Option<String>,
-    findings_count: usize,
-    severity_counts: crate::core::snapshot::SeverityCounts,
-    worktree_clean: bool,
-}
-
-impl From<&CheckRecord> for LogEntry {
-    fn from(r: &CheckRecord) -> Self {
-        Self {
-            check_id: r.check_id.clone(),
-            started_at: r.started_at,
-            head_sha: r.head_sha.clone(),
-            findings_count: r.findings.len(),
-            severity_counts: r.severity_counts,
-            worktree_clean: r.worktree_clean,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Default)]
-pub(super) struct CacheDiff {
+pub(super) struct FixDiff {
     pub resolved: Vec<DiffEntry>,
     pub regressed: Vec<DiffEntry>,
     pub improved: Vec<DiffEntry>,
@@ -287,13 +220,13 @@ pub(super) struct DiffEntry {
     pub hotspot: bool,
 }
 
-fn compute_diff(from: &CheckRecord, to: &CheckRecord) -> CacheDiff {
+fn compute_diff(from: &CheckRecord, to: &CheckRecord) -> FixDiff {
     let from_by_id: HashMap<&str, &Finding> =
         from.findings.iter().map(|f| (f.id.as_str(), f)).collect();
     let to_by_id: HashMap<&str, &Finding> =
         to.findings.iter().map(|f| (f.id.as_str(), f)).collect();
 
-    let mut diff = CacheDiff::default();
+    let mut diff = FixDiff::default();
 
     for (id, prev) in &from_by_id {
         match to_by_id.get(id) {
@@ -350,12 +283,12 @@ impl DiffEntry {
 fn render_diff(
     from: &CheckRecord,
     to: &CheckRecord,
-    diff: &CacheDiff,
+    diff: &FixDiff,
     show_all: bool,
     colorize: bool,
     out: &mut impl Write,
 ) -> Result<()> {
-    let title = ansi_wrap(ANSI_CYAN, "── HEAL cache diff", colorize);
+    let title = ansi_wrap(ANSI_CYAN, "── HEAL fix diff", colorize);
     let bar: String = "─".repeat(45);
     writeln!(out, "{title} {bar}")?;
     writeln!(
@@ -524,15 +457,15 @@ mod tests {
     }
 
     #[test]
-    fn mark_fixed_appends_entry_with_supplied_metadata() {
+    fn mark_appends_entry_with_supplied_metadata() {
         use crate::core::check_cache::read_fixed;
         use tempfile::TempDir;
         let tmp = TempDir::new().unwrap();
         let paths = HealPaths::new(tmp.path());
         paths.ensure().unwrap();
 
-        run_mark_fixed(&paths, "ccn:src/a.rs:foo:abc", "deadbeef").unwrap();
-        run_mark_fixed(&paths, "ccn:src/b.rs:bar:def", "cafebabe").unwrap();
+        run_mark(&paths, "ccn:src/a.rs:foo:abc", "deadbeef").unwrap();
+        run_mark(&paths, "ccn:src/b.rs:bar:def", "cafebabe").unwrap();
 
         let entries = read_fixed(&paths.checks_fixed_log()).unwrap();
         assert_eq!(entries.len(), 2);

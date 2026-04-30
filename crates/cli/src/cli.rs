@@ -38,22 +38,33 @@ pub enum Command {
         #[arg(long, value_enum)]
         metric: Option<StatusMetric>,
     },
-    /// Browse `.heal/logs/` event entries (commit/edit/stop hook records).
-    /// Commit entries hold metadata only — see `heal status` for the
-    /// metric series persisted in `.heal/snapshots/`.
-    Logs(LogsArgs),
+    /// Browse `.heal/logs/` event entries (commit/edit/stop hook
+    /// records). Lightweight metadata; the metric series live in
+    /// `.heal/snapshots/` and surface via `heal status` or
+    /// `heal snapshots`.
+    Logs(LogFilters),
+    /// Browse `.heal/snapshots/` event entries (`commit` carries the
+    /// `MetricsSnapshot` payload; `calibrate` carries `CalibrationEvent`).
+    /// `heal status` is the synthesised view; `heal snapshots` walks the
+    /// raw timeline.
+    Snapshots(LogFilters),
+    /// Browse `.heal/checks/` records — newest-first list of every
+    /// `CheckRecord` ever written. Diff and detail-render live under
+    /// `heal fix`.
+    Checks(ChecksFilters),
     /// Render the cached `CheckRecord` from `.heal/checks/latest.json`
     /// — Critical / High view by default. Runs a fresh scan only when
     /// the cache is missing; pass `--refresh` to force a rescan and
     /// overwrite the cache. The single source of truth that
-    /// `/heal-fix` (Claude side) and `heal cache *` (read-only) consume.
+    /// `/heal-fix` (Claude side) and `heal fix *` consume.
     Check(CheckArgs),
-    /// Inspect the `.heal/checks/` cache: enumerate records (`log`),
-    /// render one (`show`), diff two (`diff`), or claim a commit as
-    /// fixing a finding (`mark-fixed`, used by `/heal-fix`).
-    Cache {
+    /// Update the fix-tracking state attached to `.heal/checks/`:
+    /// `show` renders one historical `CheckRecord`, `diff` buckets
+    /// findings across two, `mark` records a finding as resolved by
+    /// a commit (used by `/heal-fix`).
+    Fix {
         #[command(subcommand)]
-        action: CacheAction,
+        action: FixAction,
     },
     /// Manage the bundled Claude plugin.
     Skills {
@@ -236,12 +247,18 @@ pub struct CheckArgs {
     pub top: Option<usize>,
 }
 
+/// Shared filters for the `heal logs` / `heal snapshots` browsers.
+/// Both back onto `.heal/<dir>/*.jsonl(.gz)` event logs, so the same
+/// filter shape applies. `heal checks` takes a near-identical shape
+/// without the `--filter` flag (`CheckRecord`s carry no event-name
+/// dimension) — see [`ChecksFilters`].
 #[derive(Debug, clap::Args)]
-pub struct LogsArgs {
+pub struct LogFilters {
     /// Drop entries older than this RFC 3339 timestamp.
     #[arg(long)]
     pub since: Option<String>,
-    /// Keep only entries whose `event` equals this name (e.g. `edit`).
+    /// Keep only entries whose `event` equals this name (e.g. `edit`,
+    /// `commit`, `calibrate`).
     #[arg(long)]
     pub filter: Option<String>,
     /// Keep only the N most recent entries (after filtering).
@@ -252,28 +269,24 @@ pub struct LogsArgs {
     pub json: bool,
 }
 
+/// Filters for `heal checks` — same shape as [`LogFilters`] minus the
+/// `--filter` flag, since [`CheckRecord`](crate::core::check_cache::CheckRecord)
+/// has no event-name dimension to match against.
+#[derive(Debug, clap::Args)]
+pub struct ChecksFilters {
+    /// Drop entries with `started_at` older than this RFC 3339 timestamp.
+    #[arg(long)]
+    pub since: Option<String>,
+    /// Keep only the N most recent records (after filtering).
+    #[arg(long)]
+    pub limit: Option<usize>,
+    /// Emit raw JSON list instead of the one-line-per-record summary.
+    #[arg(long)]
+    pub json: bool,
+}
+
 #[derive(Debug, Subcommand)]
-pub enum CacheAction {
-    /// List `CheckRecord`s newest-first (`check_id`, `started_at`,
-    /// `head_sha`, finding count, severity tally).
-    Log {
-        #[arg(long)]
-        json: bool,
-        /// Cap at the N most recent records.
-        #[arg(long, value_name = "N")]
-        limit: Option<usize>,
-    },
-    /// Append a `FixedFinding` to `.heal/checks/fixed.jsonl`. Called by
-    /// `/heal-fix` (or any skill that commits a fix) so the next
-    /// `heal check` can warn if the same finding re-appears.
-    MarkFixed {
-        /// `Finding.id` from `heal check --json` output.
-        #[arg(long, value_name = "ID")]
-        finding_id: String,
-        /// SHA of the commit that resolved the finding.
-        #[arg(long, value_name = "SHA")]
-        commit_sha: String,
-    },
+pub enum FixAction {
     /// Render one `CheckRecord` by its ULID. **Unstable**: the human
     /// view may change. For a stable contract use `--json` (same shape
     /// as `heal check --json`).
@@ -306,6 +319,17 @@ pub enum CacheAction {
         #[arg(long)]
         json: bool,
     },
+    /// Append a `FixedFinding` to `.heal/checks/fixed.jsonl`. Called by
+    /// `/heal-fix` (or any skill that commits a fix) so the next
+    /// `heal check --refresh` can warn if the same finding re-appears.
+    Mark {
+        /// `Finding.id` from `heal check --json` output.
+        #[arg(long, value_name = "ID")]
+        finding_id: String,
+        /// SHA of the commit that resolved the finding.
+        #[arg(long, value_name = "SHA")]
+        commit_sha: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Subcommand)]
@@ -337,9 +361,11 @@ impl Cli {
             Command::Init { force } => commands::init::run(&project, force),
             Command::Hook { event } => commands::hook::run(&project, event),
             Command::Status { json, metric } => commands::status::run(&project, json, metric),
-            Command::Logs(args) => commands::logs::run(&project, &args),
+            Command::Logs(args) => commands::logs::run_logs(&project, &args),
+            Command::Snapshots(args) => commands::logs::run_snapshots(&project, &args),
+            Command::Checks(args) => commands::logs::run_checks(&project, &args),
             Command::Check(args) => commands::check::run(&project, &args),
-            Command::Cache { action } => commands::cache::run(&project, action),
+            Command::Fix { action } => commands::fix::run(&project, action),
             Command::Skills { action } => commands::skills::run(&project, action),
             Command::Calibrate { force } => commands::calibrate::run(&project, force),
             Command::Compact { verbose } => commands::compact::run(&project, verbose),
