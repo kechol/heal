@@ -7,6 +7,7 @@ pub mod error;
 pub mod eventlog;
 pub mod finding;
 pub mod fs;
+pub mod hash;
 pub mod paths;
 pub mod severity;
 pub mod snapshot;

@@ -19,15 +19,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::core::hash::{fnv1a_64_chunked, fnv1a_hex};
 pub use crate::core::severity::Severity;
-
-/// FNV-1a 64-bit constants — same prime/offset as
-/// `observer::duplication`. We do not use `std::hash::DefaultHasher`
-/// because it is explicitly unstable across Rust releases (see
-/// `CLAUDE.md` §Hashing); a `rustc` upgrade would otherwise invalidate
-/// every recorded id.
-const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-const FNV_PRIME: u64 = 0x100_0000_01b3;
 
 /// A single point in the codebase a finding refers to. `line` and
 /// `symbol` are optional because not every metric has them — hotspot
@@ -104,6 +97,26 @@ impl Finding {
         self
     }
 
+    /// Compact "metric=N" tag used by `heal check` rows and the
+    /// post-commit nudge. The numeric tail is recovered from
+    /// `summary` so observers don't have to expose a second value
+    /// channel; metrics whose summary doesn't carry a leading number
+    /// (`duplication`, `change_coupling`, `hotspot`) fall back to a
+    /// short label.
+    #[must_use]
+    pub fn short_label(&self) -> String {
+        match self.metric.as_str() {
+            "ccn" => extract_leading_number(&self.summary, "CCN=")
+                .map_or_else(|| "CCN".to_owned(), |v| format!("CCN={v}")),
+            "cognitive" => extract_leading_number(&self.summary, "Cognitive=")
+                .map_or_else(|| "Cognitive".to_owned(), |v| format!("Cognitive={v}")),
+            "duplication" => "duplication".to_owned(),
+            "change_coupling" => "coupled".to_owned(),
+            "hotspot" => "hotspot".to_owned(),
+            other => other.to_owned(),
+        }
+    }
+
     /// Compose the stable id for a finding.
     ///
     /// Format: `<metric>:<file>:<symbol-or-*>:<16-hex-fnv1a>`. The hex
@@ -116,21 +129,26 @@ impl Finding {
     pub fn make_id(metric: &str, location: &Location, content_seed: &str) -> String {
         let path = location.file.to_string_lossy();
         let symbol = location.symbol.as_deref().unwrap_or("*");
-
-        let mut h = FNV_OFFSET;
-        for chunk in [
+        let h = fnv1a_64_chunked(&[
             metric.as_bytes(),
             path.as_bytes(),
             symbol.as_bytes(),
             content_seed.as_bytes(),
-        ] {
-            for b in chunk {
-                h = (h ^ u64::from(*b)).wrapping_mul(FNV_PRIME);
-            }
-            // Field separator so `("ab", "c")` and `("a", "bc")` don't collide.
-            h = (h ^ 0xff).wrapping_mul(FNV_PRIME);
-        }
-        format!("{metric}:{path}:{symbol}:{h:016x}")
+        ]);
+        format!("{metric}:{path}:{symbol}:{}", fnv1a_hex(h))
+    }
+}
+
+/// Pluck the `<digits>` immediately after `prefix` from `summary`,
+/// returning `None` when no digit follows. Used by [`Finding::short_label`]
+/// to recover CCN/Cognitive numbers without round-tripping observer state.
+fn extract_leading_number(summary: &str, prefix: &str) -> Option<String> {
+    let after = summary.strip_prefix(prefix)?;
+    let value: String = after.chars().take_while(char::is_ascii_digit).collect();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
     }
 }
 
@@ -198,6 +216,43 @@ mod tests {
         let l = loc("src/foo.rs", None, None);
         let id = Finding::make_id("hotspot", &l, "");
         assert!(id.starts_with("hotspot:src/foo.rs:*:"));
+    }
+
+    #[test]
+    fn short_label_extracts_metric_number_or_falls_back() {
+        let mut ccn = Finding::new(
+            "ccn",
+            loc("src/foo.rs", Some("bar"), Some(10)),
+            "CCN=28 bar (rust)".into(),
+            "seed",
+        );
+        ccn.severity = Severity::Critical;
+        assert_eq!(ccn.short_label(), "CCN=28");
+
+        let cog = Finding::new(
+            "cognitive",
+            loc("src/foo.rs", Some("bar"), Some(10)),
+            "Cognitive=42 bar (rust)".into(),
+            "seed",
+        );
+        assert_eq!(cog.short_label(), "Cognitive=42");
+
+        // Summary with no digit after `CCN=` falls back to the bare label.
+        let bare = Finding::new(
+            "ccn",
+            loc("src/foo.rs", Some("bar"), Some(10)),
+            "no number here".into(),
+            "seed",
+        );
+        assert_eq!(bare.short_label(), "CCN");
+
+        let dup = Finding::new(
+            "duplication",
+            loc("src/foo.rs", None, None),
+            "anything".into(),
+            "",
+        );
+        assert_eq!(dup.short_label(), "duplication");
     }
 
     #[test]

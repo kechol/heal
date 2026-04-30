@@ -347,16 +347,11 @@ fn inject_skill_metadata(body: &str, meta: &SkillInstallMeta) -> String {
 }
 
 /// Drift-detection fingerprint shared by `extract` (manifest writer) and
-/// `skills::status` (drift reader). FNV-1a 64-bit — same bytes always map
-/// to the same hex digest across processes and toolchain versions.
+/// `skills::status` (drift reader). Backed by the workspace-shared
+/// FNV-1a 64-bit so the same bytes always map to the same hex digest
+/// across processes and toolchain versions.
 pub(crate) fn fingerprint(bytes: &[u8]) -> String {
-    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-    const FNV_PRIME: u64 = 0x100_0000_01b3;
-    let mut h = FNV_OFFSET;
-    for b in bytes {
-        h = (h ^ u64::from(*b)).wrapping_mul(FNV_PRIME);
-    }
-    format!("{h:016x}")
+    crate::core::hash::fnv1a_hex(crate::core::hash::fnv1a_64(bytes))
 }
 
 fn relative_key(p: &Path) -> String {
