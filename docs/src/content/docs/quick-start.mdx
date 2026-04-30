@@ -89,17 +89,15 @@ This command:
   regenerate it (`heal calibrate --force`).
 - Installs `.git/hooks/post-commit`.
 - Appends the first `MetricsSnapshot`, including the Severity tally.
+- If the `claude` CLI is on your `PATH`, **asks whether to extract
+  the bundled Claude plugin** into `.claude/plugins/heal/`. Answer
+  `Y` (the default) to install `/heal-code-check` and
+  `/heal-code-fix` in one step. The prompt is suppressed when
+  `claude` isn't installed.
 
-Re-running is safe: `config.toml` and any existing non-heal hooks are
-left in place unless `--force` is passed.
-
-## 3. Install the Claude plugin
-
-```sh
-heal skills install
-```
-
-Extracts the bundled plugin tree to `.claude/plugins/heal/`:
+When done, `heal init` prints an "Installed:" summary listing every
+path it touched: config, calibration, initial snapshot, post-commit
+hook, and the Claude plugin. The directory tree it extracts is:
 
 ```
 .claude/plugins/heal/
@@ -113,14 +111,13 @@ Extracts the bundled plugin tree to `.claude/plugins/heal/`:
         └── SKILL.md
 ```
 
-The plugin tree is embedded in the binary, so the version installed
-always matches the binary in use. After upgrading `heal`, run
-`heal skills update` to refresh.
+For non-interactive shells (CI, scripts) pass `--yes` to install the
+plugin without prompting, or `--no-skills` to skip. Re-running
+`heal init` is safe: `config.toml` and existing non-heal hooks stay
+in place unless `--force` is passed; `heal skills install` /
+`heal skills update` can extract or refresh the plugin later.
 
-`heal skills install` is idempotent — re-running compares fingerprints
-and only touches files that differ from what's bundled.
-
-## 4. See where the codebase stands
+## 3. See where the codebase stands
 
 For the canonical workflow — the per-file Severity-grouped TODO list:
 
@@ -166,7 +163,7 @@ since the previous commit) instead of the per-file list, use
 `heal status` — it reads the same observer pass but presents it as
 trends rather than a TODO list.
 
-## 5. Audit and drain with Claude
+## 4. Audit and drain with Claude
 
 With the plugin installed, ask Claude to audit the cache and (when
 ready) drain it:
@@ -201,7 +198,7 @@ one finding = one commit, never pushes, never amends.
 When the cache empties, the loop ends. You then `git push` /
 `gh pr create` yourself.
 
-## 6. Live with the post-commit nudge
+## 5. Live with the post-commit nudge
 
 `heal init` installed a post-commit hook. From this point on, every
 commit:

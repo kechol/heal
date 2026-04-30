@@ -41,7 +41,10 @@ plugin. You do not normally call them by hand.
 Bootstraps heal inside a git repository:
 
 ```sh
-heal init
+heal init                # interactive — prompts to install Claude skills
+heal init --yes          # also extract the Claude plugin (no prompt)
+heal init --no-skills    # skip the plugin entirely (CI / non-Claude users)
+heal init --force        # overwrite an existing config.toml / hook
 ```
 
 `heal init` does:
@@ -49,11 +52,22 @@ heal init
 1. Create `.heal/` with `config.toml`, `calibration.toml`, `snapshots/`,
    `logs/`, and `checks/`.
 2. Run every observer once and compute the codebase's percentile
-   distribution per metric — that becomes `calibration.toml`.
+   distribution per metric — that becomes `calibration.toml` (with a
+   provenance comment header pointing at `heal calibrate --force`).
 3. Install `.git/hooks/post-commit` (idempotent — the script is marked
    with a comment so re-installation never duplicates the line).
 4. Append the first `MetricsSnapshot` to `.heal/snapshots/`, including
    the Severity tally.
+5. If the `claude` CLI is on `PATH`, prompt to extract the bundled
+   Claude plugin into `.claude/plugins/heal/`. The prompt defaults to
+   `Y`; pass `--yes` to skip the prompt and install, or `--no-skills`
+   to skip without prompting. When `claude` is **not** on `PATH`, the
+   prompt is suppressed silently (the plugin would have nothing to
+   talk to).
+
+When done, `heal init` prints an "Installed:" summary listing every
+file it wrote — config, calibration, initial snapshot, post-commit
+hook, and the Claude plugin path (or the reason it was skipped).
 
 Re-running is safe: `config.toml` is left in place unless `--force` is
 passed; the post-commit hook is replaced only when it carries the heal

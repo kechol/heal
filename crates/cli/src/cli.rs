@@ -23,6 +23,14 @@ pub enum Command {
         /// Overwrite an existing config.toml.
         #[arg(long)]
         force: bool,
+        /// Assume "yes" for the Claude-skills install prompt
+        /// (extracts the bundled plugin without asking).
+        #[arg(long, short = 'y', conflicts_with = "no_skills")]
+        yes: bool,
+        /// Skip the Claude-skills install prompt entirely. Use when you
+        /// don't have Claude Code installed, or for CI invocations.
+        #[arg(long)]
+        no_skills: bool,
     },
     /// Hook entrypoint invoked by git hooks and the Claude plugin.
     Hook {
@@ -359,7 +367,11 @@ impl Cli {
             .project
             .unwrap_or_else(|| std::env::current_dir().expect("cwd"));
         match self.command {
-            Command::Init { force } => commands::init::run(&project, force),
+            Command::Init {
+                force,
+                yes,
+                no_skills,
+            } => commands::init::run(&project, force, yes, no_skills),
             Command::Hook { event } => commands::hook::run(&project, event),
             Command::Status { json, metric } => commands::status::run(&project, json, metric),
             Command::Logs(args) => commands::logs::run_logs(&project, &args),

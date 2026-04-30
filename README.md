@@ -82,10 +82,15 @@ heal --version
 Inside any git repository:
 
 ```sh
-heal init                # create .heal/, calibrate, install the post-commit hook
-heal skills install      # extract the Claude plugin → /heal-code-check + /heal-code-fix
+heal init                # create .heal/, calibrate, install the hook (offers Claude skills inline)
 heal check               # render the Severity-grouped TODO list
 ```
+
+`heal init` prompts to extract the Claude plugin
+(`/heal-code-check` + `/heal-code-fix`) when the `claude` CLI is on
+your `PATH`. Pass `--yes` to bypass the prompt and install, or
+`--no-skills` to skip; running `heal skills install` later does the
+same job.
 
 After `heal init`, every commit:
 
@@ -108,7 +113,7 @@ Ordered by everyday importance — start at the top and work down.
 
 | Command | Purpose |
 |---------|---------|
-| `heal init [--force]` | Create `.heal/`, calibrate from the initial scan, write `config.toml` + `calibration.toml`, install the post-commit hook, capture the first snapshot. |
+| `heal init [--force] [--yes\|--no-skills]` | Create `.heal/`, calibrate from the initial scan, write `config.toml` + `calibration.toml`, install the post-commit hook, capture the first snapshot, and (when `claude` is on `PATH`) prompt to extract the Claude plugin. `--yes` installs the plugin without asking; `--no-skills` skips it. |
 | `heal skills <install\|update\|status\|uninstall>` | Manage the bundled Claude plugin under `.claude/plugins/heal/`. Unlocks `/heal-code-check` and `/heal-code-fix` inside Claude Code. |
 | `heal check [--metric <name>] [--severity <level>] [--feature <prefix>] [--all] [--top N] [--json] [--refresh]` | Render the cached `CheckRecord` from `.heal/checks/latest.json`. Re-scans only on a missing cache or `--refresh`; that path is the single writer of `.heal/checks/`. |
 | `heal status [--json] [--metric <name>]` | Metric series + delta from the most recent snapshot. `--metric` scopes output to one observer (`loc` / `complexity` / `churn` / `change-coupling` / `duplication` / `hotspot` / `lcom`). |

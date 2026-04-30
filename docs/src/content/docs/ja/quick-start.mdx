@@ -90,17 +90,14 @@ heal init
   を記すコメントヘッダが入ります。
 - `.git/hooks/post-commit` をインストール。
 - 初回 `MetricsSnapshot`（Severity tally 込み）を append。
+- `claude` コマンドが `PATH` にあれば、**同梱 Claude プラグインを
+  抽出するか確認**します。`Y`（デフォルト）で
+  `/heal-code-check` と `/heal-code-fix` をその場でインストール。
+  `claude` が無い環境ではプロンプト自体出ません。
 
-再実行は安全です。`config.toml` も既存の非 heal フックも `--force`
-無しでは触りません。
-
-## 3. Claude プラグインをインストール
-
-```sh
-heal skills install
-```
-
-同梱のプラグインツリーが `.claude/plugins/heal/` に展開されます。
+完了時には "Installed:" サマリで生成したすべてのファイルを一覧表示
+します — config、calibration、初回 snapshot、post-commit フック、
+Claude プラグイン。展開されるディレクトリ構成：
 
 ```
 .claude/plugins/heal/
@@ -114,14 +111,13 @@ heal skills install
         └── SKILL.md
 ```
 
-プラグインツリーはバイナリに埋め込まれているため、インストールされ
-るバージョンは常に使用中のバイナリと一致します。`heal` を更新した
-後は `heal skills update` でリフレッシュ。
+非対話シェル（CI やスクリプト）では `--yes` でプロンプトを飛ばして
+インストール、`--no-skills` で完全に飛ばせます。`heal init` の再実
+行は安全です — `config.toml` と既存の非 heal フックは `--force` 無
+しでは触りません。後から `heal skills install` /
+`heal skills update` でプラグインの抽出やリフレッシュも可能。
 
-`heal skills install` は冪等です — 同梱バージョンとフィンガープリ
-ントを比較し、差分があるファイルだけを書き換えます。
-
-## 4. コードベースの状態を把握
+## 3. コードベースの状態を把握
 
 ファイル単位の Severity 別 TODO リストが本命のワークフロー：
 
@@ -166,7 +162,7 @@ heal check --all                      # Medium / Ok と低 Severity の Hotspot 
 らの差分）が欲しいときは `heal status` を使ってください — 同じオブ
 ザーバ実行結果を、TODO リストではなくトレンドとして表示します。
 
-## 5. Claude で監査・消化
+## 4. Claude で監査・消化
 
 プラグインを入れた状態で、キャッシュを Claude に監査させて、必要に
 応じて消化させられます：
@@ -201,7 +197,7 @@ amend しない。
 キャッシュが空になったらループ終了。`git push` / `gh pr create` は
 ユーザーが手動で実行します。
 
-## 6. post-commit nudge と暮らす
+## 5. post-commit nudge と暮らす
 
 `heal init` で post-commit フックがインストール済みです。これ以降、
 コミットごとに：

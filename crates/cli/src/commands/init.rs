@@ -11,10 +11,13 @@
 //!      distribution, then append a `MetricsSnapshot` (with
 //!      `severity_counts` already classified by the new calibration)
 //!      to `snapshots/` as an `init` event.
+//!   6. Optionally extract the Claude plugin to `.claude/plugins/heal/`
+//!      (prompted when `claude` is on `PATH` and stdin is a TTY; bypassed
+//!      with `--yes` / `--no-skills`).
 
 use std::fmt;
-use std::io::IsTerminal;
-use std::path::Path;
+use std::io::{BufRead, IsTerminal, Write};
+use std::path::{Path, PathBuf};
 
 use crate::core::config::Config;
 use crate::core::eventlog::{Event, EventLog};
@@ -22,6 +25,7 @@ use crate::core::snapshot::SeverityCounts;
 use crate::core::HealPaths;
 use crate::observer::git;
 use crate::observer::loc::LocObserver;
+use crate::plugin_assets::{self, ExtractMode, ExtractStats};
 use anyhow::{Context, Result};
 
 use crate::observers::{build_calibration, run_all};
@@ -80,7 +84,27 @@ impl fmt::Display for HookAction {
     }
 }
 
-pub fn run(project: &Path, force: bool) -> Result<()> {
+/// Outcome of the optional Claude-skills install step. The path is the
+/// destination directory; the rendering layer composes
+/// "<path> (<verb>)" lines from this.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SkillsAction {
+    /// Bundled plugin extracted; carries the `(added, unchanged)` count
+    /// pulled from the extract summary so the user sees how many files
+    /// landed.
+    Installed { added: usize, unchanged: usize },
+    /// User declined the prompt.
+    Declined,
+    /// `--no-skills` was passed.
+    SuppressedByFlag,
+    /// `claude` not on `PATH` — silently skipped (no prompt).
+    SkippedNoClaude,
+    /// stdin is not a TTY and `--yes` wasn't passed — skipped with a
+    /// hint pointing at `heal skills install`.
+    SkippedNonInteractive,
+}
+
+pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool) -> Result<()> {
     let paths = HealPaths::new(project);
     paths
         .ensure()
@@ -88,32 +112,101 @@ pub fn run(project: &Path, force: bool) -> Result<()> {
 
     let primary_language = LocObserver::default().scan(project).primary;
     let config_action = write_config(&paths, force)?;
-    let hook_action = install_post_commit_hook(project, force)?;
+    let (hook_action, hook_path) = install_post_commit_hook(project, force)?;
     let severity_counts = run_initial_scan(project, &paths)?;
+    let plugin_dest = plugin_dest(project);
+    let skills_action = handle_skills_install(&plugin_dest, yes, no_skills)?;
 
+    print_summary(
+        &paths,
+        primary_language.as_deref(),
+        config_action,
+        hook_action,
+        hook_path.as_deref(),
+        &plugin_dest,
+        &skills_action,
+        severity_counts.as_ref(),
+    );
+    Ok(())
+}
+
+fn plugin_dest(project: &Path) -> PathBuf {
+    project.join(".claude").join("plugins").join("heal")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn print_summary(
+    paths: &HealPaths,
+    primary_language: Option<&str>,
+    config_action: ConfigAction,
+    hook_action: HookAction,
+    hook_path: Option<&Path>,
+    plugin_dest: &Path,
+    skills_action: &SkillsAction,
+    severity_counts: Option<&SeverityCounts>,
+) {
     println!("HEAL initialized at {}", paths.root().display());
-    if let Some(lang) = primary_language.as_deref() {
-        println!("  primary language: {lang}");
-    } else {
-        println!("  primary language: (not detected)");
-    }
     println!(
-        "  config:           {} ({config_action})",
+        "  primary language: {}",
+        primary_language.unwrap_or("(not detected)"),
+    );
+
+    println!();
+    println!("Installed:");
+    println!(
+        "  config            {}  ({config_action})",
         paths.config().display(),
     );
-    println!("  post-commit hook: {hook_action}");
-    println!("  initial snapshot: captured");
+    println!("  calibration       {}", paths.calibration().display());
+    println!("  initial snapshot  {}/", paths.snapshots_dir().display());
+    match hook_path {
+        Some(p) => println!("  post-commit hook  {}  ({hook_action})", p.display()),
+        None => println!("  post-commit hook  {hook_action}"),
+    }
+    println!(
+        "  Claude plugin     {}",
+        render_skills_line(plugin_dest, skills_action),
+    );
+
     if let Some(counts) = severity_counts {
         let colorize = std::io::stdout().is_terminal();
-        println!("  findings:         {}", counts.render_inline(colorize));
+        println!();
+        println!("Findings: {}", counts.render_inline(colorize));
         if counts.critical > 0 {
             println!("  → goal: bring [critical] to 0 (try `heal check --severity critical`)");
         }
     }
-    println!("next steps:");
-    println!("  1. heal skills install   # install Claude plugin");
-    println!("  2. heal status           # see current findings");
-    Ok(())
+
+    println!();
+    println!("Next steps:");
+    println!("  heal check               # render the Severity-grouped TODO list");
+    println!("  heal status              # see metric trends");
+    if matches!(
+        skills_action,
+        SkillsAction::Installed { .. } | SkillsAction::SkippedNoClaude
+    ) {
+        // No further skills hint for "Installed" (already done) or
+        // "SkippedNoClaude" (Claude isn't there to use them anyway).
+    } else {
+        println!("  heal skills install      # extract the Claude plugin when ready");
+    }
+}
+
+fn render_skills_line(dest: &Path, action: &SkillsAction) -> String {
+    match action {
+        SkillsAction::Installed { added, unchanged } => format!(
+            "{}/  (extracted: {added} new, {unchanged} unchanged)",
+            dest.display()
+        ),
+        SkillsAction::Declined => "skipped (declined)".to_string(),
+        SkillsAction::SuppressedByFlag => "skipped (--no-skills)".to_string(),
+        SkillsAction::SkippedNoClaude => {
+            "skipped (no `claude` command on PATH)".to_string()
+        }
+        SkillsAction::SkippedNonInteractive => {
+            "skipped (non-interactive shell; pass `--yes` or run `heal skills install` later)".to_string()
+        }
+    }
 }
 
 fn write_config(paths: &HealPaths, force: bool) -> Result<ConfigAction> {
@@ -130,9 +223,9 @@ fn write_config(paths: &HealPaths, force: bool) -> Result<ConfigAction> {
     })
 }
 
-fn install_post_commit_hook(project: &Path, force: bool) -> Result<HookAction> {
+fn install_post_commit_hook(project: &Path, force: bool) -> Result<(HookAction, Option<PathBuf>)> {
     let Some(hooks_dir) = git::hooks_dir(project) else {
-        return Ok(HookAction::SkippedNoRepo);
+        return Ok((HookAction::SkippedNoRepo, None));
     };
     std::fs::create_dir_all(&hooks_dir)
         .with_context(|| format!("creating {}", hooks_dir.display()))?;
@@ -142,17 +235,17 @@ fn install_post_commit_hook(project: &Path, force: bool) -> Result<HookAction> {
         let body = std::fs::read_to_string(&hook_path).unwrap_or_default();
         if body.contains(HEAL_HOOK_MARKER) {
             write_hook(&hook_path)?;
-            return Ok(HookAction::Refreshed);
+            return Ok((HookAction::Refreshed, Some(hook_path)));
         }
         if !force {
-            return Ok(HookAction::SkippedUserHook);
+            return Ok((HookAction::SkippedUserHook, Some(hook_path)));
         }
         write_hook(&hook_path)?;
-        return Ok(HookAction::Overwrote);
+        return Ok((HookAction::Overwrote, Some(hook_path)));
     }
 
     write_hook(&hook_path)?;
-    Ok(HookAction::Installed)
+    Ok((HookAction::Installed, Some(hook_path)))
 }
 
 fn write_hook(hook_path: &Path) -> Result<()> {
@@ -204,6 +297,80 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<Option<Severity
     Ok(counts)
 }
 
+/// Decide whether to install the Claude plugin and do it. Returns the
+/// outcome label so the summary block can render "<path> (verb)".
+///
+/// Decision tree (first match wins):
+///   1. `--no-skills` → `SuppressedByFlag`.
+///   2. `claude` not on `PATH` → `SkippedNoClaude` (no prompt — the
+///      skills are useless without Claude Code anyway).
+///   3. `--yes` → install.
+///   4. stdin is a TTY → prompt the user (default `Y`).
+///   5. otherwise → `SkippedNonInteractive` (with a hint in the
+///      summary).
+fn handle_skills_install(dest: &Path, yes: bool, no_skills: bool) -> Result<SkillsAction> {
+    if no_skills {
+        return Ok(SkillsAction::SuppressedByFlag);
+    }
+    if !claude_on_path() {
+        return Ok(SkillsAction::SkippedNoClaude);
+    }
+    if yes {
+        return install_skills(dest);
+    }
+    if std::io::stdin().is_terminal() {
+        if confirm_skills_install()? {
+            install_skills(dest)
+        } else {
+            Ok(SkillsAction::Declined)
+        }
+    } else {
+        Ok(SkillsAction::SkippedNonInteractive)
+    }
+}
+
+fn install_skills(dest: &Path) -> Result<SkillsAction> {
+    let (stats, _) = plugin_assets::extract(dest, ExtractMode::InstallSafe)?;
+    let summary = extract_counts(&stats);
+    Ok(summary)
+}
+
+fn extract_counts(stats: &ExtractStats) -> SkillsAction {
+    let s = stats.summary();
+    SkillsAction::Installed {
+        added: s.added,
+        unchanged: s.unchanged + s.skipped,
+    }
+}
+
+/// Walk `PATH` looking for an executable named `claude`. Pure stdlib so
+/// no extra dependency. Heal is Unix-only today so the Windows
+/// extension dance is omitted.
+fn claude_on_path() -> bool {
+    let Some(path_var) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path_var).any(|dir| dir.join("claude").is_file())
+}
+
+fn confirm_skills_install() -> Result<bool> {
+    print!(
+        "Install the bundled Claude plugin (provides /heal-code-check + /heal-code-fix)? [Y/n] ",
+    );
+    std::io::stdout()
+        .flush()
+        .context("flushing skills-install prompt")?;
+
+    let stdin = std::io::stdin();
+    let mut line = String::new();
+    stdin
+        .lock()
+        .read_line(&mut line)
+        .context("reading skills-install prompt response")?;
+    let answer = line.trim().to_ascii_lowercase();
+    Ok(matches!(answer.as_str(), "" | "y" | "yes"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -214,10 +381,17 @@ mod tests {
         commit(cwd, file, body, email, "snap");
     }
 
-    fn hook_path(project: &Path) -> std::path::PathBuf {
+    fn hook_path_for(project: &Path) -> std::path::PathBuf {
         git::hooks_dir(project)
             .expect("test repo must be initialized before requesting hook path")
             .join("post-commit")
+    }
+
+    /// Default invocation for the end-to-end tests: `--no-skills` so the
+    /// suite never depends on whether `claude` happens to be on the
+    /// runner's PATH.
+    fn run_no_skills(project: &Path, force: bool) -> Result<()> {
+        run(project, force, false, true)
     }
 
     #[test]
@@ -258,8 +432,9 @@ mod tests {
     #[test]
     fn install_hook_skips_outside_git_repo() {
         let dir = TempDir::new().unwrap();
-        let action = install_post_commit_hook(dir.path(), false).unwrap();
+        let (action, path) = install_post_commit_hook(dir.path(), false).unwrap();
         assert_eq!(action, HookAction::SkippedNoRepo);
+        assert!(path.is_none(), "hook path is meaningless without a repo");
     }
 
     #[cfg(unix)]
@@ -268,9 +443,10 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = TempDir::new().unwrap();
         init_repo(dir.path());
-        let action = install_post_commit_hook(dir.path(), false).unwrap();
+        let (action, path) = install_post_commit_hook(dir.path(), false).unwrap();
         assert_eq!(action, HookAction::Installed);
-        let hook = hook_path(dir.path());
+        let hook = path.expect("hook path must be returned on a real repo");
+        assert_eq!(hook, hook_path_for(dir.path()));
         let body = std::fs::read_to_string(&hook).unwrap();
         assert!(body.contains(HEAL_HOOK_MARKER));
         assert!(body.contains("heal hook commit"));
@@ -286,15 +462,16 @@ mod tests {
     fn install_hook_refreshes_own_marker() {
         let dir = TempDir::new().unwrap();
         init_repo(dir.path());
-        let hook = hook_path(dir.path());
+        let hook = hook_path_for(dir.path());
         std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
         std::fs::write(
             &hook,
             format!("#!/bin/sh\n{HEAL_HOOK_MARKER}\necho stale\n"),
         )
         .unwrap();
-        let action = install_post_commit_hook(dir.path(), false).unwrap();
+        let (action, path) = install_post_commit_hook(dir.path(), false).unwrap();
         assert_eq!(action, HookAction::Refreshed);
+        assert_eq!(path.as_deref(), Some(hook.as_path()));
         let body = std::fs::read_to_string(&hook).unwrap();
         assert!(body.contains("heal hook commit"));
         assert!(!body.contains("stale"));
@@ -304,10 +481,10 @@ mod tests {
     fn install_hook_preserves_user_hook_without_force() {
         let dir = TempDir::new().unwrap();
         init_repo(dir.path());
-        let hook = hook_path(dir.path());
+        let hook = hook_path_for(dir.path());
         std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
         std::fs::write(&hook, "#!/bin/sh\necho user hook\n").unwrap();
-        let action = install_post_commit_hook(dir.path(), false).unwrap();
+        let (action, _) = install_post_commit_hook(dir.path(), false).unwrap();
         assert_eq!(action, HookAction::SkippedUserHook);
         let body = std::fs::read_to_string(&hook).unwrap();
         assert!(body.contains("echo user hook"));
@@ -317,10 +494,10 @@ mod tests {
     fn install_hook_overwrites_user_hook_with_force() {
         let dir = TempDir::new().unwrap();
         init_repo(dir.path());
-        let hook = hook_path(dir.path());
+        let hook = hook_path_for(dir.path());
         std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
         std::fs::write(&hook, "#!/bin/sh\necho user hook\n").unwrap();
-        let action = install_post_commit_hook(dir.path(), true).unwrap();
+        let (action, _) = install_post_commit_hook(dir.path(), true).unwrap();
         assert_eq!(action, HookAction::Overwrote);
         let body = std::fs::read_to_string(&hook).unwrap();
         assert!(body.contains(HEAL_HOOK_MARKER));
@@ -331,7 +508,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         init_repo(dir.path());
         commit_default(dir.path(), "main.rs", "fn main() {}\n", "solo@example.com");
-        run(dir.path(), false).unwrap();
+        run_no_skills(dir.path(), false).unwrap();
         let paths = HealPaths::new(dir.path());
         assert!(paths.config().exists(), "config.toml must exist");
         assert!(paths.calibration().exists(), "calibration.toml must exist");
@@ -341,7 +518,7 @@ mod tests {
             .any(|e| e.is_ok());
         assert!(any_snapshot, "snapshots dir must contain the init record");
         assert!(
-            hook_path(dir.path()).exists(),
+            hook_path_for(dir.path()).exists(),
             "post-commit hook must be installed",
         );
 
@@ -357,5 +534,93 @@ mod tests {
             metrics.codebase_files.is_some(),
             "snapshot must carry codebase_files for the recalibrate trigger"
         );
+    }
+
+    #[test]
+    fn no_skills_flag_leaves_plugin_dir_unwritten() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit_default(dir.path(), "main.rs", "fn main() {}\n", "solo@example.com");
+        run_no_skills(dir.path(), false).unwrap();
+        assert!(
+            !plugin_dest(dir.path()).exists(),
+            "--no-skills must not extract the plugin"
+        );
+    }
+
+    #[test]
+    fn handle_skills_install_respects_no_skills_flag() {
+        let dir = TempDir::new().unwrap();
+        let dest = plugin_dest(dir.path());
+        let action = handle_skills_install(&dest, false, true).unwrap();
+        assert_eq!(action, SkillsAction::SuppressedByFlag);
+        assert!(!dest.exists());
+    }
+
+    #[test]
+    fn handle_skills_install_with_yes_extracts_plugin_when_claude_available() {
+        // Stage a fake `claude` binary on PATH so the prompt logic
+        // believes Claude Code is installed. Without this, the call
+        // legitimately returns SkippedNoClaude on hosts that don't
+        // happen to have `claude` on PATH.
+        let bin_dir = TempDir::new().unwrap();
+        let claude_bin = bin_dir.path().join("claude");
+        std::fs::write(&claude_bin, b"#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&claude_bin, std::fs::Permissions::from_mode(0o755))
+                .unwrap();
+        }
+        let original_path = std::env::var_os("PATH").unwrap_or_default();
+        let mut new_path = std::ffi::OsString::from(bin_dir.path());
+        new_path.push(":");
+        new_path.push(&original_path);
+        let _guard = PathGuard::set(new_path);
+
+        let dir = TempDir::new().unwrap();
+        let dest = plugin_dest(dir.path());
+        let action = handle_skills_install(&dest, true, false).unwrap();
+        assert!(matches!(action, SkillsAction::Installed { .. }));
+        assert!(dest.exists(), "yes path must extract the plugin");
+        assert!(dest.join("plugin.json").exists());
+    }
+
+    #[test]
+    fn handle_skills_install_skips_when_no_claude() {
+        // Pretend PATH is empty so the claude lookup fails
+        // deterministically regardless of host environment.
+        let _guard = PathGuard::set(std::ffi::OsString::new());
+        let dir = TempDir::new().unwrap();
+        let dest = plugin_dest(dir.path());
+        let action = handle_skills_install(&dest, true, false).unwrap();
+        assert_eq!(action, SkillsAction::SkippedNoClaude);
+        assert!(!dest.exists());
+    }
+
+    /// RAII guard so individual tests can mutate `PATH` without
+    /// leaking the change into siblings. `cargo test` runs tests on
+    /// shared threads, so a leaked `PATH` would reach into unrelated
+    /// suites — single-threaded scopes within `mod tests` keep this
+    /// safe; the guard restores the original value on drop.
+    struct PathGuard {
+        original: Option<std::ffi::OsString>,
+    }
+
+    impl PathGuard {
+        fn set(value: std::ffi::OsString) -> Self {
+            let original = std::env::var_os("PATH");
+            std::env::set_var("PATH", value);
+            Self { original }
+        }
+    }
+
+    impl Drop for PathGuard {
+        fn drop(&mut self) {
+            match self.original.take() {
+                Some(v) => std::env::set_var("PATH", v),
+                None => std::env::remove_var("PATH"),
+            }
+        }
     }
 }
