@@ -16,26 +16,37 @@ git commit
     ▼
 .git/hooks/post-commit  ──►  heal hook commit
                                   │
-                                  ├──►  オブザーバー（LOC, complexity, churn, …）
+                                  ├──►  オブザーバー（LOC, complexity, churn, …, lcom）
+                                  │       (run_all を 1 回; 結果は下流で再利用)
                                   │
                                   ├──►  .heal/snapshots/YYYY-MM.jsonl
+                                  │       (MetricsSnapshot, severity_counts 含む)
                                   │
-                                  └──►  .heal/logs/YYYY-MM.jsonl
+                                  ├──►  .heal/logs/YYYY-MM.jsonl
+                                  │       (軽量な CommitInfo)
+                                  │
+                                  └──►  stdout: Severity ナッジ
+                                         (Critical / High Finding のみ;
+                                          トリガー発火時は recalibrate ヒントを先頭に追加)
 
-claude セッション開始
+ユーザー: heal check（または `claude /heal-fix`）
     │
     ▼
-SessionStart フック  ──►  heal hook session-start
-                              │
-                              ├──►  最新スナップショット + 差分を読む
-                              │
-                              ├──►  .heal/state.json を読む（クールダウン）
-                              │
-                              └──►  Markdown ナッジを stdout に出力（Claude が読む）
+heal check  ──►  calibration.toml で Finding を分類
+                       │
+                       ├──►  .heal/checks/YYYY-MM.jsonl + latest.json
+                       │       (CheckRecord — TODO リスト)
+                       │
+                       ├──►  fixed.jsonl ↔ regressed.jsonl を整合
+                       │
+                       └──►  Severity ごとのビューを stdout に描画
 ```
 
 `heal` は単一バイナリです。両方の経路がこれを通ります。デーモンも、
-スケジューラも、バックグラウンドプロセスもありません。
+スケジューラも、バックグラウンドプロセスもありません。post-commit
+フックは全オブザーバーを **一度だけ** 実行し、その結果をスナップ
+ショットライターとナッジの両方に渡します — オブザーバーが 1 コミッ
+トあたり 2 回走ることはありません。
 
 ## オンディスクのレイアウト
 
@@ -44,12 +55,17 @@ SessionStart フック  ──►  heal hook session-start
 ```
 <your-repo>/
 ├── .heal/
-│   ├── config.toml                # 自分で編集する。heal init がデフォルトを書く
+│   ├── config.toml                # 自分で編集する
+│   ├── calibration.toml           # 自動 — heal init / heal calibrate
 │   ├── snapshots/
-│   │   └── 2026-04.jsonl          # コミットごとの完全メトリクススナップショット
+│   │   └── 2026-04.jsonl          # MetricsSnapshot + CalibrationEvent ストリーム
 │   ├── logs/
-│   │   └── 2026-04.jsonl          # 軽量なイベントタイムライン
-│   └── state.json                 # ナッジルールのクールダウンタイムスタンプ
+│   │   └── 2026-04.jsonl          # 軽量な commit / edit / stop イベント
+│   └── checks/
+│       ├── 2026-04.jsonl          # 追記専用の CheckRecord ストリーム
+│       ├── latest.json            # 最新レコードのアトミックなミラー
+│       ├── fixed.jsonl            # `/heal-fix` がコミットでの修正を主張
+│       └── regressed.jsonl        # 修正済みが再検出された — 警告として表示
 │
 ├── .git/hooks/post-commit         # `heal hook commit` を呼ぶ 1 行のシム
 │
@@ -58,30 +74,39 @@ SessionStart フック  ──►  heal hook session-start
 
 ## 何がいつ書かれるか
 
-| ファイル                        | 書き出し元                  | タイミング                              |
-| ------------------------------- | --------------------------- | --------------------------------------- |
-| `.heal/config.toml`             | `heal init`                 | セットアップ時に一度。自由に編集可。    |
-| `.heal/snapshots/YYYY-MM.jsonl` | post-commit フック          | `git commit` のたび。                   |
-| `.heal/logs/YYYY-MM.jsonl`      | post-commit + Claude フック | コミットおよび Claude イベントのたび。  |
-| `.heal/state.json`              | SessionStart フック         | ルールが発火するたびに更新。            |
-| `.claude/plugins/heal/`         | `heal skills install`       | 一度だけ。`heal skills update` で更新。 |
+| ファイル / ディレクトリ          | 書き出し元                                       | タイミング                                       |
+| -------------------------------- | ------------------------------------------------ | ------------------------------------------------ |
+| `.heal/config.toml`              | `heal init`                                      | セットアップ時に一度。自由に編集可。             |
+| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                   | セットアップ時、その後は明示的な再 calibrate 時。|
+| `.heal/snapshots/YYYY-MM.jsonl`  | post-commit フック + `heal calibrate`            | `git commit` ごと、再 calibrate ごと。           |
+| `.heal/logs/YYYY-MM.jsonl`       | post-commit + Claude PostToolUse / Stop          | コミットおよび Claude ツールイベントごと。       |
+| `.heal/checks/YYYY-MM.jsonl`     | `heal check`                                     | 新規 `heal check`（キャッシュミス経路）ごと。    |
+| `.heal/checks/latest.json`       | `heal check`                                     | アトミックミラー；新規実行ごとにリフレッシュ。   |
+| `.heal/checks/fixed.jsonl`       | `heal cache mark-fixed`（`/heal-fix` から呼出）  | `/heal-fix` のコミット着地ごと。                 |
+| `.heal/checks/regressed.jsonl`   | `heal check`（整合パス）                         | 修正済み Finding が再検出されたとき。            |
+| `.claude/plugins/heal/`          | `heal skills install`                            | 一度だけ。`heal skills update` で更新。          |
+
+v0.2 以前の `.heal/state.json` は SessionStart ナッジとともに廃止
+されました — 履歴状態の問い合わせは `EventLog::iter_segments` で
+`snapshots/` を辿る方法に統一されています。
 
 ## イベントログ
 
-`snapshots/` と `logs/` はオンディスク形式が共通です:
+`snapshots/`、`logs/`、`checks/` はオンディスク形式が共通です。
 
 - **月ごとに 1 ファイル**: `YYYY-MM.jsonl`（UTC）。
 - **追記専用**: 各レコードは 1 行 1 つの JSON オブジェクト。
+- **透過的な gzip**: リーダーは `.gz` ファイルもプレーンテキストと
+  並行して扱います。コンパクション（過去月を gzip、12 か月超を
+  archive）は v0.2+ で実装予定。
 
-すべてのレコードは外側の形が同じです:
+すべてのレコードは外側の形が同じです。
 
 ```json
 {
   "timestamp": "2026-04-29T05:14:22Z",
   "event": "commit",
-  "data": {
-    /* … 形は event に依存 … */
-  }
+  "data": { /* … 形は event に依存 … */ }
 }
 ```
 
@@ -89,84 +114,109 @@ SessionStart フック  ──►  heal hook session-start
 
 ### `snapshots/` — メトリクスペイロード
 
-コミットごとに書き出されます。有効化されている全オブザーバーから
-の出力をすべて含みます。`heal status` が読むのはこちらです。
+コミットごと（`event = "commit"`）と再 calibrate ごと
+（`event = "calibrate"`）に書き出されます。両者は同居しており、リー
+ダーはデコード前に `event` でフィルタします。
 
 ```json
 {
   "version": 1,
   "git_sha": "a0a6d1a…",
-  "loc": {
-    /* LocReport */
-  },
-  "complexity": {
-    /* 無効ならば null */
-  },
-  "churn": {
-    /* … */
-  },
-  "change_coupling": null,
-  "duplication": {
-    /* … */
-  },
-  "hotspot": {
-    /* … */
-  },
-  "delta": {
-    /* SnapshotDelta、または初回スナップショットでは null */
-  }
+  "loc": { /* LocReport */ },
+  "complexity": { /* 無効ならば null */ },
+  "churn": { /* … */ },
+  "change_coupling": { /* pairs[].direction = "symmetric" | "one_way" */ },
+  "duplication": { /* … */ },
+  "hotspot": { /* … */ },
+  "lcom": { /* classes[].cluster_count, clusters[].methods */ },
+  "severity_counts": { "critical": 2, "high": 5, "medium": 12, "ok": 84 },
+  "codebase_files": 142,
+  "delta": { /* SnapshotDelta、または初回スナップショットでは null */ }
 }
 ```
 
-`delta` は前回のスナップショットからの変化をまとめます — worst-N
-リストの新規エントリ、`max_ccn` の変化、Hotspot ランキングのシフト
-など。SessionStart のナッジはこれを参照してどのルールを発火させる
-かを決定します。
+`delta` は前回スナップショットからの変化をまとめます。post-commit
+ナッジはこれを参照しません — Severity は現在の `Finding` セットを
+`calibration.toml` に照らして計算されます。
 
 ### `logs/` — イベントタイムライン
 
-コミットおよび Claude フックイベントごとに書き出される軽量レコード
-です。`heal logs` が読むのはこちらです。
+メトリクスペイロードを含まない軽量レコードです。`heal logs` が読み
+ます。
 
-| イベント種別    | 書き出されるタイミング                                |
-| --------------- | ----------------------------------------------------- |
-| `init`          | `heal init` 実行時                                    |
-| `commit`        | `git commit` 着地時（コミットメタデータのみ）         |
-| `edit`          | Claude がファイルを編集したとき（PostToolUse フック） |
-| `stop`          | Claude のターンが終わったとき（Stop フック）          |
-| `session-start` | Claude セッションが開いたとき（SessionStart フック）  |
+| イベント種別 | 書き出されるタイミング                              |
+| ------------ | --------------------------------------------------- |
+| `commit`     | `git commit` 着地時（CommitInfo メタデータ）        |
+| `edit`       | Claude がファイルを編集したとき（PostToolUse フック）|
+| `stop`       | Claude のターンが終わったとき（Stop フック）        |
 
-`logs/` の `commit` イベントは軽量メタデータ（sha、author、メッセー
-ジサマリ、変更ファイル）のみを保持します — メトリクスペイロード本
-体は持ちません。この分離により、有効化されているメトリクス数に関わ
-らずタイムラインクエリが速いままです。
+`commit` イベントはメタデータのみ（sha、parent、author、メッセー
+ジサマリ、変更ファイル）を保持します。フルなメトリクスペイロードは
+`snapshots/` に残ります。この分離により、有効化されているメトリク
+ス数に関わらずタイムラインクエリが速いままです。
 
-どちらのストリームも標準的な Unix ツールで直接調査できます:
+### `checks/` — 結果キャッシュ
 
-```sh
-# 最新 5 件のコミットイベント
-heal logs --filter commit --limit 5
-
-# スクリプティング用の生 JSON
-heal logs --json | jq '.data.git_sha'
-```
-
-## ステート
-
-`.heal/state.json` は、同じナッジが毎セッションに出ないよ
-うクールダウンのタイムスタンプを追跡します。
+`/heal-fix` が消化する TODO リストです。`heal check` が唯一の
+writer です。
 
 ```json
 {
-  "last_fired": {
-    "complexity.spike": "2026-04-28T03:14:22Z",
-    "hotspot.new_top": "2026-04-25T11:02:08Z"
-  }
+  "version": 1,
+  "check_id": "01HKM3Q6Z1B7…",          // ULID
+  "started_at": "2026-04-30T05:14:22Z",
+  "head_sha": "a0a6d1a…",
+  "worktree_clean": true,
+  "config_hash": "9f8e7d6c5b4a3210",     // config + calibration の FNV-1a
+  "severity_counts": { … },
+  "findings": [ /* Vec<Finding> */ ]
 }
 ```
 
-ルールが発火すると、heal はそのタイムスタンプをここに記録します。
-次の SessionStart は `cooldown_hours` が経過するまでそのルールを抑
-制します。書き込みはアトミック（一時ファイルに書いてからリネーム）
-なので、プロセスが中断されてもファイルが半端な状態で残ることはあり
-ません。
+`heal check` は `(head_sha, config_hash, worktree_clean=true)` が
+最新キャッシュレコードと一致するときショートサーキットします — 同
+じコミット上での再実行は無料です。
+
+`fixed.jsonl` と `regressed.jsonl` は同じディレクトリにありますが、
+`EventLog` のエンベロープではなくフラットな JSON-lines です。小さ
+くて目的が単一の監査トレイルです。
+
+```jsonl
+{"finding_id":"ccn:src/payments/engine.ts:processOrder:9f8e…","commit_sha":"a1b2c3","fixed_at":"…"}
+```
+
+新規 `heal check` で、既に fixed の `finding_id` が再出現すると、
+エントリは `fixed.jsonl` から `regressed.jsonl` に移動し、レンダラー
+が警告を出します。
+
+これらのストリームは標準的な Unix ツールで直接調査できます。
+
+```sh
+# logs/ 直近 5 件のコミットイベント
+heal logs --filter commit --limit 5
+
+# 全 CheckRecord を辿る
+heal cache log --json | jq '.[].check_id'
+
+# id でキャッシュレコードを取得
+heal cache show <check_id> --json
+```
+
+## Calibration
+
+`calibration.toml` は Severity を扱う各メトリクスのコードベース相
+対パーセンタイル区切りを保持します。`heal init` が初回スキャンか
+ら計算し、`heal calibrate` がオンデマンドで更新します。post-commit
+ナッジは `Calibration::with_overrides(config)` 経由で読むため、
+`config.toml` の `floor_critical` は calibrate されたパーセンタイ
+ルに勝ちます。
+
+再 calibrate は **絶対に自動では行いません**。
+`heal calibrate --check` が自動検知トリガー（90 日経過、コードベー
+スファイル数 ±20%、30 日連続で Critical が 0）を評価し推奨を表示し
+ます。実行するかはユーザーが判断します。
+
+監査トレイルは `.heal/snapshots/` に `event = "calibrate"` として
+残ります。`MetricsSnapshot::latest_in_segments` はスナップショット
+としてデコードできないレコードを静かにスキップするため、2 種類のイ
+ベント形が干渉なく同居します。

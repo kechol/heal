@@ -25,29 +25,27 @@ production.
 
 > **Turn codebase health signals into agent triggers.**
 
-heal observes the codebase in the same way a CI system observes test
+heal observes the codebase the same way a CI system observes test
 runs:
 
 - On every commit, it measures the codebase (complexity, churn,
-  duplication, hotspots).
-- It writes a small snapshot to `.heal/snapshots/`.
-- When the next Claude Code session opens, heal surfaces what changed
-  — provided something crossed a threshold worth attention.
+  duplication, hotspots, LCOM).
+- It writes a `MetricsSnapshot` to `.heal/snapshots/`.
+- It surfaces every Critical / High Finding to stdout right inside
+  the commit output.
+- On demand (`heal check`), it classifies findings by Severity and
+  writes a TODO list cache that the bundled `/heal-fix` skill can
+  drain — one finding per commit.
 
 The result: rather than relying on the human to remember to run a
-linter, the agent receives a structured notice — for example,
-_"the function recently modified in `init.rs` is now the highest CCN
-in the project; consider refactoring."_
+linter, the agent receives a structured, prioritised list — and the
+post-commit hook keeps the next move visible without needing a daemon
+or polling.
 
 ## The loop
 
-heal is structured around three steps:
-
-1. **Observe** — collect health metrics on every commit.
-2. **Nudge** — surface meaningful changes to the agent at the right moment.
-3. **Repair** — allow the agent to open a pull request addressing the highlighted issue, with policy gates governing what may merge.
-
-Here is how the first two steps play out in practice:
+heal is structured around four steps: **observe → calibrate → check →
+fix**.
 
 ```
 Every commit
@@ -58,77 +56,88 @@ git commit
     ▼
 post-commit hook ──► heal hook commit
                           │
-                          ├─ run observers (LOC, complexity, churn, …)
+                          ├─ run observers (one pass)
                           │
-                          └─ write snapshot ──► .heal/snapshots/
+                          ├─ write snapshot ──► .heal/snapshots/
+                          │
+                          └─ surface Critical / High to stdout
 
-                    (snapshot stored, waiting)
+                    (snapshot stored; nudge already surfaced)
 
 
-Next Claude Code session
+On demand
 ─────────────────────────────────────────────────
 
-claude opens
+heal check
     │
-    ▼
-SessionStart hook ──► heal hook session-start
-                           │
-                           ├─ load latest snapshot + delta
-                           ├─ check thresholds and cool-down
-                           │
-                           ├─ threshold crossed ──► print nudge to Claude
-                           └─ below threshold   ──► silent
+    ├─ classify findings via .heal/calibration.toml
+    ├─ write CheckRecord ──► .heal/checks/latest.json
+    ├─ reconcile fixed.jsonl ↔ regressed.jsonl
+    └─ render Severity-grouped view
+
+
+claude /heal-fix
+    │
+    └─ drain .heal/checks/latest.json one finding per commit
+       (Severity order; Critical 🔥 first)
 ```
 
-**Cool-down** prevents the same notice from flooding every session.
-After a rule fires, heal suppresses it for `cooldown_hours` (default
-24 hours). The rule fires again if the threshold is still crossed once
-the cool-down expires.
+## Codebase-relative Severity
 
-In practice, a cycle looks like this:
+A naïve threshold ("CCN ≥ 10 is high") works poorly across projects:
+a 200-line script and a 200kloc service operate in different worlds.
+heal calibrates each metric to the **codebase's own distribution**:
 
-1. You commit a change; heal records a snapshot silently in the background.
-2. You open Claude Code to continue working.
-3. heal compares the new snapshot to the previous one.
-4. If a hotspot file changed or complexity spiked, a brief notice
-   appears at the top of Claude's context.
-5. Claude can address it immediately, run `heal check` for details, or
-   you can defer it.
+- `p75 / p90 / p95` from the initial scan become the percentile
+  breaks under the literature-derived absolute floor.
+- Above the floor (or above `p95`): Critical.
+- `≥ p90`: High.
+- `≥ p75`: Medium.
+- otherwise: Ok.
 
-The **Repair** step extends the loop further: rather than only
-surfacing a notice, heal can open a pull request that addresses the
-issue — gated by an explicit policy you control.
+`Hotspot` is **orthogonal** — it's a flag (top-10% of the hotspot
+score), not a Severity. A finding can be `Critical 🔥`,
+`Critical`, `High 🔥`, etc. — the renderer surfaces them as
+separate buckets.
 
-## Read-only by default
+`heal calibrate --check` watches for drift (calibration over 90 days
+old, codebase file count ±20%, 30 days of zero Critical) and prints
+a recommendation; recalibration is **never automatic** so the user
+controls when to reset the baseline.
 
-heal does not modify source files unless you enable a repair policy.
-Every command either reads metrics or hands them to Claude for
-explanation. The only files heal writes are:
+## Read-only by default; write through the skill
 
-- `.heal/` — its own data directory
-- `.git/hooks/post-commit` — a single hook line, installed once
-- `.claude/plugins/heal/` — opt-in, via `heal skills install`
+The `heal` CLI itself never modifies source files. Repair flows
+through the bundled `/heal-fix` Claude skill, which:
 
-Automated repair is gated behind an explicit `policy.action = execute`
-setting. Until you set that, every change remains a human decision
-informed by what heal surfaced.
+- refuses to run on a dirty worktree,
+- commits one finding per fix,
+- never pushes,
+- never amends.
+
+`heal cache mark-fixed` is the single CLI subcommand that mutates
+state — it appends a line to `fixed.jsonl` and is meant to be called
+by `/heal-fix` after each commit.
 
 ## Why metrics
 
-Six metrics ship with heal:
+Seven metrics ship with heal:
 
 - **LOC** — language composition of the project
-- **Complexity (CCN + Cognitive)** — functions that are difficult to
-  follow
+- **Complexity (CCN + Cognitive)** — functions difficult to follow
 - **Churn** — files that change frequently
-- **Change Coupling** — files that change together
+- **Change Coupling** — files that change together; both the
+  one-way leader/follower count and the symmetric ("responsibility
+  mixing") subset
 - **Duplication** — code blocks that have been copied
 - **Hotspot** — churn × complexity, the "code as a crime scene" view
+- **LCOM** — classes whose methods don't share state (mechanically
+  separable)
 
 Each is a long-standing, well-studied metric. None are AI-specific.
 heal's contribution is not the metrics themselves — they have existed
-for decades — but the use of them as triggers for the agent loop,
-removing the human from the polling path.
+for decades — but using them as **calibrated triggers** for the agent
+loop, removing the human from the polling path.
 
 For the formulas behind each metric, see [Metrics](/heal/metrics/).
 
@@ -137,32 +146,37 @@ For the formulas behind each metric, see [Metrics](/heal/metrics/).
 Agents produce code well but do not consistently inspect the
 surrounding state. Hooks let the codebase emit signals on its own:
 
-- The **git post-commit hook** writes a snapshot when a commit lands.
-  No daemon, no schedule, no polling.
-- The **Claude Code SessionStart hook** reads the latest snapshot when
-  a session opens. The agent receives the signal at the moment it is
-  about to act.
+- The **git post-commit hook** writes a snapshot and surfaces the
+  Severity nudge when a commit lands. No daemon, no schedule.
+- Claude's **PostToolUse** / **Stop** hooks log what the agent did to
+  `.heal/logs/`, kept under ~1ms so the session loop isn't slowed.
 
-Both hooks invoke the same `heal` binary. There is no background
-process to manage.
+Both call the same `heal` binary. There is no background process to
+manage.
 
 ## What heal is not
 
 - **Not a linter.** Linters report on individual lines. heal reports
-  on which files warrant attention.
+  on which files warrant attention and in what order.
 - **Not a code reviewer.** That role belongs to Claude; heal shapes
-  the prompt.
+  the prompt and the TODO list.
 - **Not a CI gate.** The post-commit hook fires after a commit lands.
   heal tracks the long-term trajectory of the codebase rather than
   blocking individual PRs.
-- **Not a replacement for tests.** heal surfaces structural complexity;
-  correctness is still your test suite's job.
+- **Not a replacement for tests.** heal surfaces structural
+  complexity; correctness is still your test suite's job.
 
 ## Further reading
 
 - [Quick Start](/heal/quick-start/) — install and try it on a real
   repository
-- [Metrics](/heal/metrics/) — what each metric means
-- [CLI](/heal/cli/) — the full command surface
-- [Architecture](/heal/architecture/) — how the components fit
-  together
+- [Metrics](/heal/metrics/) — what each metric measures and how
+  Severity is assigned
+- [CLI](/heal/cli/) — the full command surface (`heal check`,
+  `heal cache`, `heal calibrate`)
+- [Configuration](/heal/configuration/) — `.heal/config.toml` and
+  `.heal/calibration.toml` reference
+- [Architecture](/heal/architecture/) — on-disk layout, event
+  streams, the cache contract
+- [Claude plugin](/heal/claude-plugin/) — `check-*` skills and
+  `/heal-fix`

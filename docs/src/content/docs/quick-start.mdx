@@ -1,6 +1,6 @@
 ---
 title: Quick Start
-description: Install heal, run it inside a git repository, and read the first metrics — in five minutes.
+description: Install heal, run it inside a git repository, calibrate, and drain the first TODO list — in five minutes.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
@@ -8,9 +8,9 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 After completing this walkthrough you will have:
 
 - heal running inside one of your git repositories
-- The first metrics on screen — a snapshot of the codebase
-- (Optional) Claude reading those metrics and pointing out where to
-  focus
+- A calibrated `.heal/` directory and the post-commit hook installed
+- The first Severity-grouped TODO list on screen
+- (Optional) Claude draining the cache via `/heal-fix`
 
 No source clone or manual build is required. The walkthrough takes
 about five minutes.
@@ -20,7 +20,7 @@ about five minutes.
 - macOS or Linux
 - A git repository to evaluate — your own or any open-source clone
 - (Optional) the [Claude Code](https://claude.com/code) CLI, for the
-  metric-explanation step
+  `check-*` skills and `/heal-fix`
 
 ## 1. Install `heal`
 
@@ -66,9 +66,8 @@ Verify the install:
 heal --version
 ```
 
-If the command is not found, ensure `~/.cargo/bin` is on the
-`PATH`. See [Installation](/heal/installation/) for details on each
-method.
+If the command is not found, ensure `~/.cargo/bin` is on the `PATH`.
+See [Installation](/heal/installation/) for details on each method.
 
 ## 2. Set up your repository
 
@@ -80,100 +79,127 @@ heal init
 
 This command:
 
-- Creates the `.heal/` directory used to store metrics
-- Installs a `.git/hooks/post-commit` hook
-- Captures the first snapshot
+- Creates `.heal/` with `config.toml`, `calibration.toml`,
+  `snapshots/`, `logs/`, `checks/`.
+- Runs every observer once to compute the codebase's percentile
+  distribution per metric (`p75 / p90 / p95`) — that's
+  `calibration.toml`.
+- Installs `.git/hooks/post-commit`.
+- Appends the first `MetricsSnapshot`, including the Severity tally.
 
-The command is safe to re-run. The config file and any existing hooks
-are left in place unless `--force` is passed.
+The command is safe to re-run. The config file and any existing
+non-heal hooks are left in place unless `--force` is passed.
 
-## 3. Read the first metrics
+## 3. See where the codebase stands
 
 ```sh
 heal status
 ```
 
-Sample output:
+Prints a summary of every enabled metric and the delta since the
+previous snapshot. After the first commit you'll see something like:
 
 ```
-Primary language: Rust
-
-LOC (top languages)
-  Rust         18421 code   2891 comments
-  TypeScript    4920 code    612 comments
-
-Complexity (max CCN: 14, max Cognitive: 22)
-  worst CCN:        run            crates/cli/src/commands/init.rs:78    14
-  worst Cognitive:  collect        crates/cli/src/observer/churn.rs:42   22
-
-Hotspots (top 3)
-  crates/cli/src/commands/init.rs        score 482
-  crates/cli/src/observer/loc.rs         score 213
-  crates/cli/src/core/eventlog.rs        score 187
-
-Δ since last commit
-  max_ccn       +2  (run)
-  hotspot top   unchanged
+Primary language: Rust  (18421 LOC across 142 files)
+  complexity:        max CCN 28  Cog 42  (172 functions across 73 files)
+  hotspot:           max score 640.0
+  lcom:              5 / 12 classes ≥ min_cluster_count=2
+  Δ since last:      max_ccn  +2  (busy_function)
 ```
 
-Key points:
-
-- **Primary language** is detected by `tokei`.
-- **Hotspot** is the most actionable single metric — the file most
-  worth attention, scored as `commits × ccn_sum`.
-- **Δ since last commit** is the delta block. An unchanged delta
-  indicates the latest commit did not raise any tracked metric. A
-  growing delta is an early warning.
-
-This is the core feedback loop: commit, run `heal status`, review the
-delta.
-
-## 4. Ask Claude to explain the result (optional)
-
-With Claude Code installed:
+For a per-file Severity-grouped TODO list — the canonical workflow:
 
 ```sh
 heal check
 ```
 
-Runs Claude in headless mode with a read-only skill that walks
-through the metrics in plain language — which files are hot, where
-duplicates appear, and which functions are candidates for refactor.
+Sample output:
 
-For a focused investigation:
+```
+── HEAL check ──────────────────────────────────────
+  Calibrated: 2026-04-30 09:00  (12 findings, head a1b2c3d)
 
-```sh
-heal check hotspots       # hotspot ranking
-heal check complexity     # CCN and Cognitive worst-N
-heal check duplication    # duplicate blocks
-heal check coupling       # files that change together
+🔴 Critical 🔥 (1)
+  src/payments/engine.ts  CCN=28
+🟠 High (3)
+  src/billing/cart.ts     CCN=14  Cognitive=18
+  ...
+
+  Goal: 0 Critical, 0 High  (current: Critical=1  High=3)
+  Next: `heal check --severity critical` / `claude /heal-fix`
+──────────────────────────────────────────────────
 ```
 
-`heal check` only reads metrics; it does not modify source files.
+This view groups findings under Severity tiers, surfaces hotspot
+files with `🔥`, and writes a `CheckRecord` to
+`.heal/checks/latest.json` — the TODO list `/heal-fix` will consume.
 
-## 5. Receive nudges automatically (optional)
+`heal check` is read-only. To narrow the list:
 
-Steps 1–4 are on-demand. To have heal surface threshold breaches at
-the start of every Claude session automatically, install the bundled
-plugin once:
+```sh
+heal check --metric lcom              # only LCOM findings
+heal check --severity critical        # only Critical
+heal check --feature src/payments     # only files under src/payments/
+heal check --hotspot                  # low-Severity hotspot files
+```
+
+## 4. Drain the cache (optional)
+
+With the bundled Claude plugin installed:
 
 ```sh
 heal skills install
 ```
 
-From this point on, when a metric crosses a threshold (a new top
-hotspot, a CCN spike, growing duplication), the next Claude session
-opens with a notice at the top — without an explicit command.
+…you can ask Claude to drain the TODO list one finding per commit:
 
-The plugin can be installed, updated, inspected, or removed via
-`heal skills <subcommand>`. See [Claude plugin](/heal/claude-plugin/)
-for hook behaviour.
+```sh
+claude /heal-fix
+```
+
+The skill picks the next non-Ok finding in Severity order
+(`Critical 🔥` first), reads the file, plans a refactor (Extract
+Function for CCN, Extract Method for duplication, etc.), applies the
+change, runs your test runner, commits with a Conventional Commits
+message + `Refs: F#<finding_id>` trailer, then re-scans to confirm.
+
+Constraints (enforced by the skill):
+
+- Refuses on a dirty worktree.
+- One finding = one commit.
+- Never pushes; never amends.
+
+When the cache is empty, the loop ends. You then `git push` /
+`gh pr create` yourself.
+
+## 5. Live with the post-commit nudge
+
+`heal init` installed a post-commit hook. From this point, every
+commit:
+
+- Re-runs every observer once.
+- Appends a `MetricsSnapshot` to `.heal/snapshots/`.
+- Surfaces every Critical / High finding to stdout right after the
+  commit message — `Medium` and `Ok` stay quiet.
+
+The same problem reappears in the nudge every commit until it's
+fixed. There is no cool-down — that's the point.
+
+When the calibration drifts (older than 90 days, codebase file count
+shifted ±20%, or 30 days of zero Critical), the nudge prepends a
+"consider recalibrating" hint. Run `heal calibrate` when ready;
+recalibration is never automatic.
 
 ## Further reading
 
 - [Concept](/heal/concept/) — the design idea, in three minutes.
-- [Metrics](/heal/metrics/) — what each metric means.
-- [CLI](/heal/cli/) — every subcommand with examples.
-- [Configuration](/heal/configuration/) — thresholds and toggles.
+- [Metrics](/heal/metrics/) — what each metric measures and how
+  Severity is assigned.
+- [CLI](/heal/cli/) — every subcommand with examples
+  (`heal check`, `heal cache`, `heal calibrate`).
+- [Configuration](/heal/configuration/) — thresholds, toggles, the
+  calibration file.
+- [Claude plugin](/heal/claude-plugin/) — the `check-*` skills and
+  `/heal-fix`.
 
 If a step does not behave as documented, please [file an issue](https://github.com/kechol/heal/issues).
