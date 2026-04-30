@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::core::calibration::Calibration;
-use crate::core::config::{load_from_project, Config, MetricsConfig};
+use crate::core::config::{Config, MetricsConfig};
 use crate::core::eventlog::EventLog;
 use crate::core::snapshot::{
     ChangeCouplingDelta, ChurnDelta, ComplexityDelta, DuplicationDelta, HotspotDelta,
@@ -17,43 +17,27 @@ use crate::observer::churn::ChurnReport;
 use crate::observer::complexity::{ComplexityMetric, ComplexityReport};
 use crate::observer::duplication::DuplicationReport;
 use crate::observer::hotspot::HotspotReport;
-use anyhow::Result;
 
-use crate::observers::{run_all, tally_severity, ObserverReports};
+use crate::observers::{tally_severity, ObserverReports};
 
-/// `capture` plus serialization to the opaque JSON used as the `Snapshot`
-/// `data` payload. Both `heal init` and `heal hook commit` write the same
-/// shape, so the conversion lives here once.
-pub(crate) fn capture_value(project: &Path) -> Result<serde_json::Value> {
-    let snap = capture(project)?;
-    Ok(serde_json::to_value(&snap).expect("MetricsSnapshot serialization is infallible"))
-}
-
-/// Run every enabled observer and package the results into a snapshot.
-///
-/// Returns `Ok(MetricsSnapshot::default())` when the project hasn't been
-/// initialized yet (no `.heal/config.toml`). This keeps the commit hook
-/// lossless even before `heal init` lands.
-pub(crate) fn capture(project: &Path) -> Result<MetricsSnapshot> {
-    let cfg = match load_from_project(project) {
-        Ok(c) => c,
-        Err(crate::core::Error::ConfigMissing(_)) => return Ok(MetricsSnapshot::default()),
-        Err(e) => return Err(e.into()),
-    };
-    let paths = HealPaths::new(project);
-    let reports = run_all(project, &cfg, None);
-    let mut snap = pack(project, &paths, &cfg, &reports);
-
-    // Best-effort delta against the previous snapshot. Failures here are
-    // non-fatal — the hook still records the new snapshot, just without a
-    // diff payload.
+/// `pack` plus a best-effort delta against the prior snapshot. The
+/// caller runs the observers, both to populate the snapshot and (in
+/// `heal hook commit`) to classify the same `reports` for the
+/// post-commit nudge — passing them through here keeps a single pass.
+pub(crate) fn pack_with_delta(
+    project: &Path,
+    paths: &HealPaths,
+    cfg: &Config,
+    reports: &ObserverReports,
+) -> MetricsSnapshot {
+    let mut snap = pack(project, paths, cfg, reports);
     let log = EventLog::new(paths.snapshots_dir());
     if let Ok(Some((prev_event, prev_metrics))) = MetricsSnapshot::latest_in(&log) {
-        let delta = compute_delta(prev_event.timestamp, &prev_metrics, &reports, &cfg.metrics);
+        let delta = compute_delta(prev_event.timestamp, &prev_metrics, reports, &cfg.metrics);
         snap.delta =
             Some(serde_json::to_value(&delta).expect("SnapshotDelta serialization is infallible"));
     }
-    Ok(snap)
+    snap
 }
 
 /// Build a `MetricsSnapshot` from already-computed observer reports. Loads

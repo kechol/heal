@@ -10,9 +10,10 @@ HEAL is a Rust CLI (binary: `heal`) that turns code-health signals into
 work for AI coding agents. v0.1 ships the **observe** half of the loop:
 six metric observers (LOC, CCN, Cognitive, Churn, Change Coupling,
 Duplication, Hotspot composition), the post-commit and Claude plugin
-hooks that drive them, and `heal status` / `heal check` for surfacing
-findings. The autonomous repair loop (`heal run`, PR generation) lands
-in v0.2+.
+hooks that drive them, and `heal status` / `heal check` / `heal cache`
+for surfacing findings. `heal check` runs the analyzer, classifies by
+Severity, and writes `.heal/checks/`; `heal cache *` reads it. The
+autonomous repair loop (`heal run`, PR generation) lands in v0.2+.
 
 For the user-facing overview see [`README.md`](./README.md).
 
@@ -94,24 +95,35 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
   `snapshot::MetricsSnapshot::latest_in(&log)`. Records that fail to
   decode (legacy payloads, mid-write truncation) are skipped silently —
   do not change `latest_in_segments` to propagate parse errors.
-- **`logs/`** holds raw hook events (`commit` / `edit` / `stop` /
-  `session-start`). The `commit` entry carries lightweight `CommitInfo`
-  metadata only (sha, parent, author email, message summary,
+- **`logs/`** holds raw hook events (`commit` / `edit` / `stop`). The
+  `commit` entry carries lightweight `CommitInfo` metadata only (sha,
+  parent, author email, message summary,
   files_changed/insertions/deletions); the heavy metric payload stays
   in `snapshots/`. `heal logs` reads these.
 - `EventLog::iter_segments(segments)` exists so callers that already
   paid for `segments()` (e.g. `heal status`) don't re-glob the
   directory. Use it.
 
-### Runtime state (`.heal/state.json`)
-- Holds `last_fired` (per-rule cool-down timestamps for the SessionStart
-  nudge) and the placeholder `open_proposals` (used in v0.2 once
-  `policy.action = execute` lands).
-- `State::save` writes via temp-file + rename so a SIGINT mid-write
-  never leaves a half-written file. `State::load` falls back to defaults
-  on `NotFound` so a freshly initialised project still works.
-- The struct deliberately does **not** use `deny_unknown_fields` so a
-  newer binary's additions don't break an older binary's reads.
+### Result cache (`.heal/checks/`)
+- `heal check` is the **only writer**; `heal cache *` and skill
+  workflows are readers. The cache models a TODO list — every Finding
+  has a deterministic id (`<metric>:<file>:<symbol>:<fnv1a>`) so an
+  unfixed problem reappears under the same id on the next run.
+- `checks/YYYY-MM.jsonl` (append-only) plus three side files:
+  `latest.json` (atomic mirror of the most recent record),
+  `fixed.jsonl` (skill committed a fix), `regressed.jsonl` (a fix
+  was re-detected). `core::check_cache` owns the schema.
+- Idempotency: `heal check` short-circuits when
+  `(head_sha, config_hash, worktree_clean=true)` matches the latest
+  cached record — re-running on the same commit is free. Dirty
+  worktrees never count as fresh.
+- `config_hash` covers `config.toml + calibration.toml`. A
+  `heal calibrate` invalidates every cache row, which is correct: the
+  Severity ladder shifted under us.
+- `reconcile_fixed` walks `fixed.jsonl` against new findings on every
+  fresh run. Re-detected entries move to `regressed.jsonl` and the
+  renderer surfaces them. Don't add a way to suppress this — the
+  warning is the whole point of tracking fixes separately.
 
 ### Hashing
 - Persistent hashes (duplication's per-token identity, the plugin
