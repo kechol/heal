@@ -71,6 +71,15 @@ pub enum Command {
         #[arg(long, conflicts_with = "reason")]
         check: bool,
     },
+    /// Compact `.heal/{snapshots,logs,checks}/` segments. Files older
+    /// than 90 days are gzipped in place; files older than 365 days
+    /// are deleted. Idempotent — also called automatically from
+    /// `heal hook commit`, so manual runs are mostly for diagnostics.
+    Compact {
+        /// Print one line per touched file instead of just the summary.
+        #[arg(long)]
+        verbose: bool,
+    },
 }
 
 /// Metric filter for `heal status --metric`. clap renders these in
@@ -372,6 +381,7 @@ impl Cli {
             Command::Calibrate { reason, check } => {
                 commands::calibrate::run(&project, reason, check)
             }
+            Command::Compact { verbose } => commands::compact::run(&project, verbose),
         }
     }
 }

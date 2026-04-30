@@ -3,6 +3,7 @@
 
 pub mod calibration;
 pub mod check_cache;
+pub mod compaction;
 pub mod config;
 pub mod error;
 pub mod eventlog;

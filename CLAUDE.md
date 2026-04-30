@@ -88,7 +88,13 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
 ### Event log (`.heal/snapshots/YYYY-MM.jsonl` and `.heal/logs/YYYY-MM.jsonl`)
 - Both directories use the same generic `heal_core::eventlog::EventLog`
   store: append-only, month-rotated, reads transparent across `.gz`.
-  Compaction ships in v0.2+.
+- `core::compaction::compact` gzips segments in place at 90 days
+  (`YYYY-MM.jsonl` → `YYYY-MM.jsonl.gz`) and deletes them at 365 days.
+  Best-effort from `heal hook commit`; idempotent. Older history is
+  intentionally not preserved — calibration only looks at 90 days,
+  `heal status` reads recent commits, and trends beyond a year were
+  never going to be actioned. Don't reintroduce a `.archive/` subdir;
+  the original design did and it added complexity for no reader.
 - **`snapshots/`** holds `MetricsSnapshot` events written by the
   `commit` hook. `heal status` reads these for the metric series and
   delta. Decode the latest record with

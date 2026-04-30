@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod calibrate;
 pub mod check;
+pub mod compact;
 pub mod hook;
 pub mod init;
 pub mod logs;

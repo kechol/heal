@@ -91,6 +91,11 @@ fn run_commit(project: &Path, paths: &HealPaths, logs: &EventLog) -> Result<()> 
         HookEvent::Commit.as_str(),
         commit_log_payload(project),
     ))?;
+    // Best-effort compaction. The cheap path is three `read_dir` calls
+    // — only does I/O when something is actually ripe (≥90 days old).
+    // Any error is swallowed; the user already has their snapshot.
+    crate::commands::compact::run_all(paths, &crate::core::compaction::CompactionPolicy::default())
+        .ok();
     // Best-effort nudge — the user just committed and the snapshot is
     // already persisted, so don't fail the hook on rendering issues.
     write_nudge(
