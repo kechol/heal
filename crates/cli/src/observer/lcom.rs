@@ -353,6 +353,12 @@ fn is_method_kind(node: Node<'_>, lang: Language) -> bool {
         // methods and emit no Findings.
         #[cfg(feature = "lang-go")]
         Language::Go => false,
+        // Scala spans class / trait / object / case-class / given
+        // constructs and uses bare-name field access more than
+        // `this.field`. A class-aware LCOM that handles this richness
+        // needs the LSP backend (v0.5+); skip in v0.2.
+        #[cfg(feature = "lang-scala")]
+        Language::Scala => false,
         #[cfg(feature = "lang-rust")]
         Language::Rust => node.kind() == "function_item",
     }
@@ -372,6 +378,8 @@ fn class_name_for(class_node: Node<'_>, source: &[u8], lang: Language) -> String
         // here doesn't matter.
         #[cfg(feature = "lang-go")]
         Language::Go => "name",
+        #[cfg(feature = "lang-scala")]
+        Language::Scala => "name",
         #[cfg(feature = "lang-rust")]
         Language::Rust => "type",
     };
@@ -462,9 +470,26 @@ fn self_ref_shape(lang: Language) -> SelfRefShape {
         // the match stays total.
         #[cfg(feature = "lang-go")]
         Language::Go => SELF_REF_GO_NOOP,
+        // Scala's LCOM is a no-op (see `is_method_kind`); reuse the
+        // never-receiver shape so the match stays total.
+        #[cfg(feature = "lang-scala")]
+        Language::Scala => SELF_REF_SCALA_NOOP,
         #[cfg(feature = "lang-rust")]
         Language::Rust => SELF_REF_RUST,
     }
+}
+
+#[cfg(feature = "lang-scala")]
+const SELF_REF_SCALA_NOOP: SelfRefShape = SelfRefShape {
+    access_kind: "field_expression",
+    receiver_field: "value",
+    is_receiver: never_receiver_scala,
+    property_field: "field",
+    call_kind: "call_expression",
+};
+#[cfg(feature = "lang-scala")]
+fn never_receiver_scala(_: Node<'_>, _: &[u8]) -> bool {
+    false
 }
 
 #[cfg(feature = "lang-go")]
@@ -629,6 +654,12 @@ mod tests {
     fn run_go(source: &str) -> Vec<ClassLcom> {
         let parsed = parse(source.to_owned(), Language::Go).unwrap();
         classes_in(&parsed, Path::new("test.go"))
+    }
+
+    #[cfg(feature = "lang-scala")]
+    fn run_scala(source: &str) -> Vec<ClassLcom> {
+        let parsed = parse(source.to_owned(), Language::Scala).unwrap();
+        classes_in(&parsed, Path::new("test.scala"))
     }
 
     #[cfg(feature = "lang-rust")]
@@ -874,6 +905,21 @@ func (c *Counter) Inc() { c.value += 1 }
 func (c *Counter) Get() int { return c.value }
 ";
         assert!(run_go(src).is_empty());
+    }
+
+    #[cfg(feature = "lang-scala")]
+    #[test]
+    fn scala_lcom_is_a_noop_in_v0_2() {
+        // Same shape as Go — Scala's class story is too rich for the
+        // tree-sitter-approx backend; deferred to v0.3+ LSP.
+        let src = r"
+class Counter {
+  private var value = 0
+  def inc(): Unit = value += 1
+  def get: Int = value
+}
+";
+        assert!(run_scala(src).is_empty());
     }
 
     #[cfg(feature = "lang-py")]

@@ -25,10 +25,11 @@ use tree_sitter_typescript::{LANGUAGE_TSX, LANGUAGE_TYPESCRIPT};
     feature = "lang-js",
     feature = "lang-py",
     feature = "lang-go",
+    feature = "lang-scala",
     feature = "lang-rust"
 )))]
 compile_error!(
-    "heal-observer requires at least one language feature: lang-ts / lang-js / lang-py / lang-go / lang-rust"
+    "heal-observer requires at least one language feature: lang-ts / lang-js / lang-py / lang-go / lang-scala / lang-rust"
 );
 
 #[cfg(feature = "lang-ts")]
@@ -67,6 +68,15 @@ const GO_COGNITIVE_QUERY: &str = include_str!("../../queries/go/cognitive.scm");
 #[cfg(feature = "lang-go")]
 const GO_LCOM_QUERY: &str = include_str!("../../queries/go/lcom.scm");
 
+#[cfg(feature = "lang-scala")]
+const SCALA_FUNCTIONS_QUERY: &str = include_str!("../../queries/scala/functions.scm");
+#[cfg(feature = "lang-scala")]
+const SCALA_CCN_QUERY: &str = include_str!("../../queries/scala/ccn.scm");
+#[cfg(feature = "lang-scala")]
+const SCALA_COGNITIVE_QUERY: &str = include_str!("../../queries/scala/cognitive.scm");
+#[cfg(feature = "lang-scala")]
+const SCALA_LCOM_QUERY: &str = include_str!("../../queries/scala/lcom.scm");
+
 #[cfg(feature = "lang-rust")]
 const RUST_FUNCTIONS_QUERY: &str = include_str!("../../queries/rust/functions.scm");
 #[cfg(feature = "lang-rust")]
@@ -91,6 +101,8 @@ pub enum Language {
     Python,
     #[cfg(feature = "lang-go")]
     Go,
+    #[cfg(feature = "lang-scala")]
+    Scala,
     #[cfg(feature = "lang-rust")]
     Rust,
 }
@@ -153,6 +165,8 @@ static JSX_QUERIES: LanguageQueries = LanguageQueries::new();
 static PYTHON_QUERIES: LanguageQueries = LanguageQueries::new();
 #[cfg(feature = "lang-go")]
 static GO_QUERIES: LanguageQueries = LanguageQueries::new();
+#[cfg(feature = "lang-scala")]
+static SCALA_QUERIES: LanguageQueries = LanguageQueries::new();
 #[cfg(feature = "lang-rust")]
 static RUST_QUERIES: LanguageQueries = LanguageQueries::new();
 
@@ -175,6 +189,8 @@ impl Language {
             "py" | "pyi" => Some(Self::Python),
             #[cfg(feature = "lang-go")]
             "go" => Some(Self::Go),
+            #[cfg(feature = "lang-scala")]
+            "scala" | "sc" => Some(Self::Scala),
             #[cfg(feature = "lang-rust")]
             "rs" => Some(Self::Rust),
             _ => None,
@@ -197,6 +213,8 @@ impl Language {
             Self::Python => "python",
             #[cfg(feature = "lang-go")]
             Self::Go => "go",
+            #[cfg(feature = "lang-scala")]
+            Self::Scala => "scala",
             #[cfg(feature = "lang-rust")]
             Self::Rust => "rust",
         }
@@ -215,6 +233,8 @@ impl Language {
             Self::Python => tree_sitter_python::LANGUAGE.into(),
             #[cfg(feature = "lang-go")]
             Self::Go => tree_sitter_go::LANGUAGE.into(),
+            #[cfg(feature = "lang-scala")]
+            Self::Scala => tree_sitter_scala::LANGUAGE.into(),
             #[cfg(feature = "lang-rust")]
             Self::Rust => tree_sitter_rust::LANGUAGE.into(),
         }
@@ -289,6 +309,8 @@ impl Language {
             Self::Python => &PYTHON_QUERIES,
             #[cfg(feature = "lang-go")]
             Self::Go => &GO_QUERIES,
+            #[cfg(feature = "lang-scala")]
+            Self::Scala => &SCALA_QUERIES,
             #[cfg(feature = "lang-rust")]
             Self::Rust => &RUST_QUERIES,
         }
@@ -304,6 +326,8 @@ impl Language {
             Self::Python => PYTHON_FUNCTIONS_QUERY,
             #[cfg(feature = "lang-go")]
             Self::Go => GO_FUNCTIONS_QUERY,
+            #[cfg(feature = "lang-scala")]
+            Self::Scala => SCALA_FUNCTIONS_QUERY,
             #[cfg(feature = "lang-rust")]
             Self::Rust => RUST_FUNCTIONS_QUERY,
         }
@@ -319,6 +343,8 @@ impl Language {
             Self::Python => PYTHON_CCN_QUERY,
             #[cfg(feature = "lang-go")]
             Self::Go => GO_CCN_QUERY,
+            #[cfg(feature = "lang-scala")]
+            Self::Scala => SCALA_CCN_QUERY,
             #[cfg(feature = "lang-rust")]
             Self::Rust => RUST_CCN_QUERY,
         }
@@ -334,6 +360,8 @@ impl Language {
             Self::Python => PYTHON_COGNITIVE_QUERY,
             #[cfg(feature = "lang-go")]
             Self::Go => GO_COGNITIVE_QUERY,
+            #[cfg(feature = "lang-scala")]
+            Self::Scala => SCALA_COGNITIVE_QUERY,
             #[cfg(feature = "lang-rust")]
             Self::Rust => RUST_COGNITIVE_QUERY,
         }
@@ -349,6 +377,8 @@ impl Language {
             Self::Python => PYTHON_LCOM_QUERY,
             #[cfg(feature = "lang-go")]
             Self::Go => GO_LCOM_QUERY,
+            #[cfg(feature = "lang-scala")]
+            Self::Scala => SCALA_LCOM_QUERY,
             #[cfg(feature = "lang-rust")]
             Self::Rust => RUST_LCOM_QUERY,
         }
@@ -537,5 +567,31 @@ mod tests {
         assert!(Language::Go.ccn_query().query.pattern_count() > 0);
         assert!(Language::Go.cognitive_query().query.pattern_count() > 0);
         assert!(Language::Go.lcom_query().query.pattern_count() > 0);
+    }
+
+    #[cfg(feature = "lang-scala")]
+    #[test]
+    fn dispatches_scala_extensions() {
+        assert_eq!(
+            Language::from_path(&PathBuf::from("src/main/scala/Foo.scala")),
+            Some(Language::Scala)
+        );
+        assert_eq!(
+            Language::from_path(&PathBuf::from("script.sc")),
+            Some(Language::Scala)
+        );
+    }
+
+    #[cfg(feature = "lang-scala")]
+    #[test]
+    fn scala_queries_compile_and_grammar_loads() {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&Language::Scala.ts_language())
+            .expect("scala grammar loads");
+        assert!(Language::Scala.functions_query().query.pattern_count() > 0);
+        assert!(Language::Scala.ccn_query().query.pattern_count() > 0);
+        assert!(Language::Scala.cognitive_query().query.pattern_count() > 0);
+        assert!(Language::Scala.lcom_query().query.pattern_count() > 0);
     }
 }

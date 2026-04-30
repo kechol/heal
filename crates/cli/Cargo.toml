@@ -40,6 +40,7 @@ lang-ts = ["dep:tree-sitter-typescript"]
 lang-js = ["dep:tree-sitter-javascript"]
 lang-py = ["dep:tree-sitter-python"]
 lang-go = ["dep:tree-sitter-go"]
+lang-scala = ["dep:tree-sitter-scala"]
 lang-rust = ["dep:tree-sitter-rust"]
 
 [lib]
@@ -66,6 +67,7 @@ tree-sitter-typescript = { workspace = true, optional = true }
 tree-sitter-javascript = { workspace = true, optional = true }
 tree-sitter-python = { workspace = true, optional = true }
 tree-sitter-go = { workspace = true, optional = true }
+tree-sitter-scala = { workspace = true, optional = true }
 tree-sitter-rust = { workspace = true, optional = true }
 ignore = { workspace = true }
 git2 = { workspace = true }
