@@ -1,5 +1,6 @@
 //! Cross-observer `Finding` abstraction — promoted to `core` as the
-//! prerequisite for v0.2 (Calibration, `heal check` cache, `/heal-fix`).
+//! prerequisite for v0.2 (Calibration, `heal check` cache,
+//! `/heal-code-fix`).
 //!
 //! Every observer's report can be lowered into `Vec<Finding>` via the
 //! [`IntoFindings`] trait. The lowering is deterministic and pure: it

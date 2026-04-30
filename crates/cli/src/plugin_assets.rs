@@ -483,7 +483,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let dest = dir.path();
         extract(dest, ExtractMode::InstallSafe).unwrap();
-        let body = std::fs::read_to_string(dest.join("skills/check-hotspots/SKILL.md")).unwrap();
+        let body = std::fs::read_to_string(dest.join("skills/heal-code-check/SKILL.md")).unwrap();
         assert!(body.contains("metadata:"));
         assert!(body.contains("heal-version: 0.1.0"));
     }

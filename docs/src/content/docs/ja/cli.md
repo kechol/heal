@@ -108,7 +108,7 @@ SessionStart ナッジとともに廃止されました。
 ## `heal check`
 
 `.heal/checks/latest.json` に保存された `CheckRecord` を描画します
-（`/heal-fix` が読む TODO リスト）。キャッシュが無いとき、または
+（`/heal-code-fix` が読む TODO リスト）。キャッシュが無いとき、または
 `--refresh` 指定時のみ全オブザーバーを実行して `calibration.toml`
 で Severity を分類し、結果を書き出します。
 
@@ -133,7 +133,7 @@ heal check --json                       # CheckRecord 形式を stdout へ
 出力は Finding を `🔴 Critical 🔥 / 🔴 Critical / 🟠 High 🔥 /
 🟠 High / 🟡 Medium / ✅ Ok` の下にグループ化し（最後の 2 つは
 `--all` が必要）、ファイル単位に 1 行へ集約します。最後に
-`Goal: 0 Critical, 0 High` と、`claude /heal-fix` を指す "next steps"
+`Goal: 0 Critical, 0 High` と、`claude /heal-code-fix` を指す "next steps"
 の行が続きます。`--all` 指定時は、「Severity は低いが上位 10% の
 Hotspot」に該当するファイルを別セクション（`Ok / Medium 🔥`）で
 追加表示します。
@@ -153,7 +153,7 @@ heal fix diff <from>                  # <from> vs ライブスキャン
 heal fix diff <from> <to>             # 2 件のキャッシュ間（スキャンなし）
 heal fix diff --all --json            # Improved/Unchanged も表示 + JSON
 
-heal fix mark --finding-id <id> --commit-sha <sha>   # /heal-fix が呼ぶ
+heal fix mark --finding-id <id> --commit-sha <sha>   # /heal-code-fix が呼ぶ
 ```
 
 引数のセマンティクスは `git diff` と同じ。`<to>` を省略すると「ワー
@@ -212,11 +212,13 @@ heal skills uninstall   # .claude/plugins/heal/ を削除
 
 同梱プラグインに含まれるもの:
 
-- 5 つのリードオンリー `check-*` スキル（`overview` / `hotspots` /
-  `complexity` / `duplication` / `coupling`） — `heal status --metric <x>`
-  をラップ。
-- 1 つの write スキル `heal-fix` — `.heal/checks/latest.json` を
-  Severity 順（`Critical 🔥` 先頭）に 1 コミット 1 Finding ずつ消化。
+- 1 つのリードオンリースキル `heal-code-check` — `heal check --all
+  --json` を取り込み、フラグ付きコードを深く読み込み、アーキテクチャ
+  的な所見と優先度付きのリファクタ TODO リストを返します（リファレ
+  ンスは `skills/heal-code-check/references/` 以下）。
+- 1 つの write スキル `heal-code-fix` — `.heal/checks/latest.json`
+  を Severity 順（`Critical 🔥` 先頭）に 1 コミット 1 Finding ずつ
+  消化。
 
 ---
 

@@ -29,7 +29,7 @@ git commit
                                          (Critical / High Finding のみ;
                                           トリガー発火時は recalibrate ヒントを先頭に追加)
 
-ユーザー: heal check（または `claude /heal-fix`）
+ユーザー: heal check（または `claude /heal-code-fix`）
     │
     ▼
 heal check  ──►  calibration.toml で Finding を分類
@@ -64,7 +64,7 @@ heal check  ──►  calibration.toml で Finding を分類
 │   └── checks/
 │       ├── 2026-04.jsonl          # 追記専用の CheckRecord ストリーム
 │       ├── latest.json            # 最新レコードのアトミックなミラー
-│       ├── fixed.jsonl            # `/heal-fix` がコミットでの修正を主張
+│       ├── fixed.jsonl            # `/heal-code-fix` がコミットでの修正を主張
 │       └── regressed.jsonl        # 修正済みが再検出された — 警告として表示
 │
 ├── .git/hooks/post-commit         # `heal hook commit` を呼ぶ 1 行のシム
@@ -82,7 +82,7 @@ heal check  ──►  calibration.toml で Finding を分類
 | `.heal/logs/YYYY-MM.jsonl`       | post-commit + Claude PostToolUse / Stop          | コミットおよび Claude ツールイベントごと。       |
 | `.heal/checks/YYYY-MM.jsonl`     | `heal check`                                     | 新規 `heal check`（キャッシュミス経路）ごと。    |
 | `.heal/checks/latest.json`       | `heal check`                                     | アトミックミラー；新規実行ごとにリフレッシュ。   |
-| `.heal/checks/fixed.jsonl`       | `heal fix mark`（`/heal-fix` から呼出）          | `/heal-fix` のコミット着地ごと。                 |
+| `.heal/checks/fixed.jsonl`       | `heal fix mark`（`/heal-code-fix` から呼出）          | `/heal-code-fix` のコミット着地ごと。                 |
 | `.heal/checks/regressed.jsonl`   | `heal check`（整合パス）                         | 修正済み Finding が再検出されたとき。            |
 | `.claude/plugins/heal/`          | `heal skills install`                            | 一度だけ。`heal skills update` で更新。          |
 
@@ -157,7 +157,7 @@ v0.2 以前の `.heal/state.json` は SessionStart ナッジとともに廃止
 
 ### `checks/` — 結果キャッシュ
 
-`/heal-fix` が消化する TODO リストです。`heal check` が唯一の
+`/heal-code-fix` が消化する TODO リストです。`heal check` が唯一の
 writer です。
 
 ```json

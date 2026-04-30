@@ -10,7 +10,7 @@ After completing this walkthrough you will have:
 - heal running inside one of your git repositories
 - A calibrated `.heal/` directory and the post-commit hook installed
 - The first Severity-grouped TODO list on screen
-- (Optional) Claude draining the cache via `/heal-fix`
+- (Optional) Claude draining the cache via `/heal-code-fix`
 
 No source clone or manual build is required. The walkthrough takes
 about five minutes.
@@ -20,7 +20,7 @@ about five minutes.
 - macOS or Linux
 - A git repository to evaluate — your own or any open-source clone
 - (Optional) the [Claude Code](https://claude.com/code) CLI, for the
-  `check-*` skills and `/heal-fix`
+  `/heal-code-check` audit and `/heal-code-fix` repair skills
 
 ## 1. Install `heal`
 
@@ -126,13 +126,13 @@ Sample output:
   ...
 
   Goal: 0 Critical, 0 High  (current: Critical=1  High=3)
-  Next: `heal check --severity critical` / `claude /heal-fix`
+  Next: `heal check --severity critical` / `claude /heal-code-fix`
 ──────────────────────────────────────────────────
 ```
 
 This view groups findings under Severity tiers, surfaces hotspot
 files with `🔥`, and writes a `CheckRecord` to
-`.heal/checks/latest.json` — the TODO list `/heal-fix` will consume.
+`.heal/checks/latest.json` — the TODO list `/heal-code-fix` will consume.
 
 `heal check` is read-only. To narrow the list:
 
@@ -151,13 +151,19 @@ With the bundled Claude plugin installed:
 heal skills install
 ```
 
-…you can ask Claude to drain the TODO list one finding per commit:
+…you can audit the cache or drain it through Claude:
 
 ```sh
-claude /heal-fix
+claude /heal-code-check    # architectural reading + prioritised TODO
+claude /heal-code-fix      # one finding per commit, in Severity order
 ```
 
-The skill picks the next non-Ok finding in Severity order
+`/heal-code-check` is read-only — it ingests the cache, deep-reads
+the flagged code, and returns an architectural reading plus a
+prioritised refactor TODO list (grounded in the metric literature
+and module-depth / layered / DDD vocabulary).
+
+`/heal-code-fix` picks the next non-Ok finding in Severity order
 (`Critical 🔥` first), reads the file, plans a refactor (Extract
 Function for CCN, Extract Method for duplication, etc.), applies the
 change, runs your test runner, commits with a Conventional Commits
@@ -199,7 +205,7 @@ recalibration is never automatic.
   (`heal check`, `heal cache`, `heal calibrate`).
 - [Configuration](/heal/configuration/) — thresholds, toggles, the
   calibration file.
-- [Claude plugin](/heal/claude-plugin/) — the `check-*` skills and
-  `/heal-fix`.
+- [Claude plugin](/heal/claude-plugin/) — the `/heal-code-check` and
+  `/heal-code-fix` skills.
 
 If a step does not behave as documented, please [file an issue](https://github.com/kechol/heal/issues).

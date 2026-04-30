@@ -16,8 +16,8 @@ The loop is observe → calibrate → check → fix:
   (`Critical / High / Medium / Ok`). Hotspot is an orthogonal flag.
 - **check**: `heal check` classifies findings by Severity, writes a TODO
   cache to `.heal/checks/`, and groups the rendered list per-file.
-- **fix**: the bundled `/heal-fix` Claude skill drains the cache one
-  finding per commit; the post-commit hook surfaces the next
+- **fix**: the bundled `/heal-code-fix` Claude skill drains the cache
+  one finding per commit; the post-commit hook surfaces the next
   Critical / High items right inside `git commit` output.
 
 Documentation: <https://kechol.github.io/heal/>
@@ -84,7 +84,7 @@ Inside any git repository:
 ```sh
 heal init                # create .heal/, calibrate, install the post-commit hook
 heal check               # analyze + render the Severity-grouped TODO list
-heal skills install      # bundle the Claude plugin for /heal-fix
+heal skills install      # bundle the Claude plugin for /heal-code-fix
 ```
 
 After `heal init`, every commit:
@@ -98,7 +98,7 @@ After `heal init`, every commit:
 
 `heal check` then re-runs the analysis on demand and writes a
 `CheckRecord` to `.heal/checks/latest.json` — the single file the
-`/heal-fix` skill reads as a TODO list.
+`/heal-code-fix` skill reads as a TODO list.
 
 The full walkthrough is at <https://kechol.github.io/heal/quick-start/>.
 
@@ -114,7 +114,7 @@ The full walkthrough is at <https://kechol.github.io/heal/quick-start/>.
 | `heal check [--metric <name>] [--severity <level>] [--feature <prefix>] [--all] [--top N] [--json] [--refresh]` | Render the cached `CheckRecord` from `.heal/checks/latest.json`. Re-scans only on a missing cache or `--refresh`; that path is the single writer of `.heal/checks/`. |
 | `heal fix show <check_id> [--json]` | Detail-render one cached record (use `--json` for the stable shape). |
 | `heal fix diff [<from>] [<to>] [--all] [--json]` | Bucket findings into Resolved / Regressed / Improved / New / Unchanged, with progress %. Argument shape mirrors `git diff`: omit `<to>` to compare against a live scan (no record written); omit both to default `<from>` to the latest cached record. |
-| `heal fix mark --finding-id <id> --commit-sha <sha>` | Append a `FixedFinding` line; called by `/heal-fix` after each commit. |
+| `heal fix mark --finding-id <id> --commit-sha <sha>` | Append a `FixedFinding` line; called by `/heal-code-fix` after each commit. |
 | `heal calibrate [--force]` | Calibrate codebase-relative Severity thresholds. Default reads `.heal/calibration.toml` and reports drift triggers; `--force` rescans and overwrites. |
 | `heal hook <commit\|edit\|stop>` | Hook entrypoint invoked by git or the Claude plugin. Not for direct use. |
 | `heal skills <install\|update\|status\|uninstall>` | Manage the bundled Claude plugin under `.claude/plugins/heal/`. |
@@ -230,9 +230,14 @@ crates.io tarball ships it, and is materialised into
 - Two hook scripts wired to `heal hook <event>`:
   - `PostToolUse(Edit|Write|MultiEdit)` → `heal hook edit` (logs only)
   - `Stop` → `heal hook stop` (logs only)
-- Five read-only `check-*` skills (`overview`, `hotspots`, `complexity`,
-  `duplication`, `coupling`) that pull from `heal status --metric <x>`.
-- One write skill `heal-fix` that drains `.heal/checks/latest.json` one
+- One read-only skill `heal-code-check` that ingests `heal check
+  --all --json`, deep-reads the flagged code, and produces an
+  architectural reading plus a prioritised TODO list — grounded in
+  the metric literature (see
+  `skills/heal-code-check/references/metrics.md`) and module-depth /
+  layered / DDD vocabulary
+  (`skills/heal-code-check/references/architecture.md`).
+- One write skill `heal-code-fix` that drains `.heal/checks/latest.json` one
   finding per commit (Severity order; `Critical 🔥` first), in
   Conventional Commits format, with `Refs: F#<finding_id>` trailers.
   Refuses to start on a dirty worktree; never pushes; never amends.

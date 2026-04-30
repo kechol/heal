@@ -33,8 +33,9 @@ pub enum Command {
     Status {
         #[arg(long)]
         json: bool,
-        /// Restrict output to a single metric. Drives the per-metric
-        /// `check-*` skills under `.claude/plugins/heal/`.
+        /// Restrict output to a single metric. Used by the
+        /// `heal-code-check` skill under `.claude/plugins/heal/` when
+        /// narrowing focus.
         #[arg(long, value_enum)]
         metric: Option<StatusMetric>,
     },
@@ -56,12 +57,12 @@ pub enum Command {
     /// — Critical / High view by default. Runs a fresh scan only when
     /// the cache is missing; pass `--refresh` to force a rescan and
     /// overwrite the cache. The single source of truth that
-    /// `/heal-fix` (Claude side) and `heal fix *` consume.
+    /// `/heal-code-fix` (Claude side) and `heal fix *` consume.
     Check(CheckArgs),
     /// Update the fix-tracking state attached to `.heal/checks/`:
     /// `show` renders one historical `CheckRecord`, `diff` buckets
     /// findings across two, `mark` records a finding as resolved by
-    /// a commit (used by `/heal-fix`).
+    /// a commit (used by `/heal-code-fix`).
     Fix {
         #[command(subcommand)]
         action: FixAction,
@@ -320,7 +321,7 @@ pub enum FixAction {
         json: bool,
     },
     /// Append a `FixedFinding` to `.heal/checks/fixed.jsonl`. Called by
-    /// `/heal-fix` (or any skill that commits a fix) so the next
+    /// `/heal-code-fix` (or any skill that commits a fix) so the next
     /// `heal check --refresh` can warn if the same finding re-appears.
     Mark {
         /// `Finding.id` from `heal check --json` output.

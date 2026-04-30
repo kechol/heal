@@ -1,14 +1,14 @@
 ---
-name: heal-fix
-description: Drain the HEAL findings cache by fixing one finding per commit, in Severity order. Trigger on "fix the HEAL findings", "drain the cache", "/heal-fix", "work through the TODO list HEAL produced". Writes code, runs tests, and commits — does NOT push or open PRs. Refuses to start on a dirty worktree.
+name: heal-code-fix
+description: Drain the cache produced by `heal check`, fixing one finding per commit in Severity order, until the cache is empty or the user stops. Writes code, runs tests, and commits — does NOT push or open PRs. Refuses to start on a dirty worktree. Trigger on "fix the heal findings", "drain the cache", "work through the TODO list heal produced", "/heal-code-fix".
 ---
 
-# heal-fix
+# heal-code-fix
 
-Drain the cache that `heal check` produced. One finding per commit, in
-Severity order, until the cache is empty (or you stop the session).
-This is the **write** counterpart to the `check-*` skills — those
-propose, this applies.
+Drain the cache that `heal check` produced. One finding per commit,
+in Severity order, until the cache is empty (or the user stops). This
+is the **write** counterpart to `heal-code-check` — that one proposes,
+this one applies.
 
 ## Mental model
 
@@ -75,8 +75,7 @@ Skip findings already present in `.heal/checks/fixed.jsonl` (the next
 `heal check` would have moved them out, but a session in progress
 might still have stale entries — match by `finding_id`).
 
-If the user invoked `/heal-fix --metric <name>` (or
-`/heal-fix-complexity` / `/heal-fix-duplication`), restrict the
+If the user invoked `/heal-code-fix --metric <name>`, restrict the
 selection to that metric. Default = no filter.
 
 ## Per-metric fix patterns

@@ -19,11 +19,7 @@
     ]
   },
   "skills": [
-    "skills/check-overview",
-    "skills/check-hotspots",
-    "skills/check-complexity",
-    "skills/check-duplication",
-    "skills/check-coupling",
-    "skills/heal-fix"
+    "skills/heal-code-check",
+    "skills/heal-code-fix"
   ]
 }

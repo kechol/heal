@@ -185,7 +185,7 @@ fn write_nudge(
             f.short_label(),
         )?;
     }
-    writeln!(out, "Next: `heal check` / `claude /heal-fix`")?;
+    writeln!(out, "Next: `heal check` / `claude /heal-code-fix`")?;
     Ok(())
 }
 

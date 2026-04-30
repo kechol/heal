@@ -27,7 +27,7 @@ external signal, the human is the only one tracking them.
 `heal` fills that gap. A git post-commit hook records a metric
 snapshot on every commit and surfaces every Critical / High finding
 to stdout. `heal check` writes the same findings to a cache the
-bundled `/heal-fix` Claude skill drains, one finding per commit.
+bundled `/heal-code-fix` Claude skill drains, one finding per commit.
 
 ## At a glance
 
@@ -44,7 +44,7 @@ bundled `/heal-fix` Claude skill drains, one finding per commit.
   </Card>
   <Card title="Read-only by default; write through the skill" icon="approve-check">
     The CLI never modifies source files. Repair flows through
-    `/heal-fix`: one finding per commit, refuses on a dirty worktree,
+    `/heal-code-fix`: one finding per commit, refuses on a dirty worktree,
     never pushes.
   </Card>
   <Card title="Single binary" icon="rocket">
