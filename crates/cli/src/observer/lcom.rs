@@ -49,11 +49,6 @@ use crate::observer::lang::Language;
 use crate::observer::walk::walk_supported_files;
 use crate::observer::{ObservationMeta, Observer};
 
-/// Default `min_cluster_count` floor — anything `>= 2` (separable into
-/// at least two clusters) is worth surfacing. The Calibration percentile
-/// breaks layer Severity on top.
-pub const DEFAULT_MIN_CLUSTER_COUNT: u32 = 2;
-
 #[derive(Debug, Clone, Default)]
 pub struct LcomObserver {
     pub enabled: bool,
@@ -227,9 +222,12 @@ fn analyze_class(class_node: Node<'_>, parsed: &ParsedFile, file: &Path) -> Opti
     }
     let class_name = class_name_for(class_node, parsed.source.as_bytes(), parsed.lang);
 
-    // method_index → fields it touches + sibling-method calls
-    let mut field_to_methods: HashMap<String, Vec<usize>> = HashMap::new();
-    let mut method_calls: Vec<Vec<usize>> = vec![Vec::new(); methods.len()];
+    // field-name → distinct method indices that touch it. The
+    // `BTreeSet` dedupes within a method (a method touching `this.foo`
+    // ten times still produces one entry) so the union-find pass
+    // doesn't waste work re-unioning the same pair.
+    let mut field_to_methods: HashMap<String, BTreeSet<usize>> = HashMap::new();
+    let mut method_calls: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); methods.len()];
     let method_name_to_index: HashMap<&str, usize> = methods
         .iter()
         .enumerate()
@@ -239,12 +237,12 @@ fn analyze_class(class_node: Node<'_>, parsed: &ParsedFile, file: &Path) -> Opti
     for (i, method) in methods.iter().enumerate() {
         let refs = collect_self_refs(method.body, parsed.source.as_bytes(), parsed.lang);
         for field in refs.fields {
-            field_to_methods.entry(field).or_default().push(i);
+            field_to_methods.entry(field).or_default().insert(i);
         }
         for callee in refs.method_calls {
             if let Some(&j) = method_name_to_index.get(callee.as_str()) {
                 if j != i {
-                    method_calls[i].push(j);
+                    method_calls[i].insert(j);
                 }
             }
         }
@@ -252,8 +250,11 @@ fn analyze_class(class_node: Node<'_>, parsed: &ParsedFile, file: &Path) -> Opti
 
     let mut uf = UnionFind::new(methods.len());
     for members in field_to_methods.values() {
-        for w in members.windows(2) {
-            uf.union(w[0], w[1]);
+        let mut iter = members.iter();
+        if let Some(&first) = iter.next() {
+            for &m in iter {
+                uf.union(first, m);
+            }
         }
     }
     for (i, callees) in method_calls.iter().enumerate() {
@@ -307,38 +308,30 @@ fn collect_methods<'a>(
     lang: Language,
     source: &[u8],
 ) -> Vec<MethodEntry<'a>> {
-    let body = class_body(class_node, lang);
-    let Some(body) = body else {
+    let Some(body) = class_node.child_by_field_name("body") else {
         return Vec::new();
     };
     let mut methods = Vec::new();
-    for child in iter_children(body) {
+    let mut cursor = body.walk();
+    for child in body.named_children(&mut cursor) {
         if !is_method_kind(child, lang) {
             continue;
         }
-        let Some(name) = method_name(child, source) else {
+        let Some(name_node) = child.child_by_field_name("name") else {
             continue;
         };
-        let Some(body_node) = method_body(child) else {
+        let Ok(name) = name_node.utf8_text(source) else {
+            continue;
+        };
+        let Some(body_node) = child.child_by_field_name("body") else {
             continue;
         };
         methods.push(MethodEntry {
-            name,
+            name: name.to_owned(),
             body: body_node,
         });
     }
     methods
-}
-
-fn class_body(class_node: Node<'_>, lang: Language) -> Option<Node<'_>> {
-    let _ = lang; // body field name is "body" for both grammars
-    class_node.child_by_field_name("body")
-}
-
-fn iter_children(node: Node<'_>) -> impl Iterator<Item = Node<'_>> {
-    let mut cursor = node.walk();
-    let kids: Vec<_> = node.named_children(&mut cursor).collect();
-    kids.into_iter()
 }
 
 fn is_method_kind(node: Node<'_>, lang: Language) -> bool {
@@ -352,21 +345,9 @@ fn is_method_kind(node: Node<'_>, lang: Language) -> bool {
     }
 }
 
-fn method_name(node: Node<'_>, source: &[u8]) -> Option<String> {
-    let name_node = node.child_by_field_name("name")?;
-    let text = name_node.utf8_text(source).ok()?;
-    Some(text.to_owned())
-}
-
-fn method_body(node: Node<'_>) -> Option<Node<'_>> {
-    node.child_by_field_name("body")
-}
-
 fn class_name_for(class_node: Node<'_>, source: &[u8], lang: Language) -> String {
-    // TS: class_declaration has a `name` field. Rust impl_item has a
-    // `type` field (the type the impl applies to). Trait impls also
-    // have a `trait` field; the displayed name uses just the type so
-    // `impl Foo for Bar` and `impl Bar` both render as `Bar`.
+    // Rust trait impls have both `trait` and `type` fields; we deliberately
+    // pick `type` so `impl Foo for Bar` and `impl Bar` collapse to `Bar`.
     let lookup = match lang {
         #[cfg(feature = "lang-ts")]
         Language::TypeScript | Language::Tsx => "name",
@@ -387,21 +368,53 @@ struct SelfRefs {
     method_calls: Vec<String>,
 }
 
-/// Walk a method body looking for `this.foo` / `self.foo` and `this.bar()`
-/// / `self.bar()`. The split into "field" vs "method call" is based on
-/// whether the parent is a `call_expression` whose function is the
-/// member-access node — pure syntactic, no type info.
+/// Per-language tree-sitter shape of "receiver-bound member access".
+/// One row replaces an entire `visit_*` function — adding a third
+/// language is a table entry, not new code.
+#[derive(Clone, Copy)]
+struct SelfRefShape {
+    /// Outer node kind that names the access (TS: `member_expression`,
+    /// Rust: `field_expression`).
+    access_kind: &'static str,
+    /// Field name on the access for the receiver.
+    receiver_field: &'static str,
+    /// Kind the receiver must have to count as `self` / `this`.
+    receiver_kind: &'static str,
+    /// Field name on the access for the property.
+    property_field: &'static str,
+}
+
+#[cfg(feature = "lang-ts")]
+const SELF_REF_TS: SelfRefShape = SelfRefShape {
+    access_kind: "member_expression",
+    receiver_field: "object",
+    receiver_kind: "this",
+    property_field: "property",
+};
+#[cfg(feature = "lang-rust")]
+const SELF_REF_RUST: SelfRefShape = SelfRefShape {
+    access_kind: "field_expression",
+    receiver_field: "value",
+    receiver_kind: "self",
+    property_field: "field",
+};
+
+fn self_ref_shape(lang: Language) -> SelfRefShape {
+    match lang {
+        #[cfg(feature = "lang-ts")]
+        Language::TypeScript | Language::Tsx => SELF_REF_TS,
+        #[cfg(feature = "lang-rust")]
+        Language::Rust => SELF_REF_RUST,
+    }
+}
+
 fn collect_self_refs(body: Node<'_>, source: &[u8], lang: Language) -> SelfRefs {
+    let shape = self_ref_shape(lang);
     let mut refs = SelfRefs::default();
     let mut cursor = body.walk();
     let mut stack = vec![body];
     while let Some(node) = stack.pop() {
-        match lang {
-            #[cfg(feature = "lang-ts")]
-            Language::TypeScript | Language::Tsx => visit_ts(node, source, &mut refs),
-            #[cfg(feature = "lang-rust")]
-            Language::Rust => visit_rust(node, source, &mut refs),
-        }
+        visit_self_ref(node, shape, source, &mut refs);
         for child in node.named_children(&mut cursor) {
             stack.push(child);
         }
@@ -409,46 +422,20 @@ fn collect_self_refs(body: Node<'_>, source: &[u8], lang: Language) -> SelfRefs 
     refs
 }
 
-#[cfg(feature = "lang-ts")]
-fn visit_ts(node: Node<'_>, source: &[u8], refs: &mut SelfRefs) {
-    if node.kind() != "member_expression" {
+fn visit_self_ref(node: Node<'_>, shape: SelfRefShape, source: &[u8], refs: &mut SelfRefs) {
+    if node.kind() != shape.access_kind {
         return;
     }
-    let Some(object) = node.child_by_field_name("object") else {
+    let Some(receiver) = node.child_by_field_name(shape.receiver_field) else {
         return;
     };
-    if object.kind() != "this" {
+    if receiver.kind() != shape.receiver_kind {
         return;
     }
-    let Some(prop) = node.child_by_field_name("property") else {
+    let Some(prop) = node.child_by_field_name(shape.property_field) else {
         return;
     };
     let Ok(name) = prop.utf8_text(source) else {
-        return;
-    };
-    let name = name.to_owned();
-    if is_call_target(node) {
-        refs.method_calls.push(name);
-    } else {
-        refs.fields.push(name);
-    }
-}
-
-#[cfg(feature = "lang-rust")]
-fn visit_rust(node: Node<'_>, source: &[u8], refs: &mut SelfRefs) {
-    if node.kind() != "field_expression" {
-        return;
-    }
-    let Some(value) = node.child_by_field_name("value") else {
-        return;
-    };
-    if value.kind() != "self" {
-        return;
-    }
-    let Some(field) = node.child_by_field_name("field") else {
-        return;
-    };
-    let Ok(name) = field.utf8_text(source) else {
         return;
     };
     let name = name.to_owned();

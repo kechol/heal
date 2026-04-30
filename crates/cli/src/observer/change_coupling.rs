@@ -324,16 +324,7 @@ impl IntoFindings for ChangeCouplingReport {
                     line: None,
                     symbol: Some(b_str.clone()),
                 };
-                let metric = match pair.direction {
-                    Some(PairDirection::Symmetric) => "change_coupling.symmetric",
-                    _ => "change_coupling",
-                };
-                let arrow = match &pair.direction {
-                    Some(PairDirection::Symmetric) => "↔ (symmetric)",
-                    Some(PairDirection::OneWay { from, .. }) if from == &pair.a => "→",
-                    Some(PairDirection::OneWay { .. }) => "←",
-                    None => "↔",
-                };
+                let (metric, arrow) = render_metric_and_arrow(pair);
                 let summary = format!(
                     "co-changed {} times: {} {arrow} {}",
                     pair.count,
@@ -347,6 +338,17 @@ impl IntoFindings for ChangeCouplingReport {
     }
 }
 
+/// Single match table for the rendered tag and arrow, so a future
+/// direction variant only touches one site.
+fn render_metric_and_arrow(pair: &FilePair) -> (&'static str, &'static str) {
+    match &pair.direction {
+        Some(PairDirection::Symmetric) => ("change_coupling.symmetric", "↔ (symmetric)"),
+        Some(PairDirection::OneWay { from, .. }) if from == &pair.a => ("change_coupling", "→"),
+        Some(PairDirection::OneWay { .. }) => ("change_coupling", "←"),
+        None => ("change_coupling", "↔"),
+    }
+}
+
 fn collect_pairs(
     pair_counts: HashMap<(PathBuf, PathBuf), u32>,
     min_coupling: u32,
@@ -357,7 +359,10 @@ fn collect_pairs(
         .into_iter()
         .filter(|(_, count)| *count >= min_coupling)
         .map(|((a, b), count)| {
-            let direction = classify_direction(&a, &b, count, file_commits, symmetric_threshold);
+            let count_a = file_commits.get(&a).copied().unwrap_or(0).max(count);
+            let count_b = file_commits.get(&b).copied().unwrap_or(0).max(count);
+            let direction =
+                classify_direction(&a, &b, count, count_a, count_b, symmetric_threshold);
             FilePair {
                 a,
                 b,
@@ -375,30 +380,20 @@ fn collect_pairs(
     pairs
 }
 
-/// Classify the (a, b) pair given the per-file totals. `count_a` /
-/// `count_b` are the total commits each file participated in (across
-/// every pair, not just this one). With both ≥ `pair_count`, the ratio
+/// Classify the pair from per-file totals. `count_a` / `count_b` are
+/// the total commits each file participated in. The ratio
 /// `pair_count / count_*` is `P(other | this)` — the probability that
 /// "this" file's edits drag the partner along. Both above
-/// `symmetric_threshold` → the pair never moves alone (Symmetric);
-/// otherwise the file with the higher conditional probability of being
-/// co-changed is the dependent (follower), and the partner is the
-/// `from` (leader) of the `OneWay` edge.
+/// `symmetric_threshold` → Symmetric; otherwise the file the partner
+/// is more conditionally bound to is the leader (`from`).
 fn classify_direction(
     a: &Path,
     b: &Path,
     pair_count: u32,
-    file_commits: &HashMap<PathBuf, u32>,
+    count_a: u32,
+    count_b: u32,
     symmetric_threshold: f64,
 ) -> PairDirection {
-    let count_a = file_commits.get(a).copied().unwrap_or(0);
-    let count_b = file_commits.get(b).copied().unwrap_or(0);
-    if count_a == 0 || count_b == 0 {
-        // Defensive — every pair we see came from a co-edit, so both
-        // counts must be ≥ pair_count. Fall back to Symmetric so the
-        // pair still surfaces.
-        return PairDirection::Symmetric;
-    }
     #[allow(clippy::cast_precision_loss)]
     let p_b_given_a = f64::from(pair_count) / f64::from(count_a);
     #[allow(clippy::cast_precision_loss)]
@@ -406,7 +401,6 @@ fn classify_direction(
     if p_b_given_a >= symmetric_threshold && p_a_given_b >= symmetric_threshold {
         PairDirection::Symmetric
     } else if p_a_given_b > p_b_given_a {
-        // B is more conditionally co-changed with A → B is dependent; A leads.
         PairDirection::OneWay {
             from: a.to_path_buf(),
             to: b.to_path_buf(),

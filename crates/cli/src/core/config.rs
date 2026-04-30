@@ -316,11 +316,11 @@ fn default_symmetric_threshold() -> f64 {
 #[serde(deny_unknown_fields)]
 pub struct LcomConfig {
     pub enabled: bool,
-    /// Backend used to extract methods + field references. v0.2 ships
-    /// only `tree-sitter-approx` (syntactic walk, no type info); a
-    /// typed `lsp` backend is on the v0.5+ roadmap.
-    #[serde(default = "default_lcom_backend")]
-    pub backend: String,
+    /// Extraction backend. v0.2 ships only `tree-sitter-approx`; a
+    /// typed `lsp` variant lands in v0.5+. Typo-resistant by virtue
+    /// of being an enum.
+    #[serde(default)]
+    pub backend: LcomBackend,
     /// Classes whose `cluster_count` is below this floor are not
     /// surfaced as Findings. `2` is the natural baseline — `1` means
     /// the class is cohesive and `0` means it has no methods.
@@ -335,13 +335,24 @@ pub struct LcomConfig {
     pub floor_critical: Option<f64>,
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LcomBackend {
+    #[default]
+    TreeSitterApprox,
+    /// Reserved for the v0.5+ LSP-backed implementation; not yet
+    /// usable from a `LcomObserver` scan, but the variant is wired so
+    /// configs that opt in early don't fail to parse.
+    Lsp,
+}
+
 impl Eq for LcomConfig {}
 
 impl Default for LcomConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            backend: default_lcom_backend(),
+            backend: LcomBackend::default(),
             min_cluster_count: default_min_cluster_count(),
             top_n: None,
             floor_critical: None,
@@ -353,16 +364,12 @@ impl Toggle for LcomConfig {
     fn enabled() -> Self {
         Self {
             enabled: true,
-            backend: default_lcom_backend(),
+            backend: LcomBackend::default(),
             min_cluster_count: default_min_cluster_count(),
             top_n: None,
             floor_critical: None,
         }
     }
-}
-
-fn default_lcom_backend() -> String {
-    "tree-sitter-approx".to_owned()
 }
 
 fn default_min_cluster_count() -> u32 {
