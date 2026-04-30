@@ -107,7 +107,7 @@ pub fn run(project: &Path, force: bool) -> Result<()> {
         let colorize = std::io::stdout().is_terminal();
         println!("  findings:         {}", counts.render_inline(colorize));
         if counts.critical > 0 {
-            println!("  → goal: bring [critical] to 0 (try `heal check hotspots`)");
+            println!("  → goal: bring [critical] to 0 (try `heal check --severity critical`)");
         }
     }
     println!("next steps:");

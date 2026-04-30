@@ -1,20 +1,22 @@
-//! `heal check` — analyze, classify, render, and persist a `CheckRecord`.
+//! `heal check` — render `.heal/checks/latest.json` and, when needed,
+//! produce it.
 //!
-//! This is the single writer of `.heal/checks/`. It runs every observer,
-//! lifts the reports through `crate::core::finding::IntoFindings`,
-//! decorates each Finding with Severity (via `Calibration`) and the
-//! per-file hotspot flag (via `HotspotCalibration`), then either reuses
-//! or refreshes `latest.json` based on a `(head_sha, config_hash,
-//! worktree_clean)` freshness check.
+//! Default flow reads the cached `CheckRecord` from `latest.json` if
+//! one exists. Only when the cache is missing — or `--refresh` is
+//! passed — does this command run every observer, lift the reports
+//! through `crate::core::finding::IntoFindings`, decorate each Finding
+//! with Severity (via `Calibration`) and the per-file hotspot flag
+//! (via `HotspotCalibration`), and write a fresh `CheckRecord`. This
+//! is still the single writer of `.heal/checks/`.
 //!
 //! The renderer groups findings under `Critical 🔥 / Critical / High 🔥
-//! / High / Medium / Ok` (last two only with `--all`), aggregates one
-//! row per file, and surfaces a "next steps" footer pointing at
-//! `heal check --severity critical` and `claude /heal-fix`.
+//! / High / Medium 🔥 / Medium / Ok 🔥 / Ok` (last four require
+//! `--all`), aggregates one row per file, and surfaces a "next steps"
+//! footer pointing at `heal check --severity critical` and `claude
+//! /heal-fix`.
 //!
-//! `--since-cache` skips the scan entirely and re-renders the latest
-//! cached record. `--json` emits the `CheckRecord` in the exact shape of
-//! `latest.json` so skills and CI scripts have one stable contract.
+//! `--json` emits the `CheckRecord` in the exact shape of `latest.json`
+//! so skills and CI scripts have one stable contract.
 
 use std::collections::BTreeMap;
 use std::io::{IsTerminal, Write};
@@ -22,7 +24,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use crate::cli::{CheckArgs, CheckMetric, LegacyCheckSkill, SeverityFilter};
+use crate::cli::{CheckArgs, CheckMetric, SeverityFilter};
 use crate::core::calibration::Calibration;
 use crate::core::check_cache::{
     config_hash_from_paths, read_latest, reconcile_fixed, write_record, CheckRecord, RegressedEntry,
@@ -44,43 +46,29 @@ pub fn run(project: &Path, args: &CheckArgs) -> Result<()> {
         )
     })?;
 
-    if let Some(skill) = args.legacy_skill {
-        eprintln!(
-            "warning: `heal check {}` is deprecated; use {} (will be removed in v0.3)",
-            skill.short_name(),
-            legacy_replacement_hint(skill),
-        );
-    }
-
     let filters = Filters::from_args(args);
-    if args.since_cache {
-        return run_since_cache(&paths, &filters, args.json);
-    }
-
-    let cfg = load_from_project(project).with_context(|| {
-        format!(
-            "loading {} (run `heal init` first?)",
-            paths.config().display(),
-        )
-    })?;
-    let calibration = Calibration::load(&paths.calibration())
-        .ok()
-        .map(|c| c.with_overrides(&cfg));
-
-    let head_sha = git::head_sha(project);
-    let worktree_clean = git::worktree_clean(project).unwrap_or(false);
-    let config_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
-
     let cached = read_latest(&paths.checks_latest()).ok().flatten();
-    let reuse = cached
-        .as_ref()
-        .filter(|prev| prev.is_fresh_against(head_sha.as_deref(), &config_hash, worktree_clean));
 
-    let (record, regressed) = if let Some(prev) = reuse {
-        // Cache hit: don't re-reconcile fixed.jsonl. Reconciliation
-        // already happened on the run that produced `prev`.
-        (prev.clone(), Vec::new())
-    } else {
+    // Default: reuse the cache if present. `--refresh` forces a fresh
+    // scan and overwrite. A missing cache also triggers a scan so the
+    // first invocation in a freshly-initialised project still works.
+    let must_scan = args.refresh || cached.is_none();
+
+    let (record, regressed) = if must_scan {
+        let cfg = load_from_project(project).with_context(|| {
+            format!(
+                "loading {} (run `heal init` first?)",
+                paths.config().display(),
+            )
+        })?;
+        let calibration = Calibration::load(&paths.calibration())
+            .ok()
+            .map(|c| c.with_overrides(&cfg));
+
+        let head_sha = git::head_sha(project);
+        let worktree_clean = git::worktree_clean(project).unwrap_or(false);
+        let config_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
+
         let record = build_fresh_record(
             project,
             &cfg,
@@ -96,6 +84,13 @@ pub fn run(project: &Path, args: &CheckArgs) -> Result<()> {
             &record,
         )?;
         (record, regs)
+    } else {
+        // Cache hit: skip the scan entirely. Reconciliation already
+        // happened on the run that produced this record.
+        (
+            cached.expect("cache present per must_scan branch"),
+            Vec::new(),
+        )
     };
 
     if args.json {
@@ -132,75 +127,29 @@ pub(super) fn build_fresh_record(
     CheckRecord::new(head_sha, worktree_clean, config_hash, findings)
 }
 
-fn run_since_cache(paths: &HealPaths, filters: &Filters, as_json: bool) -> Result<()> {
-    let record = read_latest(&paths.checks_latest())
-        .with_context(|| {
-            format!(
-                "reading {} (a corrupt latest.json was found)",
-                paths.checks_latest().display(),
-            )
-        })?
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "no cache at {} — run `heal check` once to populate it",
-                paths.checks_latest().display(),
-            )
-        })?;
-    if as_json {
-        emit_json(&record);
-        return Ok(());
-    }
-    let mut stdout = std::io::stdout();
-    let colorize = stdout.is_terminal();
-    render(&record, &[], filters, colorize, &mut stdout)?;
-    Ok(())
-}
-
 fn emit_json(record: &CheckRecord) {
     let body =
         serde_json::to_string_pretty(record).expect("CheckRecord serialization is infallible");
     println!("{body}");
 }
 
-fn legacy_replacement_hint(skill: LegacyCheckSkill) -> &'static str {
-    match skill {
-        LegacyCheckSkill::Overview => "`heal check` (no positional)",
-        LegacyCheckSkill::Hotspots => "`heal check --hotspot`",
-        LegacyCheckSkill::Complexity => "`heal check --metric complexity`",
-        LegacyCheckSkill::Duplication => "`heal check --metric duplication`",
-        LegacyCheckSkill::Coupling => "`heal check --metric coupling`",
-    }
-}
-
-/// Resolved filters for the renderer. Built once from `CheckArgs` so
-/// the legacy positional and the new flags hit a single normalized
-/// shape — every render path consumes this.
+/// Resolved filters for the renderer.
 #[derive(Debug, Clone, Default)]
 pub(super) struct Filters {
     pub(super) metric: Option<CheckMetric>,
     pub(super) feature: Option<String>,
     pub(super) severity: Option<Severity>,
     pub(super) all: bool,
-    pub(super) hotspot_only: bool,
     pub(super) top: Option<usize>,
 }
 
 impl Filters {
     fn from_args(args: &CheckArgs) -> Self {
-        let metric = args.metric.or(match args.legacy_skill {
-            Some(LegacyCheckSkill::Complexity) => Some(CheckMetric::Complexity),
-            Some(LegacyCheckSkill::Duplication) => Some(CheckMetric::Duplication),
-            Some(LegacyCheckSkill::Coupling) => Some(CheckMetric::Coupling),
-            _ => None,
-        });
-        let hotspot_only =
-            args.hotspot || matches!(args.legacy_skill, Some(LegacyCheckSkill::Hotspots));
         Self {
-            metric,
+            metric: args.metric,
             feature: args.feature.clone(),
             severity: args.severity.map(SeverityFilter::into_severity),
             all: args.all,
-            hotspot_only,
             top: args.top,
         }
     }
@@ -271,33 +220,34 @@ pub(super) fn render(
         .filter(|f| filters.passes(f))
         .collect();
 
-    if filters.hotspot_only {
-        // Special section: Ok/Medium findings flagged as hotspot. Useful
-        // for "we didn't classify it as a problem yet, but it's being
-        // touched a lot". TODO §「`heal check --hotspot`: `Ok 🔥`」.
+    let show_low = filters.all || matches!(filters.severity, Some(Severity::Medium | Severity::Ok));
+
+    if show_low {
+        // Surface the "low-Severity, top-10% hotspot" findings as a
+        // pre-bucket section: files HEAL hasn't classified as a problem
+        // but that get touched often enough to warrant a look. Folded
+        // in here under `--all` (and any explicit Medium/Ok severity
+        // floor); the dedicated `--hotspot` flag was retired.
         let hotspots: Vec<&Finding> = filtered
             .iter()
             .filter(|f| f.hotspot && matches!(f.severity, Severity::Ok | Severity::Medium))
             .copied()
             .collect();
-        render_section(
-            "Ok / Medium 🔥 (low Severity, top-10% hotspot)",
-            ANSI_CYAN,
-            &hotspots,
-            filters.top,
-            colorize,
-            out,
-        )?;
-        writeln!(out)?;
+        if !hotspots.is_empty() {
+            render_section(
+                "Ok / Medium 🔥 (low Severity, top-10% hotspot)",
+                ANSI_CYAN,
+                &hotspots,
+                filters.top,
+                colorize,
+                out,
+            )?;
+            writeln!(out)?;
+        }
     }
 
     let mut by_severity: BTreeMap<SeverityKey, Vec<&Finding>> = BTreeMap::new();
     for f in &filtered {
-        if filters.hotspot_only
-            && !(f.hotspot && matches!(f.severity, Severity::Ok | Severity::Medium))
-        {
-            continue;
-        }
         if let Some(min) = filters.severity {
             if f.severity < min {
                 continue;
@@ -309,7 +259,6 @@ pub(super) fn render(
             .push(f);
     }
 
-    let show_low = filters.all || matches!(filters.severity, Some(Severity::Medium | Severity::Ok));
     let buckets: &[(SeverityKey, &str, &str)] = &[
         (
             SeverityKey {
@@ -510,7 +459,6 @@ mod tests {
             feature: None,
             severity: None,
             all: false,
-            hotspot_only: false,
             top: None,
         }
     }
@@ -608,21 +556,39 @@ mod tests {
     }
 
     #[test]
-    fn hotspot_flag_surfaces_low_severity_hotspot_files() {
+    fn all_flag_surfaces_low_severity_hotspot_section() {
         let rec = record(vec![
             finding("hotspot", "src/touch_a_lot.ts", Severity::Ok, true),
             finding("hotspot", "src/quiet.ts", Severity::Ok, false),
         ]);
         let mut filters = default_filters();
-        filters.hotspot_only = true;
+        filters.all = true;
         let out = render_to_string(&rec, &filters);
         assert!(
-            out.contains("src/touch_a_lot.ts"),
-            "Ok-with-hotspot must surface under --hotspot:\n{out}",
+            out.contains("Ok / Medium 🔥"),
+            "low-Severity hotspot section must appear under --all:\n{out}",
         );
         assert!(
-            !out.contains("src/quiet.ts"),
-            "Ok-without-hotspot must not appear under --hotspot",
+            out.contains("src/touch_a_lot.ts"),
+            "Ok-with-hotspot must surface in the section:\n{out}",
+        );
+        // Quiet (non-hotspot) Ok findings still render in the standard
+        // Ok bucket — the section is *additional* context, not a filter.
+        assert!(out.contains("src/quiet.ts"));
+    }
+
+    #[test]
+    fn default_omits_low_severity_hotspot_section() {
+        let rec = record(vec![finding(
+            "hotspot",
+            "src/touch_a_lot.ts",
+            Severity::Ok,
+            true,
+        )]);
+        let out = render_to_string(&rec, &default_filters());
+        assert!(
+            !out.contains("Ok / Medium 🔥"),
+            "low-Severity hotspot section must stay hidden without --all:\n{out}",
         );
     }
 

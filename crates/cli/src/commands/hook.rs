@@ -344,7 +344,7 @@ mod tests {
         let cfg = crate::core::config::Config::default();
         cfg.save(&paths.config()).unwrap();
         // Calibrate inline so a calibration.toml exists.
-        crate::commands::calibrate::run(dir.path(), Some("test".into()), false).unwrap();
+        crate::commands::calibrate::run(dir.path(), false).unwrap();
         let reports = run_all(dir.path(), &cfg, None);
         let (calibration, findings) =
             crate::snapshot::classify_with_calibration(&paths, &cfg, &reports);

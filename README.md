@@ -187,15 +187,16 @@ distribution). A finding can be `Critical 🔥` (Critical AND hotspot) or
 `Critical` (Critical alone) — the renderer surfaces them as separate
 buckets.
 
-Recalibration is **never automatic**. `heal calibrate --check` (run by
-the post-commit hook) prints a recommendation when:
+Recalibration is **never automatic**. The default `heal calibrate`
+invocation (no flags) — also surfaced inline by the post-commit nudge
+— prints a recommendation when:
 
 - the calibration is over 90 days old,
 - the codebase file count has shifted by ±20% since the last calibration,
 - or 30 consecutive days have passed with zero Critical findings.
 
-The user runs `heal calibrate` manually; the audit trail lives in
-`.heal/snapshots/` as `event = "calibrate"`.
+The user runs `heal calibrate --force` to actually rescan; the audit
+trail lives in `.heal/snapshots/` as `event = "calibrate"`.
 
 ## Repository layout
 

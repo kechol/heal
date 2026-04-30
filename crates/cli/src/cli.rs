@@ -42,9 +42,10 @@ pub enum Command {
     /// Commit entries hold metadata only — see `heal status` for the
     /// metric series persisted in `.heal/snapshots/`.
     Logs(LogsArgs),
-    /// Run every observer, classify findings by Severity, render the
-    /// per-file Critical / High / Medium view, and refresh
-    /// `.heal/checks/latest.json`. The single source of truth that
+    /// Render the cached `CheckRecord` from `.heal/checks/latest.json`
+    /// — Critical / High view by default. Runs a fresh scan only when
+    /// the cache is missing; pass `--refresh` to force a rescan and
+    /// overwrite the cache. The single source of truth that
     /// `/heal-fix` (Claude side) and `heal cache *` (read-only) consume.
     Check(CheckArgs),
     /// Inspect the `.heal/checks/` cache: enumerate records (`log`),
@@ -59,17 +60,17 @@ pub enum Command {
         #[command(subcommand)]
         action: SkillsAction,
     },
-    /// Recalibrate codebase-relative Severity thresholds. With
-    /// `--check`, only evaluate auto-detect triggers without writing
-    /// anything (useful from a post-commit nudge).
+    /// Calibrate codebase-relative Severity thresholds. Default
+    /// behaviour:
+    ///   * `calibration.toml` missing → run a fresh scan and write it.
+    ///   * `calibration.toml` present → evaluate auto-detect drift
+    ///     triggers (no write) and surface `--force` as the way to
+    ///     refresh.
     Calibrate {
-        /// Free-form note recorded in the calibration audit log; ignored
-        /// by `--check`.
+        /// Force a fresh scan and overwrite `.heal/calibration.toml`
+        /// even when one already exists.
         #[arg(long)]
-        reason: Option<String>,
-        /// Evaluate triggers only; don't recalibrate or write any files.
-        #[arg(long, conflicts_with = "reason")]
-        check: bool,
+        force: bool,
     },
     /// Compact `.heal/{snapshots,logs,checks}/` segments. Files older
     /// than 90 days are gzipped in place; files older than 365 days
@@ -119,34 +120,6 @@ impl StatusMetric {
     }
 }
 
-/// Legacy positional kept for `heal check overview|hotspots|complexity|
-/// duplication|coupling`. Rewritten to flag form during arg parse and
-/// scheduled for removal in v0.3 — see [`CheckArgs::legacy_skill`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub enum LegacyCheckSkill {
-    /// Pre-v0.2 `check-overview` claude skill — now equivalent to
-    /// `heal check` with no metric filter.
-    Overview,
-    /// Pre-v0.2 `check-hotspots` — now `heal check --hotspot`.
-    Hotspots,
-    Complexity,
-    Duplication,
-    Coupling,
-}
-
-impl LegacyCheckSkill {
-    #[must_use]
-    pub fn short_name(self) -> &'static str {
-        match self {
-            Self::Overview => "overview",
-            Self::Hotspots => "hotspots",
-            Self::Complexity => "complexity",
-            Self::Duplication => "duplication",
-            Self::Coupling => "coupling",
-        }
-    }
-}
-
 /// Filter for `heal check --metric`. Distinct from [`StatusMetric`]
 /// because `complexity` here is an alias that selects both `ccn` and
 /// `cognitive` findings (TODO §「heal status の延長で metric 指定」).
@@ -154,7 +127,7 @@ impl LegacyCheckSkill {
 pub enum CheckMetric {
     Ccn,
     Cognitive,
-    /// CCN + Cognitive together. Matches the legacy `complexity` skill.
+    /// CCN + Cognitive together.
     Complexity,
     Duplication,
     /// `change_coupling` symmetric pairs.
@@ -231,15 +204,9 @@ impl HookEvent {
 #[derive(Debug, clap::Args)]
 #[allow(clippy::struct_excessive_bools)] // every flag is independent CLI surface
 pub struct CheckArgs {
-    /// **Deprecated.** Pre-v0.2 positional skill name kept as an alias
-    /// so muscle-memory invocations still work. Maps to:
-    /// `overview` → no filter, `hotspots` → `--hotspot`, others →
-    /// `--metric <name>`. Removed in v0.3 — switch to the flag form.
-    #[arg(value_enum)]
-    pub legacy_skill: Option<LegacyCheckSkill>,
     /// Restrict the rendered list to one metric (or one metric family —
     /// `complexity` covers both CCN and Cognitive).
-    #[arg(long, value_enum, conflicts_with = "legacy_skill")]
+    #[arg(long, value_enum)]
     pub metric: Option<CheckMetric>,
     /// Restrict to findings under a path prefix (e.g.
     /// `--feature src/payments`). Matched against `Finding.location.file`.
@@ -249,25 +216,21 @@ pub struct CheckArgs {
     /// also surface lower severities below it.
     #[arg(long, value_enum)]
     pub severity: Option<SeverityFilter>,
-    /// Show every Severity tier including Medium and Ok. Without this,
-    /// only Critical / High are rendered (with a "(N) hidden — pass
-    /// `--all`" footer when there are more).
+    /// Show every Severity tier (Medium / Ok included) plus the
+    /// low-Severity hotspot section. Without this, only Critical /
+    /// High render (with a "(N) hidden — pass `--all`" footer when
+    /// there are more).
     #[arg(long)]
     pub all: bool,
-    /// Surface the "low Severity, top-10% hotspot" list — i.e. files
-    /// that aren't classified as a problem yet but are getting touched
-    /// often enough that they're worth a look.
-    #[arg(long)]
-    pub hotspot: bool,
     /// Emit the `CheckRecord` payload as JSON on stdout. Same shape as
     /// `.heal/checks/latest.json` — stable contract for skills and CI.
     #[arg(long)]
     pub json: bool,
-    /// Re-render the most recent cached `CheckRecord` without scanning
-    /// the project. Errors out when no cache exists yet (run
-    /// `heal check` once first).
+    /// Re-scan the project and overwrite `.heal/checks/latest.json`
+    /// instead of reading the cached record. Without this, a present
+    /// cache is reused as-is; only a missing cache triggers a scan.
     #[arg(long)]
-    pub since_cache: bool,
+    pub refresh: bool,
     /// Cap each Severity bucket at the N worst findings.
     #[arg(long, value_name = "N")]
     pub top: Option<usize>,
@@ -378,9 +341,7 @@ impl Cli {
             Command::Check(args) => commands::check::run(&project, &args),
             Command::Cache { action } => commands::cache::run(&project, action),
             Command::Skills { action } => commands::skills::run(&project, action),
-            Command::Calibrate { reason, check } => {
-                commands::calibrate::run(&project, reason, check)
-            }
+            Command::Calibrate { force } => commands::calibrate::run(&project, force),
             Command::Compact { verbose } => commands::compact::run(&project, verbose),
         }
     }

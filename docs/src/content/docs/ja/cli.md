@@ -100,35 +100,36 @@ SessionStart ナッジとともに廃止されました。
 
 ## `heal check`
 
-全オブザーバーを実行し、`calibration.toml` を使って各 Finding を
-Severity で分類し、結果を `.heal/checks/latest.json` に書き出しま
-す（`/heal-fix` が読む TODO リスト）。
+`.heal/checks/latest.json` に保存された `CheckRecord` を描画します
+（`/heal-fix` が読む TODO リスト）。キャッシュが無いとき、または
+`--refresh` 指定時のみ全オブザーバーを実行して `calibration.toml`
+で Severity を分類し、結果を書き出します。
 
 ```sh
-heal check                              # Severity ごとの全体ビュー
+heal check                              # キャッシュを再描画（デフォルト）
+heal check --refresh                    # 再スキャンして latest.json を上書き
 heal check --metric lcom                # LCOM の Finding のみ
 heal check --severity critical          # Critical のみ（`--all` で以上を含む）
 heal check --feature src/payments       # 特定パスプレフィックスに絞る
-heal check --hotspot                    # 低 Severity の Hotspot ファイルを表示
+heal check --all                        # Medium / Ok と低 Severity の Hotspot セクションを表示
 heal check --top 5                      # 各 Severity バケットを 5 行で打ち切り
 heal check --json                       # CheckRecord 形式を stdout へ
-heal check --since-cache                # 再スキャンせず最新キャッシュを再描画
 ```
+
+デフォルトの `heal check` は `.heal/checks/latest.json` を読み出す
+だけのリードオンリー描画なので、キャッシュが温まっていれば実質コ
+スト 0 です。`--refresh` を指定した場合のみキャッシュを破棄して
+再スキャン・上書きします（このパスだけが書き込みを行います）。
+`heal init` 直後など、キャッシュが存在しない場合は最初の実行で自
+動的にスキャンするので、フラグなしでも問題なく動きます。
 
 出力は Finding を `🔴 Critical 🔥 / 🔴 Critical / 🟠 High 🔥 /
 🟠 High / 🟡 Medium / ✅ Ok` の下にグループ化し（最後の 2 つは
 `--all` が必要）、ファイル単位に 1 行へ集約します。最後に
 `Goal: 0 Critical, 0 High` と、`claude /heal-fix` を指す "next steps"
-の行が続きます。
-
-キャッシュヒット時は重いスキャンをショートサーキットします。同じ
-`head_sha` + `config_hash` + クリーンな worktree ならば、オブザー
-バーを再実行せずに直前のレコードを返します。
-
-v0.2 以前の位置引数（`overview` / `hotspots` / `complexity` /
-`duplication` / `coupling`）は今も deprecation alias として動作し
-ます — 警告を出して対応する `--metric` / `--hotspot` フラグに翻訳
-されます。v0.3 で削除予定です。
+の行が続きます。`--all` 指定時は、「Severity は低いが上位 10% の
+Hotspot」に該当するファイルを別セクション（`Ok / Medium 🔥`）で
+追加表示します。
 
 ## `heal cache`
 
@@ -157,16 +158,23 @@ heal cache mark-fixed --finding-id <id> --commit-sha <sha>
 ## `heal calibrate`
 
 ```sh
-heal calibrate                          # 再スキャンして新しい calibration.toml を書く
-heal calibrate --reason "annual review" # 監査ログにタグ付け
-heal calibrate --check                  # 自動検知トリガーを評価のみ、書き込みなし
+heal calibrate            # calibration.toml が無ければ作成、あればドリフト・チェックのみ
+heal calibrate --force    # 常に再スキャンして calibration.toml を上書き
 ```
 
-heal は **絶対に** 自動で recalibrate しません。post-commit ナッジ
-は、`heal calibrate --check` が発火する状況（90 日経過、コードベー
-スファイル数が ±20%、30 日連続で Critical が 0）で 1 行のヒント
-"consider recalibrating" を先頭に付けます。実行するかは常にユーザー
-判断です。
+heal は **絶対に** 自動で recalibrate しません。
+
+- `.heal/calibration.toml` が **無い** とき、`heal calibrate` は再
+  スキャンしてファイルを書き出します。（通常は `heal init` がブー
+  トストラップ時に作成するので、このパスは init 前のみ。）
+- ファイルが **ある** ときのデフォルト実行は読み取り専用です。ド
+  リフト・トリガー（90 日経過、コードベースファイル数 ±20%、30
+  日連続で Critical が 0）を評価して推奨を表示し、再生成のヒント
+  として `--force` を案内します。
+
+post-commit ナッジは同じトリガーで "consider recalibrating" の 1
+行ヒントを先頭に付けます。実行するかは常にユーザー判断です
+（`heal calibrate --force`）。
 
 calibration の監査記録は `.heal/snapshots/` に
 `event = "calibrate"` レコードとして残ります — `heal logs` でコ

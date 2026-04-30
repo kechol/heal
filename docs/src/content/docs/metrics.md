@@ -162,9 +162,9 @@ The weights default to `1.0`. Hotspot uses an independent percentile
 space — `score ≥ p90` flips the **flag**, which the renderer surfaces
 as the `🔥` emoji on top of any other finding for that file. It is
 **not** a Severity tier on its own; a hotspot file can be Critical 🔥,
-High 🔥, Medium 🔥, or even Ok 🔥 (`heal check --hotspot` surfaces
-that last group: low Severity but heavily touched, "why are we still
-editing this?" candidates).
+High 🔥, Medium 🔥, or even Ok 🔥. The last group — low Severity but
+heavily touched, "why are we still editing this?" candidates —
+appears in a dedicated section under `heal check --all`.
 
 The formula is multiplicative, so a file with high complexity but no
 recent commits scores zero — hotspot is meant to identify _active_

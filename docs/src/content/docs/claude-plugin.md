@@ -75,15 +75,10 @@ explain the resulting numbers in the project's `response_language`.
 | `check-duplication` | Reviews duplicate blocks and suggests where helpers might be extracted.          |
 | `check-coupling`    | Reviews co-change pairs and suggests where an abstraction may be missing.        |
 
-Two ways to invoke a skill:
-
-- From the terminal: `heal check overview` — the legacy positional
-  alias maps to `--metric` flags and prints a deprecation warning.
-- Inside an interactive Claude session: ask Claude to use the
-  `check-hotspots` skill (or any of the five) by name.
-
-All five are read-only — they may run `heal status` but cannot modify
-source files.
+Inside an interactive Claude session, ask Claude to use any of these
+skills by name (`check-overview`, `check-hotspots`, etc.). All five
+are read-only — they may run `heal status` / `heal check` but cannot
+modify source files.
 
 ## The write skill: `/heal-fix`
 

@@ -100,10 +100,11 @@ score), not a Severity. A finding can be `Critical 🔥`,
 `Critical`, `High 🔥`, etc. — the renderer surfaces them as
 separate buckets.
 
-`heal calibrate --check` watches for drift (calibration over 90 days
-old, codebase file count ±20%, 30 days of zero Critical) and prints
-a recommendation; recalibration is **never automatic** so the user
-controls when to reset the baseline.
+`heal calibrate` watches for drift (calibration over 90 days old,
+codebase file count ±20%, 30 days of zero Critical) and prints a
+recommendation; pass `--force` to actually rescan and overwrite the
+file. Recalibration is **never automatic** — the user controls when
+to reset the baseline.
 
 ## Read-only by default; write through the skill
 

@@ -31,13 +31,13 @@ the loop is self-correcting: a botched fix surfaces on the next round.
    commit-per-finding flow assumes a clean baseline. The cache also
    carries `worktree_clean=false` in this case — `heal cache log` will
    show it.
-2. **Cache exists.** Run `heal check --since-cache --json` and capture
-   the `CheckRecord`. If the command errors (no cache yet), run
-   `heal check --json` once to populate it; then re-read.
+2. **Cache exists.** Run `heal check --json` and capture the
+   `CheckRecord`. The default flow reads `.heal/checks/latest.json`
+   directly; a missing cache is auto-populated by the same invocation.
 3. **Calibration exists.** If `heal check --json` shows every finding
    as `severity: "ok"`, the project hasn't been calibrated yet — say so
-   and suggest `heal init` or `heal calibrate`. Don't try to fix Ok
-   findings; they're not actionable until thresholds are set.
+   and suggest `heal init` or `heal calibrate --force`. Don't try to
+   fix Ok findings; they're not actionable until thresholds are set.
 
 ## The loop
 
@@ -49,7 +49,7 @@ while there are non-Ok findings in the cache:
     run tests / type-check / linter (best effort, see "Verification")
     git add -p / git add <file>; git commit -m "<conventional message>"
     heal cache mark-fixed --finding-id <id> --commit-sha <new SHA>
-    heal check --json   # re-scan (cache invalidated by new HEAD)
+    heal check --refresh --json   # re-scan and overwrite latest.json
     if the finding is back (regressed warning):
         leave it for now; record in session notes; continue with next finding
     else:
@@ -156,10 +156,10 @@ heal cache mark-fixed \
   --commit-sha "$(git rev-parse HEAD)"
 ```
 
-Then run `heal check --json` (note: not `--since-cache`) to re-scan.
-The new cache will either confirm the finding is gone, or `heal check`
-itself will print a regressed warning and move the entry to
-`regressed.jsonl` automatically.
+Then run `heal check --refresh --json` to re-scan (default `heal check`
+just re-reads the now-stale cache). The new cache will either confirm
+the finding is gone, or `heal check` itself will print a regressed
+warning and move the entry to `regressed.jsonl` automatically.
 
 ## Output format
 

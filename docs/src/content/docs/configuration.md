@@ -248,9 +248,10 @@ p90 = 67.0          # Hotspot 🔥 flag boundary (top 10%, fixed)
 p95 = 145.0
 ```
 
-Run `heal calibrate --check` to evaluate the auto-detect triggers
-(90-day age, ±20% file count, 30 days zero-Critical) without
-recalibrating; the post-commit nudge surfaces the same hint inline.
+Run `heal calibrate` (no flags) once `calibration.toml` exists to
+evaluate the auto-detect triggers (90-day age, ±20% file count, 30
+days zero-Critical) without rewriting the file; the post-commit nudge
+surfaces the same hint inline. Pass `--force` to actually rescan.
 
 ## Strict by design
 

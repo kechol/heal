@@ -69,8 +69,9 @@ pub const STRATEGY_PERCENTILE: &str = "percentile";
 pub const MIN_SAMPLES_FOR_PERCENTILES: usize = 5;
 
 /// Recalibration trigger thresholds — mirror the TODO §「自動検出
-/// トリガー」spec. Surfaced via `heal calibrate --check`; the user
-/// always decides whether to run `heal calibrate`.
+/// トリガー」spec. Surfaced via the default `heal calibrate`
+/// invocation when `calibration.toml` already exists; the user always
+/// decides whether to run `heal calibrate --force`.
 pub const TRIGGER_AGE_DAYS: i64 = 90;
 pub const TRIGGER_FILE_DELTA_PCT: f64 = 0.20;
 pub const TRIGGER_CRITICAL_CLEAN_DAYS: i64 = 30;
@@ -334,9 +335,9 @@ pub struct CalibrationEvent {
     pub reason: String,
 }
 
-/// Outcome of `heal calibrate --check`. Each field is `Some(...)` when
-/// the corresponding trigger fired, holding the measured drift so the
-/// CLI can surface "what" without re-querying.
+/// Outcome of the default `heal calibrate` drift evaluation. Each field
+/// is `Some(...)` when the corresponding trigger fired, holding the
+/// measured drift so the CLI can surface "what" without re-querying.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RecalibrationCheck {
     /// Days since the current calibration's `meta.created_at` when

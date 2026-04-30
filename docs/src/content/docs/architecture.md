@@ -204,15 +204,15 @@ heal cache show <check_id> --json
 
 `calibration.toml` carries the codebase-relative percentile breaks
 for every Severity-aware metric. `heal init` computes it from the
-initial scan; `heal calibrate` refreshes it on demand. The post-
-commit nudge reads it through `Calibration::with_overrides(config)`
+initial scan; `heal calibrate --force` refreshes it on demand. The
+post-commit nudge reads it through `Calibration::with_overrides(config)`
 so any `floor_critical` set in `config.toml` wins over the calibrated
 percentile.
 
-Recalibration is **never automatic**. `heal calibrate --check`
-evaluates the auto-detect triggers (90-day age, ±20% codebase file
-count, 30 days of zero Critical findings) and prints a recommendation;
-the user runs `heal calibrate` when ready.
+Recalibration is **never automatic**. The default `heal calibrate`
+invocation evaluates the auto-detect triggers (90-day age, ±20%
+codebase file count, 30 days of zero Critical findings) and prints a
+recommendation; the user runs `heal calibrate --force` when ready.
 
 The audit trail lives in `.heal/snapshots/` as
 `event = "calibrate"`. `MetricsSnapshot::latest_in_segments`

@@ -1,18 +1,18 @@
-//! `heal calibrate` — recalibrate codebase-relative Severity thresholds.
+//! `heal calibrate` — calibrate codebase-relative Severity thresholds.
 //!
-//! Two paths:
-//!   - `heal calibrate [--reason <text>]` rescans every observer, rewrites
-//!     `.heal/calibration.toml`, and appends a `CalibrationEvent` to
-//!     `.heal/snapshots/`.
-//!   - `heal calibrate --check` reads the current calibration and the
-//!     latest snapshot, evaluates the auto-detect triggers
-//!     ([`RecalibrationCheck`]), and prints a recommendation. No files
-//!     are written.
+//! Behavior:
+//!   - `calibration.toml` missing, or `--force`: rescan every observer,
+//!     rewrite `.heal/calibration.toml`, and append a `CalibrationEvent`
+//!     to `.heal/snapshots/`.
+//!   - `calibration.toml` present (no `--force`): read it and evaluate
+//!     the auto-detect triggers ([`RecalibrationCheck`]); print a
+//!     recommendation and surface `--force` as the way to refresh. No
+//!     files are written.
 //!
 //! HEAL never recalibrates automatically (TODO §「ユーザー提案のみで
 //! 自動再較正はしない」); the post-commit nudge will surface
-//! `--check` results, but the user must invoke `heal calibrate`
-//! themselves.
+//! recalibration drift, but the user must invoke `heal calibrate
+//! --force` themselves.
 
 use std::io::IsTerminal;
 use std::path::Path;
@@ -27,7 +27,13 @@ use crate::core::snapshot::{ansi_wrap, ANSI_GREEN, ANSI_YELLOW};
 use crate::core::HealPaths;
 use crate::observers::{build_calibration, run_all};
 
-pub fn run(project: &Path, reason: Option<String>, check_only: bool) -> Result<()> {
+/// Reason recorded on every audit-log entry. The free-form `--reason`
+/// flag was removed (it was overkill for v0.1's manual flow); a single
+/// constant keeps `CalibrationEvent`'s schema stable for any external
+/// reader without forcing them to handle `Option<String>`.
+const CALIBRATE_REASON: &str = "manual";
+
+pub fn run(project: &Path, force: bool) -> Result<()> {
     let paths = HealPaths::new(project);
     let cfg = load_from_project(project).with_context(|| {
         format!(
@@ -36,22 +42,22 @@ pub fn run(project: &Path, reason: Option<String>, check_only: bool) -> Result<(
         )
     })?;
 
-    if check_only {
+    let calibration_path = paths.calibration();
+    if !force && calibration_path.exists() {
         run_check(&paths);
         return Ok(());
     }
 
-    let reason = reason.unwrap_or_else(|| "manual".to_owned());
     let reports = run_all(project, &cfg, None);
     let calibration = build_calibration(&reports, &cfg);
-    calibration.save(&paths.calibration())?;
+    calibration.save(&calibration_path)?;
 
-    let event = calibration.to_event(reason.clone());
+    let event = calibration.to_event(CALIBRATE_REASON.to_owned());
     let payload =
         serde_json::to_value(&event).expect("CalibrationEvent serialization is infallible");
     EventLog::new(paths.snapshots_dir()).append(&Event::new("calibrate", payload))?;
 
-    println!("Recalibrated {} ({reason})", paths.calibration().display());
+    println!("Recalibrated {}", calibration_path.display());
     println!("  codebase_files: {}", calibration.meta.codebase_files);
     if let Some(c) = calibration.calibration.ccn.as_ref() {
         println!("  ccn p95:        {:.1}", c.p95);
@@ -68,8 +74,10 @@ pub fn run(project: &Path, reason: Option<String>, check_only: bool) -> Result<(
 fn run_check(paths: &HealPaths) {
     let calibration_path = paths.calibration();
     let Ok(calibration) = Calibration::load(&calibration_path) else {
+        // The path-exists guard above already filtered this out; if a
+        // race deleted the file we still want to fail soft and prompt.
         println!(
-            "no calibration at {} — run `heal init` or `heal calibrate` to create one",
+            "no calibration at {} — re-run `heal calibrate --force` to create one",
             calibration_path.display(),
         );
         return;
@@ -84,6 +92,7 @@ fn run_check(paths: &HealPaths) {
             ansi_wrap(ANSI_GREEN, "OK", colorize),
             calibration.meta.created_at.format("%Y-%m-%d"),
         );
+        println!("Run `heal calibrate --force` to refresh anyway.");
         return;
     }
 
@@ -103,7 +112,7 @@ fn run_check(paths: &HealPaths) {
     if let Some(streak) = check.critical_clean_streak_days {
         println!("  - {streak} days of [critical] = 0 (>=30) — thresholds may be too lenient");
     }
-    println!("Run `heal calibrate --reason \"<note>\"` to refresh.");
+    println!("Run `heal calibrate --force` to refresh.");
 }
 
 #[cfg(test)]
@@ -125,19 +134,19 @@ mod tests {
     }
 
     #[test]
-    fn calibrate_writes_calibration_toml_and_event() {
+    fn calibrate_writes_calibration_toml_and_event_when_missing() {
         let dir = TempDir::new().unwrap();
         init_project(dir.path());
         let paths = HealPaths::new(dir.path());
 
-        run(dir.path(), Some("test-run".into()), false).unwrap();
+        // No calibration file yet — default run should generate it.
+        run(dir.path(), false).unwrap();
 
         assert!(
             paths.calibration().exists(),
             "calibration.toml must be written"
         );
 
-        // The snapshots/ dir must contain a `calibrate` event.
         let log = EvLog::new(paths.snapshots_dir());
         let events: Vec<_> = log.try_iter().unwrap().filter_map(Result::ok).collect();
         let calibrate_evs: Vec<_> = events.iter().filter(|e| e.event == "calibrate").collect();
@@ -147,20 +156,21 @@ mod tests {
             "exactly one calibrate event expected"
         );
         let ev: CalibrationEvent = serde_json::from_value(calibrate_evs[0].data.clone()).unwrap();
-        assert_eq!(ev.reason, "test-run");
+        assert_eq!(ev.reason, CALIBRATE_REASON);
     }
 
     #[test]
-    fn calibrate_check_returns_quiet_for_fresh_project() {
+    fn calibrate_default_runs_check_when_calibration_exists() {
         let dir = TempDir::new().unwrap();
         init_project(dir.path());
         let paths = HealPaths::new(dir.path());
-        // First calibrate so a calibration.toml exists, then immediately --check.
-        run(dir.path(), None, false).unwrap();
+
+        // Seed a calibration via --force so the second invocation hits
+        // the read-only check path.
+        run(dir.path(), true).unwrap();
 
         // Append a fresh commit-like snapshot so `latest_in_segments`
-        // resolves; mimic what `heal hook commit` would write. critical=0,
-        // codebase_files matches calibration.
+        // resolves; mimic what `heal hook commit` would write.
         let snap = MetricsSnapshot {
             severity_counts: Some(crate::core::snapshot::SeverityCounts::default()),
             codebase_files: Some(1),
@@ -170,14 +180,56 @@ mod tests {
             .append(&Event::new("commit", serde_json::to_value(&snap).unwrap()))
             .unwrap();
 
-        run(dir.path(), None, true).unwrap();
+        let events_before = EvLog::new(paths.snapshots_dir())
+            .try_iter()
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.event == "calibrate")
+            .count();
+
+        // Default run: must NOT append a new calibrate event.
+        run(dir.path(), false).unwrap();
+
+        let events_after = EvLog::new(paths.snapshots_dir())
+            .try_iter()
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.event == "calibrate")
+            .count();
+        assert_eq!(
+            events_before, events_after,
+            "default run must not write when calibration.toml exists"
+        );
     }
 
     #[test]
-    fn calibrate_check_without_calibration_prints_hint() {
+    fn calibrate_force_overwrites_existing_calibration() {
         let dir = TempDir::new().unwrap();
         init_project(dir.path());
-        // No calibration written yet — --check must succeed gracefully.
-        run(dir.path(), None, true).unwrap();
+        let paths = HealPaths::new(dir.path());
+
+        run(dir.path(), false).unwrap();
+        let mtime_first = std::fs::metadata(paths.calibration())
+            .unwrap()
+            .modified()
+            .unwrap();
+
+        // Sleep is unnecessary on most filesystems but the assertion is
+        // about a fresh calibrate event being recorded, which is robust.
+        run(dir.path(), true).unwrap();
+
+        let calibrate_count = EvLog::new(paths.snapshots_dir())
+            .try_iter()
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.event == "calibrate")
+            .count();
+        assert_eq!(
+            calibrate_count, 2,
+            "--force on an existing calibration must append a new event"
+        );
+        // Touch-check: even if mtime equals (rare on coarse FS), the
+        // event count assertion above is the load-bearing check.
+        let _ = mtime_first;
     }
 }

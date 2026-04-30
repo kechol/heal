@@ -206,15 +206,16 @@ heal cache show <check_id> --json
 
 `calibration.toml` は Severity を扱う各メトリクスのコードベース相
 対パーセンタイル区切りを保持します。`heal init` が初回スキャンか
-ら計算し、`heal calibrate` がオンデマンドで更新します。post-commit
-ナッジは `Calibration::with_overrides(config)` 経由で読むため、
-`config.toml` の `floor_critical` は calibrate されたパーセンタイ
-ルに勝ちます。
+ら計算し、`heal calibrate --force` がオンデマンドで更新します。
+post-commit ナッジは `Calibration::with_overrides(config)` 経由で
+読むため、`config.toml` の `floor_critical` は calibrate されたパー
+センタイルに勝ちます。
 
-再 calibrate は **絶対に自動では行いません**。
-`heal calibrate --check` が自動検知トリガー（90 日経過、コードベー
-スファイル数 ±20%、30 日連続で Critical が 0）を評価し推奨を表示し
-ます。実行するかはユーザーが判断します。
+再 calibrate は **絶対に自動では行いません**。デフォルトの
+`heal calibrate` は自動検知トリガー（90 日経過、コードベースファ
+イル数 ±20%、30 日連続で Critical が 0）を評価して推奨を表示する
+だけです。実行するかは常にユーザーが判断し、`heal calibrate
+--force` を実行します。
 
 監査トレイルは `.heal/snapshots/` に `event = "calibrate"` として
 残ります。`MetricsSnapshot::latest_in_segments` はスナップショット

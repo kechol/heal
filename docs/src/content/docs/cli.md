@@ -106,29 +106,29 @@ Runs every observer, classifies each Finding by Severity using
 (the TODO list `/heal-fix` reads):
 
 ```sh
-heal check                              # full Severity-grouped view
+heal check                              # render the cached record (default)
+heal check --refresh                    # re-scan and overwrite latest.json
 heal check --metric lcom                # only LCOM findings
 heal check --severity critical          # only Critical (and above with --all)
 heal check --feature src/payments       # restrict to one path prefix
-heal check --hotspot                    # surface low-Severity hotspot files
+heal check --all                        # show Medium / Ok plus the low-Severity hotspot section
 heal check --top 5                      # cap each Severity bucket at 5 rows
 heal check --json                       # CheckRecord shape on stdout
-heal check --since-cache                # re-render the latest cache without scanning
 ```
+
+By default `heal check` is a read-only render of `.heal/checks/latest.json`:
+runs are free once the cache is warm. Pass `--refresh` to invalidate it
+and re-run every observer; this is the only path that writes the cache.
+A missing cache (e.g. immediately after `heal init`) also triggers a
+scan, so the first invocation in a project still works without flags.
 
 Output groups findings under `🔴 Critical 🔥 / 🔴 Critical / 🟠 High 🔥
 / 🟠 High / 🟡 Medium / ✅ Ok` (last two require `--all`), aggregates
 one row per file, and ends with `Goal: 0 Critical, 0 High` plus a
-"next steps" line pointing at `claude /heal-fix`.
-
-Cache hits short-circuit the heavy scan: the same `head_sha`
-+ `config_hash` + clean worktree returns the previous record without
-re-running observers.
-
-The pre-v0.2 positional names (`overview` / `hotspots` / `complexity`
-/ `duplication` / `coupling`) still work as a deprecation alias —
-they print a warning and translate to the appropriate `--metric` /
-`--hotspot` flag. They will be removed in v0.3.
+"next steps" line pointing at `claude /heal-fix`. With `--all`, an
+extra "Ok / Medium 🔥 (low Severity, top-10% hotspot)" section
+surfaces files that aren't classified as a problem yet but get touched
+often enough to be worth a look.
 
 ## `heal cache`
 
@@ -157,16 +157,23 @@ never mutates state except for `mark-fixed`, which appends a single
 ## `heal calibrate`
 
 ```sh
-heal calibrate                          # rescan + write a fresh calibration.toml
-heal calibrate --reason "annual review" # tag the audit log entry
-heal calibrate --check                  # evaluate auto-detect triggers, no write
+heal calibrate            # check drift triggers if calibration.toml exists; create it if not
+heal calibrate --force    # always rescan and overwrite calibration.toml
 ```
 
-heal **never** recalibrates automatically. The post-commit nudge
-prepends a one-line "consider recalibrating" hint when
-`heal calibrate --check` would have fired (90-day age, ±20% codebase
-file count, or 30 days of zero Critical findings); the user always
-decides whether to invoke `heal calibrate`.
+heal **never** recalibrates automatically.
+
+- When `.heal/calibration.toml` is **missing**, `heal calibrate`
+  rescans and writes it. (Normally this only happens before
+  `heal init` has run; `init` populates the file as part of bootstrap.)
+- When the file **exists**, the default invocation is read-only: it
+  evaluates the drift triggers (90-day age, ±20% codebase file count,
+  or 30 days of zero Critical findings) and prints a recommendation,
+  surfacing `--force` as the way to refresh.
+
+The post-commit nudge prepends a one-line "consider recalibrating"
+hint when the same triggers would fire; the user always decides
+whether to invoke `heal calibrate --force`.
 
 The calibration audit trail lives in `.heal/snapshots/` as
 `event = "calibrate"` records — `heal logs` shows them alongside

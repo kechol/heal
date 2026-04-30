@@ -77,16 +77,11 @@ heal skills install
 | `check-duplication` | 重複ブロックをレビューし、ヘルパーを抽出できそうな箇所を提案。         |
 | `check-coupling`    | 共変ペアをレビューし、抽象が欠けていそうな箇所を提案。                 |
 
-スキルは 2 通りで呼び出せます。
-
-- ターミナルから: `heal check overview` — レガシー位置引数のエイリ
-  アスが `--metric` フラグにマップされ、deprecation 警告が表示され
-  ます。
-- インタラクティブな Claude セッション内: 5 つのうち任意のスキル
-  （`check-hotspots` など）を名前で指定して使うよう Claude に依頼。
-
-5 つのスキルはすべてリードオンリーです。`heal status` を呼ぶことは
-できますが、ソースファイルは変更しません。
+インタラクティブな Claude セッション内で、5 つのうち任意のスキル
+（`check-overview` / `check-hotspots` など）を名前で指定して使うよ
+う Claude に依頼します。すべてリードオンリーです — `heal status`
+や `heal check` を呼ぶことはできますが、ソースファイルは変更しま
+せん。
 
 ## write スキル: `/heal-fix`
 

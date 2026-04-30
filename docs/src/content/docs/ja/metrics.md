@@ -162,9 +162,9 @@ score = (weight_complexity × ccn_sum) × (weight_churn × commits)
 間を使い、`score ≥ p90` で **フラグ** を立てます。レンダラーはその
 ファイルの Finding に `🔥` 絵文字を付加します。Severity Tier では
 **ありません** — Hotspot ファイルは Critical 🔥、High 🔥、
-Medium 🔥、Ok 🔥 のいずれにもなり得ます（最後の 1 つは
-`heal check --hotspot` で表示される「Severity は低いがよく触られて
-いる、なぜまだ編集している？」候補です）。
+Medium 🔥、Ok 🔥 のいずれにもなり得ます。最後の 1 つ「Severity は
+低いがよく触られている、なぜまだ編集している？」候補は、
+`heal check --all` の専用セクションで追加表示されます。
 
 式は乗算であるため、複雑度は高いが直近のコミットがないファイルはス
 コアが 0 になります — Hotspot は _アクティブな_ トラブルを特定する
