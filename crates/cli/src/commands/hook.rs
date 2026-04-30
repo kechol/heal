@@ -318,6 +318,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "lang-rust")]
     #[test]
     fn nudge_lists_critical_finding_with_metric_label() {
         // Synthesize a project where the only function trips the

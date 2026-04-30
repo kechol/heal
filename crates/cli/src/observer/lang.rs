@@ -20,8 +20,10 @@ use tree_sitter::{Language as TsLanguage, Query};
 #[cfg(feature = "lang-ts")]
 use tree_sitter_typescript::{LANGUAGE_TSX, LANGUAGE_TYPESCRIPT};
 
-#[cfg(not(any(feature = "lang-ts", feature = "lang-rust")))]
-compile_error!("heal-observer requires at least one language feature: lang-ts or lang-rust");
+#[cfg(not(any(feature = "lang-ts", feature = "lang-js", feature = "lang-rust")))]
+compile_error!(
+    "heal-observer requires at least one language feature: lang-ts / lang-js / lang-rust"
+);
 
 #[cfg(feature = "lang-ts")]
 const TYPESCRIPT_FUNCTIONS_QUERY: &str = include_str!("../../queries/typescript/functions.scm");
@@ -31,6 +33,15 @@ const TYPESCRIPT_CCN_QUERY: &str = include_str!("../../queries/typescript/ccn.sc
 const TYPESCRIPT_COGNITIVE_QUERY: &str = include_str!("../../queries/typescript/cognitive.scm");
 #[cfg(feature = "lang-ts")]
 const TYPESCRIPT_LCOM_QUERY: &str = include_str!("../../queries/typescript/lcom.scm");
+
+#[cfg(feature = "lang-js")]
+const JAVASCRIPT_FUNCTIONS_QUERY: &str = include_str!("../../queries/javascript/functions.scm");
+#[cfg(feature = "lang-js")]
+const JAVASCRIPT_CCN_QUERY: &str = include_str!("../../queries/javascript/ccn.scm");
+#[cfg(feature = "lang-js")]
+const JAVASCRIPT_COGNITIVE_QUERY: &str = include_str!("../../queries/javascript/cognitive.scm");
+#[cfg(feature = "lang-js")]
+const JAVASCRIPT_LCOM_QUERY: &str = include_str!("../../queries/javascript/lcom.scm");
 
 #[cfg(feature = "lang-rust")]
 const RUST_FUNCTIONS_QUERY: &str = include_str!("../../queries/rust/functions.scm");
@@ -48,6 +59,10 @@ pub enum Language {
     TypeScript,
     #[cfg(feature = "lang-ts")]
     Tsx,
+    #[cfg(feature = "lang-js")]
+    JavaScript,
+    #[cfg(feature = "lang-js")]
+    Jsx,
     #[cfg(feature = "lang-rust")]
     Rust,
 }
@@ -102,6 +117,10 @@ impl LanguageQueries {
 static TYPESCRIPT_QUERIES: LanguageQueries = LanguageQueries::new();
 #[cfg(feature = "lang-ts")]
 static TSX_QUERIES: LanguageQueries = LanguageQueries::new();
+#[cfg(feature = "lang-js")]
+static JAVASCRIPT_QUERIES: LanguageQueries = LanguageQueries::new();
+#[cfg(feature = "lang-js")]
+static JSX_QUERIES: LanguageQueries = LanguageQueries::new();
 #[cfg(feature = "lang-rust")]
 static RUST_QUERIES: LanguageQueries = LanguageQueries::new();
 
@@ -116,6 +135,10 @@ impl Language {
             "ts" | "mts" | "cts" => Some(Self::TypeScript),
             #[cfg(feature = "lang-ts")]
             "tsx" => Some(Self::Tsx),
+            #[cfg(feature = "lang-js")]
+            "js" | "mjs" | "cjs" => Some(Self::JavaScript),
+            #[cfg(feature = "lang-js")]
+            "jsx" => Some(Self::Jsx),
             #[cfg(feature = "lang-rust")]
             "rs" => Some(Self::Rust),
             _ => None,
@@ -130,6 +153,10 @@ impl Language {
             Self::TypeScript => "typescript",
             #[cfg(feature = "lang-ts")]
             Self::Tsx => "tsx",
+            #[cfg(feature = "lang-js")]
+            Self::JavaScript => "javascript",
+            #[cfg(feature = "lang-js")]
+            Self::Jsx => "jsx",
             #[cfg(feature = "lang-rust")]
             Self::Rust => "rust",
         }
@@ -142,6 +169,8 @@ impl Language {
             Self::TypeScript => LANGUAGE_TYPESCRIPT.into(),
             #[cfg(feature = "lang-ts")]
             Self::Tsx => LANGUAGE_TSX.into(),
+            #[cfg(feature = "lang-js")]
+            Self::JavaScript | Self::Jsx => tree_sitter_javascript::LANGUAGE.into(),
             #[cfg(feature = "lang-rust")]
             Self::Rust => tree_sitter_rust::LANGUAGE.into(),
         }
@@ -208,6 +237,10 @@ impl Language {
             Self::TypeScript => &TYPESCRIPT_QUERIES,
             #[cfg(feature = "lang-ts")]
             Self::Tsx => &TSX_QUERIES,
+            #[cfg(feature = "lang-js")]
+            Self::JavaScript => &JAVASCRIPT_QUERIES,
+            #[cfg(feature = "lang-js")]
+            Self::Jsx => &JSX_QUERIES,
             #[cfg(feature = "lang-rust")]
             Self::Rust => &RUST_QUERIES,
         }
@@ -217,6 +250,8 @@ impl Language {
         match self {
             #[cfg(feature = "lang-ts")]
             Self::TypeScript | Self::Tsx => TYPESCRIPT_FUNCTIONS_QUERY,
+            #[cfg(feature = "lang-js")]
+            Self::JavaScript | Self::Jsx => JAVASCRIPT_FUNCTIONS_QUERY,
             #[cfg(feature = "lang-rust")]
             Self::Rust => RUST_FUNCTIONS_QUERY,
         }
@@ -226,6 +261,8 @@ impl Language {
         match self {
             #[cfg(feature = "lang-ts")]
             Self::TypeScript | Self::Tsx => TYPESCRIPT_CCN_QUERY,
+            #[cfg(feature = "lang-js")]
+            Self::JavaScript | Self::Jsx => JAVASCRIPT_CCN_QUERY,
             #[cfg(feature = "lang-rust")]
             Self::Rust => RUST_CCN_QUERY,
         }
@@ -235,6 +272,8 @@ impl Language {
         match self {
             #[cfg(feature = "lang-ts")]
             Self::TypeScript | Self::Tsx => TYPESCRIPT_COGNITIVE_QUERY,
+            #[cfg(feature = "lang-js")]
+            Self::JavaScript | Self::Jsx => JAVASCRIPT_COGNITIVE_QUERY,
             #[cfg(feature = "lang-rust")]
             Self::Rust => RUST_COGNITIVE_QUERY,
         }
@@ -244,6 +283,8 @@ impl Language {
         match self {
             #[cfg(feature = "lang-ts")]
             Self::TypeScript | Self::Tsx => TYPESCRIPT_LCOM_QUERY,
+            #[cfg(feature = "lang-js")]
+            Self::JavaScript | Self::Jsx => JAVASCRIPT_LCOM_QUERY,
             #[cfg(feature = "lang-rust")]
             Self::Rust => RUST_LCOM_QUERY,
         }
@@ -298,13 +339,31 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_extensions() {
-        // JavaScript / Python / docs / config types are not part of v0.1's
-        // grammar set even with all language features enabled.
-        assert_eq!(Language::from_path(&PathBuf::from("foo.js")), None);
-        assert_eq!(Language::from_path(&PathBuf::from("foo.jsx")), None);
+        // Python / docs / config types are not in any v0.2 grammar set.
         assert_eq!(Language::from_path(&PathBuf::from("foo.py")), None);
         assert_eq!(Language::from_path(&PathBuf::from("README.md")), None);
         assert_eq!(Language::from_path(&PathBuf::from("Cargo.toml")), None);
+    }
+
+    #[cfg(feature = "lang-js")]
+    #[test]
+    fn dispatches_javascript_extensions() {
+        assert_eq!(
+            Language::from_path(&PathBuf::from("src/foo.js")),
+            Some(Language::JavaScript)
+        );
+        assert_eq!(
+            Language::from_path(&PathBuf::from("src/foo.mjs")),
+            Some(Language::JavaScript)
+        );
+        assert_eq!(
+            Language::from_path(&PathBuf::from("src/foo.cjs")),
+            Some(Language::JavaScript)
+        );
+        assert_eq!(
+            Language::from_path(&PathBuf::from("src/foo.jsx")),
+            Some(Language::Jsx)
+        );
     }
 
     #[test]
@@ -349,6 +408,24 @@ mod tests {
                 g.captures.inc,
                 g.captures.binary,
             );
+        }
+    }
+
+    #[cfg(feature = "lang-js")]
+    #[test]
+    fn javascript_queries_compile_and_grammar_loads() {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&Language::JavaScript.ts_language())
+            .expect("javascript grammar loads");
+        parser
+            .set_language(&Language::Jsx.ts_language())
+            .expect("jsx grammar loads");
+        for lang in [Language::JavaScript, Language::Jsx] {
+            assert!(lang.functions_query().query.pattern_count() > 0);
+            assert!(lang.ccn_query().query.pattern_count() > 0);
+            assert!(lang.cognitive_query().query.pattern_count() > 0);
+            assert!(lang.lcom_query().query.pattern_count() > 0);
         }
     }
 }

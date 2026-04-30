@@ -343,6 +343,8 @@ fn is_method_kind(node: Node<'_>, lang: Language) -> bool {
         Language::TypeScript | Language::Tsx => {
             matches!(node.kind(), "method_definition" | "method_signature")
         }
+        #[cfg(feature = "lang-js")]
+        Language::JavaScript | Language::Jsx => node.kind() == "method_definition",
         #[cfg(feature = "lang-rust")]
         Language::Rust => node.kind() == "function_item",
     }
@@ -354,6 +356,8 @@ fn class_name_for(class_node: Node<'_>, source: &[u8], lang: Language) -> String
     let lookup = match lang {
         #[cfg(feature = "lang-ts")]
         Language::TypeScript | Language::Tsx => "name",
+        #[cfg(feature = "lang-js")]
+        Language::JavaScript | Language::Jsx => "name",
         #[cfg(feature = "lang-rust")]
         Language::Rust => "type",
     };
@@ -387,8 +391,8 @@ struct SelfRefShape {
     property_field: &'static str,
 }
 
-#[cfg(feature = "lang-ts")]
-const SELF_REF_TS: SelfRefShape = SelfRefShape {
+#[cfg(any(feature = "lang-ts", feature = "lang-js"))]
+const SELF_REF_TS_JS: SelfRefShape = SelfRefShape {
     access_kind: "member_expression",
     receiver_field: "object",
     receiver_kind: "this",
@@ -405,7 +409,9 @@ const SELF_REF_RUST: SelfRefShape = SelfRefShape {
 fn self_ref_shape(lang: Language) -> SelfRefShape {
     match lang {
         #[cfg(feature = "lang-ts")]
-        Language::TypeScript | Language::Tsx => SELF_REF_TS,
+        Language::TypeScript | Language::Tsx => SELF_REF_TS_JS,
+        #[cfg(feature = "lang-js")]
+        Language::JavaScript | Language::Jsx => SELF_REF_TS_JS,
         #[cfg(feature = "lang-rust")]
         Language::Rust => SELF_REF_RUST,
     }
@@ -544,6 +550,12 @@ mod tests {
         classes_in(&parsed, Path::new("test.ts"))
     }
 
+    #[cfg(feature = "lang-js")]
+    fn run_js(source: &str) -> Vec<ClassLcom> {
+        let parsed = parse(source.to_owned(), Language::JavaScript).unwrap();
+        classes_in(&parsed, Path::new("test.js"))
+    }
+
     #[cfg(feature = "lang-rust")]
     fn run_rust(source: &str) -> Vec<ClassLcom> {
         let parsed = parse(source.to_owned(), Language::Rust).unwrap();
@@ -675,5 +687,58 @@ mod tests {
         let src = "class Empty {}";
         let classes = run_ts(src);
         assert!(classes.is_empty());
+    }
+
+    #[cfg(feature = "lang-js")]
+    #[test]
+    fn js_cohesive_class_has_one_cluster() {
+        let src = r"
+            class Counter {
+                constructor() { this.value = 0; }
+                inc() { this.value += 1; }
+                dec() { this.value -= 1; }
+                get() { return this.value; }
+            }
+        ";
+        let classes = run_js(src);
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].class_name, "Counter");
+        assert_eq!(classes[0].cluster_count, 1);
+    }
+
+    #[cfg(feature = "lang-js")]
+    #[test]
+    fn js_split_class_has_multiple_clusters() {
+        let src = r"
+            class Mixed {
+                inc() { this.count = (this.count || 0) + 1; }
+                value() { return this.count; }
+                push(msg) { (this.log = this.log || []).push(msg); }
+                tail() { return this.log && this.log[0]; }
+            }
+        ";
+        let classes = run_js(src);
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].cluster_count, 2);
+    }
+
+    #[cfg(feature = "lang-js")]
+    #[test]
+    fn js_method_call_merges_clusters() {
+        // `tail()` bridges {push, tail} (log) ∪ {inc, value} (count).
+        let src = r"
+            class Bridged {
+                inc() { this.count = (this.count || 0) + 1; }
+                value() { return this.count; }
+                push(msg) { (this.log = this.log || []).push(msg); }
+                tail() {
+                    this.value();
+                    return this.log && this.log[0];
+                }
+            }
+        ";
+        let classes = run_js(src);
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].cluster_count, 1);
     }
 }
