@@ -58,7 +58,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        feature: [lang-ts, lang-js, lang-py, lang-rust]
+        feature: [lang-ts, lang-js, lang-py, lang-go, lang-rust]
     runs-on: ubuntu-latest
     env:
       FEATURE: ${{ matrix.feature }}

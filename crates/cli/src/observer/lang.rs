@@ -24,10 +24,11 @@ use tree_sitter_typescript::{LANGUAGE_TSX, LANGUAGE_TYPESCRIPT};
     feature = "lang-ts",
     feature = "lang-js",
     feature = "lang-py",
+    feature = "lang-go",
     feature = "lang-rust"
 )))]
 compile_error!(
-    "heal-observer requires at least one language feature: lang-ts / lang-js / lang-py / lang-rust"
+    "heal-observer requires at least one language feature: lang-ts / lang-js / lang-py / lang-go / lang-rust"
 );
 
 #[cfg(feature = "lang-ts")]
@@ -57,6 +58,15 @@ const PYTHON_COGNITIVE_QUERY: &str = include_str!("../../queries/python/cognitiv
 #[cfg(feature = "lang-py")]
 const PYTHON_LCOM_QUERY: &str = include_str!("../../queries/python/lcom.scm");
 
+#[cfg(feature = "lang-go")]
+const GO_FUNCTIONS_QUERY: &str = include_str!("../../queries/go/functions.scm");
+#[cfg(feature = "lang-go")]
+const GO_CCN_QUERY: &str = include_str!("../../queries/go/ccn.scm");
+#[cfg(feature = "lang-go")]
+const GO_COGNITIVE_QUERY: &str = include_str!("../../queries/go/cognitive.scm");
+#[cfg(feature = "lang-go")]
+const GO_LCOM_QUERY: &str = include_str!("../../queries/go/lcom.scm");
+
 #[cfg(feature = "lang-rust")]
 const RUST_FUNCTIONS_QUERY: &str = include_str!("../../queries/rust/functions.scm");
 #[cfg(feature = "lang-rust")]
@@ -79,6 +89,8 @@ pub enum Language {
     Jsx,
     #[cfg(feature = "lang-py")]
     Python,
+    #[cfg(feature = "lang-go")]
+    Go,
     #[cfg(feature = "lang-rust")]
     Rust,
 }
@@ -139,6 +151,8 @@ static JAVASCRIPT_QUERIES: LanguageQueries = LanguageQueries::new();
 static JSX_QUERIES: LanguageQueries = LanguageQueries::new();
 #[cfg(feature = "lang-py")]
 static PYTHON_QUERIES: LanguageQueries = LanguageQueries::new();
+#[cfg(feature = "lang-go")]
+static GO_QUERIES: LanguageQueries = LanguageQueries::new();
 #[cfg(feature = "lang-rust")]
 static RUST_QUERIES: LanguageQueries = LanguageQueries::new();
 
@@ -159,6 +173,8 @@ impl Language {
             "jsx" => Some(Self::Jsx),
             #[cfg(feature = "lang-py")]
             "py" | "pyi" => Some(Self::Python),
+            #[cfg(feature = "lang-go")]
+            "go" => Some(Self::Go),
             #[cfg(feature = "lang-rust")]
             "rs" => Some(Self::Rust),
             _ => None,
@@ -179,6 +195,8 @@ impl Language {
             Self::Jsx => "jsx",
             #[cfg(feature = "lang-py")]
             Self::Python => "python",
+            #[cfg(feature = "lang-go")]
+            Self::Go => "go",
             #[cfg(feature = "lang-rust")]
             Self::Rust => "rust",
         }
@@ -195,6 +213,8 @@ impl Language {
             Self::JavaScript | Self::Jsx => tree_sitter_javascript::LANGUAGE.into(),
             #[cfg(feature = "lang-py")]
             Self::Python => tree_sitter_python::LANGUAGE.into(),
+            #[cfg(feature = "lang-go")]
+            Self::Go => tree_sitter_go::LANGUAGE.into(),
             #[cfg(feature = "lang-rust")]
             Self::Rust => tree_sitter_rust::LANGUAGE.into(),
         }
@@ -267,6 +287,8 @@ impl Language {
             Self::Jsx => &JSX_QUERIES,
             #[cfg(feature = "lang-py")]
             Self::Python => &PYTHON_QUERIES,
+            #[cfg(feature = "lang-go")]
+            Self::Go => &GO_QUERIES,
             #[cfg(feature = "lang-rust")]
             Self::Rust => &RUST_QUERIES,
         }
@@ -280,6 +302,8 @@ impl Language {
             Self::JavaScript | Self::Jsx => JAVASCRIPT_FUNCTIONS_QUERY,
             #[cfg(feature = "lang-py")]
             Self::Python => PYTHON_FUNCTIONS_QUERY,
+            #[cfg(feature = "lang-go")]
+            Self::Go => GO_FUNCTIONS_QUERY,
             #[cfg(feature = "lang-rust")]
             Self::Rust => RUST_FUNCTIONS_QUERY,
         }
@@ -293,6 +317,8 @@ impl Language {
             Self::JavaScript | Self::Jsx => JAVASCRIPT_CCN_QUERY,
             #[cfg(feature = "lang-py")]
             Self::Python => PYTHON_CCN_QUERY,
+            #[cfg(feature = "lang-go")]
+            Self::Go => GO_CCN_QUERY,
             #[cfg(feature = "lang-rust")]
             Self::Rust => RUST_CCN_QUERY,
         }
@@ -306,6 +332,8 @@ impl Language {
             Self::JavaScript | Self::Jsx => JAVASCRIPT_COGNITIVE_QUERY,
             #[cfg(feature = "lang-py")]
             Self::Python => PYTHON_COGNITIVE_QUERY,
+            #[cfg(feature = "lang-go")]
+            Self::Go => GO_COGNITIVE_QUERY,
             #[cfg(feature = "lang-rust")]
             Self::Rust => RUST_COGNITIVE_QUERY,
         }
@@ -319,6 +347,8 @@ impl Language {
             Self::JavaScript | Self::Jsx => JAVASCRIPT_LCOM_QUERY,
             #[cfg(feature = "lang-py")]
             Self::Python => PYTHON_LCOM_QUERY,
+            #[cfg(feature = "lang-go")]
+            Self::Go => GO_LCOM_QUERY,
             #[cfg(feature = "lang-rust")]
             Self::Rust => RUST_LCOM_QUERY,
         }
@@ -485,5 +515,27 @@ mod tests {
         assert!(Language::Python.ccn_query().query.pattern_count() > 0);
         assert!(Language::Python.cognitive_query().query.pattern_count() > 0);
         assert!(Language::Python.lcom_query().query.pattern_count() > 0);
+    }
+
+    #[cfg(feature = "lang-go")]
+    #[test]
+    fn dispatches_go_extension() {
+        assert_eq!(
+            Language::from_path(&PathBuf::from("cmd/main.go")),
+            Some(Language::Go)
+        );
+    }
+
+    #[cfg(feature = "lang-go")]
+    #[test]
+    fn go_queries_compile_and_grammar_loads() {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&Language::Go.ts_language())
+            .expect("go grammar loads");
+        assert!(Language::Go.functions_query().query.pattern_count() > 0);
+        assert!(Language::Go.ccn_query().query.pattern_count() > 0);
+        assert!(Language::Go.cognitive_query().query.pattern_count() > 0);
+        assert!(Language::Go.lcom_query().query.pattern_count() > 0);
     }
 }

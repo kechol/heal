@@ -347,6 +347,12 @@ fn is_method_kind(node: Node<'_>, lang: Language) -> bool {
         Language::JavaScript | Language::Jsx => node.kind() == "method_definition",
         #[cfg(feature = "lang-py")]
         Language::Python => node.kind() == "function_definition",
+        // Go has no class scope; methods attach to types via receivers
+        // and live at module scope. Receiver-grouped LCOM lands in
+        // v0.3+. Returning false here makes `analyze_class` see no
+        // methods and emit no Findings.
+        #[cfg(feature = "lang-go")]
+        Language::Go => false,
         #[cfg(feature = "lang-rust")]
         Language::Rust => node.kind() == "function_item",
     }
@@ -362,6 +368,10 @@ fn class_name_for(class_node: Node<'_>, source: &[u8], lang: Language) -> String
         Language::JavaScript | Language::Jsx => "name",
         #[cfg(feature = "lang-py")]
         Language::Python => "name",
+        // Go's LCOM is a no-op (see `is_method_kind`); the field name
+        // here doesn't matter.
+        #[cfg(feature = "lang-go")]
+        Language::Go => "name",
         #[cfg(feature = "lang-rust")]
         Language::Rust => "type",
     };
@@ -447,10 +457,28 @@ fn self_ref_shape(lang: Language) -> SelfRefShape {
         Language::JavaScript | Language::Jsx => SELF_REF_TS_JS,
         #[cfg(feature = "lang-py")]
         Language::Python => SELF_REF_PY,
+        // Go's LCOM is a no-op; this branch is unreachable when
+        // `is_method_kind` returns false. Reuse the TS/JS shape so
+        // the match stays total.
+        #[cfg(feature = "lang-go")]
+        Language::Go => SELF_REF_GO_NOOP,
         #[cfg(feature = "lang-rust")]
         Language::Rust => SELF_REF_RUST,
     }
 }
+
+#[cfg(feature = "lang-go")]
+fn never_receiver(_: Node<'_>, _: &[u8]) -> bool {
+    false
+}
+#[cfg(feature = "lang-go")]
+const SELF_REF_GO_NOOP: SelfRefShape = SelfRefShape {
+    access_kind: "selector_expression",
+    receiver_field: "operand",
+    is_receiver: never_receiver,
+    property_field: "field",
+    call_kind: "call_expression",
+};
 
 fn collect_self_refs(body: Node<'_>, source: &[u8], lang: Language) -> SelfRefs {
     let shape = self_ref_shape(lang);
@@ -595,6 +623,12 @@ mod tests {
     fn run_py(source: &str) -> Vec<ClassLcom> {
         let parsed = parse(source.to_owned(), Language::Python).unwrap();
         classes_in(&parsed, Path::new("test.py"))
+    }
+
+    #[cfg(feature = "lang-go")]
+    fn run_go(source: &str) -> Vec<ClassLcom> {
+        let parsed = parse(source.to_owned(), Language::Go).unwrap();
+        classes_in(&parsed, Path::new("test.go"))
     }
 
     #[cfg(feature = "lang-rust")]
@@ -823,6 +857,23 @@ class Mixed:
         let classes = run_py(src);
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].cluster_count, 2);
+    }
+
+    #[cfg(feature = "lang-go")]
+    #[test]
+    fn go_lcom_is_a_noop_in_v0_2() {
+        // Go's class-aware LCOM is deferred — `is_method_kind` returns
+        // false for every node, so even a file with multiple methods
+        // produces no Findings.
+        let src = r"
+package x
+
+type Counter struct { value int }
+
+func (c *Counter) Inc() { c.value += 1 }
+func (c *Counter) Get() int { return c.value }
+";
+        assert!(run_go(src).is_empty());
     }
 
     #[cfg(feature = "lang-py")]
