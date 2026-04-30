@@ -112,6 +112,7 @@ impl Finding {
                 .map_or_else(|| "Cognitive".to_owned(), |v| format!("Cognitive={v}")),
             "duplication" => "duplication".to_owned(),
             "change_coupling" => "coupled".to_owned(),
+            "change_coupling.symmetric" => "coupled (sym)".to_owned(),
             "hotspot" => "hotspot".to_owned(),
             other => other.to_owned(),
         }

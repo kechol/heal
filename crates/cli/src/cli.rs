@@ -161,7 +161,7 @@ impl CheckMetric {
             Self::Cognitive => metric == "cognitive",
             Self::Complexity => matches!(metric, "ccn" | "cognitive"),
             Self::Duplication => metric == "duplication",
-            Self::Coupling => metric == "change_coupling",
+            Self::Coupling => matches!(metric, "change_coupling" | "change_coupling.symmetric"),
             Self::Hotspot => metric == "hotspot",
         }
     }

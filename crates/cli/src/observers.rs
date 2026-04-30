@@ -439,6 +439,7 @@ mod tests {
                 a: PathBuf::from("src/cold.rs"),
                 b: PathBuf::from("src/hot.rs"),
                 count: 12,
+                direction: None,
             }],
             file_sums: Vec::new(),
             totals: CouplingTotals {

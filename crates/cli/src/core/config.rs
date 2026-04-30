@@ -254,6 +254,13 @@ pub struct ChangeCouplingConfig {
     pub enabled: bool,
     #[serde(default = "default_min_coupling")]
     pub min_coupling: u32,
+    /// Threshold both `P(B|A)` and `P(A|B)` must meet for a pair to
+    /// classify as `Symmetric` rather than `OneWay`. 0.5 (default) =
+    /// each file's edits coincide with the partner at least half the
+    /// time. Lower it to surface looser symmetry; raise it to require
+    /// near-lockstep changes.
+    #[serde(default = "default_symmetric_threshold")]
+    pub symmetric_threshold: f64,
     /// Per-metric override for `metrics.top_n` — most-coupled pairs list.
     #[serde(default)]
     pub top_n: Option<usize>,
@@ -271,6 +278,7 @@ impl Default for ChangeCouplingConfig {
         Self {
             enabled: false,
             min_coupling: default_min_coupling(),
+            symmetric_threshold: default_symmetric_threshold(),
             top_n: None,
             floor_critical: None,
         }
@@ -282,6 +290,7 @@ impl Toggle for ChangeCouplingConfig {
         Self {
             enabled: true,
             min_coupling: default_min_coupling(),
+            symmetric_threshold: default_symmetric_threshold(),
             top_n: None,
             floor_critical: None,
         }
@@ -290,6 +299,10 @@ impl Toggle for ChangeCouplingConfig {
 
 fn default_min_coupling() -> u32 {
     3
+}
+
+fn default_symmetric_threshold() -> f64 {
+    0.5
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

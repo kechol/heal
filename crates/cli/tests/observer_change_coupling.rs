@@ -4,7 +4,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use heal_cli::observer::change_coupling::ChangeCouplingObserver;
+use heal_cli::observer::change_coupling::{ChangeCouplingObserver, PairDirection};
 
 mod common;
 use common::{commit_files, init_repo};
@@ -25,6 +25,7 @@ fn observer(min_coupling: u32) -> ChangeCouplingObserver {
         excluded: Vec::new(),
         since_days: 90,
         min_coupling,
+        symmetric_threshold: 0.5,
     }
 }
 
@@ -241,9 +242,111 @@ fn excluded_substrings_skip_paths() {
         excluded: vec!["vendor".to_string()],
         since_days: 90,
         min_coupling: 1,
+        symmetric_threshold: 0.5,
     };
     let report = observer.scan(dir.path());
     assert_eq!(report.pairs.len(), 1);
     assert_eq!(report.pairs[0].a.to_string_lossy(), "src/a.rs");
     assert_eq!(report.pairs[0].b.to_string_lossy(), "src/b.rs");
+}
+
+/// Two files that always co-edit and never appear alone classify as
+/// Symmetric — `P(B|A) = P(A|B) = 1.0`, both above the default 0.5.
+#[test]
+fn symmetric_pair_when_both_conditional_probs_high() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = init_repo(dir.path());
+    let now = now_secs();
+    for i in 0..4 {
+        commit_files(
+            &repo,
+            &[("a.rs", &format!("a{i}\n")), ("b.rs", &format!("b{i}\n"))],
+            &format!("ab {i}"),
+            now - 100 + i,
+        );
+    }
+    let report = observer(2).scan(dir.path());
+    assert_eq!(report.pairs.len(), 1);
+    let pair = &report.pairs[0];
+    assert_eq!(pair.count, 4);
+    assert_eq!(pair.direction, Some(PairDirection::Symmetric));
+}
+
+/// One file changes alone often, the other always tags along →
+/// classify as `OneWay { from: leader, to: follower }`. Here `core.rs`
+/// leads (10 solo edits + 4 with `extras.rs`) and `extras.rs` follows
+/// (never alone).
+#[test]
+fn one_way_pair_picks_leader_by_conditional_probability() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = init_repo(dir.path());
+    let now = now_secs();
+    // 4 co-edits with extras.rs.
+    for i in 0..4 {
+        commit_files(
+            &repo,
+            &[
+                ("core.rs", &format!("c{i}\n")),
+                ("extras.rs", &format!("e{i}\n")),
+            ],
+            &format!("co {i}"),
+            now - 200 + i,
+        );
+    }
+    // 10 solo edits to core.rs — extras.rs never appears without core.rs
+    // but core.rs ships fine alone.
+    for i in 0..10 {
+        commit_files(
+            &repo,
+            &[("core.rs", &format!("solo{i}\n"))],
+            &format!("solo {i}"),
+            now - 100 + i,
+        );
+    }
+    let report = observer(2).scan(dir.path());
+    assert_eq!(report.pairs.len(), 1);
+    let pair = &report.pairs[0];
+    assert_eq!(pair.count, 4);
+    let direction = pair.direction.as_ref().expect("direction populated");
+    let PairDirection::OneWay { from, to } = direction else {
+        panic!("expected OneWay, got {direction:?}");
+    };
+    assert_eq!(
+        from.to_string_lossy(),
+        "core.rs",
+        "core.rs is the leader — its solo edits drive extras.rs",
+    );
+    assert_eq!(to.to_string_lossy(), "extras.rs");
+}
+
+/// `symmetric_threshold` is the only knob the user can tune at runtime —
+/// confirm raising it past `1.0` (impossible) downgrades every pair to
+/// `OneWay` even when the underlying numbers would otherwise classify
+/// as `Symmetric`.
+#[test]
+fn symmetric_threshold_above_one_forces_one_way() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = init_repo(dir.path());
+    let now = now_secs();
+    for i in 0..3 {
+        commit_files(
+            &repo,
+            &[("a.rs", &format!("a{i}\n")), ("b.rs", &format!("b{i}\n"))],
+            &format!("ab {i}"),
+            now - 100 + i,
+        );
+    }
+    let strict = ChangeCouplingObserver {
+        enabled: true,
+        excluded: Vec::new(),
+        since_days: 90,
+        min_coupling: 2,
+        symmetric_threshold: 1.5,
+    };
+    let report = strict.scan(dir.path());
+    assert_eq!(report.pairs.len(), 1);
+    assert!(matches!(
+        report.pairs[0].direction,
+        Some(PairDirection::OneWay { .. })
+    ));
 }
