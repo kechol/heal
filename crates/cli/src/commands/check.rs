@@ -104,9 +104,9 @@ pub fn run(project: &Path, args: &CheckArgs) -> Result<()> {
 }
 
 /// Run every observer + classify, returning a fresh `CheckRecord`
-/// without writing it. Reused by `heal fix diff --worktree` so a
-/// half-finished session can compare against the latest cached
-/// record without polluting `.heal/checks/`.
+/// without writing it. Reused by `heal fix diff` (in "vs live" mode,
+/// when no explicit TO is supplied) so a half-finished session can
+/// compare against a cached record without polluting `.heal/checks/`.
 pub(super) fn build_fresh_record(
     project: &Path,
     cfg: &crate::core::config::Config,

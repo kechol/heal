@@ -113,7 +113,7 @@ The full walkthrough is at <https://kechol.github.io/heal/quick-start/>.
 | `heal checks [--since <RFC3339>] [--limit N] [--json]` | Newest-first summary of every `CheckRecord` in `.heal/checks/`. |
 | `heal check [--metric <name>] [--severity <level>] [--feature <prefix>] [--all] [--top N] [--json] [--refresh]` | Render the cached `CheckRecord` from `.heal/checks/latest.json`. Re-scans only on a missing cache or `--refresh`; that path is the single writer of `.heal/checks/`. |
 | `heal fix show <check_id> [--json]` | Detail-render one cached record (use `--json` for the stable shape). |
-| `heal fix diff [<from>] [<to>] [--worktree] [--all] [--json]` | Bucket findings into Resolved / Regressed / Improved / New / Unchanged across two records, with progress %. `--worktree` scans the live tree without writing a record. |
+| `heal fix diff [<from>] [<to>] [--all] [--json]` | Bucket findings into Resolved / Regressed / Improved / New / Unchanged, with progress %. Argument shape mirrors `git diff`: omit `<to>` to compare against a live scan (no record written); omit both to default `<from>` to the latest cached record. |
 | `heal fix mark --finding-id <id> --commit-sha <sha>` | Append a `FixedFinding` line; called by `/heal-fix` after each commit. |
 | `heal calibrate [--force]` | Calibrate codebase-relative Severity thresholds. Default reads `.heal/calibration.toml` and reports drift triggers; `--force` rescans and overwrites. |
 | `heal hook <commit\|edit\|stop>` | Hook entrypoint invoked by git or the Claude plugin. Not for direct use. |

@@ -296,23 +296,23 @@ pub enum FixAction {
         json: bool,
     },
     /// Compare two `CheckRecord`s — Resolved / Regressed / Improved /
-    /// New / Unchanged buckets, plus a progress percentage. With no
-    /// arguments, diffs the prior cache record against the latest. With
-    /// `--worktree`, scans the live project (no cache write) and diffs
-    /// it against the latest cache record so a half-finished session
-    /// can verify progress before committing.
+    /// New / Unchanged buckets, plus a progress percentage. Mirrors
+    /// `git diff`'s argument shape:
+    ///   * `heal fix diff`             — latest cache vs a live scan
+    ///     (no record written) so a half-finished session can verify
+    ///     progress before committing.
+    ///   * `heal fix diff <FROM>`      — `FROM` cache record vs a live scan.
+    ///   * `heal fix diff <FROM> <TO>` — two specific cached records.
     Diff {
-        /// Older `check_id` for the diff. Defaults to the second-most-
-        /// recent record.
+        /// Older `check_id` for the diff. Defaults to the most-recent
+        /// cached record (so a single-arg invocation means "FROM vs
+        /// live", and zero-arg means "latest cache vs live").
         #[arg(value_name = "FROM")]
         from: Option<String>,
-        /// Newer `check_id`. Defaults to the most-recent record.
+        /// Newer `check_id`. When omitted, the right-hand side is a
+        /// fresh in-memory scan of the working tree (never persisted).
         #[arg(value_name = "TO")]
         to: Option<String>,
-        /// Re-scan the working tree instead of reading `to` from the
-        /// cache. Conflicts with `to`.
-        #[arg(long, conflicts_with = "to")]
-        worktree: bool,
         /// Show the Improved / Unchanged buckets too.
         #[arg(long)]
         all: bool,

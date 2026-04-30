@@ -7,11 +7,17 @@
 //! - `fix show <id>`  — detailed render of one record (unstable view;
 //!   use `--json` for the stable shape).
 //! - `fix diff`       — bucket findings into Resolved / Regressed /
-//!   Improved / New / Unchanged across two records. With `--worktree`,
-//!   compares the live tree to the latest cached record without
-//!   writing anything.
+//!   Improved / New / Unchanged. Argument shape mirrors `git diff`:
+//!   no args = latest cache vs a live in-memory scan; `<from>` =
+//!   `<from>` vs live; `<from> <to>` = two cached records. The live
+//!   scan is never written to disk.
 //! - `fix mark`       — append a `FixedFinding` line to
 //!   `.heal/checks/fixed.jsonl` (the only `fix` command that writes).
+//!
+//! When the diff runs in "vs live" mode and every finding in the
+//! FROM record has been logged to `fixed.jsonl`, the renderer drops
+//! a hint suggesting `heal check --refresh` so the reconciliation
+//! pass can either retire those marks or surface regressions.
 
 use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
@@ -41,18 +47,9 @@ pub fn run(project: &Path, action: FixAction) -> Result<()> {
         FixAction::Diff {
             from,
             to,
-            worktree,
             all,
             json,
-        } => run_diff(
-            project,
-            &paths,
-            from.as_deref(),
-            to.as_deref(),
-            worktree,
-            all,
-            json,
-        ),
+        } => run_diff(project, &paths, from.as_deref(), to.as_deref(), all, json),
         FixAction::Mark {
             finding_id,
             commit_sha,
@@ -107,7 +104,6 @@ fn run_diff(
     paths: &HealPaths,
     from: Option<&str>,
     to: Option<&str>,
-    worktree: bool,
     show_all: bool,
     as_json: bool,
 ) -> Result<()> {
@@ -119,9 +115,19 @@ fn run_diff(
         );
     }
 
-    let to_record = if worktree {
-        // Live scan, never written to disk. Compares the in-flight
-        // working-tree state against the most recent cached run.
+    // `to` resolution: explicit ULID looks the record up; absence
+    // means "use a fresh in-memory scan of the working tree" (mirrors
+    // `git diff <commit>` defaulting to the working tree on the
+    // right-hand side). The live scan is never written to
+    // `.heal/checks/`.
+    let to_is_live = to.is_none();
+    let to_record = if let Some(id) = to {
+        records
+            .iter()
+            .find(|(_, r)| r.check_id == id)
+            .map(|(_, r)| r.clone())
+            .ok_or_else(|| anyhow::anyhow!("no CheckRecord with check_id={id} (TO)"))?
+    } else {
         let cfg = load_from_project(project).with_context(|| {
             format!(
                 "loading {} (run `heal init` first?)",
@@ -142,19 +148,12 @@ fn run_diff(
             worktree_clean,
             config_hash,
         )
-    } else if let Some(id) = to {
-        records
-            .iter()
-            .find(|(_, r)| r.check_id == id)
-            .map(|(_, r)| r.clone())
-            .ok_or_else(|| anyhow::anyhow!("no CheckRecord with check_id={id} (TO)"))?
-    } else {
-        records[0].1.clone()
     };
 
-    // For `from`: explicit ULID, otherwise the latest cached record
-    // that isn't `to_record` (i.e. records[0] in worktree mode,
-    // records[1] otherwise).
+    // `from` resolution: explicit ULID looks the record up; absence
+    // means "the most recent cached record". Symmetric with `to` — both
+    // sides default to "the latest known state" in their domain (cache
+    // for `from`, live tree for `to`).
     let from_record = if let Some(id) = from {
         records
             .iter()
@@ -162,14 +161,7 @@ fn run_diff(
             .map(|(_, r)| r.clone())
             .ok_or_else(|| anyhow::anyhow!("no CheckRecord with check_id={id} (FROM)"))?
     } else {
-        let skip_id = (!worktree && to.is_none()).then(|| to_record.check_id.clone());
-        records
-            .iter()
-            .map(|(_, r)| r.clone())
-            .find(|r| skip_id.as_deref() != Some(r.check_id.as_str()))
-            .ok_or_else(|| {
-                anyhow::anyhow!("need at least two CheckRecords to diff — run `heal check` again")
-            })?
+        records[0].1.clone()
     };
 
     let diff = compute_diff(&from_record, &to_record);
@@ -192,7 +184,43 @@ fn run_diff(
         colorize,
         &mut stdout,
     )?;
+
+    // Workflow nudge: in the "vs live" mode (default — no explicit
+    // TO), when every finding in the FROM record has been logged to
+    // `fixed.jsonl`, the user is sitting on a session whose `mark`s
+    // haven't been reconciled yet. `heal check --refresh` will either
+    // drop those entries (genuinely fixed) or move them to
+    // `regressed.jsonl` (the mark was wrong). Skipped for record-vs-
+    // record diffs (the user opted out of the live workflow) and for
+    // empty FROM records (nothing to mark).
+    if to_is_live && !from_record.findings.is_empty() {
+        if let Some(hint) = all_marked_hint(paths, &from_record)? {
+            writeln!(stdout, "{hint}")?;
+        }
+    }
     Ok(())
+}
+
+/// Returns a one-line nudge when every finding in `from` has been
+/// logged in `fixed.jsonl`. `Ok(None)` when not all findings are
+/// marked, or when `fixed.jsonl` is missing/empty.
+fn all_marked_hint(paths: &HealPaths, from: &CheckRecord) -> Result<Option<String>> {
+    use crate::core::check_cache::read_fixed;
+    let fixed = read_fixed(&paths.checks_fixed_log())?;
+    if fixed.is_empty() {
+        return Ok(None);
+    }
+    let marked: std::collections::HashSet<&str> =
+        fixed.iter().map(|f| f.finding_id.as_str()).collect();
+    if from.findings.iter().all(|f| marked.contains(f.id.as_str())) {
+        Ok(Some(
+            "Hint: every finding in the cache is marked fixed — run \
+             `heal check --refresh` to reconcile fixed.jsonl ↔ regressed.jsonl."
+                .to_owned(),
+        ))
+    } else {
+        Ok(None)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -473,5 +501,45 @@ mod tests {
         assert_eq!(entries[0].commit_sha, "deadbeef");
         assert_eq!(entries[1].finding_id, "ccn:src/b.rs:bar:def");
         assert_eq!(entries[1].commit_sha, "cafebabe");
+    }
+
+    #[test]
+    fn all_marked_hint_fires_only_when_every_finding_is_in_fixed_log() {
+        use tempfile::TempDir;
+        let tmp = TempDir::new().unwrap();
+        let paths = HealPaths::new(tmp.path());
+        paths.ensure().unwrap();
+
+        let a = finding("a", Severity::High);
+        let b = finding("b", Severity::High);
+        let from = record(vec![a.clone(), b.clone()]);
+
+        // No marks yet → no hint.
+        assert!(all_marked_hint(&paths, &from).unwrap().is_none());
+
+        // Mark only one of two → still no hint.
+        run_mark(&paths, &a.id, "abc1234").unwrap();
+        assert!(all_marked_hint(&paths, &from).unwrap().is_none());
+
+        // Mark the second → hint fires.
+        run_mark(&paths, &b.id, "def5678").unwrap();
+        let hint = all_marked_hint(&paths, &from).unwrap().expect("hint");
+        assert!(
+            hint.contains("heal check --refresh"),
+            "hint should reference the refresh command: {hint}",
+        );
+    }
+
+    #[test]
+    fn all_marked_hint_skipped_for_empty_fixed_log() {
+        use tempfile::TempDir;
+        let tmp = TempDir::new().unwrap();
+        let paths = HealPaths::new(tmp.path());
+        paths.ensure().unwrap();
+
+        // Empty FROM with no fixed.jsonl → no hint (avoids a false
+        // positive when the user has nothing to reconcile).
+        let from = record(Vec::new());
+        assert!(all_marked_hint(&paths, &from).unwrap().is_none());
     }
 }

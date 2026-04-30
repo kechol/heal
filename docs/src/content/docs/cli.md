@@ -147,13 +147,21 @@ the TODO list":
 heal fix show <check_id>              # render one record
 heal fix show <check_id> --json       # stable shape (same as `heal check --json`)
 
-heal fix diff                         # latest two records
-heal fix diff <from> <to>             # explicit pair
-heal fix diff --worktree              # live tree vs latest cache, no write
+heal fix diff                         # latest cache vs a live in-memory scan
+heal fix diff <from>                  # <from> vs a live scan
+heal fix diff <from> <to>             # two cached records, no scan
 heal fix diff --all --json            # show Improved/Unchanged + JSON
 
 heal fix mark --finding-id <id> --commit-sha <sha>   # used by /heal-fix
 ```
+
+The argument shape mirrors `git diff`: omitting `<to>` means "compare
+against a fresh in-memory scan of the working tree" (never persisted),
+and omitting `<from>` defaults to the most recent cached record. After
+a `vs live` diff, if every finding in the FROM record has been logged
+to `fixed.jsonl`, the renderer prints a one-line nudge to run `heal
+check --refresh` so reconciliation moves resolved entries out (or
+surfaces regressions).
 
 `heal check` is the single writer of `.heal/checks/<segment>.jsonl`
 (scan results) and `latest.json` (atomic mirror). `heal fix mark` is
@@ -235,8 +243,9 @@ it's fixed — that's the point.
 - **`heal check` is the canonical workflow.** After a meaningful
   commit, run it to refresh the cache and see what's still on the
   TODO list.
-- **`heal fix diff --worktree`** lets you verify progress mid-session
-  without polluting `.heal/checks/` with extra records.
+- **`heal fix diff`** (no args) lets you verify progress mid-session
+  by comparing the latest cached record against a live scan, without
+  polluting `.heal/checks/` with extra records.
 - **Preserve the post-commit hook.** Removing it stops new snapshots
   from being recorded, and `heal status` / `heal checks` will keep
   showing the previous delta.
