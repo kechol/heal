@@ -11,15 +11,15 @@
 //! checks` uses `CheckRecord` reads via [`iter_records`] and omits
 //! `--filter` (no event-name dimension to match).
 
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use serde::Serialize;
 use serde_json::Value;
 
 use crate::cli::{ChecksFilters, LogFilters};
-use crate::core::check_cache::{iter_records, CheckRecord};
+use crate::core::check_cache::{iter_records, CheckRecord, CheckRecordSummary};
 use crate::core::eventlog::{Event, EventLog};
 use crate::core::HealPaths;
 
@@ -43,10 +43,12 @@ pub fn run_checks(project: &Path, args: &ChecksFilters) -> Result<()> {
         records.truncate(n);
     }
     if args.json {
-        let payload: Vec<ChecksRow> = records.iter().map(ChecksRow::from).collect();
+        let payload: Vec<CheckRecordSummary> =
+            records.iter().map(CheckRecordSummary::from).collect();
         println!(
             "{}",
-            serde_json::to_string_pretty(&payload).expect("ChecksRow serialization is infallible")
+            serde_json::to_string_pretty(&payload)
+                .expect("CheckRecordSummary serialization is infallible")
         );
         return Ok(());
     }
@@ -77,7 +79,12 @@ fn run_eventlog(dir: PathBuf, args: &LogFilters) -> Result<()> {
     let log = EventLog::new(dir);
     let since_dt = parse_since(args.since.as_deref())?;
 
-    let mut kept: Vec<Event> = Vec::new();
+    // When `--limit N` is set, keep at most N entries via a bounded
+    // ring buffer instead of buffering the full history just to drain
+    // the head. The iterator is already chronological, so popping the
+    // oldest preserves "newest N" semantics.
+    let cap = args.limit;
+    let mut kept: VecDeque<Event> = VecDeque::with_capacity(cap.unwrap_or(0));
     for event in log.try_iter()? {
         let event = event?;
         if let Some(cutoff) = since_dt {
@@ -90,14 +97,12 @@ fn run_eventlog(dir: PathBuf, args: &LogFilters) -> Result<()> {
                 continue;
             }
         }
-        kept.push(event);
-    }
-
-    if let Some(n) = args.limit {
-        if kept.len() > n {
-            let drop = kept.len() - n;
-            kept.drain(..drop);
+        if let Some(n) = cap {
+            if kept.len() == n {
+                kept.pop_front();
+            }
         }
+        kept.push_back(event);
     }
 
     for event in &kept {
@@ -139,32 +144,6 @@ fn has_meaningful_data(value: &Value) -> bool {
         Value::Array(a) => !a.is_empty(),
         Value::Object(o) => !o.is_empty(),
         _ => true,
-    }
-}
-
-/// JSON row for `heal checks --json`. Mirrors the fields a tool would
-/// pull from a full `CheckRecord` for indexing/listing without paying
-/// for the embedded findings list.
-#[derive(Debug, Clone, Serialize)]
-struct ChecksRow {
-    check_id: String,
-    started_at: DateTime<Utc>,
-    head_sha: Option<String>,
-    findings_count: usize,
-    severity_counts: crate::core::snapshot::SeverityCounts,
-    worktree_clean: bool,
-}
-
-impl From<&CheckRecord> for ChecksRow {
-    fn from(r: &CheckRecord) -> Self {
-        Self {
-            check_id: r.check_id.clone(),
-            started_at: r.started_at,
-            head_sha: r.head_sha.clone(),
-            findings_count: r.findings.len(),
-            severity_counts: r.severity_counts,
-            worktree_clean: r.worktree_clean,
-        }
     }
 }
 

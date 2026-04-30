@@ -27,10 +27,8 @@ use crate::core::snapshot::{ansi_wrap, ANSI_GREEN, ANSI_YELLOW};
 use crate::core::HealPaths;
 use crate::observers::{build_calibration, run_all};
 
-/// Reason recorded on every audit-log entry. The free-form `--reason`
-/// flag was removed (it was overkill for v0.1's manual flow); a single
-/// constant keeps `CalibrationEvent`'s schema stable for any external
-/// reader without forcing them to handle `Option<String>`.
+/// Reason field on every `CalibrationEvent`. A single value keeps the
+/// audit-log schema stable for external readers.
 const CALIBRATE_REASON: &str = "manual";
 
 pub fn run(project: &Path, force: bool) -> Result<()> {
@@ -209,13 +207,6 @@ mod tests {
         let paths = HealPaths::new(dir.path());
 
         run(dir.path(), false).unwrap();
-        let mtime_first = std::fs::metadata(paths.calibration())
-            .unwrap()
-            .modified()
-            .unwrap();
-
-        // Sleep is unnecessary on most filesystems but the assertion is
-        // about a fresh calibrate event being recorded, which is robust.
         run(dir.path(), true).unwrap();
 
         let calibrate_count = EvLog::new(paths.snapshots_dir())
@@ -228,8 +219,5 @@ mod tests {
             calibrate_count, 2,
             "--force on an existing calibration must append a new event"
         );
-        // Touch-check: even if mtime equals (rare on coarse FS), the
-        // event count assertion above is the load-bearing check.
-        let _ = mtime_first;
     }
 }

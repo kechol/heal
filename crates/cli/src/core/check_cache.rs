@@ -231,6 +231,46 @@ pub fn iter_records(checks_dir: &Path) -> Result<Vec<(DateTime<Utc>, CheckRecord
     Ok(out)
 }
 
+/// Locate a record in a previously-loaded list by `check_id`. Pure
+/// linear search — the cache is small enough (one record per `heal
+/// check --refresh`) that an index isn't worth the bookkeeping.
+#[must_use]
+pub fn find_by_id<'a>(
+    records: &'a [(DateTime<Utc>, CheckRecord)],
+    check_id: &str,
+) -> Option<&'a CheckRecord> {
+    records
+        .iter()
+        .find(|(_, r)| r.check_id == check_id)
+        .map(|(_, r)| r)
+}
+
+/// Lightweight projection of [`CheckRecord`] used by `heal checks`
+/// (top-level browser) and any caller that wants the index fields
+/// without the embedded `findings` vector. Construct via `From<&CheckRecord>`.
+#[derive(Debug, Clone, Serialize)]
+pub struct CheckRecordSummary {
+    pub check_id: String,
+    pub started_at: DateTime<Utc>,
+    pub head_sha: Option<String>,
+    pub findings_count: usize,
+    pub severity_counts: SeverityCounts,
+    pub worktree_clean: bool,
+}
+
+impl From<&CheckRecord> for CheckRecordSummary {
+    fn from(r: &CheckRecord) -> Self {
+        Self {
+            check_id: r.check_id.clone(),
+            started_at: r.started_at,
+            head_sha: r.head_sha.clone(),
+            findings_count: r.findings.len(),
+            severity_counts: r.severity_counts,
+            worktree_clean: r.worktree_clean,
+        }
+    }
+}
+
 /// Append one entry to `fixed.jsonl`. Each line is one JSON-encoded
 /// [`FixedFinding`].
 pub fn append_fixed(fixed_log: &Path, entry: &FixedFinding) -> Result<()> {

@@ -47,12 +47,17 @@ pub fn run(project: &Path, args: &CheckArgs) -> Result<()> {
     })?;
 
     let filters = Filters::from_args(args);
-    let cached = read_latest(&paths.checks_latest()).ok().flatten();
 
     // Default: reuse the cache if present. `--refresh` forces a fresh
-    // scan and overwrite. A missing cache also triggers a scan so the
-    // first invocation in a freshly-initialised project still works.
-    let must_scan = args.refresh || cached.is_none();
+    // scan and overwrite, so skip the cache read entirely in that
+    // mode. A missing cache also triggers a scan so the first
+    // invocation in a freshly-initialised project still works.
+    let cached = if args.refresh {
+        None
+    } else {
+        read_latest(&paths.checks_latest()).ok().flatten()
+    };
+    let must_scan = cached.is_none();
 
     let (record, regressed) = if must_scan {
         let cfg = load_from_project(project).with_context(|| {

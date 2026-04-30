@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
 use std::path::Path;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use chrono::Utc;
 use serde::Serialize;
 
@@ -31,7 +31,8 @@ use crate::cli::FixAction;
 use crate::commands::check::{render, Filters};
 use crate::core::calibration::Calibration;
 use crate::core::check_cache::{
-    append_fixed, config_hash_from_paths, iter_records, CheckRecord, FixedFinding,
+    append_fixed, config_hash_from_paths, find_by_id, iter_records, read_latest, CheckRecord,
+    FixedFinding,
 };
 use crate::core::config::load_from_project;
 use crate::core::finding::Finding;
@@ -49,7 +50,7 @@ pub fn run(project: &Path, action: FixAction) -> Result<()> {
             to,
             all,
             json,
-        } => run_diff(project, &paths, from.as_deref(), to.as_deref(), all, json),
+        } => run_diff(project, from.as_deref(), to.as_deref(), all, json),
         FixAction::Mark {
             finding_id,
             commit_sha,
@@ -73,10 +74,8 @@ fn run_mark(paths: &HealPaths, finding_id: &str, commit_sha: &str) -> Result<()>
 
 fn run_show(paths: &HealPaths, check_id: &str, as_json: bool) -> Result<()> {
     let records = iter_records(&paths.checks_dir())?;
-    let record = records
-        .into_iter()
-        .find(|(_, r)| r.check_id == check_id)
-        .map(|(_, r)| r)
+    let record = find_by_id(&records, check_id)
+        .cloned()
         .ok_or_else(|| anyhow::anyhow!("no CheckRecord with check_id={check_id}"))?;
     if as_json {
         println!(
@@ -101,67 +100,40 @@ fn run_show(paths: &HealPaths, check_id: &str, as_json: bool) -> Result<()> {
 
 fn run_diff(
     project: &Path,
-    paths: &HealPaths,
     from: Option<&str>,
     to: Option<&str>,
     show_all: bool,
     as_json: bool,
 ) -> Result<()> {
-    let records = iter_records(&paths.checks_dir())?;
-    if records.is_empty() {
-        bail!(
-            "no cache yet at {} — run `heal check` first",
-            paths.checks_dir().display()
-        );
-    }
+    let paths = HealPaths::new(project);
 
-    // `to` resolution: explicit ULID looks the record up; absence
-    // means "use a fresh in-memory scan of the working tree" (mirrors
-    // `git diff <commit>` defaulting to the working tree on the
-    // right-hand side). The live scan is never written to
-    // `.heal/checks/`.
-    let to_is_live = to.is_none();
-    let to_record = if let Some(id) = to {
-        records
-            .iter()
-            .find(|(_, r)| r.check_id == id)
-            .map(|(_, r)| r.clone())
-            .ok_or_else(|| anyhow::anyhow!("no CheckRecord with check_id={id} (TO)"))?
+    // Defer the (potentially heavy) `iter_records` decode until we know
+    // we need it: only an explicit FROM/TO id requires walking the
+    // segments. The default FROM reads `latest.json` directly, and the
+    // default TO is a fresh observer scan.
+    let cached_records = if from.is_some() || to.is_some() {
+        Some(iter_records(&paths.checks_dir())?)
     } else {
-        let cfg = load_from_project(project).with_context(|| {
-            format!(
-                "loading {} (run `heal init` first?)",
-                paths.config().display(),
-            )
-        })?;
-        let calibration = Calibration::load(&paths.calibration())
-            .ok()
-            .map(|c| c.with_overrides(&cfg));
-        let head_sha = git::head_sha(project);
-        let worktree_clean = git::worktree_clean(project).unwrap_or(false);
-        let config_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
-        crate::commands::check::build_fresh_record(
-            project,
-            &cfg,
-            calibration.as_ref(),
-            head_sha,
-            worktree_clean,
-            config_hash,
-        )
+        None
     };
 
-    // `from` resolution: explicit ULID looks the record up; absence
-    // means "the most recent cached record". Symmetric with `to` — both
-    // sides default to "the latest known state" in their domain (cache
-    // for `from`, live tree for `to`).
-    let from_record = if let Some(id) = from {
-        records
-            .iter()
-            .find(|(_, r)| r.check_id == id)
-            .map(|(_, r)| r.clone())
-            .ok_or_else(|| anyhow::anyhow!("no CheckRecord with check_id={id} (FROM)"))?
-    } else {
-        records[0].1.clone()
+    let to_record = match to {
+        Some(id) => find_by_id(cached_records.as_deref().expect("loaded above"), id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("no CheckRecord with check_id={id} (TO)"))?,
+        None => build_live_record(project, &paths)?,
+    };
+
+    let from_record = match from {
+        Some(id) => find_by_id(cached_records.as_deref().expect("loaded above"), id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("no CheckRecord with check_id={id} (FROM)"))?,
+        None => read_latest(&paths.checks_latest())?.ok_or_else(|| {
+            anyhow::anyhow!(
+                "no cache yet at {} — run `heal check` first",
+                paths.checks_latest().display()
+            )
+        })?,
     };
 
     let diff = compute_diff(&from_record, &to_record);
@@ -185,20 +157,41 @@ fn run_diff(
         &mut stdout,
     )?;
 
-    // Workflow nudge: in the "vs live" mode (default — no explicit
-    // TO), when every finding in the FROM record has been logged to
+    // When every finding in the FROM record has been logged to
     // `fixed.jsonl`, the user is sitting on a session whose `mark`s
-    // haven't been reconciled yet. `heal check --refresh` will either
-    // drop those entries (genuinely fixed) or move them to
-    // `regressed.jsonl` (the mark was wrong). Skipped for record-vs-
-    // record diffs (the user opted out of the live workflow) and for
-    // empty FROM records (nothing to mark).
-    if to_is_live && !from_record.findings.is_empty() {
-        if let Some(hint) = all_marked_hint(paths, &from_record)? {
+    // haven't been reconciled yet — `heal check --refresh` either
+    // drops those entries (genuinely fixed) or moves them to
+    // `regressed.jsonl` (the mark was wrong). Only meaningful in
+    // vs-live mode against a non-empty FROM.
+    if to.is_none() && !from_record.findings.is_empty() {
+        if let Some(hint) = all_marked_hint(&paths, &from_record)? {
             writeln!(stdout, "{hint}")?;
         }
     }
     Ok(())
+}
+
+fn build_live_record(project: &Path, paths: &HealPaths) -> Result<CheckRecord> {
+    let cfg = load_from_project(project).with_context(|| {
+        format!(
+            "loading {} (run `heal init` first?)",
+            paths.config().display(),
+        )
+    })?;
+    let calibration = Calibration::load(&paths.calibration())
+        .ok()
+        .map(|c| c.with_overrides(&cfg));
+    let head_sha = git::head_sha(project);
+    let worktree_clean = git::worktree_clean(project).unwrap_or(false);
+    let config_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
+    Ok(crate::commands::check::build_fresh_record(
+        project,
+        &cfg,
+        calibration.as_ref(),
+        head_sha,
+        worktree_clean,
+        config_hash,
+    ))
 }
 
 /// Returns a one-line nudge when every finding in `from` has been
