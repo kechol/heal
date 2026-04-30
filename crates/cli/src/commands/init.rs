@@ -200,11 +200,10 @@ fn render_skills_line(dest: &Path, action: &SkillsAction) -> String {
         ),
         SkillsAction::Declined => "skipped (declined)".to_string(),
         SkillsAction::SuppressedByFlag => "skipped (--no-skills)".to_string(),
-        SkillsAction::SkippedNoClaude => {
-            "skipped (no `claude` command on PATH)".to_string()
-        }
+        SkillsAction::SkippedNoClaude => "skipped (no `claude` command on PATH)".to_string(),
         SkillsAction::SkippedNonInteractive => {
-            "skipped (non-interactive shell; pass `--yes` or run `heal skills install` later)".to_string()
+            "skipped (non-interactive shell; pass `--yes` or run `heal skills install` later)"
+                .to_string()
         }
     }
 }
@@ -569,8 +568,7 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&claude_bin, std::fs::Permissions::from_mode(0o755))
-                .unwrap();
+            std::fs::set_permissions(&claude_bin, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
         let original_path = std::env::var_os("PATH").unwrap_or_default();
         let mut new_path = std::ffi::OsString::from(bin_dir.path());
