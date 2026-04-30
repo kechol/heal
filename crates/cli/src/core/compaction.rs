@@ -17,7 +17,6 @@
 //! Both passes are idempotent — re-running on a state that's already
 //! compacted is a no-op.
 
-use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -27,6 +26,8 @@ use flate2::Compression;
 
 use crate::core::error::{Error, Result};
 use crate::core::eventlog::{EventLog, Segment};
+use crate::core::fs::atomic_write;
+use crate::core::HealPaths;
 
 /// Age thresholds for the two compaction passes. Defaults match the
 /// v0.2 spec (90 / 365 days).
@@ -74,70 +75,66 @@ pub fn compact(
     now: DateTime<Utc>,
 ) -> Result<CompactionStats> {
     let mut stats = CompactionStats::default();
-    let segments = log.segments()?;
-    for segment in segments {
+    for segment in log.segments()? {
         if is_older_than(&segment, policy.delete_after, now) {
-            remove_file(&segment.path)?;
+            std::fs::remove_file(&segment.path).map_err(|e| Error::Io {
+                path: segment.path.clone(),
+                source: e,
+            })?;
             stats.deleted.push(segment.path);
             continue;
         }
         if is_older_than(&segment, policy.gzip_after, now) && !segment.compressed {
-            let gz_path = gzip_replacement(&segment.path);
-            gzip_copy(&segment.path, &gz_path)?;
-            remove_file(&segment.path)?;
+            let gz_path = gzip_path(&segment.path);
+            let bytes = std::fs::read(&segment.path).map_err(|e| Error::Io {
+                path: segment.path.clone(),
+                source: e,
+            })?;
+            atomic_write(&gz_path, &gzip(&bytes, &gz_path)?)?;
+            std::fs::remove_file(&segment.path).map_err(|e| Error::Io {
+                path: segment.path.clone(),
+                source: e,
+            })?;
             stats.gzipped.push(gz_path);
         }
     }
     Ok(stats)
 }
 
+/// Run [`compact`] across every event-log dir under `.heal/`. The
+/// hook and the `heal compact` CLI both go through this so the
+/// fan-out lives in `core::` rather than in `commands::` (where
+/// `heal hook commit` shouldn't reach).
+pub fn compact_all(
+    paths: &HealPaths,
+    policy: &CompactionPolicy,
+    now: DateTime<Utc>,
+) -> Result<Vec<(&'static str, CompactionStats)>> {
+    [
+        ("snapshots", paths.snapshots_dir()),
+        ("logs", paths.logs_dir()),
+        ("checks", paths.checks_dir()),
+    ]
+    .into_iter()
+    .map(|(label, dir)| compact(&EventLog::new(&dir), policy, now).map(|stats| (label, stats)))
+    .collect()
+}
+
 /// `<dir>/2025-12.jsonl` → `<dir>/2025-12.jsonl.gz`.
-fn gzip_replacement(plaintext: &Path) -> PathBuf {
+fn gzip_path(plaintext: &Path) -> PathBuf {
     let mut s = plaintext.as_os_str().to_owned();
     s.push(".gz");
     PathBuf::from(s)
 }
 
-fn gzip_copy(src: &Path, dest: &Path) -> Result<()> {
-    let tmp = with_extra_extension(dest, "tmp");
-    {
-        let mut input = File::open(src).map_err(|e| Error::Io {
-            path: src.to_path_buf(),
-            source: e,
-        })?;
-        let output = File::create(&tmp).map_err(|e| Error::Io {
-            path: tmp.clone(),
-            source: e,
-        })?;
-        let mut encoder = GzEncoder::new(output, Compression::default());
-        std::io::copy(&mut input, &mut encoder).map_err(|e| Error::Io {
-            path: tmp.clone(),
-            source: e,
-        })?;
-        let mut finished = encoder.finish().map_err(|e| Error::Io {
-            path: tmp.clone(),
-            source: e,
-        })?;
-        finished.flush().map_err(|e| Error::Io {
-            path: tmp.clone(),
-            source: e,
-        })?;
-    }
-    fs::rename(&tmp, dest).map_err(|e| Error::Io {
-        path: dest.to_path_buf(),
+/// Compress `bytes` with gzip. `path` is only used for error context.
+fn gzip(bytes: &[u8], path: &Path) -> Result<Vec<u8>> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(bytes).map_err(|e| Error::Io {
+        path: path.to_path_buf(),
         source: e,
-    })
-}
-
-fn with_extra_extension(path: &Path, extra: &str) -> PathBuf {
-    let mut s = path.as_os_str().to_owned();
-    s.push(".");
-    s.push(extra);
-    PathBuf::from(s)
-}
-
-fn remove_file(path: &Path) -> Result<()> {
-    fs::remove_file(path).map_err(|e| Error::Io {
+    })?;
+    encoder.finish().map_err(|e| Error::Io {
         path: path.to_path_buf(),
         source: e,
     })
