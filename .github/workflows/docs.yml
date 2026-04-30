@@ -1,14 +1,12 @@
 name: Docs
 
-# Trigger only when docs/ or this workflow itself changes, so a Rust-only
-# commit does not spend CI minutes rebuilding the static site.
+# Build + deploy only on push to main; PRs do not run docs CI. The static
+# site is generated for publication, not as a per-PR check, so spending
+# CI minutes on every doc-touching PR is unnecessary. `workflow_dispatch`
+# is kept as a manual rebuild escape hatch.
 on:
   push:
     branches: [main]
-    paths:
-      - 'docs/**'
-      - '.github/workflows/docs.yml'
-  pull_request:
     paths:
       - 'docs/**'
       - '.github/workflows/docs.yml'
