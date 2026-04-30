@@ -79,6 +79,8 @@ pub struct MetricsConfig {
     pub ccn: CcnConfig,
     #[serde(default = "default_enabled")]
     pub cognitive: CognitiveConfig,
+    #[serde(default = "default_enabled")]
+    pub lcom: LcomConfig,
 }
 
 impl Eq for MetricsConfig {}
@@ -96,6 +98,7 @@ impl Default for MetricsConfig {
             duplication: DuplicationConfig::enabled(),
             ccn: CcnConfig::enabled(),
             cognitive: CognitiveConfig::enabled(),
+            lcom: LcomConfig::enabled(),
         }
     }
 }
@@ -126,6 +129,10 @@ impl MetricsConfig {
     #[must_use]
     pub fn top_n_hotspot(&self) -> usize {
         self.hotspot.top_n.unwrap_or(self.top_n)
+    }
+    #[must_use]
+    pub fn top_n_lcom(&self) -> usize {
+        self.lcom.top_n.unwrap_or(self.top_n)
     }
 }
 
@@ -303,6 +310,63 @@ fn default_min_coupling() -> u32 {
 
 fn default_symmetric_threshold() -> f64 {
     0.5
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct LcomConfig {
+    pub enabled: bool,
+    /// Backend used to extract methods + field references. v0.2 ships
+    /// only `tree-sitter-approx` (syntactic walk, no type info); a
+    /// typed `lsp` backend is on the v0.5+ roadmap.
+    #[serde(default = "default_lcom_backend")]
+    pub backend: String,
+    /// Classes whose `cluster_count` is below this floor are not
+    /// surfaced as Findings. `2` is the natural baseline — `1` means
+    /// the class is cohesive and `0` means it has no methods.
+    #[serde(default = "default_min_cluster_count")]
+    pub min_cluster_count: u32,
+    /// Per-metric override for `metrics.top_n` — most-split classes list.
+    #[serde(default)]
+    pub top_n: Option<usize>,
+    /// Calibration override. `min_cluster_count` already serves as the
+    /// scan-time floor; absolute Critical floor here is rare.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor_critical: Option<f64>,
+}
+
+impl Eq for LcomConfig {}
+
+impl Default for LcomConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            backend: default_lcom_backend(),
+            min_cluster_count: default_min_cluster_count(),
+            top_n: None,
+            floor_critical: None,
+        }
+    }
+}
+
+impl Toggle for LcomConfig {
+    fn enabled() -> Self {
+        Self {
+            enabled: true,
+            backend: default_lcom_backend(),
+            min_cluster_count: default_min_cluster_count(),
+            top_n: None,
+            floor_critical: None,
+        }
+    }
+}
+
+fn default_lcom_backend() -> String {
+    "tree-sitter-approx".to_owned()
+}
+
+fn default_min_cluster_count() -> u32 {
+    2
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

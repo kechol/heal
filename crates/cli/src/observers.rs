@@ -18,6 +18,7 @@ use crate::observer::churn::{ChurnObserver, ChurnReport};
 use crate::observer::complexity::{ComplexityObserver, ComplexityReport};
 use crate::observer::duplication::{DuplicationObserver, DuplicationReport};
 use crate::observer::hotspot::{compose as compose_hotspot, HotspotReport, HotspotWeights};
+use crate::observer::lcom::{LcomObserver, LcomReport};
 use crate::observer::loc::{LocObserver, LocReport};
 
 use crate::cli::StatusMetric;
@@ -30,6 +31,7 @@ pub(crate) struct ObserverReports {
     pub change_coupling: Option<ChangeCouplingReport>,
     pub duplication: Option<DuplicationReport>,
     pub hotspot: Option<HotspotReport>,
+    pub lcom: Option<LcomReport>,
 }
 
 /// Run the observers needed for the requested metric. `only = None`
@@ -82,6 +84,8 @@ pub(crate) fn run_all(project: &Path, cfg: &Config, only: Option<StatusMetric>) 
         )),
         _ => None,
     };
+    let lcom = (want(StatusMetric::Lcom) && cfg.metrics.lcom.enabled)
+        .then(|| LcomObserver::from_config(cfg).scan(project));
     ObserverReports {
         loc,
         complexity,
@@ -90,6 +94,7 @@ pub(crate) fn run_all(project: &Path, cfg: &Config, only: Option<StatusMetric>) 
         change_coupling,
         duplication,
         hotspot,
+        lcom,
     }
 }
 
@@ -147,6 +152,17 @@ pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> C
         non_empty(&scores).then(|| HotspotCalibration::from_distribution(&scores))
     });
 
+    let lcom = reports.lcom.as_ref().and_then(|l| {
+        let values: Vec<f64> = l
+            .classes
+            .iter()
+            .map(|c| f64::from(c.cluster_count))
+            .collect();
+        // `min_cluster_count` is already the scan-time floor; absolute
+        // Critical floor on top is rare so default to None.
+        non_empty(&values).then(|| MetricCalibration::from_distribution(&values, None))
+    });
+
     let codebase_files = u32::try_from(
         reports
             .complexity
@@ -168,6 +184,7 @@ pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> C
             duplication,
             change_coupling,
             hotspot,
+            lcom,
         },
     }
     .with_overrides(config)
@@ -270,6 +287,28 @@ pub(crate) fn classify(reports: &ObserverReports, cal: &Calibration) -> Vec<Find
             findings.push(decorate(
                 finding,
                 Severity::Ok,
+                &is_hotspot_file,
+                &any_location_hot,
+            ));
+        }
+    }
+
+    if let Some(lc) = reports.lcom.as_ref() {
+        let cal_lcom = cal.calibration.lcom.as_ref();
+        // LCOM iterates classes that survived `min_cluster_count`; the
+        // shape matches `IntoFindings::into_findings` 1:1, so zipping
+        // is safe.
+        let kept: Vec<_> = lc
+            .classes
+            .iter()
+            .filter(|c| c.cluster_count >= lc.min_cluster_count.max(1))
+            .collect();
+        for (class, finding) in kept.iter().zip(lc.into_findings()) {
+            let severity =
+                cal_lcom.map_or(Severity::Ok, |c| c.classify(f64::from(class.cluster_count)));
+            findings.push(decorate(
+                finding,
+                severity,
                 &is_hotspot_file,
                 &any_location_hot,
             ));
@@ -479,6 +518,7 @@ mod tests {
             change_coupling: Some(change_coupling),
             duplication: Some(duplication),
             hotspot: Some(hotspot),
+            lcom: None,
         };
 
         let cal = Calibration {
@@ -522,6 +562,7 @@ mod tests {
                     p90: 100.0,
                     p95: 500.0,
                 }),
+                lcom: None,
             },
         };
 

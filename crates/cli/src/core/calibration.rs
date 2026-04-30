@@ -120,6 +120,8 @@ pub struct MetricCalibrations {
     pub change_coupling: Option<MetricCalibration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hotspot: Option<HotspotCalibration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lcom: Option<MetricCalibration>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -294,6 +296,11 @@ impl Calibration {
         }
         if let Some(c) = self.calibration.change_coupling.as_mut() {
             if let Some(f) = config.metrics.change_coupling.floor_critical {
+                c.floor_critical = Some(f);
+            }
+        }
+        if let Some(c) = self.calibration.lcom.as_mut() {
+            if let Some(f) = config.metrics.lcom.floor_critical {
                 c.floor_critical = Some(f);
             }
         }

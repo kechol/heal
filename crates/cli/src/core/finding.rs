@@ -114,6 +114,8 @@ impl Finding {
             "change_coupling" => "coupled".to_owned(),
             "change_coupling.symmetric" => "coupled (sym)".to_owned(),
             "hotspot" => "hotspot".to_owned(),
+            "lcom" => extract_leading_number(&self.summary, "LCOM=")
+                .map_or_else(|| "LCOM".to_owned(), |v| format!("LCOM={v}")),
             other => other.to_owned(),
         }
     }

@@ -17,6 +17,7 @@ fn metrics_snapshot_round_trips_through_writer() {
         change_coupling: None,
         duplication: None,
         hotspot: None,
+        lcom: None,
         severity_counts: None,
         codebase_files: None,
         delta: None,

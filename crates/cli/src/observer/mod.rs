@@ -11,6 +11,7 @@ pub mod duplication;
 pub mod git;
 pub mod hotspot;
 pub mod lang;
+pub mod lcom;
 pub mod loc;
 mod walk;
 

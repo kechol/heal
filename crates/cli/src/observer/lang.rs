@@ -29,6 +29,8 @@ const TYPESCRIPT_FUNCTIONS_QUERY: &str = include_str!("../../queries/typescript/
 const TYPESCRIPT_CCN_QUERY: &str = include_str!("../../queries/typescript/ccn.scm");
 #[cfg(feature = "lang-ts")]
 const TYPESCRIPT_COGNITIVE_QUERY: &str = include_str!("../../queries/typescript/cognitive.scm");
+#[cfg(feature = "lang-ts")]
+const TYPESCRIPT_LCOM_QUERY: &str = include_str!("../../queries/typescript/lcom.scm");
 
 #[cfg(feature = "lang-rust")]
 const RUST_FUNCTIONS_QUERY: &str = include_str!("../../queries/rust/functions.scm");
@@ -36,6 +38,8 @@ const RUST_FUNCTIONS_QUERY: &str = include_str!("../../queries/rust/functions.sc
 const RUST_CCN_QUERY: &str = include_str!("../../queries/rust/ccn.scm");
 #[cfg(feature = "lang-rust")]
 const RUST_COGNITIVE_QUERY: &str = include_str!("../../queries/rust/cognitive.scm");
+#[cfg(feature = "lang-rust")]
+const RUST_LCOM_QUERY: &str = include_str!("../../queries/rust/lcom.scm");
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -72,10 +76,15 @@ pub struct CognitiveCaptures {
     pub binary: u32,
 }
 
+pub struct LcomCaptures {
+    pub class_scope: u32,
+}
+
 struct LanguageQueries {
     functions: OnceLock<CompiledQuery<FunctionCaptures>>,
     ccn: OnceLock<CompiledQuery<CcnCaptures>>,
     cognitive: OnceLock<CompiledQuery<CognitiveCaptures>>,
+    lcom: OnceLock<CompiledQuery<LcomCaptures>>,
 }
 
 impl LanguageQueries {
@@ -84,6 +93,7 @@ impl LanguageQueries {
             functions: OnceLock::new(),
             ccn: OnceLock::new(),
             cognitive: OnceLock::new(),
+            lcom: OnceLock::new(),
         }
     }
 }
@@ -180,6 +190,18 @@ impl Language {
         })
     }
 
+    #[must_use]
+    pub fn lcom_query(self) -> &'static CompiledQuery<LcomCaptures> {
+        self.cache().lcom.get_or_init(|| {
+            let lang = self.ts_language();
+            let query = Query::new(&lang, self.lcom_query_source()).expect("lcom.scm must compile");
+            let captures = LcomCaptures {
+                class_scope: capture_index(&query, "class.scope"),
+            };
+            CompiledQuery { query, captures }
+        })
+    }
+
     fn cache(self) -> &'static LanguageQueries {
         match self {
             #[cfg(feature = "lang-ts")]
@@ -215,6 +237,15 @@ impl Language {
             Self::TypeScript | Self::Tsx => TYPESCRIPT_COGNITIVE_QUERY,
             #[cfg(feature = "lang-rust")]
             Self::Rust => RUST_COGNITIVE_QUERY,
+        }
+    }
+
+    fn lcom_query_source(self) -> &'static str {
+        match self {
+            #[cfg(feature = "lang-ts")]
+            Self::TypeScript | Self::Tsx => TYPESCRIPT_LCOM_QUERY,
+            #[cfg(feature = "lang-rust")]
+            Self::Rust => RUST_LCOM_QUERY,
         }
     }
 }

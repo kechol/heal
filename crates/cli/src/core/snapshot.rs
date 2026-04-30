@@ -48,6 +48,8 @@ pub struct MetricsSnapshot {
     pub duplication: Option<serde_json::Value>,
     #[serde(default)]
     pub hotspot: Option<serde_json::Value>,
+    #[serde(default)]
+    pub lcom: Option<serde_json::Value>,
     /// Severity tally produced by Calibration. Older snapshots predate
     /// this field — `None` means "the writer hadn't classified yet"
     /// (legacy, or the project is missing `.heal/calibration.toml`),
@@ -74,6 +76,7 @@ impl Default for MetricsSnapshot {
             change_coupling: None,
             duplication: None,
             hotspot: None,
+            lcom: None,
             severity_counts: None,
             codebase_files: None,
             delta: None,

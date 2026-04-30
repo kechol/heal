@@ -208,6 +208,15 @@ fn build_worst(
                 .unwrap_or_default();
             (n, json!({ "entries": entries }))
         }
+        StatusMetric::Lcom => {
+            let n = cfg.top_n_lcom();
+            let classes = reports
+                .lcom
+                .as_ref()
+                .map(|r| r.worst_n(n))
+                .unwrap_or_default();
+            (n, json!({ "classes": classes }))
+        }
     }
 }
 
@@ -247,6 +256,11 @@ fn filtered_delta(
         }
         StatusMetric::Hotspot => {
             out.insert("hotspot".into(), json!(d.hotspot));
+        }
+        StatusMetric::Lcom => {
+            // SnapshotDelta doesn't carry an LCOM diff yet; emit Null
+            // so consumers see the metric was filtered through.
+            out.insert("lcom".into(), serde_json::Value::Null);
         }
     }
     serde_json::Value::Object(out)

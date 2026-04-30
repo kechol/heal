@@ -73,6 +73,7 @@ pub(crate) fn pack(
         change_coupling: reports.change_coupling.as_ref().map(to_value),
         duplication: reports.duplication.as_ref().map(to_value),
         hotspot: reports.hotspot.as_ref().map(to_value),
+        lcom: reports.lcom.as_ref().map(to_value),
         severity_counts,
         codebase_files,
         delta: None,

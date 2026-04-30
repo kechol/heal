@@ -89,6 +89,7 @@ pub enum StatusMetric {
     ChangeCoupling,
     Duplication,
     Hotspot,
+    Lcom,
 }
 
 impl StatusMetric {
@@ -104,6 +105,7 @@ impl StatusMetric {
             Self::ChangeCoupling => "change_coupling",
             Self::Duplication => "duplication",
             Self::Hotspot => "hotspot",
+            Self::Lcom => "lcom",
         }
     }
 }
@@ -149,6 +151,8 @@ pub enum CheckMetric {
     /// `change_coupling` symmetric pairs.
     Coupling,
     Hotspot,
+    /// `lcom` — class-level Lack of Cohesion of Methods.
+    Lcom,
 }
 
 impl CheckMetric {
@@ -163,6 +167,7 @@ impl CheckMetric {
             Self::Duplication => metric == "duplication",
             Self::Coupling => matches!(metric, "change_coupling" | "change_coupling.symmetric"),
             Self::Hotspot => metric == "hotspot",
+            Self::Lcom => metric == "lcom",
         }
     }
 }
