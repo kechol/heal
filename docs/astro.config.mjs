@@ -27,9 +27,13 @@ export default defineConfig({
         root: { label: 'English', lang: 'en' },
         ja: { label: '日本語', lang: 'ja' },
       },
-      social: {
-        github: 'https://github.com/kechol/heal',
-      },
+      social: [
+        {
+          icon: 'github',
+          label: 'GitHub',
+          href: 'https://github.com/kechol/heal',
+        },
+      ],
       editLink: {
         baseUrl: 'https://github.com/kechol/heal/edit/main/docs/',
       },
