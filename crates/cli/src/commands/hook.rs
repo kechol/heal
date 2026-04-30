@@ -27,13 +27,13 @@ use std::io::{IsTerminal, Read, Write};
 use std::path::Path;
 
 use crate::core::calibration::{Calibration, RecalibrationCheck};
-use crate::core::config::{load_from_project, Config};
+use crate::core::config::load_from_project;
 use crate::core::eventlog::{Event, EventLog};
 use crate::core::finding::Finding;
 use crate::core::severity::Severity;
 use crate::core::snapshot::{ansi_wrap, MetricsSnapshot, ANSI_RED, ANSI_YELLOW};
 use crate::core::HealPaths;
-use crate::observers::{classify, run_all, ObserverReports};
+use crate::observers::run_all;
 use anyhow::Result;
 
 use crate::cli::HookEvent;
@@ -77,11 +77,12 @@ fn run_commit(project: &Path, paths: &HealPaths, logs: &EventLog) -> Result<()> 
         Err(e) => return Err(e.into()),
     };
 
-    // Run observers ONCE and feed the same `reports` to the snapshot
-    // writer and the nudge — both consumers do the same heavy work
-    // otherwise.
+    // Run observers ONCE and classify ONCE — the snapshot writer's
+    // severity tally and the nudge's per-finding render both consume
+    // the same Vec.
     let reports = run_all(project, &cfg, None);
-    let snap = snapshot::pack_with_delta(project, paths, &cfg, &reports);
+    let (calibration, findings) = snapshot::classify_with_calibration(paths, &cfg, &reports);
+    let snap = snapshot::pack_with_delta(project, paths, &cfg, &reports, &findings);
     EventLog::new(paths.snapshots_dir()).append(&Event::new(
         HookEvent::Commit.as_str(),
         serde_json::to_value(&snap).expect("MetricsSnapshot serialization is infallible"),
@@ -92,32 +93,34 @@ fn run_commit(project: &Path, paths: &HealPaths, logs: &EventLog) -> Result<()> 
     ))?;
     // Best-effort nudge — the user just committed and the snapshot is
     // already persisted, so don't fail the hook on rendering issues.
-    write_nudge(paths, &cfg, &reports, &mut std::io::stdout()).ok();
+    write_nudge(
+        paths,
+        calibration.as_ref(),
+        &findings,
+        &mut std::io::stdout(),
+    )
+    .ok();
     Ok(())
 }
 
-/// Compose and emit the post-commit Severity nudge to `out`.
-///
-/// `reports` is the same `run_all` output that built the just-written
-/// snapshot — the caller threads it through so we don't run observers
-/// twice on a single commit.
+/// Compose and emit the post-commit Severity nudge to `out`. `findings`
+/// is the already-classified Vec from `snapshot::classify_with_calibration`;
+/// nothing is recomputed here.
 fn write_nudge(
     paths: &HealPaths,
-    cfg: &Config,
-    reports: &ObserverReports,
+    calibration: Option<&Calibration>,
+    findings: &[Finding],
     out: &mut impl Write,
 ) -> Result<()> {
-    let Ok(calibration) = Calibration::load(&paths.calibration()) else {
+    let Some(calibration) = calibration else {
         // No calibration yet — nothing actionable to nudge about.
         return Ok(());
     };
-    let calibration = calibration.with_overrides(cfg);
-    let findings = classify(reports, &calibration, cfg);
 
     // Recalibration banner first so the user sees it before the
     // per-finding lines, even when Critical/High is empty.
     let snapshots = EventLog::new(paths.snapshots_dir());
-    let check = RecalibrationCheck::evaluate(&snapshots, &calibration, chrono::Utc::now());
+    let check = RecalibrationCheck::evaluate(&snapshots, calibration, chrono::Utc::now());
     let colorize = std::io::stdout().is_terminal();
     if check.fired() {
         if let Some(days) = check.age_exceeded_days {
@@ -303,9 +306,11 @@ mod tests {
         let cfg = crate::core::config::Config::default();
         cfg.save(&paths.config()).unwrap();
         let reports = run_all(dir.path(), &cfg, None);
+        let (calibration, findings) =
+            crate::snapshot::classify_with_calibration(&paths, &cfg, &reports);
 
         let mut buf: Vec<u8> = Vec::new();
-        write_nudge(&paths, &cfg, &reports, &mut buf).unwrap();
+        write_nudge(&paths, calibration.as_ref(), &findings, &mut buf).unwrap();
         assert!(
             buf.is_empty(),
             "no calibration → no nudge, got: {}",
@@ -334,9 +339,11 @@ mod tests {
         // Calibrate inline so a calibration.toml exists.
         crate::commands::calibrate::run(dir.path(), Some("test".into()), false).unwrap();
         let reports = run_all(dir.path(), &cfg, None);
+        let (calibration, findings) =
+            crate::snapshot::classify_with_calibration(&paths, &cfg, &reports);
 
         let mut buf: Vec<u8> = Vec::new();
-        write_nudge(&paths, &cfg, &reports, &mut buf).unwrap();
+        write_nudge(&paths, calibration.as_ref(), &findings, &mut buf).unwrap();
         let out = String::from_utf8(buf).unwrap();
         assert!(
             out.contains("Critical") || out.contains("High"),

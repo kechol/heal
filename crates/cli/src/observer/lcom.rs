@@ -44,10 +44,13 @@ use tree_sitter::{Node, QueryCursor, StreamingIterator};
 
 use crate::core::config::Config;
 use crate::core::finding::{Finding, IntoFindings, Location};
+use crate::core::severity::Severity;
+use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 use crate::observer::complexity::{parse, ParsedFile};
 use crate::observer::lang::Language;
 use crate::observer::walk::walk_supported_files;
 use crate::observer::{ObservationMeta, Observer};
+use crate::observers::ObserverReports;
 
 #[derive(Debug, Clone, Default)]
 pub struct LcomObserver {
@@ -494,12 +497,12 @@ impl UnionFind {
 
 pub struct LcomFeature;
 
-impl crate::feature::Feature for LcomFeature {
-    fn meta(&self) -> crate::feature::FeatureMeta {
-        crate::feature::FeatureMeta {
+impl Feature for LcomFeature {
+    fn meta(&self) -> FeatureMeta {
+        FeatureMeta {
             name: "lcom",
             version: 1,
-            kind: crate::feature::FeatureKind::Observer,
+            kind: FeatureKind::Observer,
         }
     }
     fn enabled(&self, cfg: &Config) -> bool {
@@ -507,12 +510,11 @@ impl crate::feature::Feature for LcomFeature {
     }
     fn lower(
         &self,
-        reports: &crate::observers::ObserverReports,
+        reports: &ObserverReports,
         _cfg: &Config,
         cal: &crate::core::calibration::Calibration,
-        hotspot: &crate::feature::HotspotIndex,
+        hotspot: &HotspotIndex,
     ) -> Vec<Finding> {
-        use crate::core::severity::Severity;
         let Some(lc) = reports.lcom.as_ref() else {
             return Vec::new();
         };
@@ -526,7 +528,7 @@ impl crate::feature::Feature for LcomFeature {
         for (class, finding) in kept.iter().zip(lc.into_findings()) {
             let severity =
                 cal_lcom.map_or(Severity::Ok, |c| c.classify(f64::from(class.cluster_count)));
-            out.push(crate::feature::decorate(finding, severity, hotspot));
+            out.push(decorate(finding, severity, hotspot));
         }
         out
     }

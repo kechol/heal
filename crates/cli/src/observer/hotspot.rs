@@ -21,10 +21,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::config::Config;
 use crate::core::finding::{Finding, IntoFindings, Location};
+use crate::core::severity::Severity;
+use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
 use crate::observer::churn::{ChurnObserver, ChurnReport, FileChurn};
 use crate::observer::complexity::{ComplexityObserver, ComplexityReport, FileComplexity};
 use crate::observer::{ObservationMeta, Observer};
+use crate::observers::ObserverReports;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HotspotWeights {
@@ -202,12 +205,12 @@ impl IntoFindings for HotspotReport {
 
 pub struct HotspotFeature;
 
-impl crate::feature::Feature for HotspotFeature {
-    fn meta(&self) -> crate::feature::FeatureMeta {
-        crate::feature::FeatureMeta {
+impl Feature for HotspotFeature {
+    fn meta(&self) -> FeatureMeta {
+        FeatureMeta {
             name: "hotspot",
             version: 1,
-            kind: crate::feature::FeatureKind::Observer,
+            kind: FeatureKind::Observer,
         }
     }
     fn enabled(&self, cfg: &Config) -> bool {
@@ -215,18 +218,17 @@ impl crate::feature::Feature for HotspotFeature {
     }
     fn lower(
         &self,
-        reports: &crate::observers::ObserverReports,
+        reports: &ObserverReports,
         _cfg: &Config,
         _cal: &crate::core::calibration::Calibration,
-        hotspot: &crate::feature::HotspotIndex,
+        hotspot: &HotspotIndex,
     ) -> Vec<Finding> {
-        use crate::core::severity::Severity;
         let Some(h) = reports.hotspot.as_ref() else {
             return Vec::new();
         };
         h.into_findings()
             .into_iter()
-            .map(|f| crate::feature::decorate(f, Severity::Ok, hotspot))
+            .map(|f| decorate(f, Severity::Ok, hotspot))
             .collect()
     }
 }

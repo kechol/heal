@@ -8,11 +8,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::config::Config;
 use crate::core::finding::{Finding, IntoFindings, Location};
+use crate::core::severity::Severity;
+use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
 use crate::observer::complexity::{analyze, parse, FunctionMetric};
 use crate::observer::lang::Language;
 use crate::observer::walk::walk_supported_files;
 use crate::observer::{ObservationMeta, Observer};
+use crate::observers::ObserverReports;
 
 #[derive(Debug, Clone, Default)]
 pub struct ComplexityObserver {
@@ -215,12 +218,12 @@ impl IntoFindings for ComplexityReport {
 /// gate the respective Findings inside `lower`.
 pub struct ComplexityFeature;
 
-impl crate::feature::Feature for ComplexityFeature {
-    fn meta(&self) -> crate::feature::FeatureMeta {
-        crate::feature::FeatureMeta {
+impl Feature for ComplexityFeature {
+    fn meta(&self) -> FeatureMeta {
+        FeatureMeta {
             name: "complexity",
             version: 1,
-            kind: crate::feature::FeatureKind::Observer,
+            kind: FeatureKind::Observer,
         }
     }
     fn enabled(&self, cfg: &Config) -> bool {
@@ -228,12 +231,11 @@ impl crate::feature::Feature for ComplexityFeature {
     }
     fn lower(
         &self,
-        reports: &crate::observers::ObserverReports,
+        reports: &ObserverReports,
         cfg: &Config,
         cal: &crate::core::calibration::Calibration,
-        hotspot: &crate::feature::HotspotIndex,
+        hotspot: &HotspotIndex,
     ) -> Vec<Finding> {
-        use crate::core::severity::Severity;
         let cal_ccn = cal.calibration.ccn.as_ref();
         let cal_cog = cal.calibration.cognitive.as_ref();
         let mut out = Vec::new();
@@ -253,7 +255,7 @@ impl crate::feature::Feature for ComplexityFeature {
                         &format!("ccn:{span}"),
                     );
                     let sev = cal_ccn.map_or(Severity::Ok, |c| c.classify(f64::from(fun.ccn)));
-                    out.push(crate::feature::decorate(f, sev, hotspot));
+                    out.push(decorate(f, sev, hotspot));
                 }
                 if cfg.metrics.cognitive.enabled && fun.cognitive > 0 {
                     let f = Finding::new(
@@ -267,7 +269,7 @@ impl crate::feature::Feature for ComplexityFeature {
                     );
                     let sev =
                         cal_cog.map_or(Severity::Ok, |c| c.classify(f64::from(fun.cognitive)));
-                    out.push(crate::feature::decorate(f, sev, hotspot));
+                    out.push(decorate(f, sev, hotspot));
                 }
             }
         }

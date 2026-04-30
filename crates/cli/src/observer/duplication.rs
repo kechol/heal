@@ -27,11 +27,14 @@ use tree_sitter::TreeCursor;
 
 use crate::core::config::Config;
 use crate::core::finding::{Finding, IntoFindings, Location};
+use crate::core::severity::Severity;
+use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
 use crate::observer::complexity::{parse, ParsedFile};
 use crate::observer::lang::Language;
 use crate::observer::walk::walk_supported_files;
 use crate::observer::{ObservationMeta, Observer};
+use crate::observers::ObserverReports;
 
 /// FNV-1a 64-bit prime — used both as the per-token identity hash multiplier
 /// and as the polynomial base for the Rabin-Karp window hash. Mixed via
@@ -522,12 +525,12 @@ fn detect_blocks(files: &[FileTokens], window: usize) -> Vec<InternalBlock> {
 
 pub struct DuplicationFeature;
 
-impl crate::feature::Feature for DuplicationFeature {
-    fn meta(&self) -> crate::feature::FeatureMeta {
-        crate::feature::FeatureMeta {
+impl Feature for DuplicationFeature {
+    fn meta(&self) -> FeatureMeta {
+        FeatureMeta {
             name: "duplication",
             version: 1,
-            kind: crate::feature::FeatureKind::Observer,
+            kind: FeatureKind::Observer,
         }
     }
     fn enabled(&self, cfg: &Config) -> bool {
@@ -535,12 +538,11 @@ impl crate::feature::Feature for DuplicationFeature {
     }
     fn lower(
         &self,
-        reports: &crate::observers::ObserverReports,
+        reports: &ObserverReports,
         _cfg: &Config,
         cal: &crate::core::calibration::Calibration,
-        hotspot: &crate::feature::HotspotIndex,
+        hotspot: &HotspotIndex,
     ) -> Vec<Finding> {
-        use crate::core::severity::Severity;
         let Some(dup) = reports.duplication.as_ref() else {
             return Vec::new();
         };
@@ -558,7 +560,7 @@ impl crate::feature::Feature for DuplicationFeature {
                 .filter_map(|l| pct_by_file.get(l.path.as_path()).copied())
                 .fold(0.0_f64, f64::max);
             let severity = cal_dup.map_or(Severity::Ok, |c| c.classify(max_pct));
-            out.push(crate::feature::decorate(finding, severity, hotspot));
+            out.push(decorate(finding, severity, hotspot));
         }
         out
     }

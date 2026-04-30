@@ -82,9 +82,11 @@ impl HotspotIndex {
     }
 
     /// Convenience: a Finding's primary file or any of its
-    /// `locations` is hot.
+    /// `locations` is hot. `pub(crate)` because [`decorate`] is the
+    /// only intended consumer; if v0.3 features need it, the contract
+    /// can widen with intent.
     #[must_use]
-    pub fn any_location_hot(&self, primary: &Location, locations: &[Location]) -> bool {
+    pub(crate) fn any_location_hot(&self, primary: &Location, locations: &[Location]) -> bool {
         self.is_hot(&primary.file) || locations.iter().any(|l| self.is_hot(&l.file))
     }
 }
@@ -92,14 +94,13 @@ impl HotspotIndex {
 /// Apply Severity + hotspot decoration to a Finding in place. Used by
 /// every Feature's lowering path; centralised here so the rule "hotspot
 /// looks at primary file + every secondary location" only lives once.
+/// `any_location_hot` short-circuits to `is_hot(primary)` when the
+/// `locations` slice is empty, so single-site Findings flow through
+/// the same path as multi-site ones without a special case.
 #[must_use]
 pub fn decorate(mut f: Finding, severity: Severity, hotspot: &HotspotIndex) -> Finding {
     f.severity = severity;
-    f.hotspot = if f.locations.is_empty() {
-        hotspot.is_hot(&f.location.file)
-    } else {
-        hotspot.any_location_hot(&f.location, &f.locations)
-    };
+    f.hotspot = hotspot.any_location_hot(&f.location, &f.locations);
     f
 }
 

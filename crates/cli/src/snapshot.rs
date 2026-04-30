@@ -7,6 +7,7 @@ use std::path::Path;
 use crate::core::calibration::Calibration;
 use crate::core::config::{Config, MetricsConfig};
 use crate::core::eventlog::EventLog;
+use crate::core::finding::Finding;
 use crate::core::snapshot::{
     ChangeCouplingDelta, ChurnDelta, ComplexityDelta, DuplicationDelta, HotspotDelta,
     MetricsSnapshot, SnapshotDelta, METRICS_SNAPSHOT_VERSION,
@@ -18,7 +19,7 @@ use crate::observer::complexity::{ComplexityMetric, ComplexityReport};
 use crate::observer::duplication::DuplicationReport;
 use crate::observer::hotspot::HotspotReport;
 
-use crate::observers::{tally_severity, ObserverReports};
+use crate::observers::{classify, tally_severity, ObserverReports};
 
 /// `pack` plus a best-effort delta against the prior snapshot. The
 /// caller runs the observers, both to populate the snapshot and (in
@@ -29,8 +30,9 @@ pub(crate) fn pack_with_delta(
     paths: &HealPaths,
     cfg: &Config,
     reports: &ObserverReports,
+    findings: &[Finding],
 ) -> MetricsSnapshot {
-    let mut snap = pack(project, paths, cfg, reports);
+    let mut snap = pack(project, paths, cfg, reports, findings);
     let log = EventLog::new(paths.snapshots_dir());
     if let Ok(Some((prev_event, prev_metrics))) = MetricsSnapshot::latest_in(&log) {
         let delta = compute_delta(prev_event.timestamp, &prev_metrics, reports, &cfg.metrics);
@@ -40,17 +42,35 @@ pub(crate) fn pack_with_delta(
     snap
 }
 
-/// Build a `MetricsSnapshot` from already-computed observer reports. Loads
-/// `.heal/calibration.toml` (best-effort) so every snapshot carries a
-/// `severity_counts` tally consistent with the project's current
-/// thresholds — a missing or unparseable calibration leaves the field
-/// `None` so downstream readers can distinguish "uncalibrated" from
-/// "everything Ok".
-pub(crate) fn pack(
-    project: &Path,
+/// Classify `reports` once against `paths.calibration()`, returning
+/// both the Findings (for the snapshot's `severity_counts`, the
+/// post-commit nudge, and `heal check`'s renderer) and the loaded
+/// calibration. Centralised so callers don't load + classify twice.
+pub(crate) fn classify_with_calibration(
     paths: &HealPaths,
     cfg: &Config,
     reports: &ObserverReports,
+) -> (Option<Calibration>, Vec<Finding>) {
+    let calibration = Calibration::load(&paths.calibration())
+        .ok()
+        .map(|c| c.with_overrides(cfg));
+    let findings = calibration
+        .as_ref()
+        .map(|c| classify(reports, c, cfg))
+        .unwrap_or_default();
+    (calibration, findings)
+}
+
+/// Build a `MetricsSnapshot` from already-computed observer reports
+/// and Findings. The caller threads in the same `findings` it'll use
+/// elsewhere (post-commit nudge, `heal check` renderer) so we don't
+/// run `classify` twice on a single command.
+pub(crate) fn pack(
+    project: &Path,
+    paths: &HealPaths,
+    _cfg: &Config,
+    reports: &ObserverReports,
+    findings: &[Finding],
 ) -> MetricsSnapshot {
     let codebase_files = u32::try_from(
         reports
@@ -60,10 +80,10 @@ pub(crate) fn pack(
             .max(reports.loc.total_files()),
     )
     .ok();
-    let severity_counts = Calibration::load(&paths.calibration())
-        .ok()
-        .map(|c| c.with_overrides(cfg))
-        .map(|c| tally_severity(reports, &c, cfg));
+    let severity_counts = paths
+        .calibration()
+        .exists()
+        .then(|| tally_severity(findings));
     MetricsSnapshot {
         version: METRICS_SNAPSHOT_VERSION,
         git_sha: crate::observer::git::head_sha(project),

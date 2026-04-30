@@ -191,13 +191,13 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<Option<Severity
 
     let reports = run_all(project, &cfg, None);
 
-    // Save calibration before packing the snapshot so `pack` picks it
-    // up via `Calibration::load` and stamps `severity_counts` onto the
-    // initial record.
+    // Save calibration before packing the snapshot so the freshly
+    // saved file is what `classify_with_calibration` reads back.
     let calibration = build_calibration(&reports, &cfg);
     calibration.save(&paths.calibration())?;
 
-    let snap = snapshot::pack(project, paths, &cfg, &reports);
+    let (_, findings) = snapshot::classify_with_calibration(paths, &cfg, &reports);
+    let snap = snapshot::pack(project, paths, &cfg, &reports, &findings);
     let counts = snap.severity_counts;
     let payload = serde_json::to_value(&snap).expect("MetricsSnapshot serialization is infallible");
     EventLog::new(paths.snapshots_dir()).append(&Event::new("init", payload))?;

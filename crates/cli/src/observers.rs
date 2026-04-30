@@ -202,16 +202,13 @@ pub(crate) fn classify(reports: &ObserverReports, cal: &Calibration, cfg: &Confi
     crate::feature::FeatureRegistry::builtin().lower_all(reports, cfg, cal)
 }
 
-/// Walk the observer reports with an applied calibration and tally the
-/// resulting Severity per finding. Thin wrapper over [`classify`] so the
-/// snapshot writer's tally and `heal check`'s rendered list never drift.
-pub(crate) fn tally_severity(
-    reports: &ObserverReports,
-    cal: &Calibration,
-    cfg: &Config,
-) -> SeverityCounts {
+/// Tally Findings by Severity. Pass the same `Vec<Finding>` you used
+/// for rendering / cache writing — running `classify` twice on a
+/// single command (once for the snapshot, once for the post-commit
+/// nudge) was the v0.2.0 cost; this slice form is the deliberate fix.
+pub fn tally_severity(findings: &[Finding]) -> SeverityCounts {
     let mut counts = SeverityCounts::default();
-    for f in classify(reports, cal, cfg) {
+    for f in findings {
         counts.tally(f.severity);
     }
     counts
@@ -532,8 +529,8 @@ mod tests {
     #[test]
     fn tally_severity_matches_classify_count() {
         let (reports, cal) = fixture();
-        let counts = tally_severity(&reports, &cal, &Config::default());
         let findings = classify(&reports, &cal, &Config::default());
+        let counts = tally_severity(&findings);
 
         let total_classified = counts.critical + counts.high + counts.medium + counts.ok;
         assert_eq!(

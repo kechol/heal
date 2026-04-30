@@ -42,9 +42,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::config::Config;
 use crate::core::finding::{Finding, IntoFindings, Location};
+use crate::core::severity::Severity;
+use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
 use crate::observer::walk::{is_path_excluded, since_cutoff};
 use crate::observer::{ObservationMeta, Observer};
+use crate::observers::ObserverReports;
 
 /// Skip commits whose changed-file count exceeds this limit. The pair count
 /// grows O(N²) per commit so bulk merges (think 200-file lockfile bumps)
@@ -431,12 +434,12 @@ fn compute_file_sums(pairs: &[FilePair]) -> Vec<FileSum> {
 
 pub struct ChangeCouplingFeature;
 
-impl crate::feature::Feature for ChangeCouplingFeature {
-    fn meta(&self) -> crate::feature::FeatureMeta {
-        crate::feature::FeatureMeta {
+impl Feature for ChangeCouplingFeature {
+    fn meta(&self) -> FeatureMeta {
+        FeatureMeta {
             name: "change_coupling",
             version: 1,
-            kind: crate::feature::FeatureKind::Observer,
+            kind: FeatureKind::Observer,
         }
     }
     fn enabled(&self, cfg: &Config) -> bool {
@@ -444,12 +447,11 @@ impl crate::feature::Feature for ChangeCouplingFeature {
     }
     fn lower(
         &self,
-        reports: &crate::observers::ObserverReports,
+        reports: &ObserverReports,
         _cfg: &Config,
         cal: &crate::core::calibration::Calibration,
-        hotspot: &crate::feature::HotspotIndex,
+        hotspot: &HotspotIndex,
     ) -> Vec<Finding> {
-        use crate::core::severity::Severity;
         let Some(cc) = reports.change_coupling.as_ref() else {
             return Vec::new();
         };
@@ -457,7 +459,7 @@ impl crate::feature::Feature for ChangeCouplingFeature {
         let mut out = Vec::with_capacity(cc.pairs.len());
         for (pair, finding) in cc.pairs.iter().zip(cc.into_findings()) {
             let severity = cal_cc.map_or(Severity::Ok, |c| c.classify(f64::from(pair.count)));
-            out.push(crate::feature::decorate(finding, severity, hotspot));
+            out.push(decorate(finding, severity, hotspot));
         }
         out
     }
