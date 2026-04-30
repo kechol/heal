@@ -38,6 +38,7 @@ workspace = true
 default = ["lang-ts", "lang-rust"]
 lang-ts = ["dep:tree-sitter-typescript"]
 lang-js = ["dep:tree-sitter-javascript"]
+lang-py = ["dep:tree-sitter-python"]
 lang-rust = ["dep:tree-sitter-rust"]
 
 [lib]
@@ -62,6 +63,7 @@ tokei = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-typescript = { workspace = true, optional = true }
 tree-sitter-javascript = { workspace = true, optional = true }
+tree-sitter-python = { workspace = true, optional = true }
 tree-sitter-rust = { workspace = true, optional = true }
 ignore = { workspace = true }
 git2 = { workspace = true }

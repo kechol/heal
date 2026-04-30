@@ -345,6 +345,8 @@ fn is_method_kind(node: Node<'_>, lang: Language) -> bool {
         }
         #[cfg(feature = "lang-js")]
         Language::JavaScript | Language::Jsx => node.kind() == "method_definition",
+        #[cfg(feature = "lang-py")]
+        Language::Python => node.kind() == "function_definition",
         #[cfg(feature = "lang-rust")]
         Language::Rust => node.kind() == "function_item",
     }
@@ -358,6 +360,8 @@ fn class_name_for(class_node: Node<'_>, source: &[u8], lang: Language) -> String
         Language::TypeScript | Language::Tsx => "name",
         #[cfg(feature = "lang-js")]
         Language::JavaScript | Language::Jsx => "name",
+        #[cfg(feature = "lang-py")]
+        Language::Python => "name",
         #[cfg(feature = "lang-rust")]
         Language::Rust => "type",
     };
@@ -381,29 +385,58 @@ struct SelfRefs {
 #[derive(Clone, Copy)]
 struct SelfRefShape {
     /// Outer node kind that names the access (TS: `member_expression`,
-    /// Rust: `field_expression`).
+    /// Rust: `field_expression`, Python: `attribute`).
     access_kind: &'static str,
     /// Field name on the access for the receiver.
     receiver_field: &'static str,
-    /// Kind the receiver must have to count as `self` / `this`.
-    receiver_kind: &'static str,
+    /// Predicate identifying the receiver. TS / JS / Rust filter by
+    /// node kind alone (`this` / `self` are dedicated keyword nodes).
+    /// Python uses an `identifier` whose source text is `"self"`, so
+    /// the predicate is text-based.
+    is_receiver: fn(Node<'_>, &[u8]) -> bool,
     /// Field name on the access for the property.
     property_field: &'static str,
+    /// Kind of the parent call expression. Most grammars use
+    /// `call_expression`; Python's `call` node is the outlier.
+    call_kind: &'static str,
+}
+
+#[cfg(any(feature = "lang-ts", feature = "lang-js"))]
+fn ts_js_is_receiver(node: Node<'_>, _: &[u8]) -> bool {
+    node.kind() == "this"
+}
+#[cfg(feature = "lang-rust")]
+fn rust_is_receiver(node: Node<'_>, _: &[u8]) -> bool {
+    node.kind() == "self"
+}
+#[cfg(feature = "lang-py")]
+fn py_is_receiver(node: Node<'_>, source: &[u8]) -> bool {
+    node.kind() == "identifier" && node.utf8_text(source).is_ok_and(|t| t == "self")
 }
 
 #[cfg(any(feature = "lang-ts", feature = "lang-js"))]
 const SELF_REF_TS_JS: SelfRefShape = SelfRefShape {
     access_kind: "member_expression",
     receiver_field: "object",
-    receiver_kind: "this",
+    is_receiver: ts_js_is_receiver,
     property_field: "property",
+    call_kind: "call_expression",
 };
 #[cfg(feature = "lang-rust")]
 const SELF_REF_RUST: SelfRefShape = SelfRefShape {
     access_kind: "field_expression",
     receiver_field: "value",
-    receiver_kind: "self",
+    is_receiver: rust_is_receiver,
     property_field: "field",
+    call_kind: "call_expression",
+};
+#[cfg(feature = "lang-py")]
+const SELF_REF_PY: SelfRefShape = SelfRefShape {
+    access_kind: "attribute",
+    receiver_field: "object",
+    is_receiver: py_is_receiver,
+    property_field: "attribute",
+    call_kind: "call",
 };
 
 fn self_ref_shape(lang: Language) -> SelfRefShape {
@@ -412,6 +445,8 @@ fn self_ref_shape(lang: Language) -> SelfRefShape {
         Language::TypeScript | Language::Tsx => SELF_REF_TS_JS,
         #[cfg(feature = "lang-js")]
         Language::JavaScript | Language::Jsx => SELF_REF_TS_JS,
+        #[cfg(feature = "lang-py")]
+        Language::Python => SELF_REF_PY,
         #[cfg(feature = "lang-rust")]
         Language::Rust => SELF_REF_RUST,
     }
@@ -438,7 +473,7 @@ fn visit_self_ref(node: Node<'_>, shape: SelfRefShape, source: &[u8], refs: &mut
     let Some(receiver) = node.child_by_field_name(shape.receiver_field) else {
         return;
     };
-    if receiver.kind() != shape.receiver_kind {
+    if !(shape.is_receiver)(receiver, source) {
         return;
     }
     let Some(prop) = node.child_by_field_name(shape.property_field) else {
@@ -448,7 +483,7 @@ fn visit_self_ref(node: Node<'_>, shape: SelfRefShape, source: &[u8], refs: &mut
         return;
     };
     let name = name.to_owned();
-    if is_call_target(node) {
+    if is_call_target(node, shape) {
         refs.method_calls.push(name);
     } else {
         refs.fields.push(name);
@@ -456,14 +491,14 @@ fn visit_self_ref(node: Node<'_>, shape: SelfRefShape, source: &[u8], refs: &mut
 }
 
 /// `node` is the receiver expression of a member/field access.
-/// Returns true when the parent is a call expression whose `function`
-/// (TS) or callee (Rust) is exactly `node`. This is the syntactic
-/// signal "this is a method call" vs "this is a field read".
-fn is_call_target(node: Node<'_>) -> bool {
+/// Returns true when the parent is a call node whose `function` field
+/// is exactly `node`. The parent kind is grammar-specific
+/// (`call_expression` for TS / JS / Rust, `call` for Python).
+fn is_call_target(node: Node<'_>, shape: SelfRefShape) -> bool {
     let Some(parent) = node.parent() else {
         return false;
     };
-    if parent.kind() != "call_expression" {
+    if parent.kind() != shape.call_kind {
         return false;
     }
     let function = parent.child_by_field_name("function");
@@ -554,6 +589,12 @@ mod tests {
     fn run_js(source: &str) -> Vec<ClassLcom> {
         let parsed = parse(source.to_owned(), Language::JavaScript).unwrap();
         classes_in(&parsed, Path::new("test.js"))
+    }
+
+    #[cfg(feature = "lang-py")]
+    fn run_py(source: &str) -> Vec<ClassLcom> {
+        let parsed = parse(source.to_owned(), Language::Python).unwrap();
+        classes_in(&parsed, Path::new("test.py"))
     }
 
     #[cfg(feature = "lang-rust")]
@@ -738,6 +779,72 @@ mod tests {
             }
         ";
         let classes = run_js(src);
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].cluster_count, 1);
+    }
+
+    #[cfg(feature = "lang-py")]
+    #[test]
+    fn py_cohesive_class_has_one_cluster() {
+        let src = r"
+class Counter:
+    def __init__(self):
+        self.value = 0
+
+    def inc(self):
+        self.value += 1
+
+    def get(self):
+        return self.value
+";
+        let classes = run_py(src);
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].class_name, "Counter");
+        assert_eq!(classes[0].cluster_count, 1);
+    }
+
+    #[cfg(feature = "lang-py")]
+    #[test]
+    fn py_split_class_has_multiple_clusters() {
+        let src = r"
+class Mixed:
+    def inc(self):
+        self.count = (self.count or 0) + 1
+
+    def value(self):
+        return self.count
+
+    def push(self, msg):
+        self.log.append(msg)
+
+    def tail(self):
+        return self.log[-1]
+";
+        let classes = run_py(src);
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].cluster_count, 2);
+    }
+
+    #[cfg(feature = "lang-py")]
+    #[test]
+    fn py_method_call_merges_clusters() {
+        // `tail` touches `log` AND calls `value()` — the bridge.
+        let src = r"
+class Bridged:
+    def inc(self):
+        self.count = (self.count or 0) + 1
+
+    def value(self):
+        return self.count
+
+    def push(self, msg):
+        self.log.append(msg)
+
+    def tail(self):
+        self.value()
+        return self.log[-1]
+";
+        let classes = run_py(src);
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].cluster_count, 1);
     }
