@@ -83,8 +83,8 @@ Inside any git repository:
 
 ```sh
 heal init                # create .heal/, calibrate, install the post-commit hook
-heal check               # analyze + render the Severity-grouped TODO list
-heal skills install      # bundle the Claude plugin for /heal-code-fix
+heal skills install      # extract the Claude plugin → /heal-code-check + /heal-code-fix
+heal check               # render the Severity-grouped TODO list
 ```
 
 After `heal init`, every commit:
@@ -97,27 +97,30 @@ After `heal init`, every commit:
    stay quiet) so the next move is visible inside the commit output.
 
 `heal check` then re-runs the analysis on demand and writes a
-`CheckRecord` to `.heal/checks/latest.json` — the single file the
-`/heal-code-fix` skill reads as a TODO list.
+`CheckRecord` to `.heal/checks/latest.json` — the cache that
+`/heal-code-check` audits and `/heal-code-fix` drains.
 
 The full walkthrough is at <https://kechol.github.io/heal/quick-start/>.
 
 ## CLI
 
+Ordered by everyday importance — start at the top and work down.
+
 | Command | Purpose |
 |---------|---------|
 | `heal init [--force]` | Create `.heal/`, calibrate from the initial scan, write `config.toml` + `calibration.toml`, install the post-commit hook, capture the first snapshot. |
-| `heal status [--json] [--metric <name>]` | Metric series + delta from the most recent snapshot. `--metric` scopes output to one observer (`loc` / `complexity` / `churn` / `change-coupling` / `duplication` / `hotspot` / `lcom`). |
-| `heal logs [--since <RFC3339>] [--filter <event>] [--limit N] [--json]` | Stream `.heal/logs/` (commit / edit / stop hook events). |
-| `heal snapshots [--since <RFC3339>] [--filter <event>] [--limit N] [--json]` | Stream `.heal/snapshots/` (`MetricsSnapshot` + `calibrate` events). |
-| `heal checks [--since <RFC3339>] [--limit N] [--json]` | Newest-first summary of every `CheckRecord` in `.heal/checks/`. |
+| `heal skills <install\|update\|status\|uninstall>` | Manage the bundled Claude plugin under `.claude/plugins/heal/`. Unlocks `/heal-code-check` and `/heal-code-fix` inside Claude Code. |
 | `heal check [--metric <name>] [--severity <level>] [--feature <prefix>] [--all] [--top N] [--json] [--refresh]` | Render the cached `CheckRecord` from `.heal/checks/latest.json`. Re-scans only on a missing cache or `--refresh`; that path is the single writer of `.heal/checks/`. |
+| `heal status [--json] [--metric <name>]` | Metric series + delta from the most recent snapshot. `--metric` scopes output to one observer (`loc` / `complexity` / `churn` / `change-coupling` / `duplication` / `hotspot` / `lcom`). |
+| `heal calibrate [--force]` | Calibrate codebase-relative Severity thresholds. Default reads `.heal/calibration.toml` and reports drift triggers; `--force` rescans and overwrites. |
+| `heal logs [--since <RFC3339>] [--filter <event>] [--limit N] [--json]` | Browse `.heal/logs/` (commit / edit / stop hook events). |
+| `heal snapshots [--since <RFC3339>] [--filter <event>] [--limit N] [--json]` | Browse `.heal/snapshots/` (`MetricsSnapshot` + `calibrate` events). |
+| `heal checks [--since <RFC3339>] [--limit N] [--json]` | Newest-first summary of every `CheckRecord` in `.heal/checks/`. |
 | `heal fix show <check_id> [--json]` | Detail-render one cached record (use `--json` for the stable shape). |
 | `heal fix diff [<from>] [<to>] [--all] [--json]` | Bucket findings into Resolved / Regressed / Improved / New / Unchanged, with progress %. Argument shape mirrors `git diff`: omit `<to>` to compare against a live scan (no record written); omit both to default `<from>` to the latest cached record. |
 | `heal fix mark --finding-id <id> --commit-sha <sha>` | Append a `FixedFinding` line; called by `/heal-code-fix` after each commit. |
-| `heal calibrate [--force]` | Calibrate codebase-relative Severity thresholds. Default reads `.heal/calibration.toml` and reports drift triggers; `--force` rescans and overwrites. |
+| `heal compact [--verbose]` | Gzip `.heal/{snapshots,logs,checks}/` segments older than 90 days; delete past 365 days. Idempotent; also called automatically from `heal hook commit`. |
 | `heal hook <commit\|edit\|stop>` | Hook entrypoint invoked by git or the Claude plugin. Not for direct use. |
-| `heal skills <install\|update\|status\|uninstall>` | Manage the bundled Claude plugin under `.claude/plugins/heal/`. |
 
 Run `heal --help` or `heal <subcommand> --help` for full argument details.
 

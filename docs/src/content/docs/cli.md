@@ -1,6 +1,6 @@
 ---
 title: CLI
-description: The heal subcommand surface, with examples for everyday operations.
+description: The heal subcommand surface, ordered by everyday importance, with examples for daily operations.
 ---
 
 `heal` is a single binary. Every interaction goes through one of the
@@ -9,19 +9,21 @@ for the full argument list.
 
 ## User commands
 
-These are the commands you run directly in a terminal.
+Ordered by everyday importance — a typical day involves the top three;
+the lower entries are for investigation and maintenance.
 
 | Command          | Purpose                                                                                       |
 | ---------------- | --------------------------------------------------------------------------------------------- |
 | `heal init`      | Set up `.heal/`, calibrate, and install the post-commit hook in the current repository.        |
-| `heal status`    | Per-metric summary plus the delta since the previous snapshot.                                |
-| `heal logs`      | Stream the raw hook event log (`.heal/logs/`).                                                |
-| `heal snapshots` | Stream the metric/calibration event timeline (`.heal/snapshots/`).                            |
-| `heal checks`    | Newest-first list of every `CheckRecord` ever written to `.heal/checks/`.                     |
+| `heal skills`    | Install / update / inspect / remove the bundled Claude plugin.                                |
 | `heal check`     | Render the cached `CheckRecord` from `.heal/checks/latest.json` (or refresh it).              |
-| `heal fix`       | Update the fix-tracking state — `show <id>`, `diff`, `mark --finding-id … --commit-sha …`.    |
+| `heal status`    | Per-metric summary plus the delta since the previous snapshot.                                |
 | `heal calibrate` | Recalibrate codebase-relative Severity thresholds.                                            |
-| `heal skills`    | Install, update, or remove the bundled Claude plugin.                                         |
+| `heal logs`      | Browse the raw hook event log (`.heal/logs/`).                                                |
+| `heal snapshots` | Browse the metric / calibration event timeline (`.heal/snapshots/`).                          |
+| `heal checks`    | Newest-first list of every `CheckRecord` ever written to `.heal/checks/`.                     |
+| `heal fix`       | Per-record / per-finding ops on `.heal/checks/` — `show <id>`, `diff`, `mark`.                |
+| `heal compact`   | Gzip aged event-log segments; delete the very oldest. Idempotent; safe to run by hand.        |
 
 ## Automation commands
 
@@ -58,6 +60,65 @@ passed; the post-commit hook is replaced only when it carries the heal
 marker. If a non-heal `post-commit` hook already exists, `heal init`
 leaves it alone — pass `--force` to overwrite.
 
+## `heal skills`
+
+Manages the bundled Claude plugin under `.claude/plugins/heal/`:
+
+```sh
+heal skills install     # extract the plugin (run once per repository)
+heal skills update      # refresh after upgrading the heal binary
+heal skills status      # compare installed vs. bundled
+heal skills uninstall   # remove .claude/plugins/heal/
+```
+
+The plugin tree is embedded in the `heal` binary at compile time, so
+`heal skills install` always extracts the version matching the binary
+in use. `update` is drift-aware: files that have been hand-edited are
+left in place (use `--force` to overwrite anyway).
+
+The bundled plugin ships:
+
+- one read-only skill `heal-code-check` that ingests `heal check --all
+  --json`, deep-reads the flagged code, and produces an architectural
+  reading plus a prioritised refactor TODO list (with reference docs
+  under `skills/heal-code-check/references/`).
+- one write skill `heal-code-fix` that drains
+  `.heal/checks/latest.json` one finding per commit (Severity order;
+  `Critical 🔥` first).
+
+See [Claude plugin](/heal/claude-plugin/) for the full skill contracts.
+
+## `heal check`
+
+Runs every observer, classifies each Finding by Severity using
+`calibration.toml`, and writes the result to `.heal/checks/latest.json`
+(the TODO list `/heal-code-check` audits and `/heal-code-fix` drains):
+
+```sh
+heal check                              # render the cached record (default)
+heal check --refresh                    # re-scan and overwrite latest.json
+heal check --metric lcom                # only LCOM findings
+heal check --severity critical          # only Critical (and above with --all)
+heal check --feature src/payments       # restrict to one path prefix
+heal check --all                        # show Medium / Ok plus the low-Severity hotspot section
+heal check --top 5                      # cap each Severity bucket at 5 rows
+heal check --json                       # CheckRecord shape on stdout
+```
+
+By default `heal check` is a read-only render of `.heal/checks/latest.json`:
+runs are free once the cache is warm. Pass `--refresh` to invalidate it
+and re-run every observer; this is the only path that writes the cache.
+A missing cache (e.g. immediately after `heal init`) also triggers a
+scan, so the first invocation in a project still works without flags.
+
+Output groups findings under `🔴 Critical 🔥 / 🔴 Critical / 🟠 High 🔥
+/ 🟠 High / 🟡 Medium / ✅ Ok` (last two require `--all`), aggregates
+one row per file, and ends with `Goal: 0 Critical, 0 High` plus a
+"next steps" line pointing at `claude /heal-code-fix`. With `--all`, an
+extra "Ok / Medium 🔥 (low Severity, top-10% hotspot)" section
+surfaces files that aren't classified as a problem yet but get touched
+often enough to be worth a look.
+
 ## `heal status`
 
 ```sh
@@ -78,6 +139,37 @@ suitable for piping into `jq`.
 If `.heal/snapshots/` is empty (for example, immediately after
 `heal init` and before the first commit), the command reports that no
 snapshots are available.
+
+## `heal calibrate`
+
+```sh
+heal calibrate            # check drift triggers if calibration.toml exists; create it if not
+heal calibrate --force    # always rescan and overwrite calibration.toml
+```
+
+heal **never** recalibrates automatically.
+
+- When `.heal/calibration.toml` is **missing**, `heal calibrate`
+  rescans and writes it. (Normally this only happens before
+  `heal init` has run; `init` populates the file as part of bootstrap.)
+- When the file **exists**, the default invocation is read-only: it
+  evaluates the drift triggers (90-day age, ±20% codebase file count,
+  or 30 days of zero Critical findings) and prints a recommendation,
+  surfacing `--force` as the way to refresh.
+
+The post-commit nudge prepends a one-line "consider recalibrating"
+hint when the same triggers would fire; the user always decides
+whether to invoke `heal calibrate --force`.
+
+The generated `calibration.toml` carries a comment header noting its
+provenance and the regeneration command, so anyone opening the file
+can find their way back to this command without reading the docs. Put
+`floor_critical` overrides in `config.toml` so they survive
+`heal calibrate --force`.
+
+The calibration audit trail lives in `.heal/snapshots/` as
+`event = "calibrate"` records — `heal logs` shows them alongside
+commits.
 
 ## `heal logs` / `heal snapshots` / `heal checks`
 
@@ -105,37 +197,6 @@ heal checks --json --limit 20                # JSON list of {check_id, started_a
 `heal status` is the synthesised view over snapshots; `heal snapshots`
 is the raw timeline. The pre-v0.2 `session-start` event was retired
 along with the SessionStart nudge.
-
-## `heal check`
-
-Runs every observer, classifies each Finding by Severity using
-`calibration.toml`, and writes the result to `.heal/checks/latest.json`
-(the TODO list `/heal-code-fix` reads):
-
-```sh
-heal check                              # render the cached record (default)
-heal check --refresh                    # re-scan and overwrite latest.json
-heal check --metric lcom                # only LCOM findings
-heal check --severity critical          # only Critical (and above with --all)
-heal check --feature src/payments       # restrict to one path prefix
-heal check --all                        # show Medium / Ok plus the low-Severity hotspot section
-heal check --top 5                      # cap each Severity bucket at 5 rows
-heal check --json                       # CheckRecord shape on stdout
-```
-
-By default `heal check` is a read-only render of `.heal/checks/latest.json`:
-runs are free once the cache is warm. Pass `--refresh` to invalidate it
-and re-run every observer; this is the only path that writes the cache.
-A missing cache (e.g. immediately after `heal init`) also triggers a
-scan, so the first invocation in a project still works without flags.
-
-Output groups findings under `🔴 Critical 🔥 / 🔴 Critical / 🟠 High 🔥
-/ 🟠 High / 🟡 Medium / ✅ Ok` (last two require `--all`), aggregates
-one row per file, and ends with `Goal: 0 Critical, 0 High` plus a
-"next steps" line pointing at `claude /heal-code-fix`. With `--all`, an
-extra "Ok / Medium 🔥 (low Severity, top-10% hotspot)" section
-surfaces files that aren't classified as a problem yet but get touched
-often enough to be worth a look.
 
 ## `heal fix`
 
@@ -169,57 +230,26 @@ the only other writer; it appends a single `FixedFinding` line to
 `fixed.jsonl`. `heal fix show` / `heal fix diff` and `heal checks`
 are pure readers.
 
-## `heal calibrate`
+## `heal compact`
 
 ```sh
-heal calibrate            # check drift triggers if calibration.toml exists; create it if not
-heal calibrate --force    # always rescan and overwrite calibration.toml
+heal compact            # gzip past 90 days, delete past 365; print a one-line summary
+heal compact --verbose  # one line per touched file
 ```
 
-heal **never** recalibrates automatically.
+Walks `.heal/{snapshots,logs,checks}/` and applies the retention
+policy:
 
-- When `.heal/calibration.toml` is **missing**, `heal calibrate`
-  rescans and writes it. (Normally this only happens before
-  `heal init` has run; `init` populates the file as part of bootstrap.)
-- When the file **exists**, the default invocation is read-only: it
-  evaluates the drift triggers (90-day age, ±20% codebase file count,
-  or 30 days of zero Critical findings) and prints a recommendation,
-  surfacing `--force` as the way to refresh.
+- segments older than **90 days** are gzipped in place
+  (`YYYY-MM.jsonl` → `YYYY-MM.jsonl.gz`); readers handle both forms
+  transparently.
+- segments older than **365 days** are deleted outright.
 
-The post-commit nudge prepends a one-line "consider recalibrating"
-hint when the same triggers would fire; the user always decides
-whether to invoke `heal calibrate --force`.
-
-The calibration audit trail lives in `.heal/snapshots/` as
-`event = "calibrate"` records — `heal logs` shows them alongside
-commits.
-
-## `heal skills`
-
-Manages the bundled Claude plugin under `.claude/plugins/heal/`:
-
-```sh
-heal skills install     # extract the plugin (run once per repository)
-heal skills update      # refresh after upgrading the heal binary
-heal skills status      # compare installed vs. bundled
-heal skills uninstall   # remove .claude/plugins/heal/
-```
-
-The plugin tree is embedded in the `heal` binary at compile time, so
-`heal skills install` always extracts the version matching the binary
-in use. `update` is drift-aware: files that have been hand-edited are
-left in place (use `--force` to overwrite anyway).
-
-The bundled plugin ships:
-
-- one read-only skill `heal-code-check` that ingests
-  `heal check --all --json`, deep-reads the flagged code, and
-  produces an architectural reading plus a prioritised refactor
-  TODO list (with reference docs under
-  `skills/heal-code-check/references/`).
-- one write skill `heal-code-fix` that drains
-  `.heal/checks/latest.json` one finding per commit (Severity
-  order; `Critical 🔥` first).
+The same policy runs automatically as part of `heal hook commit`, so
+manual invocation is mostly for diagnostics and one-off cleanup —
+e.g. after restoring a backup, or to compact a long-quiet repository
+without waiting for the next commit. The action is idempotent: the
+second run on an already-compacted directory is a no-op.
 
 ---
 

@@ -1,16 +1,19 @@
 ---
 title: クイックスタート
-description: heal をインストールし、git リポジトリで動かし、最初のキャリブレーションと TODO リストを得るまで — 5 分。
+description: heal をインストールし、git リポジトリに繋ぎ、最初の TODO リストを画面に出して Claude に渡すまで — 5 分。
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 このウォークスルーが完了すると、以下が揃います：
 
-- git リポジトリの中で動いている heal
-- キャリブレーション済みの `.heal/` ディレクトリと post-commit フック
+- インストール済みの heal が git リポジトリの中で動いている
+- キャリブレーション済みの `.heal/` ディレクトリと post-commit
+  フック
+- 抽出された Claude プラグイン — エディタから `/heal-code-check`
+  と `/heal-code-fix` が使える
 - 画面に出る最初の Severity 別 TODO リスト
-- （任意）`/heal-code-fix` でキャッシュを消化する Claude
+- （任意）その TODO リストを Claude に読ませて消化させる
 
 ソースをクローンしてビルドする必要はありません。所要時間は約 5 分。
 
@@ -18,8 +21,9 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 - macOS または Linux
 - 評価対象の git リポジトリ（自前のもの、あるいは任意の OSS クローン）
-- （任意）[Claude Code](https://claude.com/code) CLI — `/heal-code-check`
-  監査と `/heal-code-fix` 修復スキルを使う場合
+- （任意）[Claude Code](https://claude.com/code) CLI — 同梱の
+  `/heal-code-check` 監査スキルと `/heal-code-fix` 修復スキルを使う
+  場合
 
 ## 1. `heal` をインストール
 
@@ -82,29 +86,42 @@ heal init
   `logs/`、`checks/`）。
 - 各オブザーバを 1 度走らせ、メトリクスごとのコードベース固有のパー
   センタイル分布 (`p75 / p90 / p95`) を計算 — それが
-  `calibration.toml`。
+  `calibration.toml`。先頭には再生成方法（`heal calibrate --force`）
+  を記すコメントヘッダが入ります。
 - `.git/hooks/post-commit` をインストール。
 - 初回 `MetricsSnapshot`（Severity tally 込み）を append。
 
 再実行は安全です。`config.toml` も既存の非 heal フックも `--force`
 無しでは触りません。
 
-## 3. コードベースの状態を把握
+## 3. Claude プラグインをインストール
 
 ```sh
-heal status
+heal skills install
 ```
 
-各メトリクスのサマリと、前回スナップショットからの delta が出ます。
-最初のコミット後はこんな感じ：
+同梱のプラグインツリーが `.claude/plugins/heal/` に展開されます。
 
 ```
-Primary language: Rust  (18421 LOC across 142 files)
-  complexity:        max CCN 28  Cog 42  (172 functions across 73 files)
-  hotspot:           max score 640.0
-  lcom:              5 / 12 classes ≥ min_cluster_count=2
-  Δ since last:      max_ccn  +2  (busy_function)
+.claude/plugins/heal/
+├── plugin.json
+├── hooks/                # PostToolUse + Stop ログ用フック
+└── skills/
+    ├── heal-code-check/  # リードオンリー監査
+    │   ├── SKILL.md
+    │   └── references/   # metrics + architecture リファレンス
+    └── heal-code-fix/    # 書き込み側
+        └── SKILL.md
 ```
+
+プラグインツリーはバイナリに埋め込まれているため、インストールされ
+るバージョンは常に使用中のバイナリと一致します。`heal` を更新した
+後は `heal skills update` でリフレッシュ。
+
+`heal skills install` は冪等です — 同梱バージョンとフィンガープリ
+ントを比較し、差分があるファイルだけを書き換えます。
+
+## 4. コードベースの状態を把握
 
 ファイル単位の Severity 別 TODO リストが本命のワークフロー：
 
@@ -131,53 +148,60 @@ heal check
 
 このビューは findings を Severity 別にグループ化し、hotspot ファイル
 を `🔥` で示し、`CheckRecord` を `.heal/checks/latest.json` に書き
-出します — `/heal-code-fix` が消費する TODO リストです。
+出します — Claude スキルが読むキャッシュです。
 
-`heal check` はリードオンリー。リストを絞るには：
+`heal check` はデフォルトでリードオンリー（キャッシュを再描画する
+だけ）です。再スキャン・上書きは `--refresh` のみが行います。
+
+リストを絞るには：
 
 ```sh
 heal check --metric lcom              # LCOM のみ
 heal check --severity critical        # Critical のみ
 heal check --feature src/payments     # src/payments/ 配下のみ
-heal check --hotspot                  # 低 Severity だが hotspot のファイル
+heal check --all                      # Medium / Ok と低 Severity の Hotspot セクションも表示
 ```
 
-## 4. キャッシュを消化（任意）
+メトリクスの推移ビュー（worst-N 関数、トップ Hotspot、前コミットか
+らの差分）が欲しいときは `heal status` を使ってください — 同じオブ
+ザーバ実行結果を、TODO リストではなくトレンドとして表示します。
 
-同梱の Claude プラグインを入れた状態で：
+## 5. Claude で監査・消化
+
+プラグインを入れた状態で、キャッシュを Claude に監査させて、必要に
+応じて消化させられます：
 
 ```sh
-heal skills install
+claude /heal-code-check    # リードオンリー: アーキテクチャ的所見 + 優先度付き TODO
+claude /heal-code-fix      # 書き込み: 1 コミット 1 Finding でキャッシュを消化
 ```
 
-…キャッシュを Claude で監査・消化できます：
+`/heal-code-check` は `heal check --all --json` を取り込み、フラグ
+付きコードを深く読み、次の 2 つを返します。
 
-```sh
-claude /heal-code-check    # アーキテクチャ的な所見 + 優先度付き TODO
-claude /heal-code-fix      # Severity 順に 1 コミット 1 Finding を処理
-```
+1. コードベースを *システム* として読んだ **アーキテクチャ的な所見**
+   （複雑度・重複・結合・ハブのいずれが支配的軸か）。
+2. ファイル / 関数を特定した **優先度付きリファクタ TODO リスト**。
+   各エントリに確立されたリファクタパターン名と、期待されるメトリクス
+   の動きが付与されます。
 
-`/heal-code-check` はリードオンリーで、キャッシュを取り込み、フラグ
-付きコードを深く読んで、アーキテクチャ的な所見と優先度付きのリファ
-クタ TODO リストを返します（メトリクスの文献と、モジュールの深さ /
-レイヤード / DDD 語彙に基づきます）。
+スキルは言語非依存で、コードベースに見て取れる既存スタイルに合わせ
+て提案を調整します（詳細は
+[Claude プラグイン › 監査スキル](/heal/ja/claude-plugin/#監査スキル-heal-code-check)
+）。ソースは変更しません。
 
 `/heal-code-fix` は Severity 順 (`Critical 🔥` 優先) に次の non-Ok
 finding を選び、ファイルを読み、リファクタを計画 (CCN なら Extract
 Function、duplication なら Extract Method など)、変更を適用、テス
 トランナを実行、Conventional Commits + `Refs: F#<finding_id>`
-trailer 付きでコミット、再スキャンで確認します。
-
-スキル側の制約：
-
-- dirty な worktree では起動拒否。
-- 1 finding = 1 commit。
-- push しない、amend しない。
+trailer 付きでコミット、再スキャンで確認します。スキル側の制約: 
+dirty な worktree では起動拒否、1 finding = 1 commit、push しない、
+amend しない。
 
 キャッシュが空になったらループ終了。`git push` / `gh pr create` は
 ユーザーが手動で実行します。
 
-## 5. post-commit nudge と暮らす
+## 6. post-commit nudge と暮らす
 
 `heal init` で post-commit フックがインストール済みです。これ以降、
 コミットごとに：
@@ -186,6 +210,9 @@ trailer 付きでコミット、再スキャンで確認します。
 - `MetricsSnapshot` が `.heal/snapshots/` に append される。
 - Critical / High の finding が commit メッセージ直後に stdout に出
   る — `Medium` と `Ok` は黙っています。
+- 古い `.heal/{snapshots,logs,checks}/` セグメントを併せてコンパク
+  ト（90 日超を gzip、365 日超を削除 — 冪等で、触るものが無ければ
+  ノーコスト）。
 
 同じ問題は修正されるまで毎コミット nudge に出ます。cool-down はあり
 ません — それが仕様です。
@@ -193,8 +220,8 @@ trailer 付きでコミット、再スキャンで確認します。
 キャリブレーションがドリフトしたとき (90 日経過、コードベースのファ
 イル数が ±20% 変化、30 日連続で zero Critical) は、nudge の冒頭に
 「再較正をおすすめ」のヒントが付きます。準備ができたら
-`heal calibrate` を実行してください。再較正は決して自動では走りませ
-ん。
+`heal calibrate --force` を実行してください。再較正は決して自動では
+走りません。
 
 ## 続けて読む
 
@@ -202,10 +229,10 @@ trailer 付きでコミット、再スキャンで確認します。
 - [Metrics](/heal/ja/metrics/) — 各メトリクスの意味と Severity の付
   与方法。
 - [CLI](/heal/ja/cli/) — 各サブコマンドと例 (`heal check`、
-  `heal cache`、`heal calibrate`)。
+  `heal checks`、`heal calibrate`、`heal compact`)。
 - [Configuration](/heal/ja/configuration/) — 閾値、トグル、
   キャリブレーションファイル。
 - [Claude プラグイン](/heal/ja/claude-plugin/) — `/heal-code-check`
-  と `/heal-code-fix` スキル。
+  と `/heal-code-fix` スキルの詳細仕様。
 
 ドキュメント通りに動かない場合は [issue を立ててください](https://github.com/kechol/heal/issues)。

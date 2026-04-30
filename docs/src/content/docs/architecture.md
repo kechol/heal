@@ -97,8 +97,9 @@ now the single way to query historical state.
 - **One file per month**: `YYYY-MM.jsonl` (UTC).
 - **Append-only**: every record is one JSON object on one line.
 - **Transparent gzip**: readers handle `.gz` files alongside plain
-  text. Compaction (gzip past months, archive past 12) lands in
-  v0.2+.
+  text. `heal compact` (also called automatically from
+  `heal hook commit`) gzips segments older than 90 days and deletes
+  those past 365 days.
 
 Every record has the same outer shape:
 

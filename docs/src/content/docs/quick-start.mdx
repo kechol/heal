@@ -1,26 +1,28 @@
 ---
 title: Quick Start
-description: Install heal, run it inside a git repository, calibrate, and drain the first TODO list — in five minutes.
+description: Install heal, plug it into a git repository, see the first TODO list, and hand it to Claude — in five minutes.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 After completing this walkthrough you will have:
 
-- heal running inside one of your git repositories
+- heal installed and running inside one of your git repositories
 - A calibrated `.heal/` directory and the post-commit hook installed
+- The Claude plugin extracted, with `/heal-code-check` and
+  `/heal-code-fix` available in your editor
 - The first Severity-grouped TODO list on screen
-- (Optional) Claude draining the cache via `/heal-code-fix`
+- (Optional) Claude reading and draining that TODO list
 
-No source clone or manual build is required. The walkthrough takes
-about five minutes.
+The walkthrough takes about five minutes; no source clone or manual
+build required.
 
 ## Requirements
 
 - macOS or Linux
-- A git repository to evaluate — your own or any open-source clone
-- (Optional) the [Claude Code](https://claude.com/code) CLI, for the
-  `/heal-code-check` audit and `/heal-code-fix` repair skills
+- A git repository to evaluate — your own or an open-source clone
+- (Optional) the [Claude Code](https://claude.com/code) CLI to use the
+  bundled `/heal-code-check` audit and `/heal-code-fix` repair skills
 
 ## 1. Install `heal`
 
@@ -69,7 +71,7 @@ heal --version
 If the command is not found, ensure `~/.cargo/bin` is on the `PATH`.
 See [Installation](/heal/installation/) for details on each method.
 
-## 2. Set up your repository
+## 2. Set up the repository
 
 Inside a git repository, run:
 
@@ -80,34 +82,47 @@ heal init
 This command:
 
 - Creates `.heal/` with `config.toml`, `calibration.toml`,
-  `snapshots/`, `logs/`, `checks/`.
+  `snapshots/`, `logs/`, and `checks/`.
 - Runs every observer once to compute the codebase's percentile
   distribution per metric (`p75 / p90 / p95`) — that's
-  `calibration.toml`.
+  `calibration.toml`. The file gets a comment header noting how to
+  regenerate it (`heal calibrate --force`).
 - Installs `.git/hooks/post-commit`.
 - Appends the first `MetricsSnapshot`, including the Severity tally.
 
-The command is safe to re-run. The config file and any existing
-non-heal hooks are left in place unless `--force` is passed.
+Re-running is safe: `config.toml` and any existing non-heal hooks are
+left in place unless `--force` is passed.
 
-## 3. See where the codebase stands
+## 3. Install the Claude plugin
 
 ```sh
-heal status
+heal skills install
 ```
 
-Prints a summary of every enabled metric and the delta since the
-previous snapshot. After the first commit you'll see something like:
+Extracts the bundled plugin tree to `.claude/plugins/heal/`:
 
 ```
-Primary language: Rust  (18421 LOC across 142 files)
-  complexity:        max CCN 28  Cog 42  (172 functions across 73 files)
-  hotspot:           max score 640.0
-  lcom:              5 / 12 classes ≥ min_cluster_count=2
-  Δ since last:      max_ccn  +2  (busy_function)
+.claude/plugins/heal/
+├── plugin.json
+├── hooks/                # PostToolUse + Stop logging hooks
+└── skills/
+    ├── heal-code-check/  # read-only audit
+    │   ├── SKILL.md
+    │   └── references/   # metrics + architecture reference docs
+    └── heal-code-fix/    # write counterpart
+        └── SKILL.md
 ```
 
-For a per-file Severity-grouped TODO list — the canonical workflow:
+The plugin tree is embedded in the binary, so the version installed
+always matches the binary in use. After upgrading `heal`, run
+`heal skills update` to refresh.
+
+`heal skills install` is idempotent — re-running compares fingerprints
+and only touches files that differ from what's bundled.
+
+## 4. See where the codebase stands
+
+For the canonical workflow — the per-file Severity-grouped TODO list:
 
 ```sh
 heal check
@@ -130,71 +145,82 @@ Sample output:
 ──────────────────────────────────────────────────
 ```
 
-This view groups findings under Severity tiers, surfaces hotspot
-files with `🔥`, and writes a `CheckRecord` to
-`.heal/checks/latest.json` — the TODO list `/heal-code-fix` will consume.
+The view groups findings under Severity tiers, marks hotspots with
+`🔥`, and writes a `CheckRecord` to `.heal/checks/latest.json` — the
+cache the Claude skills read.
 
-`heal check` is read-only. To narrow the list:
+`heal check` is read-only by default (re-renders the cache).
+`--refresh` is the only flag that re-scans and overwrites the cache.
+
+To narrow the list:
 
 ```sh
 heal check --metric lcom              # only LCOM findings
 heal check --severity critical        # only Critical
 heal check --feature src/payments     # only files under src/payments/
-heal check --hotspot                  # low-Severity hotspot files
+heal check --all                      # also surface Medium / Ok and the low-Severity hotspot section
 ```
 
-## 4. Drain the cache (optional)
+For the metric-series view (worst-N functions, top hotspots, delta
+since the previous commit) instead of the per-file list, use
+`heal status` — it reads the same observer pass but presents it as
+trends rather than a TODO list.
 
-With the bundled Claude plugin installed:
+## 5. Audit and drain with Claude
+
+With the plugin installed, ask Claude to audit the cache and (when
+ready) drain it:
 
 ```sh
-heal skills install
+claude /heal-code-check    # read-only: architectural reading + prioritised TODO
+claude /heal-code-fix      # write: drain the cache one finding per commit
 ```
 
-…you can audit the cache or drain it through Claude:
+`/heal-code-check` ingests `heal check --all --json`, deep-reads the
+flagged code, and returns:
 
-```sh
-claude /heal-code-check    # architectural reading + prioritised TODO
-claude /heal-code-fix      # one finding per commit, in Severity order
-```
+1. an **architectural reading** of the codebase as a system (which
+   axis dominates: complexity, duplication, coupling, hub);
+2. a **prioritised refactor TODO list** keyed to specific files /
+   functions, each tagged with the established refactor pattern and
+   the expected metric movement.
 
-`/heal-code-check` is read-only — it ingests the cache, deep-reads
-the flagged code, and returns an architectural reading plus a
-prioritised refactor TODO list (grounded in the metric literature
-and module-depth / layered / DDD vocabulary).
+It is language-agnostic and tailors proposals to the codebase's
+existing style (see
+[Claude plugin › audit skill](/heal/claude-plugin/#the-audit-skill-heal-code-check)).
+The skill never edits source.
 
 `/heal-code-fix` picks the next non-Ok finding in Severity order
 (`Critical 🔥` first), reads the file, plans a refactor (Extract
 Function for CCN, Extract Method for duplication, etc.), applies the
 change, runs your test runner, commits with a Conventional Commits
-message + `Refs: F#<finding_id>` trailer, then re-scans to confirm.
+message + `Refs: F#<finding_id>` trailer, and re-scans to confirm.
+Constraints (enforced by the skill): refuses on a dirty worktree,
+one finding = one commit, never pushes, never amends.
 
-Constraints (enforced by the skill):
-
-- Refuses on a dirty worktree.
-- One finding = one commit.
-- Never pushes; never amends.
-
-When the cache is empty, the loop ends. You then `git push` /
+When the cache empties, the loop ends. You then `git push` /
 `gh pr create` yourself.
 
-## 5. Live with the post-commit nudge
+## 6. Live with the post-commit nudge
 
-`heal init` installed a post-commit hook. From this point, every
+`heal init` installed a post-commit hook. From this point on, every
 commit:
 
 - Re-runs every observer once.
 - Appends a `MetricsSnapshot` to `.heal/snapshots/`.
 - Surfaces every Critical / High finding to stdout right after the
   commit message — `Medium` and `Ok` stay quiet.
+- Compacts old `.heal/{snapshots,logs,checks}/` segments in passing
+  (gzip past 90 days, delete past 365 — idempotent, free when nothing
+  needs touching).
 
 The same problem reappears in the nudge every commit until it's
 fixed. There is no cool-down — that's the point.
 
 When the calibration drifts (older than 90 days, codebase file count
-shifted ±20%, or 30 days of zero Critical), the nudge prepends a
-"consider recalibrating" hint. Run `heal calibrate` when ready;
-recalibration is never automatic.
+shifted ±20%, or 30 days of zero Critical findings), the nudge
+prepends a "consider recalibrating" hint. Run `heal calibrate --force`
+when ready; recalibration is never automatic.
 
 ## Further reading
 
@@ -202,10 +228,10 @@ recalibration is never automatic.
 - [Metrics](/heal/metrics/) — what each metric measures and how
   Severity is assigned.
 - [CLI](/heal/cli/) — every subcommand with examples
-  (`heal check`, `heal cache`, `heal calibrate`).
+  (`heal check`, `heal checks`, `heal calibrate`, `heal compact`).
 - [Configuration](/heal/configuration/) — thresholds, toggles, the
   calibration file.
 - [Claude plugin](/heal/claude-plugin/) — the `/heal-code-check` and
-  `/heal-code-fix` skills.
+  `/heal-code-fix` skill contracts in detail.
 
 If a step does not behave as documented, please [file an issue](https://github.com/kechol/heal/issues).
