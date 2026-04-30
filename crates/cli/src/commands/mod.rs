@@ -1,3 +1,4 @@
+pub mod cache;
 pub mod calibrate;
 pub mod check;
 pub mod hook;

@@ -42,10 +42,18 @@ pub enum Command {
     /// Commit entries hold metadata only — see `heal status` for the
     /// metric series persisted in `.heal/snapshots/`.
     Logs(LogsArgs),
-    /// Launch Claude Code (`claude -p`) with the read-only check-* skills.
-    /// Anything after `--` is forwarded verbatim to `claude` (e.g.
-    /// `heal check hotspots -- --model claude-opus-4-7`).
+    /// Run every observer, classify findings by Severity, render the
+    /// per-file Critical / High / Medium view, and refresh
+    /// `.heal/checks/latest.json`. The single source of truth that
+    /// `/heal-fix` (Claude side) and `heal cache *` (read-only) consume.
     Check(CheckArgs),
+    /// Inspect the `.heal/checks/` cache: enumerate records (`log`),
+    /// render one (`show`), diff two (`diff`), or claim a commit as
+    /// fixing a finding (`mark-fixed`, used by `/heal-fix`).
+    Cache {
+        #[command(subcommand)]
+        action: CacheAction,
+    },
     /// Manage the bundled Claude plugin.
     Skills {
         #[command(subcommand)]
@@ -100,45 +108,22 @@ impl StatusMetric {
     }
 }
 
-/// Output format hint passed to `claude -p` via the prompt body. The
-/// model still decides on the final shape, but the hint nudges it
-/// toward the renderer the user will actually see.
+/// Legacy positional kept for `heal check overview|hotspots|complexity|
+/// duplication|coupling`. Rewritten to flag form during arg parse and
+/// scheduled for removal in v0.3 — see [`CheckArgs::legacy_skill`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub enum OutputFormat {
-    /// TTY → plain; pipe → markdown.
-    Auto,
-    /// Strip markdown affordances (`**bold**`, `# headers`, nested
-    /// bullets) — terminal-friendly.
-    Plain,
-    /// Let the model use its default markdown.
-    Markdown,
-}
-
-/// Read-only Claude skill to invoke from `heal check`. The variants map
-/// 1:1 to the bundled `plugins/heal/skills/check-*` directories.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub enum CheckSkill {
+pub enum LegacyCheckSkill {
+    /// Pre-v0.2 `check-overview` claude skill — now equivalent to
+    /// `heal check` with no metric filter.
     Overview,
+    /// Pre-v0.2 `check-hotspots` — now `heal check --hotspot`.
     Hotspots,
     Complexity,
     Duplication,
     Coupling,
 }
 
-impl CheckSkill {
-    /// Full skill identifier as it appears on disk and in `plugin.json`.
-    #[must_use]
-    pub fn skill_name(self) -> &'static str {
-        match self {
-            Self::Overview => "check-overview",
-            Self::Hotspots => "check-hotspots",
-            Self::Complexity => "check-complexity",
-            Self::Duplication => "check-duplication",
-            Self::Coupling => "check-coupling",
-        }
-    }
-
-    /// Short name used as the CLI argument (`heal check hotspots`).
+impl LegacyCheckSkill {
     #[must_use]
     pub fn short_name(self) -> &'static str {
         match self {
@@ -147,6 +132,61 @@ impl CheckSkill {
             Self::Complexity => "complexity",
             Self::Duplication => "duplication",
             Self::Coupling => "coupling",
+        }
+    }
+}
+
+/// Filter for `heal check --metric`. Distinct from [`StatusMetric`]
+/// because `complexity` here is an alias that selects both `ccn` and
+/// `cognitive` findings (TODO §「heal status の延長で metric 指定」).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum CheckMetric {
+    Ccn,
+    Cognitive,
+    /// CCN + Cognitive together. Matches the legacy `complexity` skill.
+    Complexity,
+    Duplication,
+    /// `change_coupling` symmetric pairs.
+    Coupling,
+    Hotspot,
+}
+
+impl CheckMetric {
+    /// Does a `Finding.metric` string belong to this filter? Used by
+    /// the renderer when narrowing the displayed list.
+    #[must_use]
+    pub fn matches(self, metric: &str) -> bool {
+        match self {
+            Self::Ccn => metric == "ccn",
+            Self::Cognitive => metric == "cognitive",
+            Self::Complexity => matches!(metric, "ccn" | "cognitive"),
+            Self::Duplication => metric == "duplication",
+            Self::Coupling => metric == "change_coupling",
+            Self::Hotspot => metric == "hotspot",
+        }
+    }
+}
+
+/// CLI-side mirror of [`crate::core::severity::Severity`] so clap's
+/// `value_enum` can render the four labels without leaking SGR colour
+/// codes into the help text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum SeverityFilter {
+    Critical,
+    High,
+    Medium,
+    Ok,
+}
+
+impl SeverityFilter {
+    #[must_use]
+    pub fn into_severity(self) -> crate::core::severity::Severity {
+        use crate::core::severity::Severity;
+        match self {
+            Self::Critical => Severity::Critical,
+            Self::High => Severity::High,
+            Self::Medium => Severity::Medium,
+            Self::Ok => Severity::Ok,
         }
     }
 }
@@ -175,30 +215,48 @@ impl HookEvent {
 }
 
 #[derive(Debug, clap::Args)]
+#[allow(clippy::struct_excessive_bools)] // every flag is independent CLI surface
 pub struct CheckArgs {
-    /// Which check-* skill to run. Defaults to the overview hub.
-    #[arg(value_enum, default_value_t = CheckSkill::Overview)]
-    pub skill: CheckSkill,
-    /// Output format for the response body. `auto` (default) probes
-    /// stdout: a TTY gets `plain`, a pipe gets `markdown`. `plain`
-    /// strips markdown affordances so headings/bold don't show as
-    /// raw `**` / `#` in a terminal; `markdown` lets the model use
-    /// its default formatting.
-    #[arg(long, value_enum, default_value_t = OutputFormat::Auto)]
-    pub format: OutputFormat,
-    /// Suppress per-tool progress lines on stderr. The final synthesis
-    /// still prints to stdout.
-    #[arg(long, conflicts_with = "raw")]
-    pub quiet: bool,
-    /// Forward `claude -p` output verbatim instead of parsing
-    /// stream-json into progress lines. Useful for piping to your own
-    /// parser or for debugging.
-    #[arg(long, conflicts_with = "quiet")]
-    pub raw: bool,
-    /// Pass-through arguments to the underlying `claude` invocation.
-    /// e.g. `heal check hotspots -- --model claude-haiku-4-5 --effort low`.
-    #[arg(last = true, allow_hyphen_values = true)]
-    pub claude_args: Vec<String>,
+    /// **Deprecated.** Pre-v0.2 positional skill name kept as an alias
+    /// so muscle-memory invocations still work. Maps to:
+    /// `overview` → no filter, `hotspots` → `--hotspot`, others →
+    /// `--metric <name>`. Removed in v0.3 — switch to the flag form.
+    #[arg(value_enum)]
+    pub legacy_skill: Option<LegacyCheckSkill>,
+    /// Restrict the rendered list to one metric (or one metric family —
+    /// `complexity` covers both CCN and Cognitive).
+    #[arg(long, value_enum, conflicts_with = "legacy_skill")]
+    pub metric: Option<CheckMetric>,
+    /// Restrict to findings under a path prefix (e.g.
+    /// `--feature src/payments`). Matched against `Finding.location.file`.
+    #[arg(long)]
+    pub feature: Option<String>,
+    /// Severity floor — show only this level. Combine with `--all` to
+    /// also surface lower severities below it.
+    #[arg(long, value_enum)]
+    pub severity: Option<SeverityFilter>,
+    /// Show every Severity tier including Medium and Ok. Without this,
+    /// only Critical / High are rendered (with a "(N) hidden — pass
+    /// `--all`" footer when there are more).
+    #[arg(long)]
+    pub all: bool,
+    /// Surface the "low Severity, top-10% hotspot" list — i.e. files
+    /// that aren't classified as a problem yet but are getting touched
+    /// often enough that they're worth a look.
+    #[arg(long)]
+    pub hotspot: bool,
+    /// Emit the `CheckRecord` payload as JSON on stdout. Same shape as
+    /// `.heal/checks/latest.json` — stable contract for skills and CI.
+    #[arg(long)]
+    pub json: bool,
+    /// Re-render the most recent cached `CheckRecord` without scanning
+    /// the project. Errors out when no cache exists yet (run
+    /// `heal check` once first).
+    #[arg(long)]
+    pub since_cache: bool,
+    /// Cap each Severity bucket at the N worst findings.
+    #[arg(long, value_name = "N")]
+    pub top: Option<usize>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -215,6 +273,62 @@ pub struct LogsArgs {
     /// Emit raw JSONL instead of pretty text.
     #[arg(long)]
     pub json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CacheAction {
+    /// List `CheckRecord`s newest-first (`check_id`, `started_at`,
+    /// `head_sha`, finding count, severity tally).
+    Log {
+        #[arg(long)]
+        json: bool,
+        /// Cap at the N most recent records.
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+    },
+    /// Append a `FixedFinding` to `.heal/checks/fixed.jsonl`. Called by
+    /// `/heal-fix` (or any skill that commits a fix) so the next
+    /// `heal check` can warn if the same finding re-appears.
+    MarkFixed {
+        /// `Finding.id` from `heal check --json` output.
+        #[arg(long, value_name = "ID")]
+        finding_id: String,
+        /// SHA of the commit that resolved the finding.
+        #[arg(long, value_name = "SHA")]
+        commit_sha: String,
+    },
+    /// Render one `CheckRecord` by its ULID. **Unstable**: the human
+    /// view may change. For a stable contract use `--json` (same shape
+    /// as `heal check --json`).
+    Show {
+        check_id: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Compare two `CheckRecord`s — Resolved / Regressed / Improved /
+    /// New / Unchanged buckets, plus a progress percentage. With no
+    /// arguments, diffs the prior cache record against the latest. With
+    /// `--worktree`, scans the live project (no cache write) and diffs
+    /// it against the latest cache record so a half-finished session
+    /// can verify progress before committing.
+    Diff {
+        /// Older `check_id` for the diff. Defaults to the second-most-
+        /// recent record.
+        #[arg(value_name = "FROM")]
+        from: Option<String>,
+        /// Newer `check_id`. Defaults to the most-recent record.
+        #[arg(value_name = "TO")]
+        to: Option<String>,
+        /// Re-scan the working tree instead of reading `to` from the
+        /// cache. Conflicts with `to`.
+        #[arg(long, conflicts_with = "to")]
+        worktree: bool,
+        /// Show the Improved / Unchanged buckets too.
+        #[arg(long)]
+        all: bool,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Subcommand)]
@@ -248,6 +362,7 @@ impl Cli {
             Command::Status { json, metric } => commands::status::run(&project, json, metric),
             Command::Logs(args) => commands::logs::run(&project, &args),
             Command::Check(args) => commands::check::run(&project, &args),
+            Command::Cache { action } => commands::cache::run(&project, action),
             Command::Skills { action } => commands::skills::run(&project, action),
             Command::Calibrate { reason, check } => {
                 commands::calibrate::run(&project, reason, check)

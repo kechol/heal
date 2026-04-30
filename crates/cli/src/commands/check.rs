@@ -1,398 +1,636 @@
-//! `heal check [SKILL]` — launch Claude Code (`claude -p`) on a
-//! `check-*` skill.
+//! `heal check` — analyze, classify, render, and persist a `CheckRecord`.
 //!
-//! By default, `claude -p` is invoked with `--output-format stream-json`
-//! and the events are parsed into a per-tool progress feed on stderr
-//! (`[ 1.2s] → Bash heal status --metric hotspot --json`) so the user
-//! sees what's happening instead of waiting silently. The final
-//! synthesis lands on stdout. `--quiet` suppresses progress; `--raw`
-//! skips parsing entirely and forwards claude's output verbatim.
+//! This is the single writer of `.heal/checks/`. It runs every observer,
+//! lifts the reports through `crate::core::finding::IntoFindings`,
+//! decorates each Finding with Severity (via `Calibration`) and the
+//! per-file hotspot flag (via `HotspotCalibration`), then either reuses
+//! or refreshes `latest.json` based on a `(head_sha, config_hash,
+//! worktree_clean)` freshness check.
+//!
+//! The renderer groups findings under `Critical 🔥 / Critical / High 🔥
+//! / High / Medium / Ok` (last two only with `--all`), aggregates one
+//! row per file, and surfaces a "next steps" footer pointing at
+//! `heal check --severity critical` and `claude /heal-fix`.
+//!
+//! `--since-cache` skips the scan entirely and re-renders the latest
+//! cached record. `--json` emits the `CheckRecord` in the exact shape of
+//! `latest.json` so skills and CI scripts have one stable contract.
 
-use std::fmt::Write as _;
-use std::io::{BufRead, BufReader, IsTerminal, Write};
-use std::path::Path;
-use std::process::{Command, Stdio};
-use std::time::Instant;
+use std::collections::BTreeMap;
+use std::io::{IsTerminal, Write};
+use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
-use serde_json::Value;
+use anyhow::{Context, Result};
 
-use crate::cli::{CheckArgs, CheckSkill, OutputFormat};
-
-const PLUGIN_ROOT_REL: &str = ".claude/plugins/heal";
-const SKILLS_DIR_REL: &str = ".claude/plugins/heal/skills";
+use crate::cli::{CheckArgs, CheckMetric, LegacyCheckSkill, SeverityFilter};
+use crate::core::calibration::Calibration;
+use crate::core::check_cache::{
+    config_hash_from_paths, read_latest, reconcile_fixed, write_record, CheckRecord, RegressedEntry,
+};
+use crate::core::config::load_from_project;
+use crate::core::finding::Finding;
+use crate::core::severity::Severity;
+use crate::core::snapshot::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW};
+use crate::core::HealPaths;
+use crate::observer::git;
+use crate::observers::{classify, run_all};
 
 pub fn run(project: &Path, args: &CheckArgs) -> Result<()> {
-    ensure_plugin_installed(project, args.skill)?;
+    let paths = HealPaths::new(project);
+    paths.ensure().with_context(|| {
+        format!(
+            "creating {} (heal-cli needs a writable .heal/ directory)",
+            paths.root().display(),
+        )
+    })?;
 
-    let cfg = crate::core::config::load_from_project(project).ok();
-    let language = cfg
+    if let Some(skill) = args.legacy_skill {
+        eprintln!(
+            "warning: `heal check {}` is deprecated; use {} (will be removed in v0.3)",
+            skill.short_name(),
+            legacy_replacement_hint(skill),
+        );
+    }
+
+    let filters = Filters::from_args(args);
+    if args.since_cache {
+        return run_since_cache(&paths, &filters, args.json);
+    }
+
+    let cfg = load_from_project(project).with_context(|| {
+        format!(
+            "loading {} (run `heal init` first?)",
+            paths.config().display(),
+        )
+    })?;
+    let calibration = Calibration::load(&paths.calibration())
+        .ok()
+        .map(|c| c.with_overrides(&cfg));
+
+    let head_sha = git::head_sha(project);
+    let worktree_clean = git::worktree_clean(project).unwrap_or(false);
+    let config_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
+
+    let cached = read_latest(&paths.checks_latest()).ok().flatten();
+    let reuse = cached
         .as_ref()
-        .and_then(|c| c.project.response_language.as_deref());
-    let resolved_format = resolve_format(args.format, std::io::stdout().is_terminal());
-    let prompt = build_prompt(args.skill, language, resolved_format);
-    let mut cmd = Command::new("claude");
-    cmd.arg("-p").arg(&prompt);
+        .filter(|prev| prev.is_fresh_against(head_sha.as_deref(), &config_hash, worktree_clean));
 
-    let parse_stream = !args.raw && !user_overrides_output_format(&args.claude_args);
-    if parse_stream {
-        cmd.arg("--output-format")
-            .arg("stream-json")
-            .arg("--verbose");
-    }
-    for a in &args.claude_args {
-        cmd.arg(a);
-    }
-    cmd.current_dir(project);
-
-    if parse_stream {
-        run_with_progress(cmd, args.skill, args.quiet)
+    let (record, regressed) = if let Some(prev) = reuse {
+        // Cache hit: don't re-reconcile fixed.jsonl. Reconciliation
+        // already happened on the run that produced `prev`.
+        (prev.clone(), Vec::new())
     } else {
-        run_passthrough(cmd)
-    }
-}
-
-fn ensure_plugin_installed(project: &Path, skill: CheckSkill) -> Result<()> {
-    let plugin_root = project.join(PLUGIN_ROOT_REL);
-    let skill_md = project
-        .join(SKILLS_DIR_REL)
-        .join(skill.skill_name())
-        .join("SKILL.md");
-    if !plugin_root.is_dir() || !skill_md.is_file() {
-        bail!(
-            "HEAL plugin not installed at {} (missing {}). Run `heal skills install` first.",
-            plugin_root.display(),
-            skill_md.display(),
+        let record = build_fresh_record(
+            project,
+            &cfg,
+            calibration.as_ref(),
+            head_sha,
+            worktree_clean,
+            config_hash,
         );
-    }
-    Ok(())
-}
-
-fn run_passthrough(mut cmd: Command) -> Result<()> {
-    let status = cmd.status().with_context(spawn_error_hint)?;
-    if !status.success() {
-        bail!("`claude` exited with {status}");
-    }
-    Ok(())
-}
-
-fn run_with_progress(mut cmd: Command, skill: CheckSkill, quiet: bool) -> Result<()> {
-    cmd.stdout(Stdio::piped());
-    let mut child = cmd.spawn().with_context(spawn_error_hint)?;
-    let started = Instant::now();
-    if !quiet {
-        eprintln!("→ heal check {} (Ctrl+C to cancel)", skill.short_name());
-    }
-    let stdout = child
-        .stdout
-        .take()
-        .expect("stdout was piped by run_with_progress");
-    let reader = BufReader::new(stdout);
-    let mut final_text = String::new();
-    for line in reader.lines() {
-        let line = line?;
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(event) = serde_json::from_str::<Value>(&line) else {
-            // Non-JSON: claude isn't streaming after all. Surface the
-            // line so the user still sees output instead of a silent hang.
-            if !quiet {
-                eprintln!("{line}");
-            }
-            continue;
-        };
-        handle_event(&event, started, quiet, &mut final_text);
-    }
-    let status = child.wait()?;
-    if !quiet {
-        eprintln!("→ done in {:.1}s", started.elapsed().as_secs_f64());
-    }
-    if !final_text.is_empty() {
-        let mut out = std::io::stdout().lock();
-        writeln!(out, "{final_text}")?;
-    }
-    if !status.success() {
-        bail!("`claude` exited with {status}");
-    }
-    Ok(())
-}
-
-/// Translate one stream-json event into either a progress line (printed
-/// to stderr unless `quiet`) or a chunk of final-answer text appended
-/// directly into `final_text` — borrowing the slice from the parsed
-/// `Value` avoids a clone of what may be a multi-KB synthesis.
-fn handle_event(event: &Value, started: Instant, quiet: bool, final_text: &mut String) {
-    let Some(etype) = event.get("type").and_then(Value::as_str) else {
-        return;
+        write_record(&paths.checks_dir(), &paths.checks_latest(), &record)?;
+        let regs = reconcile_fixed(
+            &paths.checks_fixed_log(),
+            &paths.checks_regressed_log(),
+            &record,
+        )?;
+        (record, regs)
     };
-    match etype {
-        "assistant" => {
-            let Some(content) = event.pointer("/message/content").and_then(Value::as_array) else {
-                return;
-            };
-            if quiet {
-                return;
-            }
-            for c in content {
-                if c.get("type").and_then(Value::as_str) == Some("tool_use") {
-                    let name = c.get("name").and_then(Value::as_str).unwrap_or("?");
-                    let summary = summarize_tool_input(name, c.get("input"));
-                    eprintln!(
-                        "  [{:>5.1}s] → {name}{summary}",
-                        started.elapsed().as_secs_f64()
-                    );
-                }
-            }
-        }
-        "result" => {
-            // `claude --output-format stream-json` emits exactly one
-            // `result` event per session today, but guard against a
-            // future protocol that splits it: separate chunks with a
-            // newline so `result1result2` can't collide.
-            if let Some(text) = event.get("result").and_then(Value::as_str) {
-                if !final_text.is_empty() {
-                    final_text.push('\n');
-                }
-                final_text.push_str(text);
-            }
-        }
-        _ => {}
+
+    if args.json {
+        emit_json(&record);
+        return Ok(());
     }
+    let mut stdout = std::io::stdout();
+    let colorize = stdout.is_terminal();
+    render(&record, &regressed, &filters, colorize, &mut stdout)?;
+    Ok(())
 }
 
-/// Render a tool-use input as a one-line summary for the progress feed.
-/// Bash gets its `command`, Read gets the file basename, Grep/Glob get
-/// their pattern; everything else falls back to the tool name only.
-fn summarize_tool_input(name: &str, input: Option<&Value>) -> String {
-    let Some(input) = input else {
-        return String::new();
+/// Run every observer + classify, returning a fresh `CheckRecord`
+/// without writing it. Reused by `heal cache diff --worktree` so a
+/// half-finished session can compare against the latest cached
+/// record without polluting `.heal/checks/`.
+pub(super) fn build_fresh_record(
+    project: &Path,
+    cfg: &crate::core::config::Config,
+    calibration: Option<&Calibration>,
+    head_sha: Option<String>,
+    worktree_clean: bool,
+    config_hash: String,
+) -> CheckRecord {
+    let reports = run_all(project, cfg, None);
+    let owned;
+    let cal_ref = if let Some(c) = calibration {
+        c
+    } else {
+        owned = Calibration::default();
+        &owned
     };
-    let pick_str = |key: &str| input.get(key).and_then(Value::as_str).unwrap_or("");
-    match name {
-        "Bash" => format!(" {}", truncate(pick_str("command"), 80)),
-        "Read" => format!(" {}", basename(pick_str("file_path"))),
-        "Grep" | "Glob" => format!(" {}", truncate(pick_str("pattern"), 60)),
-        _ => String::new(),
+    let findings = classify(&reports, cal_ref);
+    CheckRecord::new(head_sha, worktree_clean, config_hash, findings)
+}
+
+fn run_since_cache(paths: &HealPaths, filters: &Filters, as_json: bool) -> Result<()> {
+    let record = read_latest(&paths.checks_latest())
+        .with_context(|| {
+            format!(
+                "reading {} (a corrupt latest.json was found)",
+                paths.checks_latest().display(),
+            )
+        })?
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "no cache at {} — run `heal check` once to populate it",
+                paths.checks_latest().display(),
+            )
+        })?;
+    if as_json {
+        emit_json(&record);
+        return Ok(());
+    }
+    let mut stdout = std::io::stdout();
+    let colorize = stdout.is_terminal();
+    render(&record, &[], filters, colorize, &mut stdout)?;
+    Ok(())
+}
+
+fn emit_json(record: &CheckRecord) {
+    let body =
+        serde_json::to_string_pretty(record).expect("CheckRecord serialization is infallible");
+    println!("{body}");
+}
+
+fn legacy_replacement_hint(skill: LegacyCheckSkill) -> &'static str {
+    match skill {
+        LegacyCheckSkill::Overview => "`heal check` (no positional)",
+        LegacyCheckSkill::Hotspots => "`heal check --hotspot`",
+        LegacyCheckSkill::Complexity => "`heal check --metric complexity`",
+        LegacyCheckSkill::Duplication => "`heal check --metric duplication`",
+        LegacyCheckSkill::Coupling => "`heal check --metric coupling`",
     }
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    let count = s.chars().count();
-    if count <= max {
-        return s.to_string();
-    }
-    let head: String = s.chars().take(max.saturating_sub(1)).collect();
-    format!("{head}…")
+/// Resolved filters for the renderer. Built once from `CheckArgs` so
+/// the legacy positional and the new flags hit a single normalized
+/// shape — every render path consumes this.
+#[derive(Debug, Clone, Default)]
+pub(super) struct Filters {
+    pub(super) metric: Option<CheckMetric>,
+    pub(super) feature: Option<String>,
+    pub(super) severity: Option<Severity>,
+    pub(super) all: bool,
+    pub(super) hotspot_only: bool,
+    pub(super) top: Option<usize>,
 }
 
-fn basename(path: &str) -> &str {
-    Path::new(path)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(path)
-}
-
-fn build_prompt(skill: CheckSkill, language: Option<&str>, format: OutputFormat) -> String {
-    let name = skill.skill_name();
-    let mut prompt = format!(
-        "Run the `{name}` skill (defined at `{SKILLS_DIR_REL}/{name}/SKILL.md`) \
-         on this project. Follow the SKILL.md procedure exactly, do not modify any files."
-    );
-    if let Some(lang) = language {
-        let _ = write!(prompt, " Write the response in {lang}.");
+impl Filters {
+    fn from_args(args: &CheckArgs) -> Self {
+        let metric = args.metric.or(match args.legacy_skill {
+            Some(LegacyCheckSkill::Complexity) => Some(CheckMetric::Complexity),
+            Some(LegacyCheckSkill::Duplication) => Some(CheckMetric::Duplication),
+            Some(LegacyCheckSkill::Coupling) => Some(CheckMetric::Coupling),
+            _ => None,
+        });
+        let hotspot_only =
+            args.hotspot || matches!(args.legacy_skill, Some(LegacyCheckSkill::Hotspots));
+        Self {
+            metric,
+            feature: args.feature.clone(),
+            severity: args.severity.map(SeverityFilter::into_severity),
+            all: args.all,
+            hotspot_only,
+            top: args.top,
+        }
     }
-    if matches!(format, OutputFormat::Plain) {
-        prompt.push_str(
-            " Output as plain text suitable for a terminal: \
-             no markdown headings, no `**bold**` or `*italic*` markers, \
-             no nested bullet trees — use simple indentation and dashes \
-             for structure. Inline code identifiers (file paths, function \
-             names) may stay in backticks.",
-        );
-    }
-    prompt
-}
 
-/// Resolve [`OutputFormat::Auto`] using whether stdout is a terminal.
-/// Pipe → keep markdown so downstream renderers (`bat`, `glow`) work
-/// as expected; TTY → strip markdown so `**` / `#` don't show up raw.
-fn resolve_format(format: OutputFormat, stdout_is_tty: bool) -> OutputFormat {
-    match format {
-        OutputFormat::Auto => {
-            if stdout_is_tty {
-                OutputFormat::Plain
-            } else {
-                OutputFormat::Markdown
+    fn passes(&self, finding: &Finding) -> bool {
+        if let Some(m) = self.metric {
+            if !m.matches(&finding.metric) {
+                return false;
             }
         }
-        explicit => explicit,
+        if let Some(prefix) = self.feature.as_ref() {
+            if !finding
+                .location
+                .file
+                .to_string_lossy()
+                .starts_with(prefix.as_str())
+            {
+                return false;
+            }
+        }
+        true
     }
 }
 
-/// Detect whether the user already passed `--output-format` (in either
-/// the space-separated `--output-format X` or `--output-format=X` form)
-/// so HEAL doesn't inject a competing copy and break the `claude` call.
-fn user_overrides_output_format(claude_args: &[String]) -> bool {
-    claude_args
+/// Render the record to `out`. Pure function — no IO besides writing
+/// `out`. Tests pin the prefixes for the section headers; the precise
+/// row formatting can evolve without breaking the contract.
+#[allow(clippy::too_many_lines)] // bucket-by-bucket pour; splitting hurts readability
+pub(super) fn render(
+    record: &CheckRecord,
+    regressed: &[RegressedEntry],
+    filters: &Filters,
+    colorize: bool,
+    out: &mut impl Write,
+) -> Result<()> {
+    let title = ansi_wrap(ANSI_CYAN, "── HEAL check", colorize);
+    let bar: String = "─".repeat(50);
+    writeln!(out, "{title} {bar}")?;
+    writeln!(
+        out,
+        "  Calibrated: {}  ({} findings, head {})",
+        record.started_at.format("%Y-%m-%d %H:%M"),
+        record.findings.len(),
+        record.head_sha.as_deref().unwrap_or("∅"),
+    )?;
+    if !record.worktree_clean {
+        writeln!(
+            out,
+            "  {} worktree dirty — uncommitted changes are reflected here.",
+            ansi_wrap(ANSI_YELLOW, "note:", colorize),
+        )?;
+    }
+    writeln!(out)?;
+
+    if !regressed.is_empty() {
+        writeln!(
+            out,
+            "  {} {} previously-fixed finding(s) re-detected. See `.heal/checks/regressed.jsonl`.",
+            ansi_wrap(ANSI_YELLOW, "regression:", colorize),
+            regressed.len(),
+        )?;
+        writeln!(out)?;
+    }
+
+    let filtered: Vec<&Finding> = record
+        .findings
         .iter()
-        .any(|a| a == "--output-format" || a.starts_with("--output-format="))
+        .filter(|f| filters.passes(f))
+        .collect();
+
+    if filters.hotspot_only {
+        // Special section: Ok/Medium findings flagged as hotspot. Useful
+        // for "we didn't classify it as a problem yet, but it's being
+        // touched a lot". TODO §「`heal check --hotspot`: `Ok 🔥`」.
+        let hotspots: Vec<&Finding> = filtered
+            .iter()
+            .filter(|f| f.hotspot && matches!(f.severity, Severity::Ok | Severity::Medium))
+            .copied()
+            .collect();
+        render_section(
+            "Ok / Medium 🔥 (low Severity, top-10% hotspot)",
+            ANSI_CYAN,
+            &hotspots,
+            filters.top,
+            colorize,
+            out,
+        )?;
+        writeln!(out)?;
+    }
+
+    let mut by_severity: BTreeMap<SeverityKey, Vec<&Finding>> = BTreeMap::new();
+    for f in &filtered {
+        if filters.hotspot_only
+            && !(f.hotspot && matches!(f.severity, Severity::Ok | Severity::Medium))
+        {
+            continue;
+        }
+        if let Some(min) = filters.severity {
+            if f.severity < min {
+                continue;
+            }
+        }
+        by_severity
+            .entry(SeverityKey::new(f.severity, f.hotspot))
+            .or_default()
+            .push(f);
+    }
+
+    let show_low = filters.all || matches!(filters.severity, Some(Severity::Medium | Severity::Ok));
+    let buckets: &[(SeverityKey, &str, &str)] = &[
+        (
+            SeverityKey {
+                severity: Severity::Critical,
+                hotspot: true,
+            },
+            "🔴 Critical 🔥",
+            ANSI_RED,
+        ),
+        (
+            SeverityKey {
+                severity: Severity::Critical,
+                hotspot: false,
+            },
+            "🔴 Critical",
+            ANSI_RED,
+        ),
+        (
+            SeverityKey {
+                severity: Severity::High,
+                hotspot: true,
+            },
+            "🟠 High 🔥",
+            ANSI_YELLOW,
+        ),
+        (
+            SeverityKey {
+                severity: Severity::High,
+                hotspot: false,
+            },
+            "🟠 High",
+            ANSI_YELLOW,
+        ),
+        (
+            SeverityKey {
+                severity: Severity::Medium,
+                hotspot: true,
+            },
+            "🟡 Medium 🔥",
+            ANSI_YELLOW,
+        ),
+        (
+            SeverityKey {
+                severity: Severity::Medium,
+                hotspot: false,
+            },
+            "🟡 Medium",
+            ANSI_YELLOW,
+        ),
+    ];
+
+    for (key, label, color) in buckets {
+        if matches!(key.severity, Severity::Medium) && !show_low {
+            continue;
+        }
+        if let Some(items) = by_severity.get(key) {
+            render_section(label, color, items, filters.top, colorize, out)?;
+        }
+    }
+
+    if show_low {
+        let oks: Vec<&Finding> = filtered
+            .iter()
+            .filter(|f| f.severity == Severity::Ok)
+            .copied()
+            .collect();
+        if !oks.is_empty() {
+            render_section("✅ Ok", ANSI_GREEN, &oks, filters.top, colorize, out)?;
+        }
+    } else {
+        let hidden = filtered
+            .iter()
+            .filter(|f| matches!(f.severity, Severity::Medium | Severity::Ok))
+            .count();
+        if hidden > 0 {
+            writeln!(
+                out,
+                "  ✅ Medium / Ok ({hidden} findings)  [pass --all to show]"
+            )?;
+        }
+    }
+
+    writeln!(out)?;
+    let goal = format!(
+        "Critical={}  High={}",
+        record.severity_counts.critical, record.severity_counts.high,
+    );
+    writeln!(out, "  Goal: 0 Critical, 0 High  (current: {goal})")?;
+    writeln!(
+        out,
+        "  Next: `heal check --severity critical` / `claude /heal-fix`",
+    )?;
+    let close: String = "─".repeat(60);
+    writeln!(out, "{close}")?;
+    Ok(())
 }
 
-fn spawn_error_hint() -> &'static str {
-    "failed to spawn `claude`. Is Claude Code installed and on PATH? \
-     Install: https://docs.claude.com/en/docs/claude-code/setup"
+fn render_section(
+    label: &str,
+    color: &str,
+    items: &[&Finding],
+    top: Option<usize>,
+    colorize: bool,
+    out: &mut impl Write,
+) -> std::io::Result<()> {
+    if items.is_empty() {
+        return Ok(());
+    }
+    let mut sorted: Vec<&Finding> = items.to_vec();
+    // Deterministic order so two runs on the same Findings render
+    // byte-for-byte identical output (snapshot-style tests rely on it).
+    sorted.sort_by(|a, b| {
+        b.hotspot
+            .cmp(&a.hotspot)
+            .then_with(|| a.metric.cmp(&b.metric))
+            .then_with(|| a.location.file.cmp(&b.location.file))
+    });
+    let total = sorted.len();
+    if let Some(n) = top {
+        sorted.truncate(n);
+    }
+    writeln!(out, "{} ({})", ansi_wrap(color, label, colorize), total)?;
+    // File-level aggregation: one row per file, joining the per-finding
+    // summaries. Most users care about "which file is on fire", not
+    // "which symbol within it" — file rows match the TODO mock and
+    // the per-finding detail still ships in --json.
+    let mut by_file: BTreeMap<&PathBuf, Vec<&Finding>> = BTreeMap::new();
+    for f in &sorted {
+        by_file.entry(&f.location.file).or_default().push(f);
+    }
+    for (file, fs) in &by_file {
+        let summary = fs
+            .iter()
+            .map(|f| f.short_label())
+            .collect::<Vec<_>>()
+            .join("  ");
+        writeln!(out, "  {}  {summary}", file.display())?;
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct SeverityKey {
+    severity: Severity,
+    hotspot: bool,
+}
+
+impl SeverityKey {
+    fn new(severity: Severity, hotspot: bool) -> Self {
+        Self { severity, hotspot }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
-    use tempfile::TempDir;
+    use crate::core::finding::Location;
+    use std::path::PathBuf;
+
+    fn finding(metric: &str, file: &str, severity: Severity, hotspot: bool) -> Finding {
+        let mut f = Finding::new(
+            metric,
+            Location {
+                file: PathBuf::from(file),
+                line: Some(1),
+                symbol: Some("fn_name".into()),
+            },
+            format!(
+                "{} 42 fn_name (rust)",
+                if metric == "ccn" {
+                    "CCN="
+                } else if metric == "cognitive" {
+                    "Cognitive="
+                } else {
+                    metric
+                }
+            ),
+            metric,
+        );
+        f.severity = severity;
+        f.hotspot = hotspot;
+        f
+    }
+
+    fn record(findings: Vec<Finding>) -> CheckRecord {
+        CheckRecord::new(Some("abc1234".into()), true, "h".into(), findings)
+    }
+
+    fn render_to_string(record: &CheckRecord, filters: &Filters) -> String {
+        let mut buf = Vec::new();
+        render(record, &[], filters, false, &mut buf).unwrap();
+        String::from_utf8(buf).unwrap()
+    }
+
+    fn default_filters() -> Filters {
+        Filters {
+            metric: None,
+            feature: None,
+            severity: None,
+            all: false,
+            hotspot_only: false,
+            top: None,
+        }
+    }
 
     #[test]
-    fn refuses_when_plugin_not_installed() {
-        let dir = TempDir::new().unwrap();
-        let args = CheckArgs {
-            skill: CheckSkill::Overview,
-            format: OutputFormat::Auto,
-            quiet: false,
-            raw: false,
-            claude_args: Vec::new(),
-        };
-        let err = run(dir.path(), &args).unwrap_err();
-        let msg = format!("{err:#}");
+    fn renders_critical_hotspot_above_critical_plain() {
+        let rec = record(vec![
+            finding("ccn", "src/cool.ts", Severity::Critical, false),
+            finding("ccn", "src/hot.ts", Severity::Critical, true),
+        ]);
+        let out = render_to_string(&rec, &default_filters());
+        let hot_idx = out.find("Critical 🔥").expect("hot section exists");
+        let plain_idx = out
+            .find("\nCritical (")
+            .or_else(|| out.find(" Critical ("))
+            .expect("plain critical section exists");
+        // The hot section must precede the plain section.
         assert!(
-            msg.contains("HEAL plugin not installed"),
-            "expected install hint, got: {msg}",
-        );
-        assert!(msg.contains("heal skills install"));
-    }
-
-    #[test]
-    fn prompt_references_skill_md_path() {
-        let prompt = build_prompt(CheckSkill::Hotspots, None, OutputFormat::Markdown);
-        assert!(prompt.contains("check-hotspots"));
-        assert!(prompt.contains("SKILL.md"));
-        assert!(prompt.contains("do not modify"));
-    }
-
-    #[test]
-    fn prompt_includes_language_hint_when_set() {
-        let prompt = build_prompt(
-            CheckSkill::Overview,
-            Some("Japanese"),
-            OutputFormat::Markdown,
-        );
-        assert!(prompt.contains("Write the response in Japanese."));
-    }
-
-    #[test]
-    fn prompt_includes_plain_text_hint_when_format_plain() {
-        let prompt = build_prompt(CheckSkill::Overview, None, OutputFormat::Plain);
-        assert!(prompt.contains("plain text"));
-        assert!(prompt.contains("no markdown"));
-    }
-
-    #[test]
-    fn prompt_omits_format_hint_for_markdown() {
-        let prompt = build_prompt(CheckSkill::Overview, None, OutputFormat::Markdown);
-        assert!(!prompt.contains("plain text"));
-    }
-
-    #[test]
-    fn resolve_format_auto_picks_plain_for_tty() {
-        assert_eq!(
-            resolve_format(OutputFormat::Auto, true),
-            OutputFormat::Plain
-        );
-        assert_eq!(
-            resolve_format(OutputFormat::Auto, false),
-            OutputFormat::Markdown
+            hot_idx < plain_idx,
+            "Critical 🔥 must render before Critical:\n{out}",
         );
     }
 
     #[test]
-    fn user_override_detects_both_argument_forms() {
-        let space = vec!["--output-format".to_string(), "json".to_string()];
-        let equals = vec!["--output-format=stream-json".to_string()];
-        let unrelated = vec!["--model".to_string(), "haiku".to_string()];
-        assert!(user_overrides_output_format(&space));
-        assert!(user_overrides_output_format(&equals));
-        assert!(!user_overrides_output_format(&unrelated));
-        assert!(!user_overrides_output_format(&[]));
-    }
-
-    #[test]
-    fn resolve_format_explicit_overrides_tty() {
-        assert_eq!(
-            resolve_format(OutputFormat::Plain, false),
-            OutputFormat::Plain
+    fn hides_medium_and_ok_without_all_flag() {
+        let rec = record(vec![
+            finding("ccn", "src/hot.ts", Severity::Critical, false),
+            finding("ccn", "src/lukewarm.ts", Severity::Medium, false),
+            finding("ccn", "src/cold.ts", Severity::Ok, false),
+        ]);
+        let out = render_to_string(&rec, &default_filters());
+        assert!(out.contains("Critical"), "should show Critical");
+        assert!(
+            !out.contains("🟡 Medium"),
+            "Medium section should be hidden by default"
         );
-        assert_eq!(
-            resolve_format(OutputFormat::Markdown, true),
-            OutputFormat::Markdown
+        assert!(out.contains("Medium / Ok (2 findings)"));
+    }
+
+    #[test]
+    fn all_flag_shows_medium_and_ok() {
+        let rec = record(vec![
+            finding("ccn", "src/lukewarm.ts", Severity::Medium, false),
+            finding("ccn", "src/cold.ts", Severity::Ok, false),
+        ]);
+        let mut filters = default_filters();
+        filters.all = true;
+        let out = render_to_string(&rec, &filters);
+        assert!(out.contains("Medium"), "Medium must render with --all");
+        assert!(out.contains("Ok"), "Ok must render with --all");
+    }
+
+    #[test]
+    fn metric_filter_drops_other_metrics() {
+        let rec = record(vec![
+            finding("ccn", "src/a.ts", Severity::Critical, false),
+            finding("duplication", "src/b.ts", Severity::Critical, false),
+        ]);
+        let mut filters = default_filters();
+        filters.metric = Some(CheckMetric::Ccn);
+        let out = render_to_string(&rec, &filters);
+        assert!(out.contains("src/a.ts"));
+        assert!(!out.contains("src/b.ts"));
+    }
+
+    #[test]
+    fn feature_filter_keeps_path_prefix_only() {
+        let rec = record(vec![
+            finding("ccn", "src/payments/engine.ts", Severity::Critical, false),
+            finding("ccn", "src/billing/cart.ts", Severity::Critical, false),
+        ]);
+        let mut filters = default_filters();
+        filters.feature = Some("src/payments".to_owned());
+        let out = render_to_string(&rec, &filters);
+        assert!(out.contains("src/payments/engine.ts"));
+        assert!(!out.contains("src/billing/cart.ts"));
+    }
+
+    #[test]
+    fn severity_filter_drops_below_floor() {
+        let rec = record(vec![
+            finding("ccn", "src/hot.ts", Severity::Critical, false),
+            finding("ccn", "src/warm.ts", Severity::High, false),
+            finding("ccn", "src/lukewarm.ts", Severity::Medium, false),
+        ]);
+        let mut filters = default_filters();
+        filters.severity = Some(Severity::High);
+        let out = render_to_string(&rec, &filters);
+        assert!(out.contains("src/hot.ts"));
+        assert!(out.contains("src/warm.ts"));
+        assert!(
+            !out.contains("src/lukewarm.ts"),
+            "Medium must drop with --severity high"
         );
     }
 
     #[test]
-    fn summarize_bash_includes_command() {
-        let input = json!({ "command": "heal status --metric hotspot --json" });
-        let s = summarize_tool_input("Bash", Some(&input));
-        assert!(s.contains("heal status --metric hotspot --json"));
-    }
-
-    #[test]
-    fn summarize_read_uses_basename() {
-        let input = json!({ "file_path": "/abs/path/to/foo.rs" });
-        let s = summarize_tool_input("Read", Some(&input));
-        assert_eq!(s.trim(), "foo.rs");
-    }
-
-    #[test]
-    fn truncate_appends_ellipsis_when_over_max() {
-        assert_eq!(truncate("hello", 10), "hello");
-        let long = "abcdefghijklmnop";
-        let out = truncate(long, 8);
-        assert!(out.ends_with('…'));
-        assert!(out.chars().count() <= 8);
-    }
-
-    #[test]
-    fn handle_event_writes_result_into_buffer() {
-        let event = json!({ "type": "result", "result": "the synthesis" });
-        let mut out = String::new();
-        handle_event(&event, Instant::now(), true, &mut out);
-        assert_eq!(out, "the synthesis");
-    }
-
-    #[test]
-    fn handle_event_separates_repeated_result_chunks() {
-        let mut out = String::new();
-        let started = Instant::now();
-        handle_event(
-            &json!({ "type": "result", "result": "first" }),
-            started,
-            true,
-            &mut out,
+    fn hotspot_flag_surfaces_low_severity_hotspot_files() {
+        let rec = record(vec![
+            finding("hotspot", "src/touch_a_lot.ts", Severity::Ok, true),
+            finding("hotspot", "src/quiet.ts", Severity::Ok, false),
+        ]);
+        let mut filters = default_filters();
+        filters.hotspot_only = true;
+        let out = render_to_string(&rec, &filters);
+        assert!(
+            out.contains("src/touch_a_lot.ts"),
+            "Ok-with-hotspot must surface under --hotspot:\n{out}",
         );
-        handle_event(
-            &json!({ "type": "result", "result": "second" }),
-            started,
-            true,
-            &mut out,
+        assert!(
+            !out.contains("src/quiet.ts"),
+            "Ok-without-hotspot must not appear under --hotspot",
         );
-        assert_eq!(out, "first\nsecond");
     }
 
     #[test]
-    fn handle_event_ignores_non_tool_assistant() {
-        let event = json!({
-            "type": "assistant",
-            "message": { "content": [{ "type": "text", "text": "hi" }] }
-        });
-        let mut out = String::new();
-        handle_event(&event, Instant::now(), true, &mut out);
-        assert!(out.is_empty());
+    fn empty_record_renders_goal_line() {
+        let rec = record(Vec::new());
+        let out = render_to_string(&rec, &default_filters());
+        assert!(out.contains("Goal: 0 Critical, 0 High"));
+        assert!(out.contains("Next:"));
     }
 }
