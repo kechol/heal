@@ -82,6 +82,9 @@ impl LcomObserver {
             let Some(lang) = Language::from_path(&path) else {
                 continue;
             };
+            if !lang.supports_lcom() {
+                continue;
+            }
             let Ok(source) = std::fs::read_to_string(&path) else {
                 continue;
             };
@@ -337,6 +340,16 @@ fn collect_methods<'a>(
     methods
 }
 
+// `node` is unused when only no-LCOM languages (Go/Scala) are enabled.
+#[cfg_attr(
+    not(any(
+        feature = "lang-ts",
+        feature = "lang-js",
+        feature = "lang-py",
+        feature = "lang-rust"
+    )),
+    allow(unused_variables)
+)]
 fn is_method_kind(node: Node<'_>, lang: Language) -> bool {
     match lang {
         #[cfg(feature = "lang-ts")]
@@ -349,14 +362,14 @@ fn is_method_kind(node: Node<'_>, lang: Language) -> bool {
         Language::Python => node.kind() == "function_definition",
         // Go has no class scope; methods attach to types via receivers
         // and live at module scope. Receiver-grouped LCOM lands in
-        // v0.3+. Returning false here makes `analyze_class` see no
-        // methods and emit no Findings.
+        // v0.3+. `Language::supports_lcom` short-circuits before this
+        // is reached, but the variant must still be matched.
         #[cfg(feature = "lang-go")]
         Language::Go => false,
         // Scala spans class / trait / object / case-class / given
         // constructs and uses bare-name field access more than
         // `this.field`. A class-aware LCOM that handles this richness
-        // needs the LSP backend (v0.5+); skip in v0.2.
+        // needs the LSP backend (v0.5+); skipped via `supports_lcom`.
         #[cfg(feature = "lang-scala")]
         Language::Scala => false,
         #[cfg(feature = "lang-rust")]
@@ -457,57 +470,40 @@ const SELF_REF_PY: SelfRefShape = SelfRefShape {
     call_kind: "call",
 };
 
-fn self_ref_shape(lang: Language) -> SelfRefShape {
+// Returns `None` for languages whose LCOM is a no-op (Go, Scala);
+// when neither feature is enabled the function trivially returns
+// `Some`, but we keep the Option so the no-op case stays expressible.
+#[cfg_attr(
+    not(any(feature = "lang-go", feature = "lang-scala")),
+    allow(clippy::unnecessary_wraps)
+)]
+fn self_ref_shape(lang: Language) -> Option<SelfRefShape> {
     match lang {
         #[cfg(feature = "lang-ts")]
-        Language::TypeScript | Language::Tsx => SELF_REF_TS_JS,
+        Language::TypeScript | Language::Tsx => Some(SELF_REF_TS_JS),
         #[cfg(feature = "lang-js")]
-        Language::JavaScript | Language::Jsx => SELF_REF_TS_JS,
+        Language::JavaScript | Language::Jsx => Some(SELF_REF_TS_JS),
         #[cfg(feature = "lang-py")]
-        Language::Python => SELF_REF_PY,
-        // Go's LCOM is a no-op; this branch is unreachable when
-        // `is_method_kind` returns false. Reuse the TS/JS shape so
-        // the match stays total.
+        Language::Python => Some(SELF_REF_PY),
+        // Go has no class scope and Scala's class story needs the LSP
+        // backend; both languages opt out of LCOM via
+        // `Language::supports_lcom`. `is_method_kind` also returns
+        // false, so this branch is only reached if a future caller
+        // forgets the supports_lcom gate.
         #[cfg(feature = "lang-go")]
-        Language::Go => SELF_REF_GO_NOOP,
-        // Scala's LCOM is a no-op (see `is_method_kind`); reuse the
-        // never-receiver shape so the match stays total.
+        Language::Go => None,
         #[cfg(feature = "lang-scala")]
-        Language::Scala => SELF_REF_SCALA_NOOP,
+        Language::Scala => None,
         #[cfg(feature = "lang-rust")]
-        Language::Rust => SELF_REF_RUST,
+        Language::Rust => Some(SELF_REF_RUST),
     }
 }
 
-#[cfg(feature = "lang-scala")]
-const SELF_REF_SCALA_NOOP: SelfRefShape = SelfRefShape {
-    access_kind: "field_expression",
-    receiver_field: "value",
-    is_receiver: never_receiver_scala,
-    property_field: "field",
-    call_kind: "call_expression",
-};
-#[cfg(feature = "lang-scala")]
-fn never_receiver_scala(_: Node<'_>, _: &[u8]) -> bool {
-    false
-}
-
-#[cfg(feature = "lang-go")]
-fn never_receiver(_: Node<'_>, _: &[u8]) -> bool {
-    false
-}
-#[cfg(feature = "lang-go")]
-const SELF_REF_GO_NOOP: SelfRefShape = SelfRefShape {
-    access_kind: "selector_expression",
-    receiver_field: "operand",
-    is_receiver: never_receiver,
-    property_field: "field",
-    call_kind: "call_expression",
-};
-
 fn collect_self_refs(body: Node<'_>, source: &[u8], lang: Language) -> SelfRefs {
-    let shape = self_ref_shape(lang);
     let mut refs = SelfRefs::default();
+    let Some(shape) = self_ref_shape(lang) else {
+        return refs;
+    };
     let mut cursor = body.walk();
     let mut stack = vec![body];
     while let Some(node) = stack.pop() {

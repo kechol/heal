@@ -5,7 +5,9 @@
 
 #[cfg(feature = "lang-ts")]
 use heal_cli::observer::complexity::extract_functions;
+#[cfg(any(feature = "lang-ts", feature = "lang-rust"))]
 use heal_cli::observer::complexity::{analyze, parse, FunctionMetric};
+#[cfg(any(feature = "lang-ts", feature = "lang-rust"))]
 use heal_cli::observer::lang::Language;
 
 #[cfg(feature = "lang-ts")]
@@ -20,6 +22,7 @@ fn analyze_rust(source: &str) -> Vec<FunctionMetric> {
     analyze(&parsed)
 }
 
+#[cfg(any(feature = "lang-ts", feature = "lang-rust"))]
 fn metric<'a>(metrics: &'a [FunctionMetric], name: &str) -> &'a FunctionMetric {
     metrics
         .iter()

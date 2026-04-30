@@ -157,10 +157,12 @@ impl LanguageQueries {
 static TYPESCRIPT_QUERIES: LanguageQueries = LanguageQueries::new();
 #[cfg(feature = "lang-ts")]
 static TSX_QUERIES: LanguageQueries = LanguageQueries::new();
+// JS and JSX share the same grammar (`tree_sitter_javascript::LANGUAGE`)
+// and the same `queries/javascript/*.scm` sources, so a single cache
+// serves both — TSX needs its own because tree-sitter ships a
+// distinct `LANGUAGE_TSX`.
 #[cfg(feature = "lang-js")]
 static JAVASCRIPT_QUERIES: LanguageQueries = LanguageQueries::new();
-#[cfg(feature = "lang-js")]
-static JSX_QUERIES: LanguageQueries = LanguageQueries::new();
 #[cfg(feature = "lang-py")]
 static PYTHON_QUERIES: LanguageQueries = LanguageQueries::new();
 #[cfg(feature = "lang-go")]
@@ -217,6 +219,29 @@ impl Language {
             Self::Scala => "scala",
             #[cfg(feature = "lang-rust")]
             Self::Rust => "rust",
+        }
+    }
+
+    /// Whether this language has a class-aware LCOM implementation in
+    /// the v0.2 tree-sitter-approx backend. Go has no class scope at
+    /// all (methods attach to types via receivers); Scala's class /
+    /// trait / object / case-class richness needs the LSP backend.
+    /// Both lower no Findings and the observer skips parsing entirely.
+    #[must_use]
+    pub fn supports_lcom(self) -> bool {
+        match self {
+            #[cfg(feature = "lang-ts")]
+            Self::TypeScript | Self::Tsx => true,
+            #[cfg(feature = "lang-js")]
+            Self::JavaScript | Self::Jsx => true,
+            #[cfg(feature = "lang-py")]
+            Self::Python => true,
+            #[cfg(feature = "lang-go")]
+            Self::Go => false,
+            #[cfg(feature = "lang-scala")]
+            Self::Scala => false,
+            #[cfg(feature = "lang-rust")]
+            Self::Rust => true,
         }
     }
 
@@ -302,9 +327,7 @@ impl Language {
             #[cfg(feature = "lang-ts")]
             Self::Tsx => &TSX_QUERIES,
             #[cfg(feature = "lang-js")]
-            Self::JavaScript => &JAVASCRIPT_QUERIES,
-            #[cfg(feature = "lang-js")]
-            Self::Jsx => &JSX_QUERIES,
+            Self::JavaScript | Self::Jsx => &JAVASCRIPT_QUERIES,
             #[cfg(feature = "lang-py")]
             Self::Python => &PYTHON_QUERIES,
             #[cfg(feature = "lang-go")]
