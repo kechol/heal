@@ -54,6 +54,10 @@ pub struct MetricsSnapshot {
     /// not "everything was Ok". Display layers should distinguish.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub severity_counts: Option<SeverityCounts>,
+    /// Codebase size at snapshot time, used by the `heal calibrate
+    /// --check` file-count drift trigger. `None` on legacy records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codebase_files: Option<u32>,
     /// Filled in by the snapshot writer when a prior snapshot is available.
     #[serde(default)]
     pub delta: Option<serde_json::Value>,
@@ -71,6 +75,7 @@ impl Default for MetricsSnapshot {
             duplication: None,
             hotspot: None,
             severity_counts: None,
+            codebase_files: None,
             delta: None,
         }
     }
@@ -101,6 +106,45 @@ impl SeverityCounts {
         };
         *bucket = bucket.saturating_add(1);
     }
+
+    /// Inline summary line for human-facing CLI output, e.g.
+    /// `[critical] 3   [high] 12   [medium] 28   [ok] 412`. When
+    /// `colorize` is true the four labels carry ANSI SGR codes (red /
+    /// yellow / cyan / green) suitable for a terminal; pass `false`
+    /// when piping to a file.
+    #[must_use]
+    pub fn render_inline(&self, colorize: bool) -> String {
+        format!(
+            "{} {}   {} {}   {} {}   {} {}",
+            ansi_wrap(ANSI_RED, "[critical]", colorize),
+            self.critical,
+            ansi_wrap(ANSI_YELLOW, "[high]", colorize),
+            self.high,
+            ansi_wrap(ANSI_CYAN, "[medium]", colorize),
+            self.medium,
+            ansi_wrap(ANSI_GREEN, "[ok]", colorize),
+            self.ok,
+        )
+    }
+}
+
+/// ANSI SGR colour codes. `pub(crate)` so the small set of CLI commands
+/// that emit colour can share the constants instead of redefining them.
+pub(crate) const ANSI_RED: &str = "\x1b[31m";
+pub(crate) const ANSI_GREEN: &str = "\x1b[32m";
+pub(crate) const ANSI_YELLOW: &str = "\x1b[33m";
+pub(crate) const ANSI_CYAN: &str = "\x1b[36m";
+
+/// Wrap `text` in `color` (one of `ANSI_*`) followed by the SGR reset
+/// when `enabled`; otherwise return `text` unchanged. Centralises the
+/// `is_terminal()` gating that every colorising call site does.
+#[must_use]
+pub(crate) fn ansi_wrap(color: &str, text: &str, enabled: bool) -> String {
+    if enabled {
+        format!("{color}{text}\x1b[0m")
+    } else {
+        text.to_owned()
+    }
 }
 
 impl MetricsSnapshot {
@@ -114,15 +158,14 @@ impl MetricsSnapshot {
     /// if month files ever exceed double-digit MB we'd want a real reverse-
     /// line iterator over `BufRead`.
     pub fn latest_in(log: &EventLog) -> Result<Option<(Event, Self)>> {
-        Self::latest_in_segments(log.segments()?)
+        Self::latest_in_segments(&log.segments()?)
     }
 
     /// Same as [`Self::latest_in`] over a pre-globbed segment list. Useful
     /// when the caller (e.g. `heal status`) already paid for `segments()` and
     /// wants to avoid re-scanning the directory.
-    pub fn latest_in_segments(mut segments: Vec<Segment>) -> Result<Option<(Event, Self)>> {
-        segments.reverse();
-        for seg in segments {
+    pub fn latest_in_segments(segments: &[Segment]) -> Result<Option<(Event, Self)>> {
+        for seg in segments.iter().rev() {
             let mut buf = String::new();
             seg.open()?
                 .read_to_string(&mut buf)
@@ -208,4 +251,36 @@ pub struct ChangeCouplingDelta {
     pub pairs: i64,
     pub files: i64,
     pub max_pair_count: i64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn severity_counts_render_inline_plain_has_no_ansi() {
+        let c = SeverityCounts {
+            critical: 3,
+            high: 12,
+            medium: 28,
+            ok: 412,
+        };
+        let s = c.render_inline(false);
+        assert!(
+            !s.contains('\x1b'),
+            "plain render must not include ANSI codes"
+        );
+        assert!(s.contains("[critical] 3"));
+        assert!(s.contains("[high] 12"));
+        assert!(s.contains("[medium] 28"));
+        assert!(s.contains("[ok] 412"));
+    }
+
+    #[test]
+    fn severity_counts_render_inline_colored_has_reset_after_each_label() {
+        let c = SeverityCounts::default();
+        let s = c.render_inline(true);
+        // One SGR open + reset per label = 4 resets total.
+        assert_eq!(s.matches("\x1b[0m").count(), 4);
+    }
 }

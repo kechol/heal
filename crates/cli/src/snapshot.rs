@@ -4,7 +4,8 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use crate::core::config::{load_from_project, MetricsConfig};
+use crate::core::calibration::Calibration;
+use crate::core::config::{load_from_project, Config, MetricsConfig};
 use crate::core::eventlog::EventLog;
 use crate::core::snapshot::{
     ChangeCouplingDelta, ChurnDelta, ComplexityDelta, DuplicationDelta, HotspotDelta,
@@ -18,7 +19,7 @@ use crate::observer::duplication::DuplicationReport;
 use crate::observer::hotspot::HotspotReport;
 use anyhow::Result;
 
-use crate::observers::{run_all, ObserverReports};
+use crate::observers::{run_all, tally_severity, ObserverReports};
 
 /// `capture` plus serialization to the opaque JSON used as the `Snapshot`
 /// `data` payload. Both `heal init` and `heal hook commit` write the same
@@ -41,7 +42,7 @@ pub(crate) fn capture(project: &Path) -> Result<MetricsSnapshot> {
     };
     let paths = HealPaths::new(project);
     let reports = run_all(project, &cfg, None);
-    let mut snap = pack(project, &reports);
+    let mut snap = pack(project, &paths, &cfg, &reports);
 
     // Best-effort delta against the previous snapshot. Failures here are
     // non-fatal — the hook still records the new snapshot, just without a
@@ -55,7 +56,30 @@ pub(crate) fn capture(project: &Path) -> Result<MetricsSnapshot> {
     Ok(snap)
 }
 
-pub(crate) fn pack(project: &Path, reports: &ObserverReports) -> MetricsSnapshot {
+/// Build a `MetricsSnapshot` from already-computed observer reports. Loads
+/// `.heal/calibration.toml` (best-effort) so every snapshot carries a
+/// `severity_counts` tally consistent with the project's current
+/// thresholds — a missing or unparseable calibration leaves the field
+/// `None` so downstream readers can distinguish "uncalibrated" from
+/// "everything Ok".
+pub(crate) fn pack(
+    project: &Path,
+    paths: &HealPaths,
+    cfg: &Config,
+    reports: &ObserverReports,
+) -> MetricsSnapshot {
+    let codebase_files = u32::try_from(
+        reports
+            .complexity
+            .totals
+            .files
+            .max(reports.loc.total_files()),
+    )
+    .ok();
+    let severity_counts = Calibration::load(&paths.calibration())
+        .ok()
+        .map(|c| c.with_overrides(cfg))
+        .map(|c| tally_severity(reports, &c));
     MetricsSnapshot {
         version: METRICS_SNAPSHOT_VERSION,
         git_sha: crate::observer::git::head_sha(project),
@@ -65,7 +89,8 @@ pub(crate) fn pack(project: &Path, reports: &ObserverReports) -> MetricsSnapshot
         change_coupling: reports.change_coupling.as_ref().map(to_value),
         duplication: reports.duplication.as_ref().map(to_value),
         hotspot: reports.hotspot.as_ref().map(to_value),
-        severity_counts: None,
+        severity_counts,
+        codebase_files,
         delta: None,
     }
 }

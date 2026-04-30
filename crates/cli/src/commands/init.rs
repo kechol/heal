@@ -13,16 +13,18 @@
 //!      to `snapshots/` as an `init` event.
 
 use std::fmt;
+use std::io::IsTerminal;
 use std::path::Path;
 
 use crate::core::config::Config;
 use crate::core::eventlog::{Event, EventLog};
+use crate::core::snapshot::SeverityCounts;
 use crate::core::HealPaths;
 use crate::observer::git;
 use crate::observer::loc::LocObserver;
 use anyhow::{Context, Result};
 
-use crate::observers::{build_calibration, run_all, tally_severity};
+use crate::observers::{build_calibration, run_all};
 use crate::snapshot;
 
 const HEAL_HOOK_MARKER: &str = "# heal post-commit hook";
@@ -87,7 +89,7 @@ pub fn run(project: &Path, force: bool) -> Result<()> {
     let primary_language = LocObserver::default().scan(project).primary;
     let config_action = write_config(&paths, force)?;
     let hook_action = install_post_commit_hook(project, force)?;
-    run_initial_scan(project, &paths)?;
+    let severity_counts = run_initial_scan(project, &paths)?;
 
     println!("HEAL initialized at {}", paths.root().display());
     if let Some(lang) = primary_language.as_deref() {
@@ -101,6 +103,13 @@ pub fn run(project: &Path, force: bool) -> Result<()> {
     );
     println!("  post-commit hook: {hook_action}");
     println!("  initial snapshot: captured");
+    if let Some(counts) = severity_counts {
+        let colorize = std::io::stdout().is_terminal();
+        println!("  findings:         {}", counts.render_inline(colorize));
+        if counts.critical > 0 {
+            println!("  → goal: bring [critical] to 0 (try `heal check hotspots`)");
+        }
+    }
     println!("next steps:");
     println!("  1. heal skills install   # install Claude plugin");
     println!("  2. heal status           # see current findings");
@@ -169,7 +178,7 @@ fn set_executable(_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<()> {
+fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<Option<SeverityCounts>> {
     // Load the just-written (or pre-existing) config so observers honor
     // the project's enable flags. A config-missing error here would
     // indicate a write_config bug — propagate it rather than silently
@@ -182,14 +191,17 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<()> {
 
     let reports = run_all(project, &cfg, None);
 
+    // Save calibration before packing the snapshot so `pack` picks it
+    // up via `Calibration::load` and stamps `severity_counts` onto the
+    // initial record.
     let calibration = build_calibration(&reports, &cfg);
     calibration.save(&paths.calibration())?;
 
-    let mut snap = snapshot::pack(project, &reports);
-    snap.severity_counts = Some(tally_severity(&reports, &calibration));
+    let snap = snapshot::pack(project, paths, &cfg, &reports);
+    let counts = snap.severity_counts;
     let payload = serde_json::to_value(&snap).expect("MetricsSnapshot serialization is infallible");
     EventLog::new(paths.snapshots_dir()).append(&Event::new("init", payload))?;
-    Ok(())
+    Ok(counts)
 }
 
 #[cfg(test)]
@@ -322,6 +334,7 @@ mod tests {
         run(dir.path(), false).unwrap();
         let paths = HealPaths::new(dir.path());
         assert!(paths.config().exists(), "config.toml must exist");
+        assert!(paths.calibration().exists(), "calibration.toml must exist");
         assert!(paths.snapshots_dir().exists(), "snapshots dir must exist");
         let any_snapshot = std::fs::read_dir(paths.snapshots_dir())
             .unwrap()
@@ -330,6 +343,19 @@ mod tests {
         assert!(
             hook_path(dir.path()).exists(),
             "post-commit hook must be installed",
+        );
+
+        let log = crate::core::eventlog::EventLog::new(paths.snapshots_dir());
+        let (_, metrics) = crate::core::snapshot::MetricsSnapshot::latest_in(&log)
+            .unwrap()
+            .expect("init must write a snapshot record");
+        assert!(
+            metrics.severity_counts.is_some(),
+            "snapshot must carry severity_counts after pack loads calibration.toml"
+        );
+        assert!(
+            metrics.codebase_files.is_some(),
+            "snapshot must carry codebase_files for the recalibrate trigger"
         );
     }
 }

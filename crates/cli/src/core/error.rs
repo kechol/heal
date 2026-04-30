@@ -19,13 +19,6 @@ pub enum Error {
         source: serde_json::Error,
     },
 
-    #[error("invalid state json at {path}: {source}")]
-    StateParse {
-        path: PathBuf,
-        #[source]
-        source: serde_json::Error,
-    },
-
     #[error("io error at {path}: {source}")]
     Io {
         path: PathBuf,

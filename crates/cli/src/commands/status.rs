@@ -25,9 +25,7 @@ pub fn run(project: &Path, json_output: bool, metric: Option<StatusMetric>) -> R
     let snapshot_count = EventLog::iter_segments(snapshot_segments.clone())
         .flatten()
         .count();
-    // Move (not clone) the segment list into `latest_in_segments` — `iter_segments`
-    // above already consumed a clone, so this read is the last user.
-    let latest = MetricsSnapshot::latest_in_segments(snapshot_segments).unwrap_or(None);
+    let latest = MetricsSnapshot::latest_in_segments(&snapshot_segments).unwrap_or(None);
     let delta = latest
         .as_ref()
         .and_then(|(_, m)| m.delta.as_ref())

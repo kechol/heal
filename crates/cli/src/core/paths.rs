@@ -36,14 +36,6 @@ impl HealPaths {
         self.root.join("calibration.toml")
     }
 
-    /// Cool-down / proposal state. `State::load` falls back to defaults
-    /// when the file is missing or corrupt, so a hand-edit gone wrong
-    /// only loses last-fired tracking.
-    #[must_use]
-    pub fn state(&self) -> PathBuf {
-        self.root.join("state.json")
-    }
-
     #[must_use]
     pub fn snapshots_dir(&self) -> PathBuf {
         self.root.join("snapshots")

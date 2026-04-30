@@ -51,6 +51,18 @@ pub enum Command {
         #[command(subcommand)]
         action: SkillsAction,
     },
+    /// Recalibrate codebase-relative Severity thresholds. With
+    /// `--check`, only evaluate auto-detect triggers without writing
+    /// anything (useful from a post-commit nudge).
+    Calibrate {
+        /// Free-form note recorded in the calibration audit log; ignored
+        /// by `--check`.
+        #[arg(long)]
+        reason: Option<String>,
+        /// Evaluate triggers only; don't recalibrate or write any files.
+        #[arg(long, conflicts_with = "reason")]
+        check: bool,
+    },
 }
 
 /// Metric filter for `heal status --metric`. clap renders these in
@@ -237,6 +249,9 @@ impl Cli {
             Command::Logs(args) => commands::logs::run(&project, &args),
             Command::Check(args) => commands::check::run(&project, &args),
             Command::Skills { action } => commands::skills::run(&project, action),
+            Command::Calibrate { reason, check } => {
+                commands::calibrate::run(&project, reason, check)
+            }
         }
     }
 }

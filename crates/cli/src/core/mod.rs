@@ -1,14 +1,15 @@
-//! HEAL core: shared types, config, event-log rotation, and state management.
+//! HEAL core: shared types, config, event-log rotation, and the persisted
+//! `MetricsSnapshot` schema.
 
 pub mod calibration;
 pub mod config;
 pub mod error;
 pub mod eventlog;
 pub mod finding;
+pub mod fs;
 pub mod paths;
 pub mod severity;
 pub mod snapshot;
-pub mod state;
 
 pub use error::{Error, Result};
 pub use paths::HealPaths;

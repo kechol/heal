@@ -12,13 +12,6 @@ fn ensure_creates_all_subdirs() {
 }
 
 #[test]
-fn state_lives_at_heal_root() {
-    let dir = tempfile::tempdir().unwrap();
-    let paths = HealPaths::new(dir.path());
-    assert_eq!(paths.state(), paths.root().join("state.json"));
-}
-
-#[test]
 fn ensure_is_idempotent() {
     let dir = tempfile::tempdir().unwrap();
     let paths = HealPaths::new(dir.path());

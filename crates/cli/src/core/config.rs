@@ -9,6 +9,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::core::error::{Error, Result};
+use crate::core::fs::atomic_write;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -429,21 +430,12 @@ impl Config {
         toml::to_string_pretty(self)
     }
 
-    /// Persist the config (creates parent dirs).
+    /// Persist the config atomically (temp file + rename).
     pub fn save(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| Error::Io {
-                path: parent.to_path_buf(),
-                source: e,
-            })?;
-        }
         let body = self
             .to_toml_string()
             .expect("serialization is infallible for owned data");
-        std::fs::write(path, body).map_err(|e| Error::Io {
-            path: path.to_path_buf(),
-            source: e,
-        })
+        atomic_write(path, body.as_bytes())
     }
 
     /// The exclude-path list every observer should honor: `git.exclude_paths`
