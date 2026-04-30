@@ -128,7 +128,7 @@ pub(super) fn build_fresh_record(
         owned = Calibration::default();
         &owned
     };
-    let findings = classify(&reports, cal_ref);
+    let findings = classify(&reports, cal_ref, cfg);
     CheckRecord::new(head_sha, worktree_clean, config_hash, findings)
 }
 

@@ -112,7 +112,7 @@ fn write_nudge(
         return Ok(());
     };
     let calibration = calibration.with_overrides(cfg);
-    let findings = classify(reports, &calibration);
+    let findings = classify(reports, &calibration, cfg);
 
     // Recalibration banner first so the user sees it before the
     // per-finding lines, even when Critical/High is empty.

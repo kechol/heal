@@ -492,6 +492,46 @@ impl UnionFind {
     }
 }
 
+pub struct LcomFeature;
+
+impl crate::feature::Feature for LcomFeature {
+    fn meta(&self) -> crate::feature::FeatureMeta {
+        crate::feature::FeatureMeta {
+            name: "lcom",
+            version: 1,
+            kind: crate::feature::FeatureKind::Observer,
+        }
+    }
+    fn enabled(&self, cfg: &Config) -> bool {
+        cfg.metrics.lcom.enabled
+    }
+    fn lower(
+        &self,
+        reports: &crate::observers::ObserverReports,
+        _cfg: &Config,
+        cal: &crate::core::calibration::Calibration,
+        hotspot: &crate::feature::HotspotIndex,
+    ) -> Vec<Finding> {
+        use crate::core::severity::Severity;
+        let Some(lc) = reports.lcom.as_ref() else {
+            return Vec::new();
+        };
+        let cal_lcom = cal.calibration.lcom.as_ref();
+        let kept: Vec<_> = lc
+            .classes
+            .iter()
+            .filter(|c| c.cluster_count >= lc.min_cluster_count.max(1))
+            .collect();
+        let mut out = Vec::with_capacity(kept.len());
+        for (class, finding) in kept.iter().zip(lc.into_findings()) {
+            let severity =
+                cal_lcom.map_or(Severity::Ok, |c| c.classify(f64::from(class.cluster_count)));
+            out.push(crate::feature::decorate(finding, severity, hotspot));
+        }
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

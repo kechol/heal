@@ -63,7 +63,7 @@ pub(crate) fn pack(
     let severity_counts = Calibration::load(&paths.calibration())
         .ok()
         .map(|c| c.with_overrides(cfg))
-        .map(|c| tally_severity(reports, &c));
+        .map(|c| tally_severity(reports, &c, cfg));
     MetricsSnapshot {
         version: METRICS_SNAPSHOT_VERSION,
         git_sha: crate::observer::git::head_sha(project),

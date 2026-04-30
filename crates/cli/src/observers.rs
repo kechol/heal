@@ -2,16 +2,14 @@
 //! status` and the post-commit snapshot writer call this so a new
 //! observer or enable-flag only needs editing in one place.
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::core::calibration::{
     Calibration, CalibrationMeta, HotspotCalibration, MetricCalibration, MetricCalibrations,
     FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_DUPLICATION_PCT, STRATEGY_PERCENTILE,
 };
 use crate::core::config::Config;
-use crate::core::finding::{Finding, IntoFindings, Location};
-use crate::core::severity::Severity;
+use crate::core::finding::Finding;
 use crate::core::snapshot::SeverityCounts;
 use crate::observer::change_coupling::{ChangeCouplingObserver, ChangeCouplingReport};
 use crate::observer::churn::{ChurnObserver, ChurnReport};
@@ -23,7 +21,7 @@ use crate::observer::loc::{LocObserver, LocReport};
 
 use crate::cli::StatusMetric;
 
-pub(crate) struct ObserverReports {
+pub struct ObserverReports {
     pub loc: LocReport,
     pub complexity: ComplexityReport,
     pub complexity_observer: ComplexityObserver,
@@ -190,194 +188,30 @@ pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> C
     .with_overrides(config)
 }
 
-/// Compose every observer's [`IntoFindings`] output, then attach the
-/// calibration-derived `severity` and the per-file `hotspot` flag.
+/// Compose every enabled Feature's lowered Findings into one Vec,
+/// with Severity and the per-file hotspot flag attached. Thin wrapper
+/// around [`crate::feature::FeatureRegistry::lower_all`] — the
+/// per-metric branches that used to live inline have moved into
+/// per-Feature `lower()` impls under `crate::observer::*`.
 ///
-/// The shape (set of `Finding.id`s) is identical to what each observer's
-/// `IntoFindings::into_findings()` would produce on its own — this
-/// function only **decorates** the existing findings. Tests pin that
-/// invariant so the cache layer (Phase 1) and the `heal check` renderer
-/// (Phase 2) can rely on `Finding.id` as a stable key.
-///
-/// Severity inputs per metric:
-/// - `ccn` / `cognitive`: per-function value
-/// - `duplication`: max `duplicate_pct` across the block's constituent
-///   files (a block is "as severe as its hottest file")
-/// - `change_coupling`: pair `count`
-/// - `hotspot`: no calibration target — Severity stays `Ok`; the
-///   `hotspot` flag carries the signal
-///
-/// Metrics without a calibration entry (`cal.calibration.<m>` is `None`)
-/// fall back to `Severity::Ok`. The `hotspot` flag is `false` whenever
-/// `cal.calibration.hotspot` is `None`, regardless of score.
-pub(crate) fn classify(reports: &ObserverReports, cal: &Calibration) -> Vec<Finding> {
-    let hotspot_scores = build_hotspot_score_index(reports.hotspot.as_ref());
-    let hotspot_cal = cal.calibration.hotspot.as_ref();
-    let is_hotspot_file = |path: &Path| -> bool {
-        match (hotspot_cal, hotspot_scores.get(path)) {
-            (Some(c), Some(score)) => c.flag(*score),
-            _ => false,
-        }
-    };
-    let any_location_hot = |primary: &Location, locations: &[Location]| -> bool {
-        is_hotspot_file(&primary.file) || locations.iter().any(|l| is_hotspot_file(&l.file))
-    };
-
-    let mut findings = Vec::new();
-
-    // Complexity — drive iteration off the report so per-finding values
-    // are local. Re-uses the trait impl's id derivation (same metric +
-    // location + content_seed).
-    let cal_ccn = cal.calibration.ccn.as_ref();
-    let cal_cog = cal.calibration.cognitive.as_ref();
-    for f in reports.complexity.into_findings() {
-        // Recover the raw value from the same field the trait impl
-        // looked at. The trait emits at most one `ccn` and one
-        // `cognitive` finding per function, so the symbol+line lookup
-        // is unambiguous.
-        let value = lookup_complexity_value(&reports.complexity, &f);
-        let severity = match f.metric.as_str() {
-            "ccn" => cal_ccn.map_or(Severity::Ok, |c| c.classify(value)),
-            "cognitive" => cal_cog.map_or(Severity::Ok, |c| c.classify(value)),
-            _ => Severity::Ok,
-        };
-        findings.push(decorate(f, severity, &is_hotspot_file, &any_location_hot));
-    }
-
-    if let Some(dup) = reports.duplication.as_ref() {
-        let cal_dup = cal.calibration.duplication.as_ref();
-        let pct_by_file: HashMap<&Path, f64> = dup
-            .files
-            .iter()
-            .map(|f| (f.path.as_path(), f.duplicate_pct))
-            .collect();
-        for (block, finding) in dup.blocks.iter().zip(dup.into_findings()) {
-            let max_pct = block
-                .locations
-                .iter()
-                .filter_map(|l| pct_by_file.get(l.path.as_path()).copied())
-                .fold(0.0_f64, f64::max);
-            let severity = cal_dup.map_or(Severity::Ok, |c| c.classify(max_pct));
-            findings.push(decorate(
-                finding,
-                severity,
-                &is_hotspot_file,
-                &any_location_hot,
-            ));
-        }
-    }
-
-    if let Some(cc) = reports.change_coupling.as_ref() {
-        let cal_cc = cal.calibration.change_coupling.as_ref();
-        for (pair, finding) in cc.pairs.iter().zip(cc.into_findings()) {
-            let severity = cal_cc.map_or(Severity::Ok, |c| c.classify(f64::from(pair.count)));
-            findings.push(decorate(
-                finding,
-                severity,
-                &is_hotspot_file,
-                &any_location_hot,
-            ));
-        }
-    }
-
-    if let Some(h) = reports.hotspot.as_ref() {
-        // Hotspot Findings carry the flag itself — Severity is always
-        // `Ok` (TODO §「Severity と Hotspot は直交した属性」).
-        for finding in h.into_findings() {
-            findings.push(decorate(
-                finding,
-                Severity::Ok,
-                &is_hotspot_file,
-                &any_location_hot,
-            ));
-        }
-    }
-
-    if let Some(lc) = reports.lcom.as_ref() {
-        let cal_lcom = cal.calibration.lcom.as_ref();
-        // LCOM iterates classes that survived `min_cluster_count`; the
-        // shape matches `IntoFindings::into_findings` 1:1, so zipping
-        // is safe.
-        let kept: Vec<_> = lc
-            .classes
-            .iter()
-            .filter(|c| c.cluster_count >= lc.min_cluster_count.max(1))
-            .collect();
-        for (class, finding) in kept.iter().zip(lc.into_findings()) {
-            let severity =
-                cal_lcom.map_or(Severity::Ok, |c| c.classify(f64::from(class.cluster_count)));
-            findings.push(decorate(
-                finding,
-                severity,
-                &is_hotspot_file,
-                &any_location_hot,
-            ));
-        }
-    }
-
-    findings
-}
-
-/// Look up the raw value (CCN or Cognitive) that `f` was emitted from.
-/// `f.location` carries the function's `file` + `symbol` + `start_line`,
-/// which together identify exactly one function in the report. Returns
-/// `0.0` if the lookup fails — that drives a `Severity::Ok`
-/// classification, mirroring the "uncalibrated" behaviour and avoiding a
-/// panic on mid-write data races.
-fn lookup_complexity_value(report: &ComplexityReport, f: &Finding) -> f64 {
-    let Some(symbol) = f.location.symbol.as_deref() else {
-        return 0.0;
-    };
-    let line = f.location.line.unwrap_or(0);
-    let Some(file) = report.files.iter().find(|fc| fc.path == f.location.file) else {
-        return 0.0;
-    };
-    let Some(fun) = file
-        .functions
-        .iter()
-        .find(|fun| fun.name == symbol && fun.start_line == line)
-    else {
-        return 0.0;
-    };
-    match f.metric.as_str() {
-        "ccn" => f64::from(fun.ccn),
-        "cognitive" => f64::from(fun.cognitive),
-        _ => 0.0,
-    }
-}
-
-fn build_hotspot_score_index(report: Option<&HotspotReport>) -> HashMap<PathBuf, f64> {
-    report
-        .map(|h| {
-            h.entries
-                .iter()
-                .map(|e| (e.path.clone(), e.score))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn decorate(
-    mut f: Finding,
-    severity: Severity,
-    is_hotspot_file: &dyn Fn(&Path) -> bool,
-    any_location_hot: &dyn Fn(&Location, &[Location]) -> bool,
-) -> Finding {
-    f.severity = severity;
-    f.hotspot = if f.locations.is_empty() {
-        is_hotspot_file(&f.location.file)
-    } else {
-        any_location_hot(&f.location, &f.locations)
-    };
-    f
+/// `cfg` drives per-Feature `enabled` checks. Calibration entries that
+/// are missing (`cal.calibration.<m>` is `None`) fall back to
+/// `Severity::Ok`; the `hotspot` flag is `false` whenever the project
+/// has no hotspot calibration.
+pub(crate) fn classify(reports: &ObserverReports, cal: &Calibration, cfg: &Config) -> Vec<Finding> {
+    crate::feature::FeatureRegistry::builtin().lower_all(reports, cfg, cal)
 }
 
 /// Walk the observer reports with an applied calibration and tally the
 /// resulting Severity per finding. Thin wrapper over [`classify`] so the
 /// snapshot writer's tally and `heal check`'s rendered list never drift.
-pub(crate) fn tally_severity(reports: &ObserverReports, cal: &Calibration) -> SeverityCounts {
+pub(crate) fn tally_severity(
+    reports: &ObserverReports,
+    cal: &Calibration,
+    cfg: &Config,
+) -> SeverityCounts {
     let mut counts = SeverityCounts::default();
-    for f in classify(reports, cal) {
+    for f in classify(reports, cal, cfg) {
         counts.tally(f.severity);
     }
     counts
@@ -391,6 +225,8 @@ fn non_empty(values: &[f64]) -> bool {
 mod tests {
     use super::*;
     use crate::core::calibration::{CalibrationMeta, MetricCalibrations, STRATEGY_PERCENTILE};
+    use crate::core::finding::IntoFindings;
+    use crate::core::severity::Severity;
     use crate::observer::change_coupling::{ChangeCouplingReport, CouplingTotals, FilePair};
     use crate::observer::complexity::{
         ComplexityObserver, ComplexityReport, ComplexityTotals, FileComplexity, FunctionMetric,
@@ -593,7 +429,10 @@ mod tests {
             want.extend(h.into_findings().into_iter().map(|f| f.id));
         }
 
-        let got: HashSet<String> = classify(&reports, &cal).into_iter().map(|f| f.id).collect();
+        let got: HashSet<String> = classify(&reports, &cal, &Config::default())
+            .into_iter()
+            .map(|f| f.id)
+            .collect();
 
         assert_eq!(
             got, want,
@@ -604,7 +443,7 @@ mod tests {
     #[test]
     fn classify_assigns_severity_per_metric() {
         let (reports, cal) = fixture();
-        let findings = classify(&reports, &cal);
+        let findings = classify(&reports, &cal, &Config::default());
 
         let by_metric_severity = |metric: &str, severity: Severity| {
             findings
@@ -633,7 +472,7 @@ mod tests {
     #[test]
     fn classify_flags_hotspot_for_files_above_p90() {
         let (reports, cal) = fixture();
-        let findings = classify(&reports, &cal);
+        let findings = classify(&reports, &cal, &Config::default());
 
         // src/hot.rs score=640 ≥ p90=100 → hotspot. src/cold.rs score=8 < p90.
         let hot_path = PathBuf::from("src/hot.rs");
@@ -679,7 +518,7 @@ mod tests {
             },
             calibration: MetricCalibrations::default(),
         };
-        let findings = classify(&reports, &bare);
+        let findings = classify(&reports, &bare, &Config::default());
         assert!(
             findings.iter().all(|f| f.severity == Severity::Ok),
             "without calibration, every Finding must be Severity::Ok",
@@ -693,8 +532,8 @@ mod tests {
     #[test]
     fn tally_severity_matches_classify_count() {
         let (reports, cal) = fixture();
-        let counts = tally_severity(&reports, &cal);
-        let findings = classify(&reports, &cal);
+        let counts = tally_severity(&reports, &cal, &Config::default());
+        let findings = classify(&reports, &cal, &Config::default());
 
         let total_classified = counts.critical + counts.high + counts.medium + counts.ok;
         assert_eq!(

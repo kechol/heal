@@ -15,8 +15,8 @@ mod cognitive;
 mod observer;
 
 pub use observer::{
-    ComplexityMetric, ComplexityObserver, ComplexityReport, ComplexityTotals, FileComplexity,
-    FunctionFinding,
+    ComplexityFeature, ComplexityMetric, ComplexityObserver, ComplexityReport, ComplexityTotals,
+    FileComplexity, FunctionFinding,
 };
 
 pub(super) const LOGICAL_OPERATORS: &[&str] = &["&&", "||", "??"];

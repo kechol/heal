@@ -207,3 +207,70 @@ impl IntoFindings for ComplexityReport {
         out
     }
 }
+
+/// Feature wrapper covering both CCN and Cognitive dimensions of
+/// [`ComplexityReport`]. The underlying scan runs once per project
+/// (it parses every supported file with tree-sitter); per-metric
+/// toggles `cfg.metrics.ccn.enabled` / `cfg.metrics.cognitive.enabled`
+/// gate the respective Findings inside `lower`.
+pub struct ComplexityFeature;
+
+impl crate::feature::Feature for ComplexityFeature {
+    fn meta(&self) -> crate::feature::FeatureMeta {
+        crate::feature::FeatureMeta {
+            name: "complexity",
+            version: 1,
+            kind: crate::feature::FeatureKind::Observer,
+        }
+    }
+    fn enabled(&self, cfg: &Config) -> bool {
+        cfg.metrics.ccn.enabled || cfg.metrics.cognitive.enabled
+    }
+    fn lower(
+        &self,
+        reports: &crate::observers::ObserverReports,
+        cfg: &Config,
+        cal: &crate::core::calibration::Calibration,
+        hotspot: &crate::feature::HotspotIndex,
+    ) -> Vec<Finding> {
+        use crate::core::severity::Severity;
+        let cal_ccn = cal.calibration.ccn.as_ref();
+        let cal_cog = cal.calibration.cognitive.as_ref();
+        let mut out = Vec::new();
+        for file in &reports.complexity.files {
+            for fun in &file.functions {
+                let span = fun.end_line.saturating_sub(fun.start_line);
+                let location = Location {
+                    file: file.path.clone(),
+                    line: Some(fun.start_line),
+                    symbol: Some(fun.name.clone()),
+                };
+                if cfg.metrics.ccn.enabled && fun.ccn > 0 {
+                    let f = Finding::new(
+                        "ccn",
+                        location.clone(),
+                        format!("CCN={} {} ({})", fun.ccn, fun.name, file.language),
+                        &format!("ccn:{span}"),
+                    );
+                    let sev = cal_ccn.map_or(Severity::Ok, |c| c.classify(f64::from(fun.ccn)));
+                    out.push(crate::feature::decorate(f, sev, hotspot));
+                }
+                if cfg.metrics.cognitive.enabled && fun.cognitive > 0 {
+                    let f = Finding::new(
+                        "cognitive",
+                        location,
+                        format!(
+                            "Cognitive={} {} ({})",
+                            fun.cognitive, fun.name, file.language
+                        ),
+                        &format!("cognitive:{span}"),
+                    );
+                    let sev =
+                        cal_cog.map_or(Severity::Ok, |c| c.classify(f64::from(fun.cognitive)));
+                    out.push(crate::feature::decorate(f, sev, hotspot));
+                }
+            }
+        }
+        out
+    }
+}

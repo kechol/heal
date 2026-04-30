@@ -428,3 +428,37 @@ fn compute_file_sums(pairs: &[FilePair]) -> Vec<FileSum> {
     file_sums.sort_by(|x, y| y.sum.cmp(&x.sum).then_with(|| x.path.cmp(&y.path)));
     file_sums
 }
+
+pub struct ChangeCouplingFeature;
+
+impl crate::feature::Feature for ChangeCouplingFeature {
+    fn meta(&self) -> crate::feature::FeatureMeta {
+        crate::feature::FeatureMeta {
+            name: "change_coupling",
+            version: 1,
+            kind: crate::feature::FeatureKind::Observer,
+        }
+    }
+    fn enabled(&self, cfg: &Config) -> bool {
+        cfg.metrics.change_coupling.enabled
+    }
+    fn lower(
+        &self,
+        reports: &crate::observers::ObserverReports,
+        _cfg: &Config,
+        cal: &crate::core::calibration::Calibration,
+        hotspot: &crate::feature::HotspotIndex,
+    ) -> Vec<Finding> {
+        use crate::core::severity::Severity;
+        let Some(cc) = reports.change_coupling.as_ref() else {
+            return Vec::new();
+        };
+        let cal_cc = cal.calibration.change_coupling.as_ref();
+        let mut out = Vec::with_capacity(cc.pairs.len());
+        for (pair, finding) in cc.pairs.iter().zip(cc.into_findings()) {
+            let severity = cal_cc.map_or(Severity::Ok, |c| c.classify(f64::from(pair.count)));
+            out.push(crate::feature::decorate(finding, severity, hotspot));
+        }
+        out
+    }
+}

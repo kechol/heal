@@ -519,3 +519,47 @@ fn detect_blocks(files: &[FileTokens], window: usize) -> Vec<InternalBlock> {
 
     blocks
 }
+
+pub struct DuplicationFeature;
+
+impl crate::feature::Feature for DuplicationFeature {
+    fn meta(&self) -> crate::feature::FeatureMeta {
+        crate::feature::FeatureMeta {
+            name: "duplication",
+            version: 1,
+            kind: crate::feature::FeatureKind::Observer,
+        }
+    }
+    fn enabled(&self, cfg: &Config) -> bool {
+        cfg.metrics.duplication.enabled
+    }
+    fn lower(
+        &self,
+        reports: &crate::observers::ObserverReports,
+        _cfg: &Config,
+        cal: &crate::core::calibration::Calibration,
+        hotspot: &crate::feature::HotspotIndex,
+    ) -> Vec<Finding> {
+        use crate::core::severity::Severity;
+        let Some(dup) = reports.duplication.as_ref() else {
+            return Vec::new();
+        };
+        let cal_dup = cal.calibration.duplication.as_ref();
+        let pct_by_file: HashMap<&Path, f64> = dup
+            .files
+            .iter()
+            .map(|f| (f.path.as_path(), f.duplicate_pct))
+            .collect();
+        let mut out = Vec::with_capacity(dup.blocks.len());
+        for (block, finding) in dup.blocks.iter().zip(dup.into_findings()) {
+            let max_pct = block
+                .locations
+                .iter()
+                .filter_map(|l| pct_by_file.get(l.path.as_path()).copied())
+                .fold(0.0_f64, f64::max);
+            let severity = cal_dup.map_or(Severity::Ok, |c| c.classify(max_pct));
+            out.push(crate::feature::decorate(finding, severity, hotspot));
+        }
+        out
+    }
+}
