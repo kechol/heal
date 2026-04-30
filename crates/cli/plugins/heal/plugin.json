@@ -23,6 +23,7 @@
     "skills/check-hotspots",
     "skills/check-complexity",
     "skills/check-duplication",
-    "skills/check-coupling"
+    "skills/check-coupling",
+    "skills/heal-fix"
   ]
 }
