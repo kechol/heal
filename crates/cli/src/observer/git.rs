@@ -16,6 +16,23 @@ pub fn head_sha(root: &Path) -> Option<String> {
     Some(oid.to_string())
 }
 
+/// True iff the working tree has no uncommitted changes (no untracked,
+/// modified, staged, or conflicted entries). `None` when `root` isn't a
+/// git repo — callers (`heal check` cache layer) treat that as "can't
+/// claim cleanliness, so don't reuse a clean cache".
+#[must_use]
+pub fn worktree_clean(root: &Path) -> Option<bool> {
+    let repo = Repository::discover(root).ok()?;
+    let mut opts = git2::StatusOptions::new();
+    // `include_ignored = false` is the default; we mirror `git status` —
+    // untracked counts as dirty so a half-applied refactor isn't
+    // miscategorised as a reusable clean check.
+    opts.include_untracked(true);
+    opts.include_ignored(false);
+    let statuses = repo.statuses(Some(&mut opts)).ok()?;
+    Some(statuses.is_empty())
+}
+
 /// Locate the `hooks/` directory of the git repository containing `root`.
 /// Returns `None` when `root` isn't inside a git repo. Uses the common
 /// gitdir so worktrees install hooks alongside the main repo's hooks.

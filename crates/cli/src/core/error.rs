@@ -19,6 +19,13 @@ pub enum Error {
         source: serde_json::Error,
     },
 
+    #[error("invalid cache record at {path}: {source}")]
+    CacheParse {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
     #[error("io error at {path}: {source}")]
     Io {
         path: PathBuf,
