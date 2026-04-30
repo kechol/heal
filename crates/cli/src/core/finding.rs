@@ -19,6 +19,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+pub use crate::core::severity::Severity;
+
 /// FNV-1a 64-bit constants — same prime/offset as
 /// `observer::duplication`. We do not use `std::hash::DefaultHasher`
 /// because it is explicitly unstable across Rust releases (see
@@ -26,20 +28,6 @@ use serde::{Deserialize, Serialize};
 /// every recorded id.
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x100_0000_01b3;
-
-/// Severity classes used by Calibration. Ordered `Ok < Medium < High <
-/// Critical` so per-file aggregation can use `cmp::max`.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default, Hash,
-)]
-#[serde(rename_all = "lowercase")]
-pub enum Severity {
-    #[default]
-    Ok,
-    Medium,
-    High,
-    Critical,
-}
 
 /// A single point in the codebase a finding refers to. `line` and
 /// `symbol` are optional because not every metric has them — hotspot
@@ -170,22 +158,6 @@ mod tests {
             line,
             symbol: symbol.map(str::to_owned),
         }
-    }
-
-    #[test]
-    fn severity_ord_runs_ok_to_critical() {
-        assert!(Severity::Ok < Severity::Medium);
-        assert!(Severity::Medium < Severity::High);
-        assert!(Severity::High < Severity::Critical);
-        assert_eq!(
-            Severity::Critical,
-            std::cmp::max(Severity::Ok, Severity::Critical)
-        );
-    }
-
-    #[test]
-    fn severity_default_is_ok() {
-        assert_eq!(Severity::default(), Severity::Ok);
     }
 
     #[test]

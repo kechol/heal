@@ -7,8 +7,10 @@
 //!   3. Write a default `config.toml` (skipped when one already exists
 //!      unless `--force`).
 //!   4. Install a `post-commit` git hook that calls `heal hook commit`.
-//!   5. Run an initial scan and append it to `snapshots/` as an `init`
-//!      event so `heal status` has something to compare against.
+//!   5. Run an initial scan, derive `.heal/calibration.toml` from its
+//!      distribution, then append a `MetricsSnapshot` (with
+//!      `severity_counts` already classified by the new calibration)
+//!      to `snapshots/` as an `init` event.
 
 use std::fmt;
 use std::path::Path;
@@ -20,6 +22,7 @@ use crate::observer::git;
 use crate::observer::loc::LocObserver;
 use anyhow::{Context, Result};
 
+use crate::observers::{build_calibration, run_all, tally_severity};
 use crate::snapshot;
 
 const HEAL_HOOK_MARKER: &str = "# heal post-commit hook";
@@ -167,7 +170,24 @@ fn set_executable(_path: &Path) -> Result<()> {
 }
 
 fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<()> {
-    let payload = snapshot::capture_value(project)?;
+    // Load the just-written (or pre-existing) config so observers honor
+    // the project's enable flags. A config-missing error here would
+    // indicate a write_config bug — propagate it rather than silently
+    // falling back to defaults.
+    let cfg = match crate::core::config::load_from_project(project) {
+        Ok(c) => c,
+        Err(crate::core::Error::ConfigMissing(_)) => Config::default(),
+        Err(e) => return Err(e.into()),
+    };
+
+    let reports = run_all(project, &cfg, None);
+
+    let calibration = build_calibration(&reports, &cfg);
+    calibration.save(&paths.calibration())?;
+
+    let mut snap = snapshot::pack(project, &reports);
+    snap.severity_counts = Some(tally_severity(&reports, &calibration));
+    let payload = serde_json::to_value(&snap).expect("MetricsSnapshot serialization is infallible");
     EventLog::new(paths.snapshots_dir()).append(&Event::new("init", payload))?;
     Ok(())
 }

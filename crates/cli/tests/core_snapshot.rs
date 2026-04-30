@@ -17,6 +17,7 @@ fn metrics_snapshot_round_trips_through_writer() {
         change_coupling: None,
         duplication: None,
         hotspot: None,
+        severity_counts: None,
         delta: None,
     };
     let event = Event {

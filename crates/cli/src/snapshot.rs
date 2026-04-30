@@ -55,7 +55,7 @@ pub(crate) fn capture(project: &Path) -> Result<MetricsSnapshot> {
     Ok(snap)
 }
 
-fn pack(project: &Path, reports: &ObserverReports) -> MetricsSnapshot {
+pub(crate) fn pack(project: &Path, reports: &ObserverReports) -> MetricsSnapshot {
     MetricsSnapshot {
         version: METRICS_SNAPSHOT_VERSION,
         git_sha: crate::observer::git::head_sha(project),
@@ -65,6 +65,7 @@ fn pack(project: &Path, reports: &ObserverReports) -> MetricsSnapshot {
         change_coupling: reports.change_coupling.as_ref().map(to_value),
         duplication: reports.duplication.as_ref().map(to_value),
         hotspot: reports.hotspot.as_ref().map(to_value),
+        severity_counts: None,
         delta: None,
     }
 }

@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::error::{Error, Result};
 use crate::core::eventlog::{Event, EventLog, Segment};
+use crate::core::severity::Severity;
 
 /// Current `MetricsSnapshot::version`. Bump on breaking field renames so the
 /// reader can skip records it can't decode rather than failing the whole iter.
@@ -47,6 +48,12 @@ pub struct MetricsSnapshot {
     pub duplication: Option<serde_json::Value>,
     #[serde(default)]
     pub hotspot: Option<serde_json::Value>,
+    /// Severity tally produced by Calibration. Older snapshots predate
+    /// this field — `None` means "the writer hadn't classified yet"
+    /// (legacy, or the project is missing `.heal/calibration.toml`),
+    /// not "everything was Ok". Display layers should distinguish.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub severity_counts: Option<SeverityCounts>,
     /// Filled in by the snapshot writer when a prior snapshot is available.
     #[serde(default)]
     pub delta: Option<serde_json::Value>,
@@ -63,8 +70,36 @@ impl Default for MetricsSnapshot {
             change_coupling: None,
             duplication: None,
             hotspot: None,
+            severity_counts: None,
             delta: None,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SeverityCounts {
+    #[serde(default)]
+    pub critical: u32,
+    #[serde(default)]
+    pub high: u32,
+    #[serde(default)]
+    pub medium: u32,
+    #[serde(default)]
+    pub ok: u32,
+}
+
+impl SeverityCounts {
+    /// Tally one classification result. Saturating-add so a 4-billion
+    /// finding codebase doesn't wrap to 0 (it would have other
+    /// problems by then).
+    pub fn tally(&mut self, severity: Severity) {
+        let bucket = match severity {
+            Severity::Critical => &mut self.critical,
+            Severity::High => &mut self.high,
+            Severity::Medium => &mut self.medium,
+            Severity::Ok => &mut self.ok,
+        };
+        *bucket = bucket.saturating_add(1);
     }
 }
 

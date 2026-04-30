@@ -100,74 +100,129 @@ impl DuplicationObserver {
             return report;
         }
 
-        let blocks = detect_blocks(&files, window);
-        let mut report_blocks: Vec<DuplicateBlock> = blocks
-            .into_iter()
-            .map(|b| {
-                let locations = b
-                    .locations
-                    .into_iter()
-                    .map(|(fi, start)| {
-                        let f = &files[fi];
-                        let start_line = f.lines.get(start).copied().unwrap_or(0);
-                        let end_line = f
-                            .lines
-                            .get(start + b.token_count - 1)
-                            .copied()
-                            .unwrap_or(start_line);
-                        DuplicateLocation {
-                            path: f.path.clone(),
-                            start_line,
-                            end_line,
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                let mut block = DuplicateBlock {
-                    token_count: u32::try_from(b.token_count).unwrap_or(u32::MAX),
-                    locations,
-                };
-                block.locations.sort_by(|x, y| {
-                    x.path
-                        .cmp(&y.path)
-                        .then_with(|| x.start_line.cmp(&y.start_line))
-                });
-                block
-            })
-            .collect();
-        report_blocks.sort_by(|a, b| {
-            b.token_count
-                .cmp(&a.token_count)
-                .then_with(|| a.locations[0].path.cmp(&b.locations[0].path))
-                .then_with(|| a.locations[0].start_line.cmp(&b.locations[0].start_line))
-        });
-
-        let duplicate_tokens: usize = report_blocks
-            .iter()
-            .map(|b| b.token_count as usize * b.locations.len())
-            .sum();
-        let mut affected: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
-        for b in &report_blocks {
-            for loc in &b.locations {
-                affected.insert(loc.path.clone());
-            }
-        }
+        let report_blocks = assemble_report_blocks(detect_blocks(&files, window), &files);
+        let (files_summary, affected_count, duplicate_tokens) =
+            file_level_rollup(&files, &report_blocks);
 
         report.totals = DuplicationTotals {
             duplicate_blocks: report_blocks.len(),
             duplicate_tokens,
-            files_affected: affected.len(),
+            files_affected: affected_count,
         };
         report.blocks = report_blocks;
+        report.files = files_summary;
         report
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+/// Lift `detect_blocks`'s `(file_index, start_token)` locations into
+/// the public `DuplicateBlock` shape and sort everything for stable
+/// output: each block's locations canonicalise by `(path, start_line)`,
+/// and the block list itself sorts by `token_count` desc then by the
+/// first location's path/line.
+fn assemble_report_blocks(blocks: Vec<InternalBlock>, files: &[FileTokens]) -> Vec<DuplicateBlock> {
+    let mut report_blocks: Vec<DuplicateBlock> = blocks
+        .into_iter()
+        .map(|b| {
+            let locations = b
+                .locations
+                .into_iter()
+                .map(|(fi, start)| {
+                    let f = &files[fi];
+                    let start_line = f.lines.get(start).copied().unwrap_or(0);
+                    let end_line = f
+                        .lines
+                        .get(start + b.token_count - 1)
+                        .copied()
+                        .unwrap_or(start_line);
+                    DuplicateLocation {
+                        path: f.path.clone(),
+                        start_line,
+                        end_line,
+                    }
+                })
+                .collect::<Vec<_>>();
+            let mut block = DuplicateBlock {
+                token_count: u32::try_from(b.token_count).unwrap_or(u32::MAX),
+                locations,
+            };
+            block.locations.sort_by(|x, y| {
+                x.path
+                    .cmp(&y.path)
+                    .then_with(|| x.start_line.cmp(&y.start_line))
+            });
+            block
+        })
+        .collect();
+    report_blocks.sort_by(|a, b| {
+        b.token_count
+            .cmp(&a.token_count)
+            .then_with(|| a.locations[0].path.cmp(&b.locations[0].path))
+            .then_with(|| a.locations[0].start_line.cmp(&b.locations[0].start_line))
+    });
+    report_blocks
+}
+
+/// Roll block-level locations up to a per-file summary plus the
+/// global `(affected_count, duplicate_tokens)` totals. Every scanned
+/// file appears in the summary (zero-dup included) so calibration
+/// distributions see the full sample.
+fn file_level_rollup(
+    files: &[FileTokens],
+    blocks: &[DuplicateBlock],
+) -> (Vec<FileDuplication>, usize, usize) {
+    let mut dup_tokens_by_file: std::collections::BTreeMap<PathBuf, u32> =
+        std::collections::BTreeMap::new();
+    let mut duplicate_tokens: usize = 0;
+    for b in blocks {
+        duplicate_tokens += b.token_count as usize * b.locations.len();
+        for loc in &b.locations {
+            let entry = dup_tokens_by_file.entry(loc.path.clone()).or_insert(0);
+            *entry = entry.saturating_add(b.token_count);
+        }
+    }
+
+    let mut summary: Vec<FileDuplication> = files
+        .iter()
+        .map(|f| {
+            let total_tokens = u32::try_from(f.hashes.len()).unwrap_or(u32::MAX);
+            let dt = dup_tokens_by_file
+                .get(&f.path)
+                .copied()
+                .unwrap_or(0)
+                .min(total_tokens);
+            let pct = if total_tokens == 0 {
+                0.0
+            } else {
+                f64::from(dt) / f64::from(total_tokens) * 100.0
+            };
+            FileDuplication {
+                path: f.path.clone(),
+                total_tokens,
+                duplicate_tokens: dt,
+                duplicate_pct: pct,
+            }
+        })
+        .collect();
+    summary.sort_by(|a, b| a.path.cmp(&b.path));
+
+    (summary, dup_tokens_by_file.len(), duplicate_tokens)
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct DuplicationReport {
     pub blocks: Vec<DuplicateBlock>,
+    /// Per-file roll-up. One entry per scanned file (even those with
+    /// zero duplication), sorted by path. `duplicate_pct` is the
+    /// calibration input — see TODO §「v0.2 範囲のメトリクス対象 /
+    /// Duplication % / 30%」.
+    #[serde(default)]
+    pub files: Vec<FileDuplication>,
     pub totals: DuplicationTotals,
     pub min_tokens: u32,
 }
+
+impl Eq for DuplicationReport {}
 
 impl DuplicationReport {
     /// Top-N duplicate blocks by token count (descending). The underlying
@@ -199,6 +254,16 @@ pub struct DuplicateLocation {
     pub start_line: u32,
     pub end_line: u32,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FileDuplication {
+    pub path: PathBuf,
+    pub total_tokens: u32,
+    pub duplicate_tokens: u32,
+    pub duplicate_pct: f64,
+}
+
+impl Eq for FileDuplication {}
 
 impl Observer for DuplicationObserver {
     type Output = DuplicationReport;

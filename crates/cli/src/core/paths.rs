@@ -26,6 +26,16 @@ impl HealPaths {
         self.root.join("config.toml")
     }
 
+    /// Calibration breaks (`p50` / `p75` / `p90` / `p95` per metric +
+    /// per-metric `floor_critical`). Written by `heal init` /
+    /// `heal calibrate`; read by every layer that classifies Severity.
+    /// Hand-editing is discouraged — only `floor_critical` overrides
+    /// belong in `config.toml` instead.
+    #[must_use]
+    pub fn calibration(&self) -> PathBuf {
+        self.root.join("calibration.toml")
+    }
+
     /// Cool-down / proposal state. `State::load` falls back to defaults
     /// when the file is missing or corrupt, so a hand-edit gone wrong
     /// only loses last-fired tracking.

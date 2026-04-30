@@ -77,7 +77,7 @@ pub struct MetricsConfig {
     #[serde(default = "default_enabled")]
     pub ccn: CcnConfig,
     #[serde(default = "default_enabled")]
-    pub cognitive: ToggleConfig,
+    pub cognitive: CognitiveConfig,
 }
 
 impl Eq for MetricsConfig {}
@@ -94,7 +94,7 @@ impl Default for MetricsConfig {
             change_coupling: ChangeCouplingConfig::enabled(),
             duplication: DuplicationConfig::enabled(),
             ccn: CcnConfig::enabled(),
-            cognitive: ToggleConfig::enabled(),
+            cognitive: CognitiveConfig::enabled(),
         }
     }
 }
@@ -168,15 +168,24 @@ fn default_enabled<T: Toggle>() -> T {
     T::enabled()
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct ToggleConfig {
+pub struct CognitiveConfig {
     pub enabled: bool,
+    /// Calibration override — see `core::calibration::FLOOR_COGNITIVE`
+    /// for the v0.2 default (50, `SonarQube` Critical baseline).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor_critical: Option<f64>,
 }
 
-impl Toggle for ToggleConfig {
+impl Eq for CognitiveConfig {}
+
+impl Toggle for CognitiveConfig {
     fn enabled() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            floor_critical: None,
+        }
     }
 }
 
@@ -238,7 +247,7 @@ fn default_weight() -> f64 {
     1.0
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ChangeCouplingConfig {
     pub enabled: bool,
@@ -247,7 +256,14 @@ pub struct ChangeCouplingConfig {
     /// Per-metric override for `metrics.top_n` — most-coupled pairs list.
     #[serde(default)]
     pub top_n: Option<usize>,
+    /// Calibration override. `min_coupling` already serves as the
+    /// scan-time floor, so the absolute Critical floor here is rare in
+    /// practice — leave `None` to defer entirely to percentile breaks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor_critical: Option<f64>,
 }
+
+impl Eq for ChangeCouplingConfig {}
 
 impl Default for ChangeCouplingConfig {
     fn default() -> Self {
@@ -255,6 +271,7 @@ impl Default for ChangeCouplingConfig {
             enabled: false,
             min_coupling: default_min_coupling(),
             top_n: None,
+            floor_critical: None,
         }
     }
 }
@@ -265,6 +282,7 @@ impl Toggle for ChangeCouplingConfig {
             enabled: true,
             min_coupling: default_min_coupling(),
             top_n: None,
+            floor_critical: None,
         }
     }
 }
@@ -273,7 +291,7 @@ fn default_min_coupling() -> u32 {
     3
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct DuplicationConfig {
     pub enabled: bool,
@@ -282,7 +300,13 @@ pub struct DuplicationConfig {
     /// Per-metric override for `metrics.top_n` — largest duplicate blocks.
     #[serde(default)]
     pub top_n: Option<usize>,
+    /// Calibration override (per-file duplicate %). v0.2 default is
+    /// `core::calibration::FLOOR_DUPLICATION_PCT` (30%).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor_critical: Option<f64>,
 }
+
+impl Eq for DuplicationConfig {}
 
 impl Default for DuplicationConfig {
     fn default() -> Self {
@@ -290,6 +314,7 @@ impl Default for DuplicationConfig {
             enabled: false,
             min_tokens: default_min_tokens(),
             top_n: None,
+            floor_critical: None,
         }
     }
 }
@@ -300,6 +325,7 @@ impl Toggle for DuplicationConfig {
             enabled: true,
             min_tokens: default_min_tokens(),
             top_n: None,
+            floor_critical: None,
         }
     }
 }
@@ -308,7 +334,7 @@ fn default_min_tokens() -> u32 {
     50
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CcnConfig {
     pub enabled: bool,
@@ -318,7 +344,13 @@ pub struct CcnConfig {
     /// Cognitive listings since they share the "complexity:" status section.
     #[serde(default)]
     pub top_n: Option<usize>,
+    /// Calibration override — see `core::calibration::FLOOR_CCN` for the
+    /// v0.2 default (25, `McCabe`'s "untestable" threshold).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor_critical: Option<f64>,
 }
+
+impl Eq for CcnConfig {}
 
 impl Default for CcnConfig {
     fn default() -> Self {
@@ -326,6 +358,7 @@ impl Default for CcnConfig {
             enabled: false,
             warn_delta_pct: default_warn_delta_pct(),
             top_n: None,
+            floor_critical: None,
         }
     }
 }
@@ -336,6 +369,7 @@ impl Toggle for CcnConfig {
             enabled: true,
             warn_delta_pct: default_warn_delta_pct(),
             top_n: None,
+            floor_critical: None,
         }
     }
 }
