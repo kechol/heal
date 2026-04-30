@@ -97,6 +97,11 @@ pub fn run(project: &Path, json_output: bool, metric: Option<StatusMetric>) -> R
             print_hotspot_summary(report, metrics.top_n_hotspot());
         }
     }
+    if matches_metric(metric, StatusMetric::Lcom) {
+        if let Some(report) = reports.lcom.as_ref() {
+            print_lcom_summary(report, metrics.top_n_lcom());
+        }
+    }
     if let (Some((snap, _)), Some(d)) = (latest.as_ref(), delta.as_ref()) {
         print_delta_summary(snap, d, metric);
     }
@@ -501,6 +506,35 @@ fn print_hotspot_summary(report: &HotspotReport, top_n: usize) {
             entry.path.display(),
             entry.ccn_sum,
             entry.churn_commits,
+        );
+    }
+}
+
+fn print_lcom_summary(report: &crate::observer::lcom::LcomReport, top_n: usize) {
+    println!();
+    if report.classes.is_empty() {
+        println!("  lcom: no classes scanned (TS / Rust class scope only in v0.2)");
+        return;
+    }
+    println!(
+        "  lcom: {} classes scanned, {} ≥ min_cluster_count={} (max clusters {})",
+        report.totals.classes_scanned,
+        report.totals.classes_with_lcom,
+        report.min_cluster_count,
+        report.totals.max_cluster_count,
+    );
+    if report.totals.classes_with_lcom == 0 {
+        return;
+    }
+    println!("  most-split classes (cluster_count × method_count):");
+    for class in report.worst_n(top_n) {
+        println!(
+            "    - {:>3} clusters / {:>3} methods  {}:{:<4}  {}",
+            class.cluster_count,
+            class.method_count,
+            class.file.display(),
+            class.start_line,
+            class.class_name,
         );
     }
 }
