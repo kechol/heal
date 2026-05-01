@@ -17,7 +17,7 @@ Before you start.
 - macOS or Linux
 - A git repository to evaluate
 - (Optional) [Claude Code](https://claude.com/code) CLI for the bundled
-  `/heal-code-check` and `/heal-code-fix` skills
+  `/heal-code-review` and `/heal-code-patch` skills
 
 ## 1. Install
 
@@ -83,8 +83,8 @@ Renders the per-file Severity-grouped TODO list and writes
 Hand the cache to the bundled skills — one reads, one writes.
 
 ```sh
-claude /heal-code-check    # read-only architectural audit
-claude /heal-code-fix      # drain the cache, one finding per commit
+claude /heal-code-review    # read-only architectural audit
+claude /heal-code-patch      # drain the cache, one finding per commit
 ```
 
 Skill contracts: [Claude plugin](/heal/claude-plugin/).

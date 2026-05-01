@@ -34,7 +34,7 @@ runs:
 - It surfaces every Critical / High Finding to stdout right inside
   the commit output.
 - On demand (`heal check`), it classifies findings by Severity and
-  writes a TODO list cache that the bundled `/heal-code-fix` skill can
+  writes a TODO list cache that the bundled `/heal-code-patch` skill can
   drain — one finding per commit.
 
 The result: rather than relying on the human to remember to run a
@@ -76,7 +76,7 @@ heal check
     └─ render Severity-grouped view
 
 
-claude /heal-code-fix
+claude /heal-code-patch
     │
     └─ drain .heal/checks/latest.json one finding per commit
        (Severity order; Critical 🔥 first)
@@ -109,7 +109,7 @@ to reset the baseline.
 ## Read-only by default; write through the skill
 
 The `heal` CLI itself never modifies source files. Repair flows
-through the bundled `/heal-code-fix` Claude skill, which:
+through the bundled `/heal-code-patch` Claude skill, which:
 
 - refuses to run on a dirty worktree,
 - commits one finding per fix,
@@ -118,7 +118,7 @@ through the bundled `/heal-code-fix` Claude skill, which:
 
 `heal fix mark` is the single CLI subcommand that mutates state — it
 appends a line to `fixed.jsonl` and is meant to be called by
-`/heal-code-fix` after each commit.
+`/heal-code-patch` after each commit.
 
 ## Why metrics
 
@@ -179,5 +179,5 @@ manage.
   `.heal/calibration.toml` reference
 - [Architecture](/heal/architecture/) — on-disk layout, event
   streams, the cache contract
-- [Claude plugin](/heal/claude-plugin/) — `/heal-code-check` and
-  `/heal-code-fix`
+- [Claude plugin](/heal/claude-plugin/) — `/heal-code-review` and
+  `/heal-code-patch`

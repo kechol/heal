@@ -33,7 +33,7 @@ Three commands inside any git repository:
 ```sh
 heal init                     # set up .heal/, calibrate, install hook, offer Claude plugin
 heal check                    # render the Severity-grouped TODO list
-claude /heal-code-fix         # drain it, one finding per commit
+claude /heal-code-patch         # drain it, one finding per commit
 ```
 
 Full walkthrough: [Quick Start](https://kechol.github.io/heal/quick-start/).
@@ -46,7 +46,7 @@ Topical pages on the docs site:
 - [Metrics](https://kechol.github.io/heal/metrics/) — what each metric measures, how Severity is assigned
 - [CLI](https://kechol.github.io/heal/cli/) — every subcommand
 - [Configuration](https://kechol.github.io/heal/configuration/) — thresholds, toggles, calibration
-- [Claude plugin](https://kechol.github.io/heal/claude-plugin/) — `/heal-code-check` + `/heal-code-fix` contracts
+- [Claude plugin](https://kechol.github.io/heal/claude-plugin/) — `/heal-code-review` + `/heal-code-patch` contracts
 - [Architecture](https://kechol.github.io/heal/architecture/) — internals
 
 ## Development

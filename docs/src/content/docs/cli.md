@@ -92,11 +92,11 @@ left in place (use `--force` to overwrite anyway).
 
 The bundled plugin ships:
 
-- one read-only skill `heal-code-check` that ingests `heal check --all
+- one read-only skill `heal-code-review` that ingests `heal check --all
 --json`, deep-reads the flagged code, and produces an architectural
   reading plus a prioritised refactor TODO list (with reference docs
-  under `skills/heal-code-check/references/`).
-- one write skill `heal-code-fix` that drains
+  under `skills/heal-code-review/references/`).
+- one write skill `heal-code-patch` that drains
   `.heal/checks/latest.json` one finding per commit (Severity order;
   `Critical 🔥` first).
 
@@ -106,7 +106,7 @@ See [Claude plugin](/heal/claude-plugin/) for the full skill contracts.
 
 Runs every observer, classifies each Finding by Severity using
 `calibration.toml`, and writes the result to `.heal/checks/latest.json`
-(the TODO list `/heal-code-check` audits and `/heal-code-fix` drains):
+(the TODO list `/heal-code-review` audits and `/heal-code-patch` drains):
 
 ```sh
 heal check                              # render the cached record (default)
@@ -128,7 +128,7 @@ scan, so the first invocation in a project still works without flags.
 Output groups findings under `🔴 Critical 🔥 / 🔴 Critical / 🟠 High 🔥
 / 🟠 High / 🟡 Medium / ✅ Ok` (last two require `--all`), aggregates
 one row per file, and ends with `Goal: 0 Critical, 0 High` plus a
-"next steps" line pointing at `claude /heal-code-fix`. With `--all`, an
+"next steps" line pointing at `claude /heal-code-patch`. With `--all`, an
 extra "Ok / Medium 🔥 (low Severity, top-10% hotspot)" section
 surfaces files that aren't classified as a problem yet but get touched
 often enough to be worth a look.
@@ -227,7 +227,7 @@ heal fix diff <from>                  # <from> vs a live scan
 heal fix diff <from> <to>             # two cached records, no scan
 heal fix diff --all --json            # show Improved/Unchanged + JSON
 
-heal fix mark --finding-id <id> --commit-sha <sha>   # used by /heal-code-fix
+heal fix mark --finding-id <id> --commit-sha <sha>   # used by /heal-code-patch
 ```
 
 The argument shape mirrors `git diff`: omitting `<to>` means "compare

@@ -8,7 +8,7 @@ long-standing code-health metric that has been in use for decades.
 heal's contribution is **calibrating them to the codebase's own
 distribution** so a 200-line script and a 200kloc service trigger
 differently for the same raw value, then surfacing the result as a
-TODO list `/heal-code-fix` consumes.
+TODO list `/heal-code-patch` consumes.
 
 This page summarises each metric. For configuration knobs, see
 [Configuration](/heal/configuration/).
@@ -214,7 +214,7 @@ Every commit, heal:
 
 `heal check` re-runs the analysis on demand, classifies findings by
 Severity, and writes a `CheckRecord` to `.heal/checks/latest.json`.
-That cache is the TODO list the `/heal-code-fix` skill drains, one finding
+That cache is the TODO list the `/heal-code-patch` skill drains, one finding
 per commit.
 
 The exact JSON shapes and storage details are documented in

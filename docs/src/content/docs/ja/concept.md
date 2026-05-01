@@ -35,7 +35,7 @@ CI がテストの実行を監視するのと同じ感覚で、heal はコード
 - すべての Critical / High Finding を、そのコミット出力の中で
   stdout に出す。
 - オンデマンド（`heal check`）で、Finding を Severity 別に分類し、
-  同梱の `/heal-code-fix` スキルが消化する TODO リストキャッシュを書き
+  同梱の `/heal-code-patch` スキルが消化する TODO リストキャッシュを書き
   出す — 1 コミット 1 Finding ずつ。
 
 その結果、「リンターを走らせるのを忘れないようにしないと」と人間が
@@ -77,7 +77,7 @@ heal check
     └─ Severity ごとのビューを描画
 
 
-claude /heal-code-fix
+claude /heal-code-patch
     │
     └─ .heal/checks/latest.json を 1 コミット 1 Finding ずつ消化
        (Severity 順; Critical 🔥 が先頭)
@@ -110,7 +110,7 @@ claude /heal-code-fix
 ## デフォルトはリードオンリー、書き込みはスキル経由
 
 `heal` CLI そのものはソースファイルを変更しません。修復は同梱の
-`/heal-code-fix` Claude スキル経由で行われ、次の制約を持ちます。
+`/heal-code-patch` Claude スキル経由で行われ、次の制約を持ちます。
 
 - dirty な worktree では起動しない、
 - 1 修正につき 1 コミット、
@@ -118,7 +118,7 @@ claude /heal-code-fix
 - amend しない。
 
 `heal fix mark` が状態を mutate する唯一の CLI サブコマンドで、
-`fixed.jsonl` に 1 行追記します。`/heal-code-fix` がコミット後に呼ぶこ
+`fixed.jsonl` に 1 行追記します。`/heal-code-patch` がコミット後に呼ぶこ
 とを想定しています。
 
 ## なぜメトリクスなのか
@@ -186,5 +186,5 @@ heal には 7 つのメトリクスが付属しています。
   `.heal/calibration.toml` のリファレンス
 - [アーキテクチャ](/heal/ja/architecture/) — オンディスクレイアウ
   ト、イベントストリーム、キャッシュ契約
-- [Claude プラグイン](/heal/ja/claude-plugin/) — `/heal-code-check`
-  と `/heal-code-fix`
+- [Claude プラグイン](/heal/ja/claude-plugin/) — `/heal-code-review`
+  と `/heal-code-patch`

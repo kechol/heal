@@ -17,7 +17,7 @@ heal はコミットのたびにコードベースのメトリクスを測り、
 - macOS または Linux
 - 評価対象の git リポジトリ
 - （任意）[Claude Code](https://claude.com/code) CLI — 同梱の
-  `/heal-code-check` と `/heal-code-fix` スキルを使う場合
+  `/heal-code-review` と `/heal-code-patch` スキルを使う場合
 
 ## 1. インストール
 
@@ -86,8 +86,8 @@ heal check
 直すスキルの 2 つを用意しています。
 
 ```sh
-claude /heal-code-check    # 読むだけ: コード全体を見て改善案を出す
-claude /heal-code-fix      # 直す: 1 コミット 1 finding ずつキャッシュを片付ける
+claude /heal-code-review    # 読むだけ: コード全体を見て改善案を出す
+claude /heal-code-patch      # 直す: 1 コミット 1 finding ずつキャッシュを片付ける
 ```
 
 スキルの詳細は [Claude プラグイン](/heal/ja/claude-plugin/) を参照。

@@ -1,6 +1,6 @@
 ---
 title: Claude plugin
-description: How the bundled Claude Code plugin connects heal's metrics to Claude sessions, with the /heal-code-check audit and /heal-code-fix repair loop.
+description: How the bundled Claude Code plugin connects heal's metrics to Claude sessions, with the /heal-code-review audit and /heal-code-patch repair loop.
 ---
 
 heal ships with a Claude Code plugin so the metrics it collects flow
@@ -8,10 +8,10 @@ into Claude sessions automatically. The plugin is installed once per
 repository with `heal skills install`. From that point on:
 
 - Every Claude edit and turn-end is logged to `.heal/logs/`.
-- A read-only skill `/heal-code-check` audits
+- A read-only skill `/heal-code-review` audits
   `.heal/checks/latest.json` and produces an architectural reading
   plus a prioritised refactor TODO list.
-- A write skill `/heal-code-fix` drains the same cache one finding
+- A write skill `/heal-code-patch` drains the same cache one finding
   per commit, in Severity order, until the cache is empty or you
   stop the session.
 
@@ -35,12 +35,12 @@ This extracts the plugin tree to `.claude/plugins/heal/`:
 │   ├── claude-post-tool-use.sh
 │   └── claude-stop.sh
 └── skills/
-    ├── heal-code-check/
+    ├── heal-code-review/
     │   ├── SKILL.md
     │   └── references/
     │       ├── metrics.md
     │       └── architecture.md
-    └── heal-code-fix/
+    └── heal-code-patch/
         └── SKILL.md
 ```
 
@@ -61,10 +61,10 @@ Two hooks ship with the plugin. Both call back into the same
 Both are pure logging — they do not run any observer, so they add no
 measurable latency to a Claude turn.
 
-The repair loop runs through the `heal-code-fix` skill (below), not
+The repair loop runs through the `heal-code-patch` skill (below), not
 a SessionStart nudge.
 
-## The audit skill: `/heal-code-check`
+## The audit skill: `/heal-code-review`
 
 Read-only. Ingests `heal check --all --json`, deep-reads the flagged
 code, and returns two artefacts:
@@ -90,12 +90,12 @@ demand:
   architecture (Cockburn, Evans), DDD (Evans, Vernon), plus the
   rules for _respecting the codebase_ the proposals must pass.
 
-`/heal-code-check` proposes only — it never edits source. The write
-counterpart is `/heal-code-fix`.
+`/heal-code-review` proposes only — it never edits source. The write
+counterpart is `/heal-code-patch`.
 
-## The write skill: `/heal-code-fix`
+## The write skill: `/heal-code-patch`
 
-`/heal-code-fix` is the repair loop counterpart to `/heal-code-check`.
+`/heal-code-patch` is the repair loop counterpart to `/heal-code-review`.
 It drains `.heal/checks/latest.json` one finding at a time, in
 Severity order, committing once per fix.
 
@@ -130,14 +130,14 @@ skill hits a finding that needs human judgement (architectural
 decision, business rule). In the last case, it surfaces the
 trade-offs and asks before applying.
 
-Per-metric, `/heal-code-fix` maps to established refactoring vocabulary
+Per-metric, `/heal-code-patch` maps to established refactoring vocabulary
 (Fowler, Tornhill):
 
 | Metric                      | Common moves                                                                           |
 | --------------------------- | -------------------------------------------------------------------------------------- |
 | `ccn` / `cognitive`         | Extract Function, Replace Nested Conditional with Guard Clauses, Decompose Conditional |
 | `duplication`               | Extract Function / Method, Pull Up Method, Form Template Method, Rule of Three         |
-| `change_coupling`           | Surface the architectural seam — `/heal-code-fix` does not auto-fix coupling           |
+| `change_coupling`           | Surface the architectural seam — `/heal-code-patch` does not auto-fix coupling           |
 | `change_coupling.symmetric` | Same — strong "responsibility mixing" signal needs a human call                        |
 | `lcom`                      | Split the class along the cluster boundary — usually Extract Class                     |
 | `hotspot`                   | Hotspot is a flag, not a problem; act on the underlying CCN/dup/coupling               |

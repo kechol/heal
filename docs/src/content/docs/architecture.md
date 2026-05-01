@@ -29,7 +29,7 @@ git commit
                                          (Critical / High findings only;
                                           recalibrate hint when a trigger fires)
 
-user: heal check (or `claude /heal-code-fix`)
+user: heal check (or `claude /heal-code-patch`)
     │
     ▼
 heal check  ──►  classify Findings via calibration.toml
@@ -64,7 +64,7 @@ After `heal init`:
 │   └── checks/
 │       ├── 2026-04.jsonl          # append-only CheckRecord stream
 │       ├── latest.json            # atomic mirror of the most recent record
-│       ├── fixed.jsonl            # `/heal-code-fix` claimed a commit fixes a finding
+│       ├── fixed.jsonl            # `/heal-code-patch` claimed a commit fixes a finding
 │       └── regressed.jsonl        # a fix re-detected — surfaced as a warning
 │
 ├── .git/hooks/post-commit         # one-line shim: calls `heal hook commit`
@@ -82,7 +82,7 @@ After `heal init`:
 | `.heal/logs/YYYY-MM.jsonl`      | post-commit + Claude PostToolUse / Stop      | On every commit and Claude tool event.       |
 | `.heal/checks/YYYY-MM.jsonl`    | `heal check`                                 | Each fresh `heal check` (cache-miss path).   |
 | `.heal/checks/latest.json`      | `heal check`                                 | Atomic mirror; refreshed on every fresh run. |
-| `.heal/checks/fixed.jsonl`      | `heal fix mark` (called by `/heal-code-fix`) | Each commit `/heal-code-fix` lands.          |
+| `.heal/checks/fixed.jsonl`      | `heal fix mark` (called by `/heal-code-patch`) | Each commit `/heal-code-patch` lands.          |
 | `.heal/checks/regressed.jsonl`  | `heal check` (reconcile pass)                | When a fixed finding is re-detected.         |
 | `.claude/plugins/heal/`         | `heal skills install`                        | Once; updated with `heal skills update`.     |
 
@@ -175,7 +175,7 @@ how many metrics are enabled.
 
 ### `checks/` — the result cache
 
-The TODO list `/heal-code-fix` consumes. `heal check` is the only writer.
+The TODO list `/heal-code-patch` consumes. `heal check` is the only writer.
 
 ```json
 {
