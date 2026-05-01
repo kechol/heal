@@ -20,6 +20,8 @@
   },
   "skills": [
     "skills/heal-code-review",
-    "skills/heal-code-patch"
+    "skills/heal-code-patch",
+    "skills/heal-config",
+    "skills/heal-cli"
   ]
 }
