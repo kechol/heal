@@ -182,8 +182,8 @@ hook, initial scan + calibration, optional Claude-plugin install.
   "calibration_path": "…/.heal/calibration.toml",
   "snapshots_dir":    "…/.heal/snapshots",
   "post_commit_hook": { "path": "…/.git/hooks/post-commit", "action": "installed" },
-  "plugin": {
-    "dest": "…/.claude/plugins/heal",
+  "skills": {
+    "dest": "…/.claude/skills",
     "action": "installed",                // or declined / suppressed_by_flag / skipped_*
     "added": 42, "updated": 0, "unchanged": 0
   },
@@ -193,7 +193,7 @@ hook, initial scan + calibration, optional Claude-plugin install.
 
 `config.action` ∈ `wrote | overwrote | kept_existing`.
 `post_commit_hook.action` ∈ `installed | overwrote | refreshed | skipped_no_repo | skipped_user_hook`.
-`plugin.action` ∈ `installed | declined | suppressed_by_flag | skipped_no_claude | skipped_non_interactive`.
+`skills.action` ∈ `installed | declined | suppressed_by_flag | skipped_no_claude | skipped_non_interactive`.
 
 ### `heal logs [filters] [--json]`
 
@@ -215,15 +215,22 @@ restricted to one metric (`loc`, `complexity`, `churn`,
 
 ### `heal skills install [--force] [--json]` / `update [--force] [--json]` / `status [--json]` / `uninstall [--json]`
 
-Manage the bundled Claude plugin under `.claude/plugins/heal/`. The
-binary embeds the plugin tree (`include_dir!`) and extracts on demand.
+Manage the bundled skill set under `<project>/.claude/skills/`. Each
+top-level child of the embedded tree (`heal-cli`, `heal-config`,
+`heal-code-review`, `heal-code-patch`) extracts to a sibling directory
+under `.claude/skills/`. The same install merges HEAL's hook commands
+into `.claude/settings.json` (PostToolUse → `heal hook edit`, Stop →
+`heal hook stop`); uninstall removes only HEAL's command entries.
+
+The drift-detection manifest lives at `.heal/skills-install.json`
+(heal-owned state, not under `.claude/`).
 
 `status --json`:
 
 ```jsonc
 {
   "state": "installed",                   // or not_installed / no_manifest
-  "dest": ".claude/plugins/heal",
+  "dest": ".claude/skills",
   "installed": "0.2.1",
   "bundled":   "0.2.1",
   "installed_at": "2026-04-28T09:00:00Z",
@@ -238,27 +245,29 @@ binary embeds the plugin tree (`include_dir!`) and extracts on demand.
 ```jsonc
 {
   "action": "installed",                  // or "updated"
-  "dest": ".claude/plugins/heal",
+  "dest": ".claude/skills",
   "version": "0.2.1",
   "source":  "bundled",
   "files": { "added": 42, "updated": 0, "unchanged": 0, "skipped": 0, "user_modified": 0 },
   "user_modified_paths": [],
-  "claude":  { "marketplace": "created", "settings": "created" }
+  "claude":  { "settings": "created" }    // or updated / unchanged
 }
 ```
 
 `uninstall --json`:
 
 ```jsonc
-{ "action": "removed", "dest": ".claude/plugins/heal" }
+{ "action": "removed", "dest": ".claude/skills", "skills_removed": ["heal-cli", "heal-code-patch", "heal-code-review", "heal-config"] }
 // or { "action": "noop", … } when nothing was installed
 ```
 
 ### `heal hook <commit|edit|stop>` (internal)
 
-Hook entrypoint invoked by git and the Claude plugin. Not for direct
-use — `heal init` wires it up. No `--json` (output is a one-line nudge
-to the user's terminal, not a programmatic contract).
+Hook entrypoint invoked by git (`commit`) and Claude Code's
+`settings.json` hook commands (`edit`, `stop`). Not for direct use —
+`heal init` / `heal skills install` wire it up. No `--json` (output is
+a one-line nudge to the user's terminal, not a programmatic contract).
+Silently no-ops when invoked in a project that has no `.heal/`.
 
 ## Common patterns
 

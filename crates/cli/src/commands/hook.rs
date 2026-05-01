@@ -41,19 +41,35 @@ use crate::cli::HookEvent;
 use crate::snapshot;
 
 pub fn run(project: &Path, event: HookEvent) -> Result<()> {
+    // The hook may be invoked from settings.json on any project Claude
+    // Code happens to be in — including ones that never ran `heal init`.
+    // Skip silently so we don't materialise `.heal/` on a project the
+    // user never opted into.
     let paths = HealPaths::new(project);
-    let logs = EventLog::new(paths.logs_dir());
-
+    if !paths.root().exists() {
+        return Ok(());
+    }
+    // Edit / Stop fire on every Claude turn. Bury any internal failure
+    // so the hook never blocks the agent loop — log-write errors,
+    // unparseable stdin, etc. are not worth propagating. `Commit` keeps
+    // the original error path: it's invoked from a git hook (`heal hook
+    // commit`) where surfacing failure during local debugging matters.
     match event {
-        HookEvent::Commit => run_commit(project, &paths, &logs)?,
+        HookEvent::Commit => run_commit(project, &paths, &EventLog::new(paths.logs_dir()))?,
         HookEvent::Edit | HookEvent::Stop => {
-            // Both events stay log-only. Stop intentionally does NOT emit a
-            // nudge: `MetricsSnapshot` only updates on commit, so any
-            // turn-level Stop nudge would either repeat itself or stay
-            // silent.
-            logs.append(&Event::new(event.as_str(), capture_stdin()?))?;
+            // Stop intentionally does NOT emit a nudge: `MetricsSnapshot`
+            // only updates on commit, so any turn-level Stop nudge would
+            // either repeat itself or stay silent.
+            let _ = run_log_only(&paths, event);
         }
     }
+    Ok(())
+}
+
+fn run_log_only(paths: &HealPaths, event: HookEvent) -> Result<()> {
+    let logs = EventLog::new(paths.logs_dir());
+    let payload = capture_stdin()?;
+    logs.append(&Event::new(event.as_str(), payload))?;
     Ok(())
 }
 

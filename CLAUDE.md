@@ -31,7 +31,7 @@ crates/
       core/                  # config, eventlog, snapshot, state, paths, error types
       observer/              # LOC, complexity (CCN/Cognitive), churn, coupling,
                              # duplication, hotspot composition
-    plugins/heal/            # Claude Code plugin tree, embedded via include_dir!
+    plugins/heal/skills/     # Claude Code skills tree, embedded via include_dir!
     queries/                 # tree-sitter queries (rust/, typescript/) read via include_str!
 plugins → crates/cli/plugins # top-level convenience symlink
 ```
@@ -142,17 +142,27 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
   across releases, which would invalidate every recorded fingerprint
   after a `rustc` upgrade.
 
-### Claude plugin
-- Source of truth lives at `crates/cli/plugins/heal/`. The tree sits
+### Claude skills
+- Source of truth lives at `crates/cli/plugins/heal/skills/`. Each
+  top-level child is a self-contained skill directory. The tree sits
   inside the `heal-cli` crate directory so `cargo publish` includes it
   in the published tarball — `include_dir!` is a compile-time read and
   Cargo only packages files inside the crate dir.
 - `heal-cli` embeds the directory at build time via
-  `include_dir!("$CARGO_MANIFEST_DIR/plugins/heal")`.
+  `include_dir!("$CARGO_MANIFEST_DIR/plugins/heal/skills")`.
 - `heal skills install` extracts the embedded tree to
-  `.claude/plugins/heal/` and chmods `*.sh` to `0755` on Unix. Each
-  extracted file's fingerprint is recorded in `.heal-install.json` for
-  drift detection on `heal skills update`.
+  `<project>/.claude/skills/<skill-name>/` (no marketplace, no plugin
+  wrapper — Claude Code natively discovers project-scope skills under
+  `.claude/skills/`). Each extracted file's fingerprint is recorded in
+  `.heal/skills-install.json` for drift detection on
+  `heal skills update`.
+- The same install merges HEAL's hook commands into
+  `<project>/.claude/settings.json`: `PostToolUse → "heal hook edit"`,
+  `Stop → "heal hook stop"`. Merge is additive — existing user hook
+  blocks are preserved; uninstall removes only HEAL's command lines.
+- `heal hook` is robust against missing `.heal/`: if a project never
+  ran `heal init`, the hook silently no-ops so it doesn't pollute an
+  un-opted-in worktree.
 
 ### Lints
 - `clippy::pedantic = warn` at the workspace level, plus `-D warnings`

@@ -79,6 +79,15 @@ impl HealPaths {
         self.checks_dir().join("regressed.jsonl")
     }
 
+    /// Manifest tracking which skill files were extracted by
+    /// `heal skills install`, keyed by `<skill-name>/<rel-path>`. Lives
+    /// under `.heal/` (not `.claude/skills/`) so the manifest stays
+    /// heal-owned and Claude never reads files it doesn't recognise.
+    #[must_use]
+    pub fn skills_install_manifest(&self) -> PathBuf {
+        self.root.join("skills-install.json")
+    }
+
     #[must_use]
     pub fn docs_dir(&self) -> PathBuf {
         self.root.join("docs")

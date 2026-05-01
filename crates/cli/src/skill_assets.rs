@@ -1,9 +1,12 @@
-//! Build-time embedding of the Claude plugin tree (`crates/cli/plugins/heal/`)
-//! and the install/update bookkeeping that surrounds it.
+//! Build-time embedding of the bundled skill set
+//! (`crates/cli/plugins/heal/skills/`) and the install/update bookkeeping
+//! that surrounds it.
 //!
-//! The plugin tree lives inside the `heal-cli` crate directory so a published
-//! crates.io tarball includes it — `include_dir!` is a compile-time read,
-//! and Cargo only packages files inside the crate directory.
+//! The embedded tree's children are individual skill directories
+//! (`heal-cli/`, `heal-config/`, `heal-code-review/`, `heal-code-patch/`)
+//! that get extracted directly into `<project>/.claude/skills/<name>/`.
+//! No marketplace, no plugin wrapper — Claude Code natively discovers
+//! project-scope skills under `.claude/skills/`.
 //!
 //! ## Why a manifest?
 //!
@@ -15,11 +18,10 @@
 //!      (so a routine `update` doesn't blow away hand-tuned skills).
 //!   3. A timestamp + source provenance per agentskills.io conventions.
 //!
-//! HEAL records (1) and (3) in `.heal-install.json` at the plugin root and
-//! mirrors the same metadata into each SKILL.md's YAML frontmatter so the
-//! file remains self-describing if it leaves HEAL's directory tree.
-//! Drift detection (2) compares an on-disk fingerprint with the manifest's
-//! recorded fingerprint from the previous install.
+//! The manifest lives at `.heal/skills-install.json` (heal-owned state,
+//! decoupled from `.claude/`). Drift detection compares an on-disk
+//! fingerprint against the manifest's recorded fingerprint from the
+//! previous install.
 //!
 //! The fingerprint algorithm is a hand-rolled FNV-1a 64-bit hash formatted
 //! as 16 hex digits. It is *not* cryptographic — its only job is to
@@ -37,25 +39,21 @@ use chrono::{DateTime, Utc};
 use include_dir::{include_dir, Dir, DirEntry, File};
 use serde::{Deserialize, Serialize};
 
-pub static PLUGIN_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/plugins/heal");
+/// Embedded bundle. Each top-level child is a skill directory whose
+/// contents land 1:1 under `<project>/.claude/skills/<skill-name>/`.
+pub static SKILLS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/plugins/heal/skills");
 
-/// Filename of the install metadata, stored at the plugin root.
-pub const INSTALL_MANIFEST: &str = ".heal-install.json";
+/// Project-relative location of the extracted skills tree. Single source
+/// of truth for the install destination.
+pub const SKILLS_DEST_REL: &str = ".claude/skills";
 
-/// Project-relative location of the extracted Claude plugin tree. Single
-/// source of truth — both `commands::*::plugin_dest` and the marketplace
-/// `source` field in `claude_settings::marketplace_value` derive from
-/// this so the disk layout and the JSON catalog can never drift.
-pub const PLUGIN_DEST_REL: &str = ".claude/plugins/heal";
-
-/// Resolve the plugin destination directory inside `project`.
+/// Resolve the skills destination directory inside `project`.
 #[must_use]
-pub fn plugin_dest(project: &Path) -> PathBuf {
-    project.join(PLUGIN_DEST_REL)
+pub fn skills_dest(project: &Path) -> PathBuf {
+    project.join(SKILLS_DEST_REL)
 }
 
-/// Source-of-install marker recorded in the manifest. Static for v0.1
-/// (Marketplace adds another value in v0.3+).
+/// Source-of-install marker recorded in the manifest.
 pub const INSTALL_SOURCE_BUNDLED: &str = "bundled";
 
 /// Caller intent for [`extract`]. Drift handling differs between the three:
@@ -115,8 +113,8 @@ pub struct InstallManifest {
     pub heal_version: String,
     pub installed_at: DateTime<Utc>,
     pub source: String,
-    /// Map of `<relative-path>` → fingerprint hex. The relative path uses
-    /// `/` separators regardless of host OS.
+    /// Map of `<skill-name>/<rel-path>` → fingerprint hex. The relative
+    /// path uses `/` separators regardless of host OS.
     pub assets: BTreeMap<String, String>,
 }
 
@@ -130,40 +128,45 @@ impl InstallManifest {
         }
     }
 
-    pub fn load(plugin_root: &Path) -> Option<Self> {
-        let path = plugin_root.join(INSTALL_MANIFEST);
+    /// Read the manifest from its on-disk path. `None` when the file is
+    /// missing or unparseable — callers treat both as "no prior state."
+    pub fn load(path: &Path) -> Option<Self> {
         let body = std::fs::read_to_string(path).ok()?;
         serde_json::from_str(&body).ok()
     }
 
-    fn save(&self, plugin_root: &Path) -> Result<()> {
-        let path = plugin_root.join(INSTALL_MANIFEST);
+    fn save(&self, path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("mkdir {}", parent.display()))?;
+        }
         let body = serde_json::to_string_pretty(self)
             .expect("InstallManifest serialization is infallible");
-        std::fs::write(&path, body).with_context(|| format!("writing {}", path.display()))
+        std::fs::write(path, body).with_context(|| format!("writing {}", path.display()))
     }
 }
 
-/// Read the embedded `plugin.json` and pull `version` out. `None` when the
-/// embedded tree is malformed (shouldn't happen in practice — the file is
-/// shipped with the binary).
+/// Bundled HEAL version. Sourced from the crate's `Cargo.toml` at build
+/// time so install metadata always matches the binary that wrote it.
 #[must_use]
-pub fn bundled_version() -> Option<String> {
-    let file = PLUGIN_DIR.get_file("plugin.json")?;
-    let body = std::str::from_utf8(file.contents()).ok()?;
-    let v: serde_json::Value = serde_json::from_str(body).ok()?;
-    v.get("version")?.as_str().map(str::to_string)
+pub fn bundled_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
 }
 
-/// Walk the embedded tree, write each entry to `dest`, and return both
-/// the per-file outcome and the manifest that was just persisted. The
-/// manifest is also written to `dest/.heal-install.json` as a side effect.
-pub fn extract(dest: &Path, mode: ExtractMode) -> Result<(ExtractStats, InstallManifest)> {
+/// Walk the embedded tree, write each entry to `dest` (the skills
+/// parent directory), persist the manifest at `manifest_path`, and
+/// return both the per-file outcome and the manifest that was just
+/// persisted.
+pub fn extract(
+    dest: &Path,
+    manifest_path: &Path,
+    mode: ExtractMode,
+) -> Result<(ExtractStats, InstallManifest)> {
     std::fs::create_dir_all(dest)
-        .with_context(|| format!("creating plugin dest dir {}", dest.display()))?;
+        .with_context(|| format!("creating skills dest dir {}", dest.display()))?;
 
-    let prior = InstallManifest::load(dest);
-    let version = bundled_version().unwrap_or_else(|| "unknown".to_string());
+    let prior = InstallManifest::load(manifest_path);
+    let version = bundled_version();
     let mut manifest = InstallManifest::new(version.clone(), Utc::now());
     let install_meta = SkillInstallMeta {
         version,
@@ -172,7 +175,7 @@ pub fn extract(dest: &Path, mode: ExtractMode) -> Result<(ExtractStats, InstallM
     let mut stats = ExtractStats::default();
 
     walk(
-        &PLUGIN_DIR,
+        &SKILLS_DIR,
         dest,
         mode,
         prior.as_ref(),
@@ -180,7 +183,7 @@ pub fn extract(dest: &Path, mode: ExtractMode) -> Result<(ExtractStats, InstallM
         &mut stats,
         &mut manifest,
     )?;
-    manifest.save(dest)?;
+    manifest.save(manifest_path)?;
     Ok((stats, manifest))
 }
 
@@ -276,13 +279,6 @@ fn write_asset(target: &Path, body: &[u8]) -> Result<()> {
         std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
     }
     std::fs::write(target, body).with_context(|| format!("writing {}", target.display()))?;
-    #[cfg(unix)]
-    if target.extension().is_some_and(|ext| ext == "sh") {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(target)?.permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(target, perms)?;
-    }
     Ok(())
 }
 
@@ -301,8 +297,8 @@ fn canonical_bytes(file: &File<'_>, rel_path: &Path, meta: &SkillInstallMeta) ->
 /// Per-skill frontmatter metadata. Intentionally **content-derived only**
 /// — no timestamps. A wall-clock value here would make every `extract`
 /// pass produce different bytes for an otherwise-unchanged SKILL.md and
-/// keep flagging it as "updated". The plugin-wide install timestamp
-/// lives in [`InstallManifest::installed_at`] instead.
+/// keep flagging it as "updated". The install timestamp lives in
+/// [`InstallManifest::installed_at`] instead.
 #[derive(Debug, Clone)]
 struct SkillInstallMeta {
     version: String,
@@ -385,9 +381,13 @@ mod tests {
         }
     }
 
+    fn manifest_under(dir: &Path) -> PathBuf {
+        dir.join("skills-install.json")
+    }
+
     #[test]
-    fn bundled_version_reads_plugin_json() {
-        assert_eq!(bundled_version().as_deref(), Some("0.2.1"));
+    fn bundled_version_returns_crate_version() {
+        assert_eq!(bundled_version(), env!("CARGO_PKG_VERSION"));
     }
 
     #[test]
@@ -430,16 +430,17 @@ mod tests {
     #[test]
     fn extract_install_safe_preserves_existing_files() {
         let dir = TempDir::new().unwrap();
-        let dest = dir.path();
-        // First install populates everything.
-        let (stats1, _) = extract(dest, ExtractMode::InstallSafe).unwrap();
-        assert!(stats1.added.iter().any(|p| p == "plugin.json"));
-        // User edits an asset.
-        let target = dest.join("hooks/claude-stop.sh");
-        std::fs::write(&target, "#!/bin/sh\n# user edit\n").unwrap();
-        // Re-install in safe mode skips it.
-        let (stats2, _) = extract(dest, ExtractMode::InstallSafe).unwrap();
-        assert!(stats2.skipped.iter().any(|p| p == "hooks/claude-stop.sh"));
+        let dest = dir.path().join("skills");
+        let manifest = manifest_under(dir.path());
+        let (stats1, _) = extract(&dest, &manifest, ExtractMode::InstallSafe).unwrap();
+        assert!(stats1.added.iter().any(|p| p == "heal-cli/SKILL.md"));
+        let target = dest.join("heal-code-patch/SKILL.md");
+        std::fs::write(&target, "---\nuser edit\n---\n").unwrap();
+        let (stats2, _) = extract(&dest, &manifest, ExtractMode::InstallSafe).unwrap();
+        assert!(stats2
+            .skipped
+            .iter()
+            .any(|p| p == "heal-code-patch/SKILL.md"));
         let body = std::fs::read_to_string(&target).unwrap();
         assert!(body.contains("user edit"));
     }
@@ -447,17 +448,18 @@ mod tests {
     #[test]
     fn extract_update_skips_user_modified_without_force() {
         let dir = TempDir::new().unwrap();
-        let dest = dir.path();
-        extract(dest, ExtractMode::InstallSafe).unwrap();
+        let dest = dir.path().join("skills");
+        let manifest = manifest_under(dir.path());
+        extract(&dest, &manifest, ExtractMode::InstallSafe).unwrap();
 
-        let target = dest.join("hooks/claude-stop.sh");
-        std::fs::write(&target, "#!/bin/sh\n# user edit\n").unwrap();
+        let target = dest.join("heal-code-patch/SKILL.md");
+        std::fs::write(&target, "---\nuser edit\n---\n").unwrap();
 
-        let (stats, _) = extract(dest, ExtractMode::Update { force: false }).unwrap();
+        let (stats, _) = extract(&dest, &manifest, ExtractMode::Update { force: false }).unwrap();
         assert!(stats
             .user_modified
             .iter()
-            .any(|p| p == "hooks/claude-stop.sh"));
+            .any(|p| p == "heal-code-patch/SKILL.md"));
         let body = std::fs::read_to_string(&target).unwrap();
         assert!(body.contains("user edit"));
     }
@@ -465,14 +467,18 @@ mod tests {
     #[test]
     fn extract_update_force_overwrites_user_edits() {
         let dir = TempDir::new().unwrap();
-        let dest = dir.path();
-        extract(dest, ExtractMode::InstallSafe).unwrap();
+        let dest = dir.path().join("skills");
+        let manifest = manifest_under(dir.path());
+        extract(&dest, &manifest, ExtractMode::InstallSafe).unwrap();
 
-        let target = dest.join("hooks/claude-stop.sh");
-        std::fs::write(&target, "#!/bin/sh\n# user edit\n").unwrap();
+        let target = dest.join("heal-code-patch/SKILL.md");
+        std::fs::write(&target, "---\nuser edit\n---\n").unwrap();
 
-        let (stats, _) = extract(dest, ExtractMode::Update { force: true }).unwrap();
-        assert!(stats.updated.iter().any(|p| p == "hooks/claude-stop.sh"));
+        let (stats, _) = extract(&dest, &manifest, ExtractMode::Update { force: true }).unwrap();
+        assert!(stats
+            .updated
+            .iter()
+            .any(|p| p == "heal-code-patch/SKILL.md"));
         let body = std::fs::read_to_string(&target).unwrap();
         assert!(!body.contains("user edit"));
     }
@@ -480,23 +486,24 @@ mod tests {
     #[test]
     fn install_manifest_records_version_and_assets() {
         let dir = TempDir::new().unwrap();
-        let dest = dir.path();
-        let (_, manifest) = extract(dest, ExtractMode::InstallSafe).unwrap();
-        assert_eq!(manifest.heal_version, bundled_version().unwrap());
+        let dest = dir.path().join("skills");
+        let manifest_path = manifest_under(dir.path());
+        let (_, manifest) = extract(&dest, &manifest_path, ExtractMode::InstallSafe).unwrap();
+        assert_eq!(manifest.heal_version, bundled_version());
         assert_eq!(manifest.source, "bundled");
-        assert!(manifest.assets.contains_key("plugin.json"));
-        // Loadable from disk too.
-        let loaded = InstallManifest::load(dest).unwrap();
+        assert!(manifest.assets.contains_key("heal-cli/SKILL.md"));
+        let loaded = InstallManifest::load(&manifest_path).unwrap();
         assert_eq!(loaded, manifest);
     }
 
     #[test]
     fn skill_md_install_carries_frontmatter_metadata() {
         let dir = TempDir::new().unwrap();
-        let dest = dir.path();
-        extract(dest, ExtractMode::InstallSafe).unwrap();
-        let body = std::fs::read_to_string(dest.join("skills/heal-code-review/SKILL.md")).unwrap();
+        let dest = dir.path().join("skills");
+        let manifest = manifest_under(dir.path());
+        extract(&dest, &manifest, ExtractMode::InstallSafe).unwrap();
+        let body = std::fs::read_to_string(dest.join("heal-code-review/SKILL.md")).unwrap();
         assert!(body.contains("metadata:"));
-        assert!(body.contains(&format!("heal-version: {}", bundled_version().unwrap())));
+        assert!(body.contains(&format!("heal-version: {}", bundled_version())));
     }
 }

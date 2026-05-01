@@ -33,3 +33,24 @@ pub fn atomic_write(path: &Path, body: &[u8]) -> Result<()> {
         source: e,
     })
 }
+
+/// True when `dir` exists, is readable, and contains no entries.
+/// Returns `false` for missing or non-directory paths.
+#[must_use]
+pub fn dir_is_empty(dir: &Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|mut it| it.next().is_none())
+}
+
+/// `rmdir` the directory if it's empty; ignore the call otherwise.
+/// Idempotent — useful for cleaning up parent dirs after removing
+/// the only file inside.
+pub fn remove_dir_if_empty(dir: &Path) -> std::io::Result<()> {
+    if !dir_is_empty(dir) {
+        return Ok(());
+    }
+    match std::fs::remove_dir(dir) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}

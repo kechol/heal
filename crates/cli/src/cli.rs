@@ -37,7 +37,9 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Hook entrypoint invoked by git hooks and the Claude plugin.
+    /// Hook entrypoint invoked by git hooks and Claude Code's
+    /// `settings.json` hook commands. No-ops silently when the project
+    /// has no `.heal/` directory.
     Hook {
         #[command(subcommand)]
         event: HookEvent,
@@ -47,7 +49,7 @@ pub enum Command {
         #[arg(long)]
         json: bool,
         /// Restrict output to a single metric. Used by the
-        /// `heal-code-review` skill under `.claude/plugins/heal/` when
+        /// `heal-code-review` skill under `.claude/skills/` when
         /// narrowing focus.
         #[arg(long, value_enum)]
         metric: Option<StatusMetric>,
@@ -80,7 +82,7 @@ pub enum Command {
         #[command(subcommand)]
         action: FixAction,
     },
-    /// Manage the bundled Claude plugin.
+    /// Manage the bundled Claude skill set under `.claude/skills/`.
     Skills {
         #[command(subcommand)]
         action: SkillsAction,
@@ -217,9 +219,9 @@ impl SeverityFilter {
 pub enum HookEvent {
     /// Post-commit hook (git).
     Commit,
-    /// PostToolUse(Edit|Write|MultiEdit) hook (Claude plugin).
+    /// Claude Code PostToolUse(Edit|Write|MultiEdit) hook.
     Edit,
-    /// Stop hook (Claude plugin) — log only, no nudge.
+    /// Claude Code Stop hook — log only, no nudge.
     Stop,
 }
 
@@ -361,16 +363,17 @@ pub enum FixAction {
 
 #[derive(Debug, Clone, Copy, Subcommand)]
 pub enum SkillsAction {
-    /// Extract the bundled plugin into `.claude/plugins/heal/`.
+    /// Extract the bundled skills into `<project>/.claude/skills/` and
+    /// merge HEAL's hook commands into `<project>/.claude/settings.json`.
     Install {
-        /// Overwrite existing assets even if they were edited locally.
+        /// Overwrite existing skill files even if they were edited locally.
         #[arg(long)]
         force: bool,
         /// Emit a JSON summary of the install outcome.
         #[arg(long)]
         json: bool,
     },
-    /// Refresh plugin assets after a binary upgrade. Skips files the user
+    /// Refresh skill files after a binary upgrade. Skips files the user
     /// has edited locally; pass `--force` to overwrite them too.
     Update {
         #[arg(long)]
@@ -379,13 +382,14 @@ pub enum SkillsAction {
         #[arg(long)]
         json: bool,
     },
-    /// Show installed plugin version, bundled version, and any drift.
+    /// Show installed skill version, bundled version, and any drift.
     Status {
         /// Emit a JSON view of the install status (versions, drift list).
         #[arg(long)]
         json: bool,
     },
-    /// Remove the plugin from `.claude/plugins/heal/`.
+    /// Remove HEAL's skills from `.claude/skills/` and its hook
+    /// commands from `.claude/settings.json`.
     Uninstall {
         /// Emit a JSON summary of what was removed.
         #[arg(long)]

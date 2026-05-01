@@ -11,7 +11,8 @@
 //!      distribution, then append a `MetricsSnapshot` (with
 //!      `severity_counts` already classified by the new calibration)
 //!      to `snapshots/` as an `init` event.
-//!   6. Optionally extract the Claude plugin to `.claude/plugins/heal/`
+//!   6. Optionally extract the bundled skills to `.claude/skills/` and
+//!      register HEAL's hook commands in `.claude/settings.json`
 //!      (prompted when `claude` is on `PATH` and stdin is a TTY; bypassed
 //!      with `--yes` / `--no-skills`).
 
@@ -26,7 +27,7 @@ use crate::core::snapshot::SeverityCounts;
 use crate::core::HealPaths;
 use crate::observer::git;
 use crate::observer::loc::LocObserver;
-use crate::plugin_assets::{self, plugin_dest, ExtractMode, ExtractStats};
+use crate::skill_assets::{self, skills_dest, ExtractMode, ExtractStats};
 use anyhow::{Context, Result};
 use serde::Serialize;
 
@@ -122,8 +123,9 @@ pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool, as_json: boo
     let config_action = write_config(&paths, force)?;
     let (hook_action, hook_path) = install_post_commit_hook(project, force)?;
     let severity_counts = run_initial_scan(project, &paths)?;
-    let plugin_dest = plugin_dest(project);
-    let skills_action = handle_skills_install(project, &plugin_dest, force, yes, no_skills)?;
+    let skills_dest = skills_dest(project);
+    let skills_action =
+        handle_skills_install(project, &paths, &skills_dest, force, yes, no_skills)?;
 
     if as_json {
         super::emit_json(&InitReport::new(
@@ -133,7 +135,7 @@ pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool, as_json: boo
             &config_action,
             &hook_action,
             hook_path.as_deref(),
-            &plugin_dest,
+            &skills_dest,
             &skills_action,
             severity_counts.as_ref(),
         ));
@@ -146,7 +148,7 @@ pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool, as_json: boo
         config_action,
         hook_action,
         hook_path.as_deref(),
-        &plugin_dest,
+        &skills_dest,
         &skills_action,
         severity_counts.as_ref(),
     );
@@ -165,7 +167,7 @@ struct InitReport<'a> {
     calibration_path: String,
     snapshots_dir: String,
     post_commit_hook: PathAction<'a, HookAction>,
-    plugin: PluginReport<'a>,
+    skills: SkillsReport<'a>,
     severity_counts: Option<&'a SeverityCounts>,
 }
 
@@ -182,7 +184,7 @@ struct PathAction<'a, A: Serialize> {
 }
 
 #[derive(Debug, Serialize)]
-struct PluginReport<'a> {
+struct SkillsReport<'a> {
     dest: String,
     #[serde(flatten)]
     action: &'a SkillsAction,
@@ -197,7 +199,7 @@ impl<'a> InitReport<'a> {
         config_action: &'a ConfigAction,
         hook_action: &'a HookAction,
         hook_path: Option<&Path>,
-        plugin_dest: &Path,
+        skills_dest: &Path,
         skills_action: &'a SkillsAction,
         severity_counts: Option<&'a SeverityCounts>,
     ) -> Self {
@@ -215,8 +217,8 @@ impl<'a> InitReport<'a> {
                 path: hook_path.map(|p| p.display().to_string()),
                 action: hook_action,
             },
-            plugin: PluginReport {
-                dest: plugin_dest.display().to_string(),
+            skills: SkillsReport {
+                dest: skills_dest.display().to_string(),
                 action: skills_action,
             },
             severity_counts,
@@ -231,7 +233,7 @@ fn print_summary(
     config_action: ConfigAction,
     hook_action: HookAction,
     hook_path: Option<&Path>,
-    plugin_dest: &Path,
+    skills_dest: &Path,
     skills_action: &SkillsAction,
     severity_counts: Option<&SeverityCounts>,
 ) {
@@ -254,8 +256,8 @@ fn print_summary(
         None => println!("  post-commit hook  {hook_action}"),
     }
     println!(
-        "  Claude plugin     {}",
-        render_skills_line(plugin_dest, skills_action),
+        "  Claude skills     {}",
+        render_skills_line(skills_dest, skills_action),
     );
 
     if let Some(counts) = severity_counts {
@@ -278,7 +280,7 @@ fn print_summary(
         // No further skills hint for "Installed" (already done) or
         // "SkippedNoClaude" (Claude isn't there to use them anyway).
     } else {
-        println!("  heal skills install      # extract the Claude plugin when ready");
+        println!("  heal skills install      # extract the Claude skills when ready");
     }
 }
 
@@ -394,7 +396,7 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<Option<Severity
     Ok(counts)
 }
 
-/// Decide whether to install the Claude plugin and do it. Returns the
+/// Decide whether to install the bundled skills and do it. Returns the
 /// outcome label so the summary block can render "<path> (verb)".
 ///
 /// Decision tree (first match wins):
@@ -407,11 +409,12 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<Option<Severity
 ///      summary).
 ///
 /// `force` matches `heal init --force` semantics: when on, refresh the
-/// plugin tree (overwriting drift / locally edited files) so a binary
+/// skills tree (overwriting drift / locally edited files) so a binary
 /// upgrade actually picks up the latest skill set. When off, leave
 /// existing files alone (initial-install behaviour).
 fn handle_skills_install(
     project: &Path,
+    paths: &HealPaths,
     dest: &Path,
     force: bool,
     yes: bool,
@@ -424,11 +427,11 @@ fn handle_skills_install(
         return Ok(SkillsAction::SkippedNoClaude);
     }
     if yes {
-        return install_skills(project, dest, force);
+        return install_skills(project, paths, dest, force);
     }
     if std::io::stdin().is_terminal() {
         if confirm_skills_install()? {
-            install_skills(project, dest, force)
+            install_skills(project, paths, dest, force)
         } else {
             Ok(SkillsAction::Declined)
         }
@@ -437,15 +440,20 @@ fn handle_skills_install(
     }
 }
 
-fn install_skills(project: &Path, dest: &Path, force: bool) -> Result<SkillsAction> {
+fn install_skills(
+    project: &Path,
+    paths: &HealPaths,
+    dest: &Path,
+    force: bool,
+) -> Result<SkillsAction> {
     let mode = if force {
         // `Update` keeps the manifest in sync; `InstallForce` is reserved for `heal skills install --force`.
         ExtractMode::Update { force: true }
     } else {
         ExtractMode::InstallSafe
     };
-    let (stats, manifest) = plugin_assets::extract(dest, mode)?;
-    claude_settings::wire(project, &manifest.heal_version)?;
+    let (stats, _manifest) = skill_assets::extract(dest, &paths.skills_install_manifest(), mode)?;
+    claude_settings::wire(project)?;
     Ok(extract_counts(&stats))
 }
 
@@ -470,7 +478,7 @@ fn claude_on_path() -> bool {
 
 fn confirm_skills_install() -> Result<bool> {
     print!(
-        "Install the bundled Claude plugin (provides /heal-code-review + /heal-code-patch)? [Y/n] ",
+        "Install the bundled Claude skills (heal-cli, heal-config, /heal-code-review, /heal-code-patch)? [Y/n] ",
     );
     std::io::stdout()
         .flush()
@@ -652,14 +660,14 @@ mod tests {
     }
 
     #[test]
-    fn no_skills_flag_leaves_plugin_dir_unwritten() {
+    fn no_skills_flag_leaves_skills_dir_unwritten() {
         let dir = TempDir::new().unwrap();
         init_repo(dir.path());
         commit_default(dir.path(), "main.rs", "fn main() {}\n", "solo@example.com");
         run_no_skills(dir.path(), false).unwrap();
         assert!(
-            !plugin_dest(dir.path()).exists(),
-            "--no-skills must not extract the plugin"
+            !skills_dest(dir.path()).exists(),
+            "--no-skills must not extract the skill set"
         );
     }
 
@@ -667,14 +675,16 @@ mod tests {
     fn handle_skills_install_respects_no_skills_flag() {
         let dir = TempDir::new().unwrap();
         let project = dir.path();
-        let dest = plugin_dest(project);
-        let action = handle_skills_install(project, &dest, false, false, true).unwrap();
+        let paths = HealPaths::new(project);
+        paths.ensure().unwrap();
+        let dest = skills_dest(project);
+        let action = handle_skills_install(project, &paths, &dest, false, false, true).unwrap();
         assert_eq!(action, SkillsAction::SuppressedByFlag);
         assert!(!dest.exists());
     }
 
     #[test]
-    fn handle_skills_install_with_yes_extracts_plugin_when_claude_available() {
+    fn handle_skills_install_with_yes_extracts_skills_when_claude_available() {
         // Stage a fake `claude` binary on PATH so the prompt logic
         // believes Claude Code is installed. Without this, the call
         // legitimately returns SkippedNoClaude on hosts that don't
@@ -695,18 +705,16 @@ mod tests {
 
         let dir = TempDir::new().unwrap();
         let project = dir.path();
-        let dest = plugin_dest(project);
-        let action = handle_skills_install(project, &dest, false, true, false).unwrap();
+        let paths = HealPaths::new(project);
+        paths.ensure().unwrap();
+        let dest = skills_dest(project);
+        let action = handle_skills_install(project, &paths, &dest, false, true, false).unwrap();
         assert!(matches!(action, SkillsAction::Installed { .. }));
-        assert!(dest.exists(), "yes path must extract the plugin");
-        assert!(dest.join("plugin.json").exists());
-        assert!(
-            project.join(".claude-plugin/marketplace.json").exists(),
-            "init must wire the local marketplace alongside the plugin tree"
-        );
+        assert!(dest.exists(), "yes path must extract the skill set");
+        assert!(dest.join("heal-cli/SKILL.md").exists());
         assert!(
             project.join(".claude/settings.json").exists(),
-            "init must register the marketplace in settings.json"
+            "init must register hook commands in settings.json"
         );
     }
 
@@ -717,8 +725,10 @@ mod tests {
         let _guard = PathGuard::set(std::ffi::OsString::new());
         let dir = TempDir::new().unwrap();
         let project = dir.path();
-        let dest = plugin_dest(project);
-        let action = handle_skills_install(project, &dest, false, true, false).unwrap();
+        let paths = HealPaths::new(project);
+        paths.ensure().unwrap();
+        let dest = skills_dest(project);
+        let action = handle_skills_install(project, &paths, &dest, false, true, false).unwrap();
         assert_eq!(action, SkillsAction::SkippedNoClaude);
         assert!(!dest.exists());
     }
@@ -728,8 +738,10 @@ mod tests {
         // First install: clean extraction.
         let dir = TempDir::new().unwrap();
         let project = dir.path();
-        let dest = project.join("plugin");
-        let initial = install_skills(project, &dest, false).unwrap();
+        let paths = HealPaths::new(project);
+        paths.ensure().unwrap();
+        let dest = project.join("skills");
+        let initial = install_skills(project, &paths, &dest, false).unwrap();
         let SkillsAction::Installed {
             added: initial_added,
             updated: initial_updated,
@@ -742,12 +754,12 @@ mod tests {
         assert_eq!(initial_updated, 0, "no drift on first install");
 
         // Tamper with a known-shipped skill file.
-        let skill = dest.join("skills/heal-code-patch/SKILL.md");
+        let skill = dest.join("heal-code-patch/SKILL.md");
         assert!(skill.exists(), "fixture should have shipped this skill");
         std::fs::write(&skill, "tampered\n").unwrap();
 
         // Refresh path: force=true should overwrite even drifted files.
-        let refreshed = install_skills(project, &dest, true).unwrap();
+        let refreshed = install_skills(project, &paths, &dest, true).unwrap();
         let SkillsAction::Installed {
             updated: refreshed_updated,
             ..
@@ -771,14 +783,16 @@ mod tests {
         // First install seeds the manifest.
         let dir = TempDir::new().unwrap();
         let project = dir.path();
-        let dest = project.join("plugin");
-        install_skills(project, &dest, false).unwrap();
+        let paths = HealPaths::new(project);
+        paths.ensure().unwrap();
+        let dest = project.join("skills");
+        install_skills(project, &paths, &dest, false).unwrap();
 
         // Tamper with a skill — without --force we expect it preserved.
-        let skill = dest.join("skills/heal-code-patch/SKILL.md");
+        let skill = dest.join("heal-code-patch/SKILL.md");
         std::fs::write(&skill, "tampered\n").unwrap();
 
-        let action = install_skills(project, &dest, false).unwrap();
+        let action = install_skills(project, &paths, &dest, false).unwrap();
         let SkillsAction::Installed { updated, .. } = action else {
             panic!("expected Installed, got {action:?}");
         };

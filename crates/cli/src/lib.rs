@@ -23,7 +23,7 @@ pub mod core;
 pub mod feature;
 pub mod observer;
 pub mod observers;
-pub mod plugin_assets;
+pub mod skill_assets;
 pub mod snapshot;
 #[cfg(test)]
 mod test_support;
