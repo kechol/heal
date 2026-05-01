@@ -74,17 +74,17 @@ After `heal init`:
 
 ## What gets written and when
 
-| File / dir                       | Written by                                  | When                                          |
-| -------------------------------- | ------------------------------------------- | --------------------------------------------- |
-| `.heal/config.toml`              | `heal init`                                 | Once at setup; you can edit it freely.        |
-| `.heal/calibration.toml`         | `heal init` / `heal calibrate`              | At setup, then on explicit recalibration.     |
-| `.heal/snapshots/YYYY-MM.jsonl`  | post-commit hook + `heal calibrate`         | On every `git commit` and recalibration.      |
-| `.heal/logs/YYYY-MM.jsonl`       | post-commit + Claude PostToolUse / Stop     | On every commit and Claude tool event.        |
-| `.heal/checks/YYYY-MM.jsonl`     | `heal check`                                | Each fresh `heal check` (cache-miss path).    |
-| `.heal/checks/latest.json`       | `heal check`                                | Atomic mirror; refreshed on every fresh run.  |
-| `.heal/checks/fixed.jsonl`       | `heal fix mark` (called by `/heal-code-fix`)     | Each commit `/heal-code-fix` lands.                |
-| `.heal/checks/regressed.jsonl`   | `heal check` (reconcile pass)               | When a fixed finding is re-detected.          |
-| `.claude/plugins/heal/`          | `heal skills install`                       | Once; updated with `heal skills update`.      |
+| File / dir                      | Written by                                   | When                                         |
+| ------------------------------- | -------------------------------------------- | -------------------------------------------- |
+| `.heal/config.toml`             | `heal init`                                  | Once at setup; you can edit it freely.       |
+| `.heal/calibration.toml`        | `heal init` / `heal calibrate`               | At setup, then on explicit recalibration.    |
+| `.heal/snapshots/YYYY-MM.jsonl` | post-commit hook + `heal calibrate`          | On every `git commit` and recalibration.     |
+| `.heal/logs/YYYY-MM.jsonl`      | post-commit + Claude PostToolUse / Stop      | On every commit and Claude tool event.       |
+| `.heal/checks/YYYY-MM.jsonl`    | `heal check`                                 | Each fresh `heal check` (cache-miss path).   |
+| `.heal/checks/latest.json`      | `heal check`                                 | Atomic mirror; refreshed on every fresh run. |
+| `.heal/checks/fixed.jsonl`      | `heal fix mark` (called by `/heal-code-fix`) | Each commit `/heal-code-fix` lands.          |
+| `.heal/checks/regressed.jsonl`  | `heal check` (reconcile pass)                | When a fixed finding is re-detected.         |
+| `.claude/plugins/heal/`         | `heal skills install`                        | Once; updated with `heal skills update`.     |
 
 The pre-v0.2 `.heal/state.json` was retired along with the
 SessionStart nudge — `EventLog::iter_segments` over `snapshots/` is
@@ -107,7 +107,9 @@ Every record has the same outer shape:
 {
   "timestamp": "2026-04-29T05:14:22Z",
   "event": "commit",
-  "data": { /* … shape depends on event … */ }
+  "data": {
+    /* … shape depends on event … */
+  }
 }
 ```
 
@@ -123,16 +125,32 @@ before decoding.
 {
   "version": 1,
   "git_sha": "a0a6d1a…",
-  "loc": { /* LocReport */ },
-  "complexity": { /* or null if disabled */ },
-  "churn": { /* … */ },
-  "change_coupling": { /* pairs[].direction = "symmetric" | "one_way" */ },
-  "duplication": { /* … */ },
-  "hotspot": { /* … */ },
-  "lcom": { /* classes[].cluster_count, clusters[].methods */ },
+  "loc": {
+    /* LocReport */
+  },
+  "complexity": {
+    /* or null if disabled */
+  },
+  "churn": {
+    /* … */
+  },
+  "change_coupling": {
+    /* pairs[].direction = "symmetric" | "one_way" */
+  },
+  "duplication": {
+    /* … */
+  },
+  "hotspot": {
+    /* … */
+  },
+  "lcom": {
+    /* classes[].cluster_count, clusters[].methods */
+  },
   "severity_counts": { "critical": 2, "high": 5, "medium": 12, "ok": 84 },
   "codebase_files": 142,
-  "delta": { /* SnapshotDelta, or null on the first snapshot */ }
+  "delta": {
+    /* SnapshotDelta, or null on the first snapshot */
+  }
 }
 ```
 
@@ -144,11 +162,11 @@ current `Finding` set against `calibration.toml`.
 
 Lightweight records, no metric payloads. `heal logs` walks them.
 
-| Event type | Written when                                 |
-| ---------- | -------------------------------------------- |
-| `commit`   | A `git commit` landed (CommitInfo metadata)  |
-| `edit`     | Claude edited a file (PostToolUse hook)      |
-| `stop`     | A Claude turn ended (Stop hook)              |
+| Event type | Written when                                |
+| ---------- | ------------------------------------------- |
+| `commit`   | A `git commit` landed (CommitInfo metadata) |
+| `edit`     | Claude edited a file (PostToolUse hook)     |
+| `stop`     | A Claude turn ended (Stop hook)             |
 
 `commit` events carry only metadata (sha, parent, author, message
 summary, files changed); the full metric payload stays in
@@ -181,7 +199,11 @@ are flat JSON-lines (not the `EventLog` envelope). They're small,
 single-purpose audit trails:
 
 ```jsonl
-{"finding_id":"ccn:src/payments/engine.ts:processOrder:9f8e…","commit_sha":"a1b2c3","fixed_at":"…"}
+{
+  "finding_id": "ccn:src/payments/engine.ts:processOrder:9f8e…",
+  "commit_sha": "a1b2c3",
+  "fixed_at": "…"
+}
 ```
 
 When a previously-fixed `finding_id` re-appears in a new `heal check`,

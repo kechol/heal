@@ -55,16 +55,16 @@ min_cluster_count = 2
 `heal init` 後、すべてのオブザーバーがデフォルトで有効です。無効化
 するには対応セクションで `enabled = false` を設定してください。
 
-| メトリクス       | デフォルト                       |
-| ---------------- | -------------------------------- |
-| LOC              | 常に有効（トグルなし）           |
-| Churn            | 有効                             |
-| Complexity (CCN) | 有効                             |
-| Cognitive        | 有効                             |
-| Duplication      | 有効                             |
-| Change Coupling  | 有効（symmetric を含む）         |
-| Hotspot          | 有効                             |
-| LCOM             | 有効（`tree-sitter-approx`）     |
+| メトリクス       | デフォルト                   |
+| ---------------- | ---------------------------- |
+| LOC              | 常に有効（トグルなし）       |
+| Churn            | 有効                         |
+| Complexity (CCN) | 有効                         |
+| Cognitive        | 有効                         |
+| Duplication      | 有効                         |
+| Change Coupling  | 有効（symmetric を含む）     |
+| Hotspot          | 有効                         |
+| LCOM             | 有効（`tree-sitter-approx`） |
 
 無効化されたメトリクスは完全にスキップされます。オブザーバーが走ら
 ず、`heal status` にも現れません。
@@ -203,7 +203,7 @@ weight_complexity = 1.0
 
 - `weight_churn` と `weight_complexity`（どちらもデフォルト `1.0`）
   — 合成スコアは `(weight_complexity × ccn_sum) × (weight_churn ×
-  commits)`。どちらかを `0.0` にすると、その側の合成だけ無効化され
+commits)`。どちらかを `0.0` にすると、その側の合成だけ無効化され
   ます（オブザーバー本体は無効化されません）。
 
 Hotspot 自体に `floor_critical` はありません。Severity Tier ではな

@@ -33,23 +33,20 @@ bundled `/heal-code-fix` Claude skill drains, one finding per commit.
 
 <CardGrid>
   <Card title="Seven calibrated metrics" icon="seti:rust">
-    LOC, complexity (CCN + Cognitive), churn, change coupling
-    (one-way + symmetric), duplication, hotspot, and LCOM — each
-    classified against the codebase's own percentile distribution.
+    LOC, complexity (CCN + Cognitive), churn, change coupling (one-way + symmetric), duplication,
+    hotspot, and LCOM — each classified against the codebase's own percentile distribution.
   </Card>
   <Card title="Hook-driven" icon="puzzle">
-    A git post-commit hook writes the snapshot and surfaces the
-    Severity nudge. No daemon, no scheduler — observers run once per
-    commit.
+    A git post-commit hook writes the snapshot and surfaces the Severity nudge. No daemon, no
+    scheduler — observers run once per commit.
   </Card>
   <Card title="Read-only by default; write through the skill" icon="approve-check">
-    The CLI never modifies source files. Repair flows through
-    `/heal-code-fix`: one finding per commit, refuses on a dirty worktree,
-    never pushes.
+    The CLI never modifies source files. Repair flows through `/heal-code-fix`: one finding per
+    commit, refuses on a dirty worktree, never pushes.
   </Card>
   <Card title="Single binary" icon="rocket">
-    `cargo install heal-cli` installs the CLI. The Claude plugin is
-    bundled in the binary and extracted by `heal skills install`.
+    `cargo install heal-cli` installs the CLI. The Claude plugin is bundled in the binary and
+    extracted by `heal skills install`.
   </Card>
 </CardGrid>
 

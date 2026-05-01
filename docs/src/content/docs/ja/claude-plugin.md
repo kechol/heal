@@ -71,8 +71,8 @@ heal skills install
 リードオンリー。`heal check --all --json` を取り込み、フラグ付きの
 コードを深く読み込んで、2 つの成果物を返します:
 
-1. **アーキテクチャ的な所見** — Finding を *リスト* ではなく
-   *システム* として読み解いたもの（複雑度・重複・結合・ハブの
+1. **アーキテクチャ的な所見** — Finding を _リスト_ ではなく
+   _システム_ として読み解いたもの（複雑度・重複・結合・ハブの
    いずれが支配的軸か）。
 2. **優先度付き TODO リスト** — ファイル / 関数を特定した具体的な
    リファクタ提案。各エントリには確立されたリファクタパターン名と、
@@ -89,7 +89,7 @@ heal skills install
 - `references/architecture.md` — リファクタ提案で使う語彙集:
   モジュールの深さ（Ousterhout）、レイヤード / ヘキサゴナル
   アーキテクチャ（Cockburn、Evans）、DDD（Evans、Vernon）、
-  および提案が満たすべき *コードベース尊重* のルール。
+  および提案が満たすべき _コードベース尊重_ のルール。
 
 `/heal-code-check` は提案のみで、ソースを変更しません。書き込み側は
 `/heal-code-fix` です。
@@ -133,14 +133,14 @@ heal skills install
 メトリクスごとに `/heal-code-fix` は確立されたリファクタリング語彙
 （Fowler、Tornhill）にマッピングされます。
 
-| メトリクス                  | 主な手法                                                                                |
-| --------------------------- | --------------------------------------------------------------------------------------- |
-| `ccn` / `cognitive`         | Extract Function、Replace Nested Conditional with Guard Clauses、Decompose Conditional  |
-| `duplication`               | Extract Function / Method、Pull Up Method、Form Template Method、Rule of Three          |
-| `change_coupling`           | アーキテクチャ的な seam を表面化 — `/heal-code-fix` は coupling を自動修正しない        |
-| `change_coupling.symmetric` | 同様 — 強い「責務の混在」シグナルは人間の判断が必要                                     |
-| `lcom`                      | クラスをクラスタ境界で分割 — 通常 Extract Class                                         |
-| `hotspot`                   | Hotspot は問題ではなくフラグ；裏にある CCN/dup/coupling に対処する                      |
+| メトリクス                  | 主な手法                                                                               |
+| --------------------------- | -------------------------------------------------------------------------------------- |
+| `ccn` / `cognitive`         | Extract Function、Replace Nested Conditional with Guard Clauses、Decompose Conditional |
+| `duplication`               | Extract Function / Method、Pull Up Method、Form Template Method、Rule of Three         |
+| `change_coupling`           | アーキテクチャ的な seam を表面化 — `/heal-code-fix` は coupling を自動修正しない       |
+| `change_coupling.symmetric` | 同様 — 強い「責務の混在」シグナルは人間の判断が必要                                    |
+| `lcom`                      | クラスをクラスタ境界で分割 — 通常 Extract Class                                        |
+| `hotspot`                   | Hotspot は問題ではなくフラグ；裏にある CCN/dup/coupling に対処する                     |
 
 スキルが強制する制約:
 

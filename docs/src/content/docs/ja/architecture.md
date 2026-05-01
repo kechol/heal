@@ -74,17 +74,17 @@ heal check  ──►  calibration.toml で Finding を分類
 
 ## 何がいつ書かれるか
 
-| ファイル / ディレクトリ          | 書き出し元                                       | タイミング                                       |
-| -------------------------------- | ------------------------------------------------ | ------------------------------------------------ |
-| `.heal/config.toml`              | `heal init`                                      | セットアップ時に一度。自由に編集可。             |
-| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                   | セットアップ時、その後は明示的な再 calibrate 時。|
-| `.heal/snapshots/YYYY-MM.jsonl`  | post-commit フック + `heal calibrate`            | `git commit` ごと、再 calibrate ごと。           |
-| `.heal/logs/YYYY-MM.jsonl`       | post-commit + Claude PostToolUse / Stop          | コミットおよび Claude ツールイベントごと。       |
-| `.heal/checks/YYYY-MM.jsonl`     | `heal check`                                     | 新規 `heal check`（キャッシュミス経路）ごと。    |
-| `.heal/checks/latest.json`       | `heal check`                                     | アトミックミラー；新規実行ごとにリフレッシュ。   |
-| `.heal/checks/fixed.jsonl`       | `heal fix mark`（`/heal-code-fix` から呼出）          | `/heal-code-fix` のコミット着地ごと。                 |
-| `.heal/checks/regressed.jsonl`   | `heal check`（整合パス）                         | 修正済み Finding が再検出されたとき。            |
-| `.claude/plugins/heal/`          | `heal skills install`                            | 一度だけ。`heal skills update` で更新。          |
+| ファイル / ディレクトリ         | 書き出し元                                   | タイミング                                        |
+| ------------------------------- | -------------------------------------------- | ------------------------------------------------- |
+| `.heal/config.toml`             | `heal init`                                  | セットアップ時に一度。自由に編集可。              |
+| `.heal/calibration.toml`        | `heal init` / `heal calibrate`               | セットアップ時、その後は明示的な再 calibrate 時。 |
+| `.heal/snapshots/YYYY-MM.jsonl` | post-commit フック + `heal calibrate`        | `git commit` ごと、再 calibrate ごと。            |
+| `.heal/logs/YYYY-MM.jsonl`      | post-commit + Claude PostToolUse / Stop      | コミットおよび Claude ツールイベントごと。        |
+| `.heal/checks/YYYY-MM.jsonl`    | `heal check`                                 | 新規 `heal check`（キャッシュミス経路）ごと。     |
+| `.heal/checks/latest.json`      | `heal check`                                 | アトミックミラー；新規実行ごとにリフレッシュ。    |
+| `.heal/checks/fixed.jsonl`      | `heal fix mark`（`/heal-code-fix` から呼出） | `/heal-code-fix` のコミット着地ごと。             |
+| `.heal/checks/regressed.jsonl`  | `heal check`（整合パス）                     | 修正済み Finding が再検出されたとき。             |
+| `.claude/plugins/heal/`         | `heal skills install`                        | 一度だけ。`heal skills update` で更新。           |
 
 v0.2 以前の `.heal/state.json` は SessionStart ナッジとともに廃止
 されました — 履歴状態の問い合わせは `EventLog::iter_segments` で
@@ -107,7 +107,9 @@ v0.2 以前の `.heal/state.json` は SessionStart ナッジとともに廃止
 {
   "timestamp": "2026-04-29T05:14:22Z",
   "event": "commit",
-  "data": { /* … 形は event に依存 … */ }
+  "data": {
+    /* … 形は event に依存 … */
+  }
 }
 ```
 
@@ -123,16 +125,32 @@ v0.2 以前の `.heal/state.json` は SessionStart ナッジとともに廃止
 {
   "version": 1,
   "git_sha": "a0a6d1a…",
-  "loc": { /* LocReport */ },
-  "complexity": { /* 無効ならば null */ },
-  "churn": { /* … */ },
-  "change_coupling": { /* pairs[].direction = "symmetric" | "one_way" */ },
-  "duplication": { /* … */ },
-  "hotspot": { /* … */ },
-  "lcom": { /* classes[].cluster_count, clusters[].methods */ },
+  "loc": {
+    /* LocReport */
+  },
+  "complexity": {
+    /* 無効ならば null */
+  },
+  "churn": {
+    /* … */
+  },
+  "change_coupling": {
+    /* pairs[].direction = "symmetric" | "one_way" */
+  },
+  "duplication": {
+    /* … */
+  },
+  "hotspot": {
+    /* … */
+  },
+  "lcom": {
+    /* classes[].cluster_count, clusters[].methods */
+  },
   "severity_counts": { "critical": 2, "high": 5, "medium": 12, "ok": 84 },
   "codebase_files": 142,
-  "delta": { /* SnapshotDelta、または初回スナップショットでは null */ }
+  "delta": {
+    /* SnapshotDelta、または初回スナップショットでは null */
+  }
 }
 ```
 
@@ -145,11 +163,11 @@ v0.2 以前の `.heal/state.json` は SessionStart ナッジとともに廃止
 メトリクスペイロードを含まない軽量レコードです。`heal logs` が読み
 ます。
 
-| イベント種別 | 書き出されるタイミング                              |
-| ------------ | --------------------------------------------------- |
-| `commit`     | `git commit` 着地時（CommitInfo メタデータ）        |
-| `edit`       | Claude がファイルを編集したとき（PostToolUse フック）|
-| `stop`       | Claude のターンが終わったとき（Stop フック）        |
+| イベント種別 | 書き出されるタイミング                                |
+| ------------ | ----------------------------------------------------- |
+| `commit`     | `git commit` 着地時（CommitInfo メタデータ）          |
+| `edit`       | Claude がファイルを編集したとき（PostToolUse フック） |
+| `stop`       | Claude のターンが終わったとき（Stop フック）          |
 
 `commit` イベントはメタデータのみ（sha、parent、author、メッセー
 ジサマリ、変更ファイル）を保持します。フルなメトリクスペイロードは
@@ -183,7 +201,11 @@ writer です。
 くて目的が単一の監査トレイルです。
 
 ```jsonl
-{"finding_id":"ccn:src/payments/engine.ts:processOrder:9f8e…","commit_sha":"a1b2c3","fixed_at":"…"}
+{
+  "finding_id": "ccn:src/payments/engine.ts:processOrder:9f8e…",
+  "commit_sha": "a1b2c3",
+  "fixed_at": "…"
+}
 ```
 
 新規 `heal check` で、既に fixed の `finding_id` が再出現すると、

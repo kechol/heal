@@ -12,27 +12,27 @@ for the full argument list.
 Ordered by everyday importance — a typical day involves the top three;
 the lower entries are for investigation and maintenance.
 
-| Command          | Purpose                                                                                       |
-| ---------------- | --------------------------------------------------------------------------------------------- |
-| `heal init`      | Set up `.heal/`, calibrate, and install the post-commit hook in the current repository.        |
-| `heal skills`    | Install / update / inspect / remove the bundled Claude plugin.                                |
-| `heal check`     | Render the cached `CheckRecord` from `.heal/checks/latest.json` (or refresh it).              |
-| `heal status`    | Per-metric summary plus the delta since the previous snapshot.                                |
-| `heal calibrate` | Recalibrate codebase-relative Severity thresholds.                                            |
-| `heal logs`      | Browse the raw hook event log (`.heal/logs/`).                                                |
-| `heal snapshots` | Browse the metric / calibration event timeline (`.heal/snapshots/`).                          |
-| `heal checks`    | Newest-first list of every `CheckRecord` ever written to `.heal/checks/`.                     |
-| `heal fix`       | Per-record / per-finding ops on `.heal/checks/` — `show <id>`, `diff`, `mark`.                |
-| `heal compact`   | Gzip aged event-log segments; delete the very oldest. Idempotent; safe to run by hand.        |
+| Command          | Purpose                                                                                 |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| `heal init`      | Set up `.heal/`, calibrate, and install the post-commit hook in the current repository. |
+| `heal skills`    | Install / update / inspect / remove the bundled Claude plugin.                          |
+| `heal check`     | Render the cached `CheckRecord` from `.heal/checks/latest.json` (or refresh it).        |
+| `heal status`    | Per-metric summary plus the delta since the previous snapshot.                          |
+| `heal calibrate` | Recalibrate codebase-relative Severity thresholds.                                      |
+| `heal logs`      | Browse the raw hook event log (`.heal/logs/`).                                          |
+| `heal snapshots` | Browse the metric / calibration event timeline (`.heal/snapshots/`).                    |
+| `heal checks`    | Newest-first list of every `CheckRecord` ever written to `.heal/checks/`.               |
+| `heal fix`       | Per-record / per-finding ops on `.heal/checks/` — `show <id>`, `diff`, `mark`.          |
+| `heal compact`   | Gzip aged event-log segments; delete the very oldest. Idempotent; safe to run by hand.  |
 
 ## Automation commands
 
 Invoked automatically by the git post-commit hook and the Claude
 plugin. You do not normally call them by hand.
 
-| Command     | Called by                 | Purpose                                                                |
-| ----------- | ------------------------- | ---------------------------------------------------------------------- |
-| `heal hook` | git and the Claude plugin | Run observers, write snapshots, emit the post-commit Severity nudge.   |
+| Command     | Called by                 | Purpose                                                              |
+| ----------- | ------------------------- | -------------------------------------------------------------------- |
+| `heal hook` | git and the Claude plugin | Run observers, write snapshots, emit the post-commit Severity nudge. |
 
 ---
 
@@ -93,7 +93,7 @@ left in place (use `--force` to overwrite anyway).
 The bundled plugin ships:
 
 - one read-only skill `heal-code-check` that ingests `heal check --all
-  --json`, deep-reads the flagged code, and produces an architectural
+--json`, deep-reads the flagged code, and produces an architectural
   reading plus a prioritised refactor TODO list (with reference docs
   under `skills/heal-code-check/references/`).
 - one write skill `heal-code-fix` that drains
@@ -202,11 +202,11 @@ heal checks                                  # newest-first CheckRecord summary
 heal checks --json --limit 20                # JSON list of {check_id, started_at, head_sha, severity_counts, …}
 ```
 
-| Source                | Records                                                                       | Reader command  |
-| --------------------- | ----------------------------------------------------------------------------- | --------------- |
-| `.heal/logs/`         | `commit` / `edit` / `stop` hook events (lightweight metadata).                | `heal logs`     |
-| `.heal/snapshots/`    | `commit` (`MetricsSnapshot`) + `calibrate` (`CalibrationEvent`) timeline.     | `heal snapshots`|
-| `.heal/checks/`       | `CheckRecord` history written by `heal check`.                                | `heal checks`   |
+| Source             | Records                                                                   | Reader command   |
+| ------------------ | ------------------------------------------------------------------------- | ---------------- |
+| `.heal/logs/`      | `commit` / `edit` / `stop` hook events (lightweight metadata).            | `heal logs`      |
+| `.heal/snapshots/` | `commit` (`MetricsSnapshot`) + `calibrate` (`CalibrationEvent`) timeline. | `heal snapshots` |
+| `.heal/checks/`    | `CheckRecord` history written by `heal check`.                            | `heal checks`    |
 
 `heal status` is the synthesised view over snapshots; `heal snapshots`
 is the raw timeline. The pre-v0.2 `session-start` event was retired

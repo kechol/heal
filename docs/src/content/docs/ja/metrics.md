@@ -17,12 +17,12 @@ heal の貢献は **コードベース自身の分布に合わせてキャリブ
 
 すべての Finding は次の 4 段階のいずれかに収まります。
 
-| Tier      | ルール                                                                                |
-| --------- | ------------------------------------------------------------------------------------- |
-| Critical  | `value ≥ floor_critical` または `value ≥ p95`（calibrate された 95 パーセンタイル）。 |
-| High      | `value ≥ p90`                                                                         |
-| Medium    | `value ≥ p75`                                                                         |
-| Ok        | それ以外                                                                              |
+| Tier     | ルール                                                                                |
+| -------- | ------------------------------------------------------------------------------------- |
+| Critical | `value ≥ floor_critical` または `value ≥ p95`（calibrate された 95 パーセンタイル）。 |
+| High     | `value ≥ p90`                                                                         |
+| Medium   | `value ≥ p75`                                                                         |
+| Ok       | それ以外                                                                              |
 
 `floor_critical` のデフォルト値は確立された文献（McCabe / SonarQube）
 から取られています: CCN 25、Cognitive 50、Duplication 30%。パーセ

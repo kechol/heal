@@ -53,10 +53,10 @@ the version installed always matches the binary. After upgrading
 Two hooks ship with the plugin. Both call back into the same
 `heal hook` entrypoint.
 
-| Hook event    | Behaviour                                                                       |
-| ------------- | ------------------------------------------------------------------------------- |
+| Hook event    | Behaviour                                                                        |
+| ------------- | -------------------------------------------------------------------------------- |
 | `PostToolUse` | Logs every Edit / Write / MultiEdit Claude makes, to `.heal/logs/` (event-only). |
-| `Stop`        | Logs the end of every Claude turn.                                              |
+| `Stop`        | Logs the end of every Claude turn.                                               |
 
 Both are pure logging — they do not run any observer, so they add no
 measurable latency to a Claude turn.
@@ -70,7 +70,7 @@ Read-only. Ingests `heal check --all --json`, deep-reads the flagged
 code, and returns two artefacts:
 
 1. An **architectural reading** of the codebase — what the findings
-   say *as a system*, not as a list (the dominant axis: complexity,
+   say _as a system_, not as a list (the dominant axis: complexity,
    duplication, coupling, or hub).
 2. A **prioritised TODO list** — concrete refactors keyed to specific
    files / functions, each tagged with the established refactor
@@ -88,7 +88,7 @@ demand:
 - `references/architecture.md` — the vocabulary for refactor
   proposals: module depth (Ousterhout), layered / hexagonal
   architecture (Cockburn, Evans), DDD (Evans, Vernon), plus the
-  rules for *respecting the codebase* the proposals must pass.
+  rules for _respecting the codebase_ the proposals must pass.
 
 `/heal-code-check` proposes only — it never edits source. The write
 counterpart is `/heal-code-fix`.
@@ -133,14 +133,14 @@ trade-offs and asks before applying.
 Per-metric, `/heal-code-fix` maps to established refactoring vocabulary
 (Fowler, Tornhill):
 
-| Metric              | Common moves                                                                |
-| ------------------- | --------------------------------------------------------------------------- |
-| `ccn` / `cognitive` | Extract Function, Replace Nested Conditional with Guard Clauses, Decompose Conditional |
-| `duplication`       | Extract Function / Method, Pull Up Method, Form Template Method, Rule of Three |
-| `change_coupling`   | Surface the architectural seam — `/heal-code-fix` does not auto-fix coupling |
-| `change_coupling.symmetric` | Same — strong "responsibility mixing" signal needs a human call         |
-| `lcom`              | Split the class along the cluster boundary — usually Extract Class          |
-| `hotspot`           | Hotspot is a flag, not a problem; act on the underlying CCN/dup/coupling    |
+| Metric                      | Common moves                                                                           |
+| --------------------------- | -------------------------------------------------------------------------------------- |
+| `ccn` / `cognitive`         | Extract Function, Replace Nested Conditional with Guard Clauses, Decompose Conditional |
+| `duplication`               | Extract Function / Method, Pull Up Method, Form Template Method, Rule of Three         |
+| `change_coupling`           | Surface the architectural seam — `/heal-code-fix` does not auto-fix coupling           |
+| `change_coupling.symmetric` | Same — strong "responsibility mixing" signal needs a human call                        |
+| `lcom`                      | Split the class along the cluster boundary — usually Extract Class                     |
+| `hotspot`                   | Hotspot is a flag, not a problem; act on the underlying CCN/dup/coupling               |
 
 Constraints (enforced by the skill):
 

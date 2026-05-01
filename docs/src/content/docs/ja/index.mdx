@@ -34,23 +34,21 @@ commit のペースで消化します。
 
 <CardGrid>
   <Card title="7 つの較正されたメトリクス" icon="seti:rust">
-    LOC、複雑度 (CCN + Cognitive)、Churn、Change Coupling
-    (一方向 + 双方向)、Duplication、Hotspot、LCOM — それぞれが
+    LOC、複雑度 (CCN + Cognitive)、Churn、Change Coupling (一方向 +
+    双方向)、Duplication、Hotspot、LCOM — それぞれが
     コードベース自身の分布に対するパーセンタイルで分類されます。
   </Card>
   <Card title="フック駆動" icon="puzzle">
-    git の post-commit フックがスナップショット書き込みと Severity
-    nudge の両方を担当。デーモンもスケジューラもなく、オブザーバは
-    コミットごとに 1 回だけ走ります。
+    git の post-commit フックがスナップショット書き込みと Severity nudge
+    の両方を担当。デーモンもスケジューラもなく、オブザーバは コミットごとに 1 回だけ走ります。
   </Card>
   <Card title="CLI はリードオンリー、修復は skill 経由" icon="approve-check">
-    CLI 自体はソースを書き換えません。修復は `/heal-code-fix` を通じて
-    1 finding = 1 commit、dirty worktree では起動拒否、push しない、
-    amend しない、というルールで進みます。
+    CLI 自体はソースを書き換えません。修復は `/heal-code-fix` を通じて 1 finding = 1 commit、dirty
+    worktree では起動拒否、push しない、 amend しない、というルールで進みます。
   </Card>
   <Card title="単一バイナリ" icon="rocket">
-    `cargo install heal-cli` で CLI が入ります。Claude プラグインは
-    バイナリに同梱されており、`heal skills install` で展開します。
+    `cargo install heal-cli` で CLI が入ります。Claude プラグインは バイナリに同梱されており、`heal
+    skills install` で展開します。
   </Card>
 </CardGrid>
 

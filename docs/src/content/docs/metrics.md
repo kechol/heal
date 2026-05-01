@@ -17,12 +17,12 @@ This page summarises each metric. For configuration knobs, see
 
 Every Finding lands on one of four tiers:
 
-| Tier      | Rule                                                                           |
-| --------- | ------------------------------------------------------------------------------ |
-| Critical  | `value ≥ floor_critical` OR `value ≥ p95` (the calibrated 95th percentile).    |
-| High      | `value ≥ p90`                                                                  |
-| Medium    | `value ≥ p75`                                                                  |
-| Ok        | otherwise                                                                      |
+| Tier     | Rule                                                                        |
+| -------- | --------------------------------------------------------------------------- |
+| Critical | `value ≥ floor_critical` OR `value ≥ p95` (the calibrated 95th percentile). |
+| High     | `value ≥ p90`                                                               |
+| Medium   | `value ≥ p75`                                                               |
+| Ok       | otherwise                                                                   |
 
 `floor_critical` defaults are taken from established literature
 (McCabe / SonarQube): CCN 25, Cognitive 50, Duplication 30%. The

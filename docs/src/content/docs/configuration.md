@@ -53,15 +53,15 @@ min_cluster_count = 2
 Every observer is enabled by default after `heal init`. Toggle by
 setting `enabled = false` in the relevant section.
 
-| Metric           | Default                      |
-| ---------------- | ---------------------------- |
-| LOC              | always enabled (no toggle)   |
-| Churn            | enabled                      |
-| Complexity (CCN) | enabled                      |
-| Cognitive        | enabled                      |
-| Duplication      | enabled                      |
-| Change Coupling  | enabled (incl. symmetric)    |
-| Hotspot          | enabled                      |
+| Metric           | Default                        |
+| ---------------- | ------------------------------ |
+| LOC              | always enabled (no toggle)     |
+| Churn            | enabled                        |
+| Complexity (CCN) | enabled                        |
+| Cognitive        | enabled                        |
+| Duplication      | enabled                        |
+| Change Coupling  | enabled (incl. symmetric)      |
+| Hotspot          | enabled                        |
 | LCOM             | enabled (`tree-sitter-approx`) |
 
 A disabled metric is skipped entirely: its observer does not run, and
@@ -199,7 +199,7 @@ weight_complexity = 1.0
 
 - `weight_churn` and `weight_complexity` (both default `1.0`) — the
   composed score is `(weight_complexity × ccn_sum) × (weight_churn ×
-  commits)`. Setting either to `0.0` disables that side of the
+commits)`. Setting either to `0.0` disables that side of the
   composition without disabling the underlying observer.
 
 Hotspot itself does not have a `floor_critical`; it is a flag (top-10%
