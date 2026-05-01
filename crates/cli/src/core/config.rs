@@ -184,6 +184,11 @@ pub struct CognitiveConfig {
     /// for the v0.2 default (50, `SonarQube` Critical baseline).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub floor_critical: Option<f64>,
+    /// Graduation gate override — see `core::calibration::FLOOR_OK_COGNITIVE`
+    /// (8, half of `Sonar`'s "review" threshold). Values strictly below this
+    /// classify as Ok regardless of percentile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor_ok: Option<f64>,
 }
 
 impl Eq for CognitiveConfig {}
@@ -193,6 +198,7 @@ impl Toggle for CognitiveConfig {
         Self {
             enabled: true,
             floor_critical: None,
+            floor_ok: None,
         }
     }
 }
@@ -433,6 +439,11 @@ pub struct CcnConfig {
     /// v0.2 default (25, `McCabe`'s "untestable" threshold).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub floor_critical: Option<f64>,
+    /// Graduation gate override — see `core::calibration::FLOOR_OK_CCN`
+    /// (11, `McCabe`'s "simple, low risk" boundary). Values strictly below
+    /// this classify as Ok regardless of percentile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor_ok: Option<f64>,
 }
 
 impl Eq for CcnConfig {}
@@ -444,6 +455,7 @@ impl Default for CcnConfig {
             warn_delta_pct: default_warn_delta_pct(),
             top_n: None,
             floor_critical: None,
+            floor_ok: None,
         }
     }
 }
@@ -455,6 +467,7 @@ impl Toggle for CcnConfig {
             warn_delta_pct: default_warn_delta_pct(),
             top_n: None,
             floor_critical: None,
+            floor_ok: None,
         }
     }
 }

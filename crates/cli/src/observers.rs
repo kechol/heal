@@ -6,7 +6,8 @@ use std::path::Path;
 
 use crate::core::calibration::{
     Calibration, CalibrationMeta, HotspotCalibration, MetricCalibration, MetricCalibrations,
-    FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_DUPLICATION_PCT, STRATEGY_PERCENTILE,
+    FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_DUPLICATION_PCT, FLOOR_OK_CCN, FLOOR_OK_COGNITIVE,
+    STRATEGY_PERCENTILE,
 };
 use crate::core::config::Config;
 use crate::core::finding::Finding;
@@ -114,7 +115,9 @@ pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> C
             .iter()
             .flat_map(|f| f.functions.iter().map(|fun| f64::from(fun.ccn)))
             .collect();
-        non_empty(&values).then(|| MetricCalibration::from_distribution(&values, Some(FLOOR_CCN)))
+        non_empty(&values).then(|| {
+            MetricCalibration::from_distribution(&values, Some(FLOOR_CCN), Some(FLOOR_OK_CCN))
+        })
     } else {
         None
     };
@@ -126,23 +129,29 @@ pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> C
             .iter()
             .flat_map(|f| f.functions.iter().map(|fun| f64::from(fun.cognitive)))
             .collect();
-        non_empty(&values)
-            .then(|| MetricCalibration::from_distribution(&values, Some(FLOOR_COGNITIVE)))
+        non_empty(&values).then(|| {
+            MetricCalibration::from_distribution(
+                &values,
+                Some(FLOOR_COGNITIVE),
+                Some(FLOOR_OK_COGNITIVE),
+            )
+        })
     } else {
         None
     };
 
     let duplication = reports.duplication.as_ref().and_then(|d| {
         let values: Vec<f64> = d.files.iter().map(|f| f.duplicate_pct).collect();
-        non_empty(&values)
-            .then(|| MetricCalibration::from_distribution(&values, Some(FLOOR_DUPLICATION_PCT)))
+        non_empty(&values).then(|| {
+            MetricCalibration::from_distribution(&values, Some(FLOOR_DUPLICATION_PCT), None)
+        })
     });
 
     let change_coupling = reports.change_coupling.as_ref().and_then(|c| {
         let values: Vec<f64> = c.pairs.iter().map(|p| f64::from(p.count)).collect();
         // `min_coupling` already gates coupling pairs at scan time so
         // the absolute floor here is rare in practice — leave None.
-        non_empty(&values).then(|| MetricCalibration::from_distribution(&values, None))
+        non_empty(&values).then(|| MetricCalibration::from_distribution(&values, None, None))
     });
 
     let hotspot = reports.hotspot.as_ref().and_then(|h| {
@@ -158,7 +167,7 @@ pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> C
             .collect();
         // `min_cluster_count` is already the scan-time floor; absolute
         // Critical floor on top is rare so default to None.
-        non_empty(&values).then(|| MetricCalibration::from_distribution(&values, None))
+        non_empty(&values).then(|| MetricCalibration::from_distribution(&values, None, None))
     });
 
     let codebase_files = u32::try_from(
@@ -367,6 +376,7 @@ mod tests {
                     p90: 10.0,
                     p95: 20.0,
                     floor_critical: Some(FLOOR_CCN),
+                    floor_ok: Some(FLOOR_OK_CCN),
                 }),
                 cognitive: Some(MetricCalibration {
                     p50: 1.0,
@@ -374,6 +384,7 @@ mod tests {
                     p90: 30.0,
                     p95: 50.0,
                     floor_critical: Some(FLOOR_COGNITIVE),
+                    floor_ok: Some(FLOOR_OK_COGNITIVE),
                 }),
                 duplication: Some(MetricCalibration {
                     p50: 5.0,
@@ -381,6 +392,7 @@ mod tests {
                     p90: 20.0,
                     p95: 35.0,
                     floor_critical: Some(FLOOR_DUPLICATION_PCT),
+                    floor_ok: None,
                 }),
                 change_coupling: Some(MetricCalibration {
                     p50: 1.0,
@@ -388,6 +400,7 @@ mod tests {
                     p90: 8.0,
                     p95: 16.0,
                     floor_critical: None,
+                    floor_ok: None,
                 }),
                 hotspot: Some(HotspotCalibration {
                     p50: 8.0,

@@ -57,6 +57,18 @@ pub const FLOOR_CCN: f64 = 25.0;
 pub const FLOOR_COGNITIVE: f64 = 50.0;
 pub const FLOOR_DUPLICATION_PCT: f64 = 30.0;
 
+/// Built-in `floor_ok` values for proxy metrics — values strictly below
+/// these classify as `Ok` regardless of percentile placement, giving
+/// codebases a literature-anchored graduation gate. Without this floor
+/// the percentile breaks would always flag the project's top decile,
+/// even on a uniformly-clean codebase (Goodhart's Law).
+///
+/// - `FLOOR_OK_CCN`: `McCabe` (1976) — CCN 1–10 is "simple, low risk".
+/// - `FLOOR_OK_COGNITIVE`: `Sonar` (2017) — under ~8 there's no nesting
+///   penalty signal worth surfacing.
+pub const FLOOR_OK_CCN: f64 = 11.0;
+pub const FLOOR_OK_COGNITIVE: f64 = 8.0;
+
 /// Default percentile strategy label written into
 /// `meta.strategy`. Reserved for future expansion (e.g. winsorised
 /// percentiles for very small samples).
@@ -153,21 +165,38 @@ pub struct MetricCalibration {
     /// classification).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub floor_critical: Option<f64>,
+    /// Absolute "graduation gate". Anything strictly `< floor_ok`
+    /// classifies as Ok regardless of where it lands on the percentile
+    /// ladder — a codebase whose worst values are below the literature
+    /// anchor escapes the "top 10% is always Critical" loop. `None`
+    /// disables the gate (current default for non-proxy metrics whose
+    /// scan-time filters already serve the same role).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor_ok: Option<f64>,
 }
 
 impl MetricCalibration {
     /// Severity classification per TODO §「分類: 絶対フロア超過 →
     /// Critical / value >= p95 → Critical / >= p90 → High / >= p75 →
-    /// Medium / それ以下 → Ok」. Degenerate calibrations carry `NaN`
-    /// percentiles (sample size below
-    /// [`MIN_SAMPLES_FOR_PERCENTILES`]); `>=` against `NaN` is always
-    /// false, so those cases naturally fall through to the floor-only
-    /// path.
+    /// Medium / それ以下 → Ok」, plus the v0.3 graduation gate: values
+    /// strictly below `floor_ok` are forced to `Ok` regardless of
+    /// percentile rank. `floor_critical` is consulted first so a
+    /// uniformly-bad codebase still surfaces (the `Critical` escape
+    /// hatch wins over graduation).
+    ///
+    /// Degenerate calibrations carry `NaN` percentiles (sample size
+    /// below [`MIN_SAMPLES_FOR_PERCENTILES`]); `>=` against `NaN` is
+    /// always false, so those cases fall through to the floor-only path.
     #[must_use]
     pub fn classify(&self, value: f64) -> Severity {
         if let Some(floor) = self.floor_critical {
             if value >= floor {
                 return Severity::Critical;
+            }
+        }
+        if let Some(floor) = self.floor_ok {
+            if value < floor {
+                return Severity::Ok;
             }
         }
         if value >= self.p95 {
@@ -181,14 +210,18 @@ impl MetricCalibration {
         }
     }
 
-    /// Build a calibration from a sample of metric values plus an
-    /// optional absolute floor. Samples below
-    /// [`MIN_SAMPLES_FOR_PERCENTILES`] mark every percentile as `NaN`
-    /// so `classify` ignores them — a Critical decision can still
-    /// fire via `floor_critical`. Non-finite input values (`NaN` /
-    /// `inf`) are dropped before sorting.
+    /// Build a calibration from a sample of metric values plus optional
+    /// absolute floors. Samples below [`MIN_SAMPLES_FOR_PERCENTILES`]
+    /// mark every percentile as `NaN` so `classify` ignores them — a
+    /// Critical decision can still fire via `floor_critical`, and `Ok`
+    /// graduation can still fire via `floor_ok`. Non-finite input
+    /// values (`NaN` / `inf`) are dropped before sorting.
     #[must_use]
-    pub fn from_distribution(values: &[f64], floor_critical: Option<f64>) -> Self {
+    pub fn from_distribution(
+        values: &[f64],
+        floor_critical: Option<f64>,
+        floor_ok: Option<f64>,
+    ) -> Self {
         let mut sorted: Vec<f64> = values.iter().copied().filter(|v| v.is_finite()).collect();
         if sorted.len() < MIN_SAMPLES_FOR_PERCENTILES {
             return Self {
@@ -197,6 +230,7 @@ impl MetricCalibration {
                 p90: f64::NAN,
                 p95: f64::NAN,
                 floor_critical,
+                floor_ok,
             };
         }
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -206,6 +240,7 @@ impl MetricCalibration {
             p90: percentile(&sorted, 90.0),
             p95: percentile(&sorted, 95.0),
             floor_critical,
+            floor_ok,
         }
     }
 }
@@ -291,21 +326,28 @@ impl Calibration {
         }
     }
 
-    /// Apply config-side `floor_critical` overrides. Each per-metric
-    /// section in `[metrics.<name>]` may set `floor_critical = N` to
-    /// raise (or, rarely, lower) the absolute floor without touching
-    /// `.heal/calibration.toml` — that way re-calibrating from a new
-    /// codebase distribution doesn't clobber the user's preference.
+    /// Apply config-side floor overrides. Each per-metric section in
+    /// `[metrics.<name>]` may set `floor_critical = N` and/or
+    /// `floor_ok = N` to raise (or lower) the absolute floors without
+    /// touching `.heal/calibration.toml` — that way re-calibrating from
+    /// a new codebase distribution doesn't clobber the user's
+    /// preference.
     #[must_use]
     pub fn with_overrides(mut self, config: &Config) -> Self {
         if let Some(c) = self.calibration.ccn.as_mut() {
             if let Some(f) = config.metrics.ccn.floor_critical {
                 c.floor_critical = Some(f);
             }
+            if let Some(f) = config.metrics.ccn.floor_ok {
+                c.floor_ok = Some(f);
+            }
         }
         if let Some(c) = self.calibration.cognitive.as_mut() {
             if let Some(f) = config.metrics.cognitive.floor_critical {
                 c.floor_critical = Some(f);
+            }
+            if let Some(f) = config.metrics.cognitive.floor_ok {
+                c.floor_ok = Some(f);
             }
         }
         if let Some(c) = self.calibration.duplication.as_mut() {
@@ -497,6 +539,7 @@ mod tests {
             p90,
             p95,
             floor_critical: floor,
+            floor_ok: None,
         }
     }
 
@@ -506,6 +549,72 @@ mod tests {
         assert_eq!(c.classify(11.0), Severity::Critical);
         // Above p95 but below floor — still Critical via the p95 break.
         assert_eq!(c.classify(5.0), Severity::Critical);
+    }
+
+    #[test]
+    fn classify_floor_ok_forces_ok_below_threshold() {
+        // p95=4 would normally make value=5 Critical, but floor_ok=11
+        // gates anything < 11 to Ok regardless of percentile.
+        let c = MetricCalibration {
+            p50: 1.0,
+            p75: 2.0,
+            p90: 3.0,
+            p95: 4.0,
+            floor_critical: None,
+            floor_ok: Some(11.0),
+        };
+        assert_eq!(c.classify(5.0), Severity::Ok);
+        assert_eq!(c.classify(10.99), Severity::Ok);
+        // At or above the floor, percentile classifier resumes.
+        assert_eq!(c.classify(11.0), Severity::Critical);
+    }
+
+    #[test]
+    fn classify_floor_critical_overrides_floor_ok() {
+        // A uniformly-bad codebase: every value happens to sit below
+        // floor_ok numerically (impossible-but-construct), but
+        // floor_critical wins so the escape hatch isn't lost.
+        let c = MetricCalibration {
+            p50: 1.0,
+            p75: 2.0,
+            p90: 3.0,
+            p95: 4.0,
+            floor_critical: Some(5.0),
+            floor_ok: Some(11.0),
+        };
+        assert_eq!(c.classify(6.0), Severity::Critical);
+    }
+
+    #[test]
+    fn with_overrides_applies_floor_ok_from_config() {
+        let cal = Calibration {
+            meta: CalibrationMeta::default(),
+            calibration: MetricCalibrations {
+                ccn: Some(MetricCalibration::from_distribution(
+                    &[1.0, 2.0, 3.0, 4.0, 5.0],
+                    Some(FLOOR_CCN),
+                    Some(FLOOR_OK_CCN),
+                )),
+                ..MetricCalibrations::default()
+            },
+        };
+        let mut config = Config::default();
+        config.metrics.ccn.floor_ok = Some(15.0);
+        config.metrics.ccn.floor_critical = Some(40.0);
+        let merged = cal.with_overrides(&config);
+        let ccn = merged.calibration.ccn.unwrap();
+        assert_eq!(ccn.floor_ok, Some(15.0));
+        assert_eq!(ccn.floor_critical, Some(40.0));
+    }
+
+    #[test]
+    fn classify_floor_ok_works_with_nan_percentiles() {
+        // Tiny sample falls back to NaN percentiles; floor_ok must still
+        // graduate values below the literature anchor.
+        let c = MetricCalibration::from_distribution(&[1.0, 2.0], Some(25.0), Some(11.0));
+        assert!(c.p95.is_nan());
+        assert_eq!(c.classify(5.0), Severity::Ok);
+        assert_eq!(c.classify(30.0), Severity::Critical);
     }
 
     #[test]
@@ -545,7 +654,7 @@ mod tests {
 
     #[test]
     fn from_distribution_marks_breaks_nan_below_min_samples() {
-        let c = MetricCalibration::from_distribution(&[1.0, 2.0], Some(25.0));
+        let c = MetricCalibration::from_distribution(&[1.0, 2.0], Some(25.0), None);
         assert!(c.p50.is_nan());
         assert!(c.p95.is_nan());
         assert_eq!(c.floor_critical, Some(25.0));
@@ -560,7 +669,7 @@ mod tests {
     #[test]
     fn from_distribution_drops_non_finite() {
         let values = vec![1.0, 2.0, f64::NAN, 3.0, f64::INFINITY, 4.0, 5.0];
-        let c = MetricCalibration::from_distribution(&values, None);
+        let c = MetricCalibration::from_distribution(&values, None, None);
         // After filter the sorted set is [1,2,3,4,5] → p50 = 3.0.
         assert!((c.p50 - 3.0).abs() < 1e-9);
     }
@@ -593,6 +702,7 @@ mod tests {
                     p90: 14.3,
                     p95: 21.7,
                     floor_critical: Some(FLOOR_CCN),
+                    floor_ok: Some(FLOOR_OK_CCN),
                 }),
                 hotspot: Some(HotspotCalibration {
                     p50: 5.0,
@@ -647,6 +757,7 @@ mod tests {
                 ccn: Some(MetricCalibration::from_distribution(
                     &[1.0, 2.0],
                     Some(FLOOR_CCN),
+                    Some(FLOOR_OK_CCN),
                 )),
                 ..MetricCalibrations::default()
             },

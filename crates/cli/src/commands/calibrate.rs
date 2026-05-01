@@ -108,7 +108,10 @@ fn run_check(paths: &HealPaths) {
         );
     }
     if let Some(streak) = check.critical_clean_streak_days {
-        println!("  - {streak} days of [critical] = 0 (>=30) — thresholds may be too lenient");
+        println!(
+            "  - {streak} days of [critical] = 0 (>=30) — codebase may have graduated below \
+             proxy-metric floors, or thresholds may be too lenient"
+        );
     }
     println!("Run `heal calibrate --force` to refresh.");
 }
