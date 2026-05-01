@@ -23,3 +23,8 @@ install-updater = false
 github-attestations = true
 # Which actions to run on pull requests
 pr-run-mode = "skip"
+# Treat the CI workflow as hand-editable. cargo-dist's template emits
+# unpinned action refs (`@v6`); our security review pins to commit SHAs.
+# Without this, every release run aborts at `dist host` with
+# "release.yml has out of date contents and needs to be regenerated".
+allow-dirty = ["ci"]
