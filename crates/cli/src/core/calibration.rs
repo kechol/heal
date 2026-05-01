@@ -187,13 +187,20 @@ pub struct MetricCalibration {
 }
 
 impl MetricCalibration {
-    /// Severity classification per TODO §「分類: 絶対フロア超過 →
-    /// Critical / value >= p95 → Critical / >= p90 → High / >= p75 →
-    /// Medium / それ以下 → Ok」, plus the v0.3 graduation gate: values
-    /// strictly below `floor_ok` are forced to `Ok` regardless of
-    /// percentile rank. `floor_critical` is consulted first so a
-    /// uniformly-bad codebase still surfaces (the `Critical` escape
-    /// hatch wins over graduation).
+    /// Severity classification with three gates layered above the
+    /// percentile classifier:
+    ///
+    /// 1. `floor_critical` — uniformly-bad escape hatch (always Critical).
+    /// 2. `floor_ok` — graduation gate (always Ok below it).
+    /// 3. **Spread gate** — when `(p95 - p50)` is small relative to
+    ///    `(floor_critical - floor_ok)`, the percentile classifier has
+    ///    no signal (everyone clustered between the floors). Falls to
+    ///    Ok. Threshold: `(floor_critical - floor_ok) / 2`. Both floors
+    ///    must be present for the gate to fire — partial-floor
+    ///    metrics keep the existing percentile-only behaviour.
+    ///
+    /// Then the percentile cascade: `value >= p95` → Critical, `p90` →
+    /// High, `p75` → Medium, else Ok.
     ///
     /// Degenerate calibrations carry `NaN` percentiles (sample size
     /// below [`MIN_SAMPLES_FOR_PERCENTILES`]); `>=` against `NaN` is
@@ -210,6 +217,9 @@ impl MetricCalibration {
                 return Severity::Ok;
             }
         }
+        if !self.has_meaningful_spread() {
+            return Severity::Ok;
+        }
         if value >= self.p95 {
             Severity::Critical
         } else if value >= self.p90 {
@@ -219,6 +229,28 @@ impl MetricCalibration {
         } else {
             Severity::Ok
         }
+    }
+
+    /// True iff the percentile classifier carries meaningful signal —
+    /// the spread between the median and the 95th percentile is at
+    /// least half of the floor band. When the codebase has graduated
+    /// into a tight cluster between the floors, this returns `false`
+    /// and `classify` falls to Ok regardless of relative position.
+    /// Returns `true` (no gate) when either floor is missing or the
+    /// percentiles are NaN (degenerate calibration).
+    fn has_meaningful_spread(&self) -> bool {
+        let (Some(critical), Some(ok)) = (self.floor_critical, self.floor_ok) else {
+            return true;
+        };
+        if !self.p50.is_finite() || !self.p95.is_finite() {
+            return true;
+        }
+        let band = critical - ok;
+        if band <= 0.0 {
+            return true;
+        }
+        let spread_min = band / 2.0;
+        (self.p95 - self.p50) >= spread_min
     }
 
     /// Build a calibration from a sample of metric values plus the
@@ -614,6 +646,60 @@ mod tests {
         let ccn = merged.calibration.ccn.unwrap();
         assert_eq!(ccn.floor_ok, Some(15.0));
         assert_eq!(ccn.floor_critical, Some(40.0));
+    }
+
+    #[test]
+    fn classify_spread_gate_graduates_tight_distribution() {
+        // floor_ok=11, floor_critical=25, band=14, spread_min=7.
+        // Distribution clustered tightly: p50=12, p95=14 (spread=2).
+        // Even though p95 marks Critical, the spread gate forces Ok —
+        // the percentile classifier has no signal in this band.
+        let c = MetricCalibration {
+            p50: 12.0,
+            p75: 13.0,
+            p90: 13.5,
+            p95: 14.0,
+            floor_critical: Some(25.0),
+            floor_ok: Some(11.0),
+        };
+        // Value 14.0 ≥ p95 → would normally be Critical, but spread is 2 < 7.
+        assert_eq!(c.classify(14.0), Severity::Ok);
+        // Below floor_ok still Ok via the second gate.
+        assert_eq!(c.classify(10.0), Severity::Ok);
+        // Above floor_critical still Critical via the first gate.
+        assert_eq!(c.classify(30.0), Severity::Critical);
+    }
+
+    #[test]
+    fn classify_spread_gate_keeps_wide_distribution() {
+        // Wide spread: p95=22, p50=4, spread=18 ≥ spread_min=7.
+        let c = MetricCalibration {
+            p50: 4.0,
+            p75: 12.0,
+            p90: 18.0,
+            p95: 22.0,
+            floor_critical: Some(25.0),
+            floor_ok: Some(11.0),
+        };
+        assert_eq!(c.classify(22.0), Severity::Critical);
+        assert_eq!(c.classify(18.0), Severity::High);
+        assert_eq!(c.classify(12.0), Severity::Medium);
+    }
+
+    #[test]
+    fn classify_spread_gate_silent_without_both_floors() {
+        // Only floor_critical — spread gate must not fire (existing
+        // metrics like duplication don't have floor_ok).
+        let c = MetricCalibration {
+            p50: 12.0,
+            p75: 13.0,
+            p90: 13.5,
+            p95: 14.0,
+            floor_critical: Some(25.0),
+            floor_ok: None,
+        };
+        // p95=14 → Critical via the percentile cascade.
+        assert_eq!(c.classify(14.0), Severity::Critical);
     }
 
     #[test]
