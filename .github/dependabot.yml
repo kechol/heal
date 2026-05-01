@@ -35,3 +35,11 @@ updates:
         update-types:
           - patch
           - minor
+    ignore:
+      # Hold typescript on the 5.x line: @astrojs/check@0.9.x declares
+      # `peer typescript: ^5.0.0`, and our docs surface is one 7-line
+      # content collection — no upside to running outside the supported
+      # range. Drop this entry once @astrojs/check ships TS 6 support.
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
