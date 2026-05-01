@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+# rustfmt pre-commit hook — fails the commit when staged Rust files
+# don't match `cargo fmt --all`. Skipped when no .rs files are staged.
+
+staged_rs=$(git diff --cached --name-only --diff-filter=ACMR -- '*.rs')
+[ -z "$staged_rs" ] && exit 0
+
+if ! cargo fmt --all -- --check; then
+  echo "" >&2
+  echo "rustfmt check failed. Run: cargo fmt --all && git add -u" >&2
+  exit 1
+fi

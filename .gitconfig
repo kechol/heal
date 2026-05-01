@@ -1,0 +1,11 @@
+; Shared git config for the heal repository.
+;
+; Enable in your local clone with:
+;   git config --local include.path ../.gitconfig
+;
+; Inspect with:
+;   git hook list pre-commit
+
+[hook "rustfmt"]
+	event = pre-commit
+	command = .githooks/pre-commit
