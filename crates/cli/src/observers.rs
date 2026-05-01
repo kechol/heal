@@ -6,8 +6,8 @@ use std::path::Path;
 
 use crate::core::calibration::{
     Calibration, CalibrationMeta, HotspotCalibration, MetricCalibration, MetricCalibrations,
-    FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_DUPLICATION_PCT, FLOOR_OK_CCN, FLOOR_OK_COGNITIVE,
-    STRATEGY_PERCENTILE,
+    MetricFloors, FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_DUPLICATION_PCT, FLOOR_OK_CCN,
+    FLOOR_OK_COGNITIVE, STRATEGY_PERCENTILE,
 };
 use crate::core::config::Config;
 use crate::core::finding::Finding;
@@ -108,6 +108,19 @@ pub(crate) fn run_all(project: &Path, cfg: &Config, only: Option<StatusMetric>) 
 /// when the underlying complexity scan still produced raw values
 /// (CCN/Cognitive share parsing, so both arrive together).
 pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> Calibration {
+    let ccn_floors = MetricFloors {
+        critical: Some(FLOOR_CCN),
+        ok: Some(FLOOR_OK_CCN),
+    };
+    let cognitive_floors = MetricFloors {
+        critical: Some(FLOOR_COGNITIVE),
+        ok: Some(FLOOR_OK_COGNITIVE),
+    };
+    let duplication_floors = MetricFloors {
+        critical: Some(FLOOR_DUPLICATION_PCT),
+        ok: None,
+    };
+
     let ccn = if config.metrics.ccn.enabled {
         let values: Vec<f64> = reports
             .complexity
@@ -115,9 +128,7 @@ pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> C
             .iter()
             .flat_map(|f| f.functions.iter().map(|fun| f64::from(fun.ccn)))
             .collect();
-        non_empty(&values).then(|| {
-            MetricCalibration::from_distribution(&values, Some(FLOOR_CCN), Some(FLOOR_OK_CCN))
-        })
+        non_empty(&values).then(|| MetricCalibration::from_distribution(&values, ccn_floors))
     } else {
         None
     };
@@ -129,29 +140,24 @@ pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> C
             .iter()
             .flat_map(|f| f.functions.iter().map(|fun| f64::from(fun.cognitive)))
             .collect();
-        non_empty(&values).then(|| {
-            MetricCalibration::from_distribution(
-                &values,
-                Some(FLOOR_COGNITIVE),
-                Some(FLOOR_OK_COGNITIVE),
-            )
-        })
+        non_empty(&values).then(|| MetricCalibration::from_distribution(&values, cognitive_floors))
     } else {
         None
     };
 
     let duplication = reports.duplication.as_ref().and_then(|d| {
         let values: Vec<f64> = d.files.iter().map(|f| f.duplicate_pct).collect();
-        non_empty(&values).then(|| {
-            MetricCalibration::from_distribution(&values, Some(FLOOR_DUPLICATION_PCT), None)
-        })
+        non_empty(&values)
+            .then(|| MetricCalibration::from_distribution(&values, duplication_floors))
     });
 
+    // change_coupling: `min_coupling` already gates pairs at scan time so
+    // the absolute floor is rare in practice. lcom: `min_cluster_count`
+    // serves the same role.
     let change_coupling = reports.change_coupling.as_ref().and_then(|c| {
         let values: Vec<f64> = c.pairs.iter().map(|p| f64::from(p.count)).collect();
-        // `min_coupling` already gates coupling pairs at scan time so
-        // the absolute floor here is rare in practice — leave None.
-        non_empty(&values).then(|| MetricCalibration::from_distribution(&values, None, None))
+        non_empty(&values)
+            .then(|| MetricCalibration::from_distribution(&values, MetricFloors::default()))
     });
 
     let hotspot = reports.hotspot.as_ref().and_then(|h| {
@@ -165,9 +171,8 @@ pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> C
             .iter()
             .map(|c| f64::from(c.cluster_count))
             .collect();
-        // `min_cluster_count` is already the scan-time floor; absolute
-        // Critical floor on top is rare so default to None.
-        non_empty(&values).then(|| MetricCalibration::from_distribution(&values, None, None))
+        non_empty(&values)
+            .then(|| MetricCalibration::from_distribution(&values, MetricFloors::default()))
     });
 
     let codebase_files = u32::try_from(

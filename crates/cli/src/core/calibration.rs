@@ -69,6 +69,17 @@ pub const FLOOR_DUPLICATION_PCT: f64 = 30.0;
 pub const FLOOR_OK_CCN: f64 = 11.0;
 pub const FLOOR_OK_COGNITIVE: f64 = 8.0;
 
+/// Bundles the absolute floors a metric carries. `critical` is the
+/// "structurally indefensible" Critical escape hatch; `ok` is the
+/// graduation gate (values strictly below classify as Ok). Pass to
+/// [`MetricCalibration::from_distribution`] so call sites stay
+/// self-documenting and immune to argument transposition.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct MetricFloors {
+    pub critical: Option<f64>,
+    pub ok: Option<f64>,
+}
+
 /// Default percentile strategy label written into
 /// `meta.strategy`. Reserved for future expansion (e.g. winsorised
 /// percentiles for very small samples).
@@ -210,18 +221,14 @@ impl MetricCalibration {
         }
     }
 
-    /// Build a calibration from a sample of metric values plus optional
+    /// Build a calibration from a sample of metric values plus the
     /// absolute floors. Samples below [`MIN_SAMPLES_FOR_PERCENTILES`]
     /// mark every percentile as `NaN` so `classify` ignores them — a
-    /// Critical decision can still fire via `floor_critical`, and `Ok`
-    /// graduation can still fire via `floor_ok`. Non-finite input
+    /// Critical decision can still fire via `floors.critical`, and `Ok`
+    /// graduation can still fire via `floors.ok`. Non-finite input
     /// values (`NaN` / `inf`) are dropped before sorting.
     #[must_use]
-    pub fn from_distribution(
-        values: &[f64],
-        floor_critical: Option<f64>,
-        floor_ok: Option<f64>,
-    ) -> Self {
+    pub fn from_distribution(values: &[f64], floors: MetricFloors) -> Self {
         let mut sorted: Vec<f64> = values.iter().copied().filter(|v| v.is_finite()).collect();
         if sorted.len() < MIN_SAMPLES_FOR_PERCENTILES {
             return Self {
@@ -229,8 +236,8 @@ impl MetricCalibration {
                 p75: f64::NAN,
                 p90: f64::NAN,
                 p95: f64::NAN,
-                floor_critical,
-                floor_ok,
+                floor_critical: floors.critical,
+                floor_ok: floors.ok,
             };
         }
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -239,8 +246,8 @@ impl MetricCalibration {
             p75: percentile(&sorted, 75.0),
             p90: percentile(&sorted, 90.0),
             p95: percentile(&sorted, 95.0),
-            floor_critical,
-            floor_ok,
+            floor_critical: floors.critical,
+            floor_ok: floors.ok,
         }
     }
 }
@@ -592,8 +599,10 @@ mod tests {
             calibration: MetricCalibrations {
                 ccn: Some(MetricCalibration::from_distribution(
                     &[1.0, 2.0, 3.0, 4.0, 5.0],
-                    Some(FLOOR_CCN),
-                    Some(FLOOR_OK_CCN),
+                    MetricFloors {
+                        critical: Some(FLOOR_CCN),
+                        ok: Some(FLOOR_OK_CCN),
+                    },
                 )),
                 ..MetricCalibrations::default()
             },
@@ -611,7 +620,13 @@ mod tests {
     fn classify_floor_ok_works_with_nan_percentiles() {
         // Tiny sample falls back to NaN percentiles; floor_ok must still
         // graduate values below the literature anchor.
-        let c = MetricCalibration::from_distribution(&[1.0, 2.0], Some(25.0), Some(11.0));
+        let c = MetricCalibration::from_distribution(
+            &[1.0, 2.0],
+            MetricFloors {
+                critical: Some(25.0),
+                ok: Some(11.0),
+            },
+        );
         assert!(c.p95.is_nan());
         assert_eq!(c.classify(5.0), Severity::Ok);
         assert_eq!(c.classify(30.0), Severity::Critical);
@@ -654,7 +669,13 @@ mod tests {
 
     #[test]
     fn from_distribution_marks_breaks_nan_below_min_samples() {
-        let c = MetricCalibration::from_distribution(&[1.0, 2.0], Some(25.0), None);
+        let c = MetricCalibration::from_distribution(
+            &[1.0, 2.0],
+            MetricFloors {
+                critical: Some(25.0),
+                ok: None,
+            },
+        );
         assert!(c.p50.is_nan());
         assert!(c.p95.is_nan());
         assert_eq!(c.floor_critical, Some(25.0));
@@ -669,7 +690,7 @@ mod tests {
     #[test]
     fn from_distribution_drops_non_finite() {
         let values = vec![1.0, 2.0, f64::NAN, 3.0, f64::INFINITY, 4.0, 5.0];
-        let c = MetricCalibration::from_distribution(&values, None, None);
+        let c = MetricCalibration::from_distribution(&values, MetricFloors::default());
         // After filter the sorted set is [1,2,3,4,5] → p50 = 3.0.
         assert!((c.p50 - 3.0).abs() < 1e-9);
     }
@@ -756,8 +777,10 @@ mod tests {
             calibration: MetricCalibrations {
                 ccn: Some(MetricCalibration::from_distribution(
                     &[1.0, 2.0],
-                    Some(FLOOR_CCN),
-                    Some(FLOOR_OK_CCN),
+                    MetricFloors {
+                        critical: Some(FLOOR_CCN),
+                        ok: Some(FLOOR_OK_CCN),
+                    },
                 )),
                 ..MetricCalibrations::default()
             },

@@ -625,18 +625,14 @@ impl std::str::FromStr for DrainSpec {
         let severity_token = parts
             .next()
             .ok_or_else(|| format!("drain spec '{s}' is empty"))?;
-        let severity = match severity_token {
-            "critical" => crate::core::severity::Severity::Critical,
-            "high" => crate::core::severity::Severity::High,
-            "medium" => crate::core::severity::Severity::Medium,
-            "ok" => crate::core::severity::Severity::Ok,
-            other => {
-                return Err(format!(
-                    "drain spec '{s}' has unknown severity '{other}' (expected one of \
+        let severity = severity_token
+            .parse::<crate::core::severity::Severity>()
+            .map_err(|_| {
+                format!(
+                    "drain spec '{s}' has unknown severity '{severity_token}' (expected one of \
                      critical / high / medium / ok)"
-                ));
-            }
-        };
+                )
+            })?;
         let hotspot = match parts.next() {
             None => HotspotMatch::Any,
             Some("hotspot") => HotspotMatch::Required,
@@ -657,12 +653,7 @@ impl std::str::FromStr for DrainSpec {
 
 impl serde::Serialize for DrainSpec {
     fn serialize<S: serde::Serializer>(&self, ser: S) -> std::result::Result<S::Ok, S::Error> {
-        let severity = match self.severity {
-            crate::core::severity::Severity::Critical => "critical",
-            crate::core::severity::Severity::High => "high",
-            crate::core::severity::Severity::Medium => "medium",
-            crate::core::severity::Severity::Ok => "ok",
-        };
+        let severity = self.severity.as_str();
         let body = match self.hotspot {
             HotspotMatch::Any => severity.to_owned(),
             HotspotMatch::Required => format!("{severity}:hotspot"),

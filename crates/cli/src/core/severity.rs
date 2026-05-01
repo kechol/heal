@@ -10,6 +10,8 @@
 //! module owns only the type itself so observers can import the
 //! enum without pulling in the full calibration loader.
 
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -22,6 +24,37 @@ pub enum Severity {
     Medium,
     High,
     Critical,
+}
+
+impl Severity {
+    /// Lowercase string label, matching the serde representation. Used
+    /// where `serde_json` would be overkill — DSL parsing, log lines,
+    /// CLI output.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Critical => "critical",
+        }
+    }
+}
+
+impl FromStr for Severity {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "ok" => Ok(Self::Ok),
+            "medium" => Ok(Self::Medium),
+            "high" => Ok(Self::High),
+            "critical" => Ok(Self::Critical),
+            other => Err(format!(
+                "unknown severity '{other}' (expected one of critical / high / medium / ok)"
+            )),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -58,5 +91,26 @@ mod tests {
         assert_eq!(json, "\"critical\"");
         let back: Severity = serde_json::from_str("\"medium\"").unwrap();
         assert_eq!(back, Severity::Medium);
+    }
+
+    #[test]
+    fn from_str_parses_canonical_lowercase() {
+        assert_eq!("critical".parse::<Severity>().unwrap(), Severity::Critical);
+        assert_eq!("high".parse::<Severity>().unwrap(), Severity::High);
+        assert_eq!("medium".parse::<Severity>().unwrap(), Severity::Medium);
+        assert_eq!("ok".parse::<Severity>().unwrap(), Severity::Ok);
+        assert!("blocker".parse::<Severity>().is_err());
+    }
+
+    #[test]
+    fn as_str_round_trips_through_from_str() {
+        for s in [
+            Severity::Ok,
+            Severity::Medium,
+            Severity::High,
+            Severity::Critical,
+        ] {
+            assert_eq!(s.as_str().parse::<Severity>().unwrap(), s);
+        }
     }
 }

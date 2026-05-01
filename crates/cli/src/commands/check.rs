@@ -51,12 +51,6 @@ pub fn run(project: &Path, args: &CheckArgs) -> Result<()> {
         )
     })?;
 
-    let cfg = load_from_project(project).with_context(|| {
-        format!(
-            "loading {} (run `heal init` first?)",
-            paths.config().display(),
-        )
-    })?;
     let filters = Filters::from_args(args);
 
     // Default: reuse the cache if present. `--refresh` forces a fresh
@@ -70,10 +64,27 @@ pub fn run(project: &Path, args: &CheckArgs) -> Result<()> {
     };
     let must_scan = cached.is_none();
 
+    // Load config only when it's actually needed: a fresh scan needs
+    // it for build_fresh_record + with_overrides, and the textual
+    // renderer needs it for `policy.drain` + override notes. The JSON
+    // path with a cache hit pays neither cost.
+    let need_cfg = must_scan || !args.json;
+    let cfg = if need_cfg {
+        Some(load_from_project(project).with_context(|| {
+            format!(
+                "loading {} (run `heal init` first?)",
+                paths.config().display(),
+            )
+        })?)
+    } else {
+        None
+    };
+
     let (record, regressed) = if must_scan {
+        let cfg = cfg.as_ref().expect("cfg loaded above when must_scan");
         let calibration = Calibration::load(&paths.calibration())
             .ok()
-            .map(|c| c.with_overrides(&cfg));
+            .map(|c| c.with_overrides(cfg));
 
         let head_sha = git::head_sha(project);
         let worktree_clean = git::worktree_clean(project).unwrap_or(false);
@@ -81,7 +92,7 @@ pub fn run(project: &Path, args: &CheckArgs) -> Result<()> {
 
         let record = build_fresh_record(
             project,
-            &cfg,
+            cfg,
             calibration.as_ref(),
             head_sha,
             worktree_clean,
@@ -107,6 +118,7 @@ pub fn run(project: &Path, args: &CheckArgs) -> Result<()> {
         emit_json(&record);
         return Ok(());
     }
+    let cfg = cfg.expect("cfg loaded above when not args.json");
     let mut stdout = std::io::stdout();
     let colorize = stdout.is_terminal();
     render(&record, &regressed, &filters, &cfg, colorize, &mut stdout)?;
@@ -235,29 +247,9 @@ pub(super) fn render(
 
     let show_low = filters.all || matches!(filters.severity, Some(Severity::Medium | Severity::Ok));
 
-    // Pre-section: low-Severity hotspots (Ok 🔥). These don't reach any
-    // drain tier (Ok is excluded from drain entirely), but the file is
-    // touched often enough to warrant a look. Surfaced only under --all.
-    if show_low {
-        let hotspot_oks: Vec<&Finding> = record
-            .findings
-            .iter()
-            .filter(|f| filters.passes(f))
-            .filter(|f| f.hotspot && f.severity == Severity::Ok)
-            .collect();
-        if !hotspot_oks.is_empty() {
-            render_section(
-                "Ok 🔥 (low Severity, top-10% hotspot)",
-                ANSI_CYAN,
-                &hotspot_oks,
-                filters.top,
-                colorize,
-                out,
-            )?;
-            writeln!(out)?;
-        }
-    }
-
+    // Single pass: bucket each finding into its drain tier, the Ok pile,
+    // or — when relevant — the Ok 🔥 pre-section pile.
+    let mut hotspot_oks: Vec<&Finding> = Vec::new();
     let mut by_tier: BTreeMap<DrainTier, Vec<&Finding>> = BTreeMap::new();
     let mut ok_findings: Vec<&Finding> = Vec::new();
     for f in record.findings.iter().filter(|f| filters.passes(f)) {
@@ -267,12 +259,27 @@ pub(super) fn render(
             }
         }
         if f.severity == Severity::Ok {
+            if show_low && f.hotspot {
+                hotspot_oks.push(f);
+            }
             ok_findings.push(f);
             continue;
         }
         if let Some(tier) = drain.tier_for(f) {
             by_tier.entry(tier).or_default().push(f);
         }
+    }
+
+    if !hotspot_oks.is_empty() {
+        render_tier_section(
+            "Ok 🔥 (low Severity, top-10% hotspot)",
+            ANSI_CYAN,
+            &hotspot_oks,
+            filters.top,
+            colorize,
+            out,
+        )?;
+        writeln!(out)?;
     }
 
     let tiers: &[(DrainTier, &str, &str, bool)] = &[
@@ -374,48 +381,47 @@ fn render_tier_section(
 /// override active in the config. Surfaced near the header so users see
 /// "policy moved" without digging through `.heal/config.toml`.
 fn override_notes(cfg: &Config) -> Vec<String> {
-    let mut notes = Vec::new();
-    if let Some(v) = cfg.metrics.ccn.floor_ok {
-        if (v - FLOOR_OK_CCN).abs() > f64::EPSILON {
-            notes.push(format!("ccn floor_ok={v} [override from {FLOOR_OK_CCN}]"));
-        }
+    let ccn = &cfg.metrics.ccn;
+    let cog = &cfg.metrics.cognitive;
+    if ccn.floor_ok.is_none()
+        && ccn.floor_critical.is_none()
+        && cog.floor_ok.is_none()
+        && cog.floor_critical.is_none()
+    {
+        return Vec::new();
     }
-    if let Some(v) = cfg.metrics.cognitive.floor_ok {
-        if (v - FLOOR_OK_COGNITIVE).abs() > f64::EPSILON {
-            notes.push(format!(
-                "cognitive floor_ok={v} [override from {FLOOR_OK_COGNITIVE}]"
-            ));
-        }
-    }
-    if let Some(v) = cfg.metrics.ccn.floor_critical {
-        if (v - FLOOR_CCN).abs() > f64::EPSILON {
-            notes.push(format!(
-                "ccn floor_critical={v} [override from {FLOOR_CCN}]"
-            ));
-        }
-    }
-    if let Some(v) = cfg.metrics.cognitive.floor_critical {
-        if (v - FLOOR_COGNITIVE).abs() > f64::EPSILON {
-            notes.push(format!(
-                "cognitive floor_critical={v} [override from {FLOOR_COGNITIVE}]"
-            ));
-        }
-    }
+    let push =
+        |notes: &mut Vec<String>, metric: &str, kind: &str, value: Option<f64>, baseline: f64| {
+            if let Some(v) = value {
+                if (v - baseline).abs() > f64::EPSILON {
+                    notes.push(format!("{metric} {kind}={v} [override from {baseline}]"));
+                }
+            }
+        };
+    let mut notes = Vec::with_capacity(4);
+    push(&mut notes, "ccn", "floor_ok", ccn.floor_ok, FLOOR_OK_CCN);
+    push(
+        &mut notes,
+        "cognitive",
+        "floor_ok",
+        cog.floor_ok,
+        FLOOR_OK_COGNITIVE,
+    );
+    push(
+        &mut notes,
+        "ccn",
+        "floor_critical",
+        ccn.floor_critical,
+        FLOOR_CCN,
+    );
+    push(
+        &mut notes,
+        "cognitive",
+        "floor_critical",
+        cog.floor_critical,
+        FLOOR_COGNITIVE,
+    );
     notes
-}
-
-/// Reuse the tier section helper for the low-severity hotspot
-/// pre-section. Same sort, same file-aggregation; the section is just
-/// labelled differently.
-fn render_section(
-    label: &str,
-    color: &str,
-    items: &[&Finding],
-    top: Option<usize>,
-    colorize: bool,
-    out: &mut impl Write,
-) -> std::io::Result<()> {
-    render_tier_section(label, color, items, top, colorize, out)
 }
 
 #[cfg(test)]
