@@ -13,7 +13,7 @@
 //! / High / Medium 🔥 / Medium / Ok 🔥 / Ok` (last four require
 //! `--all`), aggregates one row per file, and surfaces a "next steps"
 //! footer pointing at `heal check --severity critical` and `claude
-//! /heal-code-fix`.
+//! /heal-code-patch`.
 //!
 //! `--json` emits the `CheckRecord` in the exact shape of `latest.json`
 //! so skills and CI scripts have one stable contract.
@@ -354,7 +354,7 @@ pub(super) fn render(
     writeln!(out, "  Goal: 0 Critical, 0 High  (current: {goal})")?;
     writeln!(
         out,
-        "  Next: `heal check --severity critical` / `claude /heal-code-fix`",
+        "  Next: `heal check --severity critical` / `claude /heal-code-patch`",
     )?;
     let close: String = "─".repeat(60);
     writeln!(out, "{close}")?;

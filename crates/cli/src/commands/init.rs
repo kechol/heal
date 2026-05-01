@@ -380,7 +380,7 @@ fn claude_on_path() -> bool {
 
 fn confirm_skills_install() -> Result<bool> {
     print!(
-        "Install the bundled Claude plugin (provides /heal-code-check + /heal-code-fix)? [Y/n] ",
+        "Install the bundled Claude plugin (provides /heal-code-review + /heal-code-patch)? [Y/n] ",
     );
     std::io::stdout()
         .flush()
@@ -652,7 +652,7 @@ mod tests {
         assert_eq!(initial_updated, 0, "no drift on first install");
 
         // Tamper with a known-shipped skill file.
-        let skill = dest.join("skills/heal-code-fix/SKILL.md");
+        let skill = dest.join("skills/heal-code-patch/SKILL.md");
         assert!(skill.exists(), "fixture should have shipped this skill");
         std::fs::write(&skill, "tampered\n").unwrap();
 
@@ -685,7 +685,7 @@ mod tests {
         install_skills(project, &dest, false).unwrap();
 
         // Tamper with a skill — without --force we expect it preserved.
-        let skill = dest.join("skills/heal-code-fix/SKILL.md");
+        let skill = dest.join("skills/heal-code-patch/SKILL.md");
         std::fs::write(&skill, "tampered\n").unwrap();
 
         let action = install_skills(project, &dest, false).unwrap();

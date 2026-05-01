@@ -1,9 +1,9 @@
 ---
-name: heal-code-check
-description: Read every finding produced by `heal check --all --json`, deeply investigate the user's codebase, and return one architectural reading plus a prioritised refactor TODO list — grounded in the metric literature and module-depth / layering / DDD vocabulary. Works on any language and shape of project; respects the codebase's existing design. Read-only — proposes only. The write counterpart is `heal-code-fix`. Trigger on "what does heal say?", "review the codebase health", "where should we refactor?", "/heal-code-check".
+name: heal-code-review
+description: Read every finding produced by `heal check --all --json`, deeply investigate the user's codebase, and return one architectural reading plus a prioritised refactor TODO list — grounded in the metric literature and module-depth / layering / DDD vocabulary. Works on any language and shape of project; respects the codebase's existing design. Read-only — proposes only. The write counterpart is `heal-code-patch`. Trigger on "what does heal say?", "review the codebase health", "where should we refactor?", "/heal-code-review".
 ---
 
-# heal-code-check
+# heal-code-review
 
 One entry point for *understanding* what `heal check` has found.
 Runs across every metric in a single pass and returns one ranked
@@ -19,7 +19,7 @@ The output is two artefacts:
    pattern and its expected metric movement.
 
 This skill *proposes*; it does not edit code. The write counterpart
-is `heal-code-fix`, which drains the same cache one finding per
+is `heal-code-patch`, which drains the same cache one finding per
 commit.
 
 ## Audience
@@ -200,7 +200,7 @@ Each entry is exactly **5 lines**:
     Why it scores:          <root cause: nesting / mixed responsibilities / hidden seam / hub / etc>
     Proposed move:          <named pattern from references/architecture.md, with target>
     Expected drop:          <which metric(s) move, by roughly how much; or "verifies on next heal check">
-    finding-id:             <id from CheckRecord — exact, so heal-code-fix can pick it up>
+    finding-id:             <id from CheckRecord — exact, so heal-code-patch can pick it up>
 ```
 
 Reach for the smallest vocabulary layer that fits the finding (see
@@ -243,13 +243,13 @@ the move:
    internal callers, no compatibility shims, Rule of Three on
    duplication, generated code excluded not refactored.
 4. **Name the next concrete step.** "If you accept this,
-   `heal-code-fix` can drain finding `<id>` next. For
+   `heal-code-patch` can drain finding `<id>` next. For
    architecture-level moves you'll write the change yourself, then
    `heal check --refresh` to confirm the scores moved."
 
 Stop when the user has decided which moves to act on. Don't slide
 into "and now I'll do all of them" — the next step is either
-`heal-code-fix` (per-finding mechanical refactors) or a human-led
+`heal-code-patch` (per-finding mechanical refactors) or a human-led
 architectural change.
 
 ## Triage: classify before fixing
@@ -316,7 +316,7 @@ Deferred questions  (only if any)
   - <one-sentence framing>:  <files>  <why it's a call, not a fix>
 
 Next step
-  Run `claude /heal-code-fix` to drain the mechanical fixes (one commit
+  Run `claude /heal-code-patch` to drain the mechanical fixes (one commit
   each, in Severity order). Architecture-level entries above need a
   human call — pick one and I'll walk it with you.
 ```
@@ -340,7 +340,7 @@ reading. The reading leads with intent; numbers support it.
 - **One contract — `heal check --all --json`.** Don't shell out to
   other observers, don't reimplement a metric. The cache is the
   source of truth.
-- **Keep `finding-id:` lines exact.** `heal-code-fix` reads them
+- **Keep `finding-id:` lines exact.** `heal-code-patch` reads them
   directly to pick up where the analysis left off.
 - **Default top 8.** Expand only on user request — over-listing
   dilutes the signal.

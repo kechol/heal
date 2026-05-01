@@ -19,7 +19,7 @@
     ]
   },
   "skills": [
-    "skills/heal-code-check",
-    "skills/heal-code-fix"
+    "skills/heal-code-review",
+    "skills/heal-code-patch"
   ]
 }

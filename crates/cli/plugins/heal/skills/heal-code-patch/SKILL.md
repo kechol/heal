@@ -1,13 +1,13 @@
 ---
-name: heal-code-fix
-description: Drain the cache produced by `heal check`, fixing one finding per commit in Severity order, until the cache is empty or the user stops. Writes code, runs tests, and commits — does NOT push or open PRs. Refuses to start on a dirty worktree. Trigger on "fix the heal findings", "drain the cache", "work through the TODO list heal produced", "/heal-code-fix".
+name: heal-code-patch
+description: Drain the cache produced by `heal check`, fixing one finding per commit in Severity order, until the cache is empty or the user stops. Writes code, runs tests, and commits — does NOT push or open PRs. Refuses to start on a dirty worktree. Trigger on "fix the heal findings", "drain the cache", "work through the TODO list heal produced", "/heal-code-patch".
 ---
 
-# heal-code-fix
+# heal-code-patch
 
 Drain the cache that `heal check` produced. One finding per commit,
 in Severity order, until the cache is empty (or the user stops). This
-is the **write** counterpart to `heal-code-check` — that one proposes,
+is the **write** counterpart to `heal-code-review` — that one proposes,
 this one applies.
 
 ## Mental model
@@ -25,11 +25,11 @@ the loop is self-correcting: a botched fix surfaces on the next round.
 
 ## Role boundary: mechanical fixes only
 
-`heal-code-fix` applies *mechanical* refactorings — those whose
+`heal-code-patch` applies *mechanical* refactorings — those whose
 transformation rule is deterministic, locally-scoped, and does not
 require domain knowledge to apply correctly. It does **not** make
 architectural decisions, choose between names, or split modules along
-domain seams. The judgement layer lives in `heal-code-check` and the
+domain seams. The judgement layer lives in `heal-code-review` and the
 readability criteria in its `references/readability.md`.
 
 When the next finding requires architectural judgement (which name to
@@ -37,14 +37,14 @@ pick, which boundary to draw, whether to split a hub file, whether two
 contexts should merge), the loop:
 
 1. Stops and surfaces the trade-off to the user.
-2. Defers the finding to `heal-code-check` for proposal-level discussion
+2. Defers the finding to `heal-code-review` for proposal-level discussion
    instead of attempting an in-loop fix.
 
 The allow-list / escalate-list under "Per-metric fix patterns" below
 codify which refactor patterns are mechanical and which require
 escalation. When the only remaining findings need Escalate-list
 patterns, end the session with a summary and recommend the user run
-`heal-code-check`.
+`heal-code-review`.
 
 ## Pre-flight (refuse to start when these fail)
 
@@ -98,7 +98,7 @@ Skip findings already present in `.heal/checks/fixed.jsonl` (the next
 `heal check` would have moved them out, but a session in progress
 might still have stale entries — match by `finding_id`).
 
-If the user invoked `/heal-code-fix --metric <name>`, restrict the
+If the user invoked `/heal-code-patch --metric <name>`, restrict the
 selection to that metric. Default = no filter.
 
 ## Per-metric fix patterns
@@ -130,7 +130,7 @@ move on without committing.
 
 ### Allow-list (apply mechanically)
 
-The following patterns from `heal-code-check/references/architecture.md`
+The following patterns from `heal-code-review/references/architecture.md`
 §5 are mechanical — apply without asking, after reading the file to
 confirm the pattern fits:
 
@@ -154,7 +154,7 @@ confirm the pattern fits:
 
 These patterns require judgement that this skill should not make alone.
 When the next finding's best-fit pattern is here, stop the loop, surface
-the trade-off, and let the user (or `heal-code-check`) decide:
+the trade-off, and let the user (or `heal-code-review`) decide:
 
 - **Replace Conditional with Polymorphism.** Picks the dispatch axis,
   which is an architectural choice with downstream consequences.
@@ -175,13 +175,13 @@ the trade-off, and let the user (or `heal-code-check`) decide:
 
 If the only remaining findings require Escalate-list patterns, end the
 session with the summary format below and recommend the user run
-`heal-code-check` to discuss the architectural moves at the proposal
+`heal-code-review` to discuss the architectural moves at the proposal
 level.
 
 ## Anti-patterns to stop on mid-loop
 
 Three failure modes that compound damage if you don't stop early. Theory
-in `heal-code-check/references/architecture.md` §6 — here, only the
+in `heal-code-review/references/architecture.md` §6 — here, only the
 operational signals.
 
 - **Relocate trap.** Signal: after Extract Function, a new helper itself

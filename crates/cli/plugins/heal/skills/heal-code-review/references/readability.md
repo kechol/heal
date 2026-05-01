@@ -1,6 +1,6 @@
 # Readability principles for refactor judgement
 
-Reference loaded by `heal-code-check` when evaluating whether a proposed
+Reference loaded by `heal-code-review` when evaluating whether a proposed
 refactor genuinely improves the code beyond moving heal's metric needles.
 
 `architecture.md` catalogues *what* refactor patterns exist and how they
@@ -81,7 +81,7 @@ heal's `duplication` drives at (3); `ccn` / `cognitive` at (2) and (4).
 
 ---
 
-## 3. Heuristics for judgement in heal-code-check
+## 3. Heuristics for judgement in heal-code-review
 
 Five questions to ask before proposing a refactor. If any answer is "no"
 or "unsure", hold the proposal as a deferred question rather than
@@ -129,7 +129,7 @@ readability directly. When this reference and the metric disagree:
 | **High** | **Would worsen** with the metric-driven fix | Reject the fix; surface as a §6 trap |
 
 The third row — *metric ok; readability poor* — is invisible to heal
-but worth surfacing during exploration. heal-code-check should
+but worth surfacing during exploration. heal-code-review should
 occasionally recommend a refactor with no finding to back it, when
 the reading suggests one is warranted.
 
@@ -141,7 +141,7 @@ added there as they're recognised.
 
 ---
 
-## How `heal-code-check` should use this reference
+## How `heal-code-review` should use this reference
 
 When proposing a refactor in Phase 2:
 

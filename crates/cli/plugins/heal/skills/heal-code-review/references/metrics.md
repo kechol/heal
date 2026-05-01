@@ -1,6 +1,6 @@
 # Code-health metrics — what each signal actually means
 
-Reference loaded by `heal-code-check` when the skill needs to
+Reference loaded by `heal-code-review` when the skill needs to
 interpret a finding. Each entry follows the same shape:
 
 - **Definition** — the operational meaning, in one sentence.

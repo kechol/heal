@@ -1,6 +1,6 @@
 # Architecture vocabulary for refactor proposals
 
-Reference loaded by `heal-code-check` when proposing refactors. The
+Reference loaded by `heal-code-review` when proposing refactors. The
 skill reaches for **established** vocabulary so suggestions land in
 concepts the user can verify against the literature, not phrases
 invented in the moment.
@@ -358,7 +358,7 @@ Use sparingly. Often relocates rather than reduces — see §6.
 
 When findings span layers, contexts, or a hub file, per-symbol patterns
 don't fit. These operate at a coarser scope and require human judgement;
-heal-code-check should *propose* them as questions, not auto-apply.
+heal-code-review should *propose* them as questions, not auto-apply.
 
 - **Strangler Fig** (Fowler / Newman). Replace a legacy subsystem
   incrementally by routing new functionality through a new
@@ -454,7 +454,7 @@ accepting the score.
 
 ---
 
-## How `heal-code-check` should use this reference
+## How `heal-code-review` should use this reference
 
 When proposing a refactor:
 
