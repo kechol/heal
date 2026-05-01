@@ -16,6 +16,7 @@
 // every accessor — noise for an unstable internal surface.
 #![allow(clippy::must_use_candidate)]
 
+pub mod claude_settings;
 pub mod cli;
 pub mod commands;
 pub mod core;

@@ -30,7 +30,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -41,6 +41,18 @@ pub static PLUGIN_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/plugins/heal"
 
 /// Filename of the install metadata, stored at the plugin root.
 pub const INSTALL_MANIFEST: &str = ".heal-install.json";
+
+/// Project-relative location of the extracted Claude plugin tree. Single
+/// source of truth — both `commands::*::plugin_dest` and the marketplace
+/// `source` field in `claude_settings::marketplace_value` derive from
+/// this so the disk layout and the JSON catalog can never drift.
+pub const PLUGIN_DEST_REL: &str = ".claude/plugins/heal";
+
+/// Resolve the plugin destination directory inside `project`.
+#[must_use]
+pub fn plugin_dest(project: &Path) -> PathBuf {
+    project.join(PLUGIN_DEST_REL)
+}
 
 /// Source-of-install marker recorded in the manifest. Static for v0.1
 /// (Marketplace adds another value in v0.3+).

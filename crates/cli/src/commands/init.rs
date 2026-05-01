@@ -19,13 +19,14 @@ use std::fmt;
 use std::io::{BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
+use crate::claude_settings;
 use crate::core::config::Config;
 use crate::core::eventlog::{Event, EventLog};
 use crate::core::snapshot::SeverityCounts;
 use crate::core::HealPaths;
 use crate::observer::git;
 use crate::observer::loc::LocObserver;
-use crate::plugin_assets::{self, ExtractMode, ExtractStats};
+use crate::plugin_assets::{self, plugin_dest, ExtractMode, ExtractStats};
 use anyhow::{Context, Result};
 
 use crate::observers::{build_calibration, run_all};
@@ -118,7 +119,7 @@ pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool) -> Result<()
     let (hook_action, hook_path) = install_post_commit_hook(project, force)?;
     let severity_counts = run_initial_scan(project, &paths)?;
     let plugin_dest = plugin_dest(project);
-    let skills_action = handle_skills_install(&plugin_dest, force, yes, no_skills)?;
+    let skills_action = handle_skills_install(project, &plugin_dest, force, yes, no_skills)?;
 
     print_summary(
         &paths,
@@ -131,10 +132,6 @@ pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool) -> Result<()
         severity_counts.as_ref(),
     );
     Ok(())
-}
-
-fn plugin_dest(project: &Path) -> PathBuf {
-    project.join(".claude").join("plugins").join("heal")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -324,6 +321,7 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<Option<Severity
 /// upgrade actually picks up the latest skill set. When off, leave
 /// existing files alone (initial-install behaviour).
 fn handle_skills_install(
+    project: &Path,
     dest: &Path,
     force: bool,
     yes: bool,
@@ -336,11 +334,11 @@ fn handle_skills_install(
         return Ok(SkillsAction::SkippedNoClaude);
     }
     if yes {
-        return install_skills(dest, force);
+        return install_skills(project, dest, force);
     }
     if std::io::stdin().is_terminal() {
         if confirm_skills_install()? {
-            install_skills(dest, force)
+            install_skills(project, dest, force)
         } else {
             Ok(SkillsAction::Declined)
         }
@@ -349,14 +347,15 @@ fn handle_skills_install(
     }
 }
 
-fn install_skills(dest: &Path, force: bool) -> Result<SkillsAction> {
+fn install_skills(project: &Path, dest: &Path, force: bool) -> Result<SkillsAction> {
     let mode = if force {
         // `Update` keeps the manifest in sync; `InstallForce` is reserved for `heal skills install --force`.
         ExtractMode::Update { force: true }
     } else {
         ExtractMode::InstallSafe
     };
-    let (stats, _) = plugin_assets::extract(dest, mode)?;
+    let (stats, manifest) = plugin_assets::extract(dest, mode)?;
+    claude_settings::wire(project, &manifest.heal_version)?;
     Ok(extract_counts(&stats))
 }
 
@@ -577,8 +576,9 @@ mod tests {
     #[test]
     fn handle_skills_install_respects_no_skills_flag() {
         let dir = TempDir::new().unwrap();
-        let dest = plugin_dest(dir.path());
-        let action = handle_skills_install(&dest, false, false, true).unwrap();
+        let project = dir.path();
+        let dest = plugin_dest(project);
+        let action = handle_skills_install(project, &dest, false, false, true).unwrap();
         assert_eq!(action, SkillsAction::SuppressedByFlag);
         assert!(!dest.exists());
     }
@@ -604,11 +604,20 @@ mod tests {
         let _guard = PathGuard::set(new_path);
 
         let dir = TempDir::new().unwrap();
-        let dest = plugin_dest(dir.path());
-        let action = handle_skills_install(&dest, false, true, false).unwrap();
+        let project = dir.path();
+        let dest = plugin_dest(project);
+        let action = handle_skills_install(project, &dest, false, true, false).unwrap();
         assert!(matches!(action, SkillsAction::Installed { .. }));
         assert!(dest.exists(), "yes path must extract the plugin");
         assert!(dest.join("plugin.json").exists());
+        assert!(
+            project.join(".claude-plugin/marketplace.json").exists(),
+            "init must wire the local marketplace alongside the plugin tree"
+        );
+        assert!(
+            project.join(".claude/settings.json").exists(),
+            "init must register the marketplace in settings.json"
+        );
     }
 
     #[test]
@@ -617,8 +626,9 @@ mod tests {
         // deterministically regardless of host environment.
         let _guard = PathGuard::set(std::ffi::OsString::new());
         let dir = TempDir::new().unwrap();
-        let dest = plugin_dest(dir.path());
-        let action = handle_skills_install(&dest, false, true, false).unwrap();
+        let project = dir.path();
+        let dest = plugin_dest(project);
+        let action = handle_skills_install(project, &dest, false, true, false).unwrap();
         assert_eq!(action, SkillsAction::SkippedNoClaude);
         assert!(!dest.exists());
     }
@@ -627,8 +637,9 @@ mod tests {
     fn install_skills_force_overwrites_drifted_files() {
         // First install: clean extraction.
         let dir = TempDir::new().unwrap();
-        let dest = dir.path().join("plugin");
-        let initial = install_skills(&dest, false).unwrap();
+        let project = dir.path();
+        let dest = project.join("plugin");
+        let initial = install_skills(project, &dest, false).unwrap();
         let SkillsAction::Installed {
             added: initial_added,
             updated: initial_updated,
@@ -646,7 +657,7 @@ mod tests {
         std::fs::write(&skill, "tampered\n").unwrap();
 
         // Refresh path: force=true should overwrite even drifted files.
-        let refreshed = install_skills(&dest, true).unwrap();
+        let refreshed = install_skills(project, &dest, true).unwrap();
         let SkillsAction::Installed {
             updated: refreshed_updated,
             ..
@@ -669,14 +680,15 @@ mod tests {
     fn install_skills_no_force_preserves_existing_files() {
         // First install seeds the manifest.
         let dir = TempDir::new().unwrap();
-        let dest = dir.path().join("plugin");
-        install_skills(&dest, false).unwrap();
+        let project = dir.path();
+        let dest = project.join("plugin");
+        install_skills(project, &dest, false).unwrap();
 
         // Tamper with a skill — without --force we expect it preserved.
         let skill = dest.join("skills/heal-code-fix/SKILL.md");
         std::fs::write(&skill, "tampered\n").unwrap();
 
-        let action = install_skills(&dest, false).unwrap();
+        let action = install_skills(project, &dest, false).unwrap();
         let SkillsAction::Installed { updated, .. } = action else {
             panic!("expected Installed, got {action:?}");
         };

@@ -6,51 +6,52 @@
 //! edits alone unless `--force`), and `status` exposes the bundled vs.
 //! installed version plus any drift surfaced by the manifest.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result};
 
+use crate::claude_settings::{self, WireReport, WriteAction};
 use crate::cli::SkillsAction;
 use crate::plugin_assets::{
-    self, ExtractMode, ExtractStats, ExtractSummary, InstallManifest, INSTALL_MANIFEST,
+    self, plugin_dest, ExtractMode, ExtractStats, ExtractSummary, InstallManifest, INSTALL_MANIFEST,
 };
 
 pub fn run(project: &Path, action: SkillsAction) -> Result<()> {
     let dest = plugin_dest(project);
     match action {
-        SkillsAction::Install { force } => install(&dest, force),
-        SkillsAction::Update { force } => update(&dest, force),
+        SkillsAction::Install { force } => install(project, &dest, force),
+        SkillsAction::Update { force } => update(project, &dest, force),
         SkillsAction::Status => {
             status(&dest);
             Ok(())
         }
-        SkillsAction::Uninstall => uninstall(&dest),
+        SkillsAction::Uninstall => uninstall(project, &dest),
     }
 }
 
-fn plugin_dest(project: &Path) -> PathBuf {
-    project.join(".claude").join("plugins").join("heal")
-}
-
-fn install(dest: &Path, force: bool) -> Result<()> {
+fn install(project: &Path, dest: &Path, force: bool) -> Result<()> {
     let mode = if force {
         ExtractMode::InstallForce
     } else {
         ExtractMode::InstallSafe
     };
     let (stats, manifest) = plugin_assets::extract(dest, mode)?;
+    let wire = claude_settings::wire(project, &manifest.heal_version)?;
     println!("plugin {} at {}", install_verb(force), dest.display());
     println!("  version: {}", manifest.heal_version);
     println!("  source:  {}", manifest.source);
     print_extract_summary(&stats);
+    print_wire_summary(wire);
     Ok(())
 }
 
-fn update(dest: &Path, force: bool) -> Result<()> {
+fn update(project: &Path, dest: &Path, force: bool) -> Result<()> {
     let (stats, manifest) = plugin_assets::extract(dest, ExtractMode::Update { force })?;
+    let wire = claude_settings::wire(project, &manifest.heal_version)?;
     println!("plugin updated at {}", dest.display());
     println!("  version: {}", manifest.heal_version);
     print_extract_summary(&stats);
+    print_wire_summary(wire);
     if !stats.user_modified.is_empty() && !force {
         println!(
             "  hint: {} file(s) skipped due to local edits — pass `--force` to overwrite.",
@@ -108,13 +109,15 @@ fn status(dest: &Path) {
     }
 }
 
-fn uninstall(dest: &Path) -> Result<()> {
-    if !dest.exists() {
+fn uninstall(project: &Path, dest: &Path) -> Result<()> {
+    let plugin_existed = dest.exists();
+    if plugin_existed {
+        std::fs::remove_dir_all(dest).with_context(|| format!("removing {}", dest.display()))?;
+        println!("removed {}", dest.display());
+    } else {
         println!("plugin not installed; nothing to do");
-        return Ok(());
     }
-    std::fs::remove_dir_all(dest).with_context(|| format!("removing {}", dest.display()))?;
-    println!("removed {}", dest.display());
+    claude_settings::unregister(project)?;
     Ok(())
 }
 
@@ -136,6 +139,22 @@ fn print_extract_summary(stats: &ExtractStats) {
         for p in &stats.user_modified {
             println!("    skipped (local edit): {p}");
         }
+    }
+}
+
+fn print_wire_summary(report: WireReport) {
+    println!(
+        "  claude:  marketplace {} | settings {}",
+        wire_verb(report.marketplace),
+        wire_verb(report.settings),
+    );
+}
+
+fn wire_verb(action: WriteAction) -> &'static str {
+    match action {
+        WriteAction::Created => "created",
+        WriteAction::Updated => "updated",
+        WriteAction::Unchanged => "unchanged",
     }
 }
 
@@ -225,9 +244,38 @@ mod tests {
     #[test]
     fn uninstall_removes_plugin_dir() {
         let dir = TempDir::new().unwrap();
-        let dest = dir.path().join("plugin");
+        let project = dir.path();
+        let dest = project.join(".claude/plugins/heal");
         plugin_assets::extract(&dest, ExtractMode::InstallSafe).unwrap();
-        uninstall(&dest).unwrap();
+        uninstall(project, &dest).unwrap();
         assert!(!dest.exists());
+    }
+
+    #[test]
+    fn install_wires_claude_marketplace_and_settings() {
+        let dir = TempDir::new().unwrap();
+        let project = dir.path();
+        let dest = project.join(".claude/plugins/heal");
+        install(project, &dest, false).unwrap();
+        assert!(project.join(".claude-plugin/marketplace.json").exists());
+        let settings = std::fs::read_to_string(project.join(".claude/settings.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&settings).unwrap();
+        assert_eq!(v["enabledPlugins"]["heal@heal-local"], true);
+        assert_eq!(
+            v["extraKnownMarketplaces"]["heal-local"]["source"]["source"],
+            "file"
+        );
+    }
+
+    #[test]
+    fn uninstall_clears_marketplace_and_settings() {
+        let dir = TempDir::new().unwrap();
+        let project = dir.path();
+        let dest = project.join(".claude/plugins/heal");
+        install(project, &dest, false).unwrap();
+        uninstall(project, &dest).unwrap();
+        assert!(!dest.exists());
+        assert!(!project.join(".claude-plugin/marketplace.json").exists());
+        assert!(!project.join(".claude/settings.json").exists());
     }
 }
