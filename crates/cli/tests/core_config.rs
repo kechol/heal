@@ -229,6 +229,70 @@ fn tier_for_default_policy_buckets_findings() {
 }
 
 #[test]
+fn tier_for_per_metric_override_replaces_global() {
+    // ccn gets a stricter must list; cognitive falls back to the global.
+    let cfg = r#"
+        [policy.drain]
+        must = ["critical:hotspot"]
+        should = ["critical"]
+
+        [policy.drain.metrics.ccn]
+        must = ["critical:hotspot", "high:hotspot"]
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    let drain = &parsed.policy.drain;
+    let mut ccn = finding_with(Severity::High, true);
+    ccn.metric = "ccn".into();
+    let mut cog = finding_with(Severity::High, true);
+    cog.metric = "cognitive".into();
+    // ccn override picks up High 🔥 as must.
+    assert_eq!(drain.tier_for(&ccn), Some(DrainTier::Must));
+    // cognitive falls back to global — High 🔥 isn't in must or should
+    // there, so Advisory.
+    assert_eq!(drain.tier_for(&cog), Some(DrainTier::Advisory));
+}
+
+#[test]
+fn tier_for_per_metric_partial_override_inherits() {
+    // override sets only `must`; `should` inherits from global.
+    let cfg = r#"
+        [policy.drain]
+        must = ["critical:hotspot"]
+        should = ["critical", "high:hotspot"]
+
+        [policy.drain.metrics.ccn]
+        must = ["critical"]
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    let drain = &parsed.policy.drain;
+    let mut ccn = finding_with(Severity::High, true);
+    ccn.metric = "ccn".into();
+    // High 🔥 hits the inherited global `should`.
+    assert_eq!(drain.tier_for(&ccn), Some(DrainTier::Should));
+}
+
+#[test]
+fn tier_for_sub_metric_inherits_from_parent_override() {
+    // change_coupling.symmetric should pick up the change_coupling
+    // override before falling back to global.
+    let cfg = r#"
+        [policy.drain]
+        must = ["critical:hotspot"]
+        should = ["critical"]
+
+        [policy.drain.metrics.change_coupling]
+        must = ["critical", "high"]
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    let drain = &parsed.policy.drain;
+    let mut sub = finding_with(Severity::High, false);
+    sub.metric = "change_coupling.symmetric".into();
+    // No `change_coupling.symmetric` override — falls back to parent
+    // `change_coupling`, which lists "high" in must.
+    assert_eq!(drain.tier_for(&sub), Some(DrainTier::Must));
+}
+
+#[test]
 fn tier_for_must_takes_precedence_over_should() {
     // If a custom policy lists "critical" in both must and should, must
     // wins (the iteration order in PolicyDrainConfig is must-then-should).

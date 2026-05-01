@@ -525,6 +525,11 @@ pub struct PolicyRuleConfig {
 /// `heal-code-patch` skill must drain (`must`, T0) vs may drain when
 /// bandwidth allows (`should`, T1). Anything not matched falls into
 /// the Advisory tier (rendered separately, never auto-drained).
+///
+/// Per-metric overrides under `[policy.drain.metrics.<name>]` let
+/// teams tune the drain gate by metric (e.g. stricter `must` for
+/// `ccn` because it's a proxy; looser for `duplication` because it's
+/// Goodhart-safe).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct PolicyDrainConfig {
@@ -535,6 +540,24 @@ pub struct PolicyDrainConfig {
     /// `["critical", "high:hotspot"]`.
     #[serde(default = "default_drain_should")]
     pub should: Vec<DrainSpec>,
+    /// Per-metric overrides keyed by metric name (`ccn`, `cognitive`,
+    /// `duplication`, `change_coupling`, `lcom`, `hotspot`). Each
+    /// override may set `must` and / or `should`; missing fields fall
+    /// back to the global lists above.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub metrics: BTreeMap<String, PolicyDrainMetricOverride>,
+}
+
+/// One per-metric override under `[policy.drain.metrics.<name>]`.
+/// Either field may be `None` to inherit the corresponding global
+/// list.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PolicyDrainMetricOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub must: Option<Vec<DrainSpec>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub should: Option<Vec<DrainSpec>>,
 }
 
 impl Default for PolicyDrainConfig {
@@ -542,6 +565,7 @@ impl Default for PolicyDrainConfig {
         Self {
             must: default_drain_must(),
             should: default_drain_should(),
+            metrics: BTreeMap::new(),
         }
     }
 }
@@ -615,18 +639,47 @@ impl PolicyDrainConfig {
     /// Classify a finding into its drain tier. Returns `None` for
     /// `Severity::Ok` findings — those are excluded from drain queues
     /// entirely (the renderer surfaces them via the separate Ok summary).
+    /// Per-metric overrides at `[policy.drain.metrics.<name>]` take
+    /// precedence over the global `must` / `should` lists; missing
+    /// overrides inherit the global value.
     #[must_use]
     pub fn tier_for(&self, finding: &crate::core::finding::Finding) -> Option<DrainTier> {
         if finding.severity == crate::core::severity::Severity::Ok {
             return None;
         }
-        if self.must.iter().any(|s| s.matches(finding)) {
+        let (must, should) = self.specs_for(&finding.metric);
+        if must.iter().any(|s| s.matches(finding)) {
             return Some(DrainTier::Must);
         }
-        if self.should.iter().any(|s| s.matches(finding)) {
+        if should.iter().any(|s| s.matches(finding)) {
             return Some(DrainTier::Should);
         }
         Some(DrainTier::Advisory)
+    }
+
+    /// Resolve the effective `(must, should)` spec lists for a metric.
+    /// Looks up the per-metric override first; metrics without an
+    /// override see the global lists. Sub-metrics (`change_coupling.symmetric`)
+    /// fall back to their parent (`change_coupling`) before going global.
+    fn specs_for(&self, metric: &str) -> (&[DrainSpec], &[DrainSpec]) {
+        let mut must: &[DrainSpec] = &self.must;
+        let mut should: &[DrainSpec] = &self.should;
+        let override_chain =
+            std::iter::once(metric).chain(metric.split_once('.').map(|(parent, _)| parent));
+        for key in override_chain {
+            if let Some(ov) = self.metrics.get(key) {
+                if let Some(m) = ov.must.as_ref() {
+                    must = m;
+                }
+                if let Some(s) = ov.should.as_ref() {
+                    should = s;
+                }
+                if ov.must.is_some() && ov.should.is_some() {
+                    break;
+                }
+            }
+        }
+        (must, should)
     }
 }
 
