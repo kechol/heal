@@ -178,8 +178,8 @@ whether to invoke `heal calibrate --force`.
 The generated `calibration.toml` carries a comment header noting its
 provenance and the regeneration command, so anyone opening the file
 can find their way back to this command without reading the docs. Put
-`floor_critical` overrides in `config.toml` so they survive
-`heal calibrate --force`.
+`floor_critical` and `floor_ok` overrides in `config.toml` so they
+survive `heal calibrate --force`.
 
 The calibration audit trail lives in `.heal/snapshots/` as
 `event = "calibrate"` records — `heal logs` shows them alongside

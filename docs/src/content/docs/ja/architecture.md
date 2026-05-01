@@ -234,8 +234,8 @@ heal fix show <check_id> --json
 対パーセンタイル区切りを保持します。`heal init` が初回スキャンか
 ら計算し、`heal calibrate --force` がオンデマンドで更新します。
 post-commit ナッジは `Calibration::with_overrides(config)` 経由で
-読むため、`config.toml` の `floor_critical` は calibrate されたパー
-センタイルに勝ちます。
+読むため、`config.toml` の `floor_critical` / `floor_ok` は calibrate
+されたパーセンタイルに勝ちます。
 
 再 calibrate は **絶対に自動では行いません**。デフォルトの
 `heal calibrate` は自動検知トリガー（90 日経過、コードベースファ
@@ -247,3 +247,50 @@ post-commit ナッジは `Calibration::with_overrides(config)` 経由で
 残ります。`MetricsSnapshot::latest_in_segments` はスナップショット
 としてデコードできないレコードを静かにスキップするため、2 種類のイ
 ベント形が干渉なく同居します。
+
+## Calibration と policy: 2 つのレイヤ
+
+heal はコード健全性の **測定** と、それに対して何を行うかの **意図**
+を分離しています。
+
+- **Calibration レイヤ**（`.heal/calibration.toml` + metric ごとの
+  `[metrics.<m>]` override）は「この Finding は赤か？」を判定。
+  3 段の分類器 — `floor_critical`（逃げ道）+ `floor_ok`（卒業ゲー
+  ト、proxy メトリクスのみ）+ パーセンタイル区切り — が Severity
+  を生成します。このレイヤは測定の問い: 値が文献閾値とプロジェクト
+  分布に対してどこに位置するか、に答えます。
+- **Policy レイヤ**（`config.toml` の `[policy.drain]`）は「その
+  Finding はアクション対象か？」を判定。`(Severity, hotspot)` の組
+  が 3 つの drain tier (T0 / `must`、T1 / `should`、Advisory) のいず
+  れかにマップされます。このレイヤは意図の問い: チームが何を drain
+  するとコミットするか、に答えます。
+
+両レイヤは直交しています — 再 calibrate は Severity 境界を動かしま
+すが policy には触れません。逆に policy を厳しく/緩くしても観測は
+再実行されません。チームは通常 calibration を文献デフォルト近くに保
+ち、自分たちの帯域に合わせて `[policy.drain]` を調整します。
+
+## Drain queue モデル
+
+`heal check` は非 Ok の Finding を `[policy.drain]` 駆動で 3 つのバ
+ケットに分けます。
+
+| Tier | デフォルト spec | レンダラー挙動 | Skill 挙動 |
+| --- | --- | --- | --- |
+| **T0 / Drain queue** | `must = ["critical:hotspot"]` | 常に表示、Severity 🔥 desc 順。 | `/heal-code-patch` が 1 finding ずつ drain。 |
+| **T1 / Should drain** | `should = ["critical", "high:hotspot"]` | デフォルト表示、別セクション。 | レビュー対象、自動 drain しない。 |
+| **Advisory** | それ以外の非 Ok | `--all` 時のみ表示。 | 自動 drain なし、余裕のあるときに review。 |
+
+`Severity::Ok` の Finding は drain 対象外です。レンダラーは Ok 🔥
+pre-section（上位 10% hotspot だがメトリクスフロア未満）と隠し合計
+カウントで表示します。
+
+Override の可視化: `[metrics.<m>] floor_ok` / `floor_critical` が文
+献デフォルトと異なる場合、`heal check` はヘッダ行に
+`override: ccn floor_ok=15 [override from 11]` のような注釈を出力し
+ます。CI ログや PR diff で policy 変更が監査可能になります。
+
+`[policy.drain]` の DSL は `<severity>`（hotspot 不問）または
+`<severity>:hotspot`（hotspot=true 必須）。Severity トークンは小文字:
+`critical / high / medium / ok`。詳細は[設定 › Drain ポリシー](/heal/ja/configuration/#drain-ポリシー)
+を参照。

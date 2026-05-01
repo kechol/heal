@@ -178,9 +178,9 @@ post-commit ナッジは同じトリガーで "consider recalibrating" の 1
 
 生成された `calibration.toml` の先頭には、ファイルの来歴と再生成
 コマンドを示すコメントヘッダが付きます。docs を見なくてもファイル
-を開いた人が辿れるようにしてあります。`floor_critical` のオーバー
-ライドは `config.toml` 側に置いてください（`heal calibrate --force`
-で消えないようにするため）。
+を開いた人が辿れるようにしてあります。`floor_critical` / `floor_ok`
+のオーバーライドは `config.toml` 側に置いてください（`heal calibrate
+--force` で消えないようにするため）。
 
 calibration の監査記録は `.heal/snapshots/` に
 `event = "calibrate"` レコードとして残ります — `heal logs` でコ

@@ -123,6 +123,11 @@ top_n = 5
 - `floor_critical`（該当する場合のみ、任意） — パーセンタイル区切
   りに勝つ Severity の絶対フロア。コードベース分布が緩めでも文献基
   準のしきい値を効かせたいときに有用。
+- `floor_ok`（proxy メトリクスのみ、任意） — 絶対の卒業ゲート。値が
+  これ未満の Finding はパーセンタイルに関係なく `Ok` に分類されま
+  す。クリーンになったコードベースが「上位 10% は永遠に赤」のループ
+  から抜けられるようにする仕組み。デフォルトは `ccn = 11`（McCabe
+  "simple"）、`cognitive = 8`（Sonar）。
 
 ### `[metrics.loc]`
 
@@ -152,10 +157,12 @@ enabled = true
 enabled        = true
 warn_delta_pct = 30
 floor_critical = 25     # McCabe "untestable in practice"
+floor_ok       = 11     # McCabe "simple, low risk" — 卒業ゲート
 
 [metrics.cognitive]
 enabled        = true
 floor_critical = 50     # SonarQube Critical のベースライン
+floor_ok       = 8      # Sonar "review" 閾値の半分
 ```
 
 - `ccn.warn_delta_pct`（デフォルト `30`） — `heal status` の差分ブ
@@ -163,6 +170,14 @@ floor_critical = 50     # SonarQube Critical のベースライン
 - `floor_critical` — Severity の絶対フロア。`≥ floor` のものはパー
   センタイル位置に関係なく Critical に分類されるため、コードベース
   全体が悪い場合でもワーストケースを表面化できます。
+- `floor_ok` — 絶対の卒業ゲート。値が `< floor_ok` のものはパーセン
+  タイルに関係なく `Ok` に分類されます。これにより、コードベース全
+  体がクリーンになっても「上位 10% は永遠に Critical」のループ
+  （Goodhart's Law）から抜けられます。デフォルトは文献由来。チーム
+  ごとのドメインがより厳しい/緩い閾値を求める場合に上書きします。
+  Override の可視化: `heal check` のヘッダ行に
+  `override: ccn floor_ok=15 [override from 11]` のような注釈が出
+  力され、CI ログで policy 変更が監査できます。
 
 ### `[metrics.duplication]`
 
@@ -228,8 +243,9 @@ min_cluster_count = 2
 ## `.heal/calibration.toml`
 
 `heal init` が生成し、`heal calibrate` で更新します。手編集は推奨
-されません — `floor_critical` の上書きは `config.toml` に置いてく
-ださい（再 calibrate でユーザーの好みが上書きされないように）。
+されません — `floor_critical` / `floor_ok` の上書きは `config.toml`
+に置いてください（再 calibrate でユーザーの好みが上書きされないよ
+うに）。
 
 ```toml
 [meta]
@@ -243,6 +259,7 @@ p75 = 8.1
 p90 = 14.3
 p95 = 21.7
 floor_critical = 25.0
+floor_ok       = 11.0
 
 [calibration.hotspot]
 p50 = 5.0
@@ -256,6 +273,41 @@ p95 = 145.0
 続で Critical が 0）を評価し、書き込み無しで推奨だけを表示しま
 す。post-commit ナッジは同じヒントをインラインで表示します。実
 際に再スキャン・上書きするには `--force` を付けます。
+
+## `[policy.drain]`
+
+drain ポリシーは、`heal-code-patch` skill が drain しなければなら
+ない `(Severity, hotspot)` の組（T0）と、余裕があれば drain する組
+（T1）を決めます。どちらにも該当しない非 Ok の Finding は Advisory
+に落ち、`heal check --all` でのみ表示されます。
+
+```toml
+[policy.drain]
+must   = ["critical:hotspot"]            # T0 — drain to zero
+should = ["critical", "high:hotspot"]    # T1 — 余裕があれば
+```
+
+DSL 文法:
+
+- `<severity>` — その severity に該当（hotspot 不問）。
+- `<severity>:hotspot` — severity に該当 **かつ** `hotspot = true`。
+
+Severity トークンは小文字: `critical / high / medium / ok`。未知の
+トークンや余分な `:` セグメントは config 読み込み時に拒否されます
+（暗黙のドリフトなし）。
+
+厳格チーム: `must = ["critical:hotspot", "critical", "high:hotspot"]`
+で T0 がデフォルトの T1 範囲も拾うようにできます。緩めチーム:
+`should = []` で T0 を厳格に保ちつつ T1 を Advisory に折り畳めます。
+
+ユーザー定義の名前付きポリシーは `[policy.rules.<name>]` 配下に置
+きます。これは v0.4 のメトリクスドリフトアクション用に予約されて
+おり、現状は parse のみ。スキーマはリリースをまたいで保持されます。
+
+```toml
+[policy.rules.high_complexity_new_function]
+action = "report-only"
+```
 
 ## 厳格設計
 

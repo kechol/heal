@@ -15,25 +15,74 @@ This page summarises each metric. For configuration knobs, see
 
 ## Severity ladder
 
-Every Finding lands on one of four tiers:
+Every Finding lands on one of four tiers, evaluated in this order:
 
-| Tier     | Rule                                                                        |
-| -------- | --------------------------------------------------------------------------- |
-| Critical | `value ≥ floor_critical` OR `value ≥ p95` (the calibrated 95th percentile). |
-| High     | `value ≥ p90`                                                               |
-| Medium   | `value ≥ p75`                                                               |
-| Ok       | otherwise                                                                   |
+| Tier     | Rule                                                                                  |
+| -------- | ------------------------------------------------------------------------------------- |
+| Critical | `value ≥ floor_critical` (literature anchor — escape hatch for uniformly-bad codebases). |
+| Ok       | `value < floor_ok` (literature anchor — graduation gate, **proxy metrics only**).        |
+| Critical | `value ≥ p95` (the calibrated 95th percentile).                                       |
+| High     | `value ≥ p90`                                                                         |
+| Medium   | `value ≥ p75`                                                                         |
+| Ok       | otherwise                                                                             |
 
-`floor_critical` defaults are taken from established literature
-(McCabe / SonarQube): CCN 25, Cognitive 50, Duplication 30%. The
-percentile breaks (`p75 / p90 / p95`) come from the codebase's own
-distribution at calibration time and live in
-`.heal/calibration.toml`.
+Two absolute floors bracket the percentile classifier:
+
+- `floor_critical` is the upper escape hatch — anything above it stays
+  Critical even on a uniformly-bad codebase. Defaults from McCabe /
+  SonarQube literature: CCN 25, Cognitive 50, Duplication 30%.
+- `floor_ok` is the lower graduation gate — anything below it is Ok
+  regardless of percentile, so a clean codebase isn't held hostage by
+  the "top 10% is always red" loop (Goodhart's Law). Defaults: CCN 11
+  (McCabe "simple, low risk"), Cognitive 8 (Sonar). Only applies to
+  proxy metrics; duplication / change_coupling / lcom rely on their
+  scan-time filters instead.
+
+The percentile breaks (`p75 / p90 / p95`) come from the codebase's own
+distribution at calibration time and live in `.heal/calibration.toml`.
+Both floors are config-overridable per metric — see
+[Configuration › Floors](/heal/configuration/#floors).
 
 **Hotspot is orthogonal.** It is a flag (top-10% of the hotspot score
 distribution), not a Severity. A finding can be `Critical 🔥`
 (structurally bad AND being touched a lot) or `Critical` (structurally
 bad, quiet) — the renderer surfaces them as separate buckets.
+
+## Drain tiers
+
+`heal check` groups non-Ok findings into three drain tiers driven by
+the `[policy.drain]` config:
+
+- **T0 — Drain queue** (default `["critical:hotspot"]`). The must-fix
+  list `/heal-code-patch` drains.
+- **T1 — Should drain** (default `["critical", "high:hotspot"]`).
+  Bandwidth-permitting; surfaced separately, not auto-drained.
+- **Advisory** — anything else above Ok. Hidden unless `--all`.
+
+The split is what makes "drain to zero" meaningful: T0 is the goal,
+T1 is hygiene, Advisory is review-when-convenient. CCN as a *proxy*
+metric belongs in T0 only when corroborated by hotspot — otherwise the
+metric drives a Goodhart loop. See
+[Configuration › Drain policy](/heal/configuration/#drain-policy).
+
+## Why CCN and Cognitive are *proxies*, not targets
+
+McCabe (1976) introduced CCN as a static estimate of the minimum number
+of test cases needed for branch coverage — not as a code-quality
+metric. Sonar's Cognitive Complexity (2017) is a readability proxy.
+Driving either toward zero damages readability:
+
+- Extract Function on a procedurally cohesive function relocates CCN
+  rather than reducing global count.
+- Converting flat positive composites (`if (A && B && C)`) to negative
+  guard chains doesn't move Cognitive (the original isn't nested) and
+  often *increases* reader load.
+
+heal's design accepts this: `floor_ok` graduates clean codebases off
+the proxy metrics, hotspot multiplies leverage on touched files, and
+the drain-tier model keeps the TODO list focused on findings where the
+proxy and the underlying problem agree. See the
+`heal-code-review` skill's `architecture.md` §6 for the trap catalogue.
 
 ## Recommended adoption order
 
@@ -80,8 +129,16 @@ Two per-function metrics, computed in a single tree-sitter walk:
 
 Both metrics calibrate independently:
 
-- CCN: `floor_critical = 25` (McCabe "untestable in practice").
-- Cognitive: `floor_critical = 50` (SonarQube Critical baseline).
+- CCN: `floor_critical = 25` (McCabe "untestable"), `floor_ok = 11`
+  (McCabe "simple").
+- Cognitive: `floor_critical = 50` (SonarQube Critical baseline),
+  `floor_ok = 8` (Sonar — half of the "review" threshold).
+
+Functions strictly below `floor_ok` classify as Ok regardless of where
+they land on the project's percentile ladder. This is the graduation
+gate that lets a uniformly-clean codebase produce zero findings on a
+proxy metric — without it the percentile classifier always flagged the
+top decile (Goodhart's Law).
 
 **Languages**: TypeScript and Rust. JS / Python / Go / Scala arrive
 in later releases.

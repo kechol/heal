@@ -74,13 +74,16 @@ heal skills install
 1. **アーキテクチャ的な所見** — Finding を _リスト_ ではなく
    _システム_ として読み解いたもの（複雑度・重複・結合・ハブの
    いずれが支配的軸か）。
-2. **優先度付き TODO リスト** — ファイル / 関数を特定した具体的な
-   リファクタ提案。各エントリには確立されたリファクタパターン名と、
-   期待されるメトリクスの動きが付与されます。
+2. **優先度付き TODO リスト** — デフォルトでは **T0 (`must`) のみ** を対
+   象とします。T1 (`should`) は別セクション「If bandwidth permits」
+   として、Advisory はカウントのみで surface します。TODO エントリ
+   はファイル / 関数を特定した具体的なリファクタ提案で、各エントリ
+   には確立されたリファクタパターン名と期待されるメトリクスの動き
+   が付与されます。
 
 スキルは言語非依存で、テンプレートを押し付けるのではなく、コード
 ベースに見て取れるスタイルに合わせて提案を調整します。リファレンス
-ファイルが 2 つ同梱されており、必要なときだけ読み込まれます:
+ファイルが 3 つ同梱されており、必要なときだけ読み込まれます:
 
 - `references/metrics.md` — 各メトリクス（`loc` / `ccn` /
   `cognitive` / `churn` / `change_coupling` / `duplication` /
@@ -89,7 +92,11 @@ heal skills install
 - `references/architecture.md` — リファクタ提案で使う語彙集:
   モジュールの深さ（Ousterhout）、レイヤード / ヘキサゴナル
   アーキテクチャ（Cockburn、Evans）、DDD（Evans、Vernon）、
-  および提案が満たすべき _コードベース尊重_ のルール。
+  リファクタパターンのレバレッジ階層、トラップカタログ、および提案
+  が満たすべき _コードベース尊重_ のルール。
+- `references/readability.md` — 提案の *positive* 基準: ゴール階
+  層（readability → maintainability → metric）、可読性の原則
+  （Boswell、Ousterhout、Beck、Knuth）、5 つの判断質問テスト。
 
 `/heal-code-review` は提案のみで、ソースを変更しません。書き込み側は
 `/heal-code-patch` です。
@@ -110,11 +117,13 @@ heal skills install
 3. **calibration が存在する。** `calibration.toml` がなければ、
    すべての Finding が `Severity::Ok` になり、対象がありません。
 
-ループ:
+ループは **T0 (`must`) のみ** を drain します — T1 / Advisory は
+review 用に surface しますが自動 drain しません。T0 が空になったら
+T1 に黙って延長せず、セッションを終了します。
 
 ```
-キャッシュに non-Ok Finding がある間:
-    次の 1 件を選ぶ（Severity 順: Critical🔥 → Critical → High🔥 → High → Medium）
+キャッシュの T0 に Finding がある間:
+    次の 1 件を選ぶ（T0 内で Severity 🔥 desc）
     対象ファイルを読み、メトリクスに対する最小の修正を計画
     変更を適用
     テスト / 型検査 / linter を可能な範囲で実行
@@ -125,10 +134,12 @@ heal skills install
     そうでなければ続行
 ```
 
-停止条件: キャッシュが空、ユーザーが中断（Ctrl+C / Stop）、または
-スキルが人間の判断（アーキテクチャ判断、ビジネスルール）を必要とす
-る Finding に当たったとき。最後のケースでは、トレードオフを提示し
-て適用前に確認します。
+停止条件: T0 が空、ユーザーが中断（Ctrl+C / Stop）、またはスキルが
+人間の判断（アーキテクチャ判断、ビジネスルール）を必要とする Finding
+に当たったとき。最後のケースでは、トレードオフを提示して適用前に確
+認します。T0 が空で T1 / Advisory が残っている場合、スキルはサマリ
+を表示し、提案レベルでの議論のために `/heal-code-review` の実行を勧
+めます。
 
 メトリクスごとに `/heal-code-patch` は確立されたリファクタリング語彙
 （Fowler、Tornhill）にマッピングされます。

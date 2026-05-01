@@ -72,13 +72,16 @@ code, and returns two artefacts:
 1. An **architectural reading** of the codebase — what the findings
    say _as a system_, not as a list (the dominant axis: complexity,
    duplication, coupling, or hub).
-2. A **prioritised TODO list** — concrete refactors keyed to specific
+2. A **prioritised TODO list** — drawn from **T0 (`must`) only** by
+   default. T1 (`should`) findings get a separate "If bandwidth
+   permits" section, and Advisory findings are surfaced as a count
+   only. The TODO entries are concrete refactors keyed to specific
    files / functions, each tagged with the established refactor
    pattern and the expected metric movement.
 
 The skill is language-agnostic and tailors proposals to the
 codebase's apparent style instead of pushing a one-size-fits-all
-template. Two reference files ship alongside it and are loaded on
+template. Three reference files ship alongside it and are loaded on
 demand:
 
 - `references/metrics.md` — what each metric (`loc`, `ccn`,
@@ -87,8 +90,13 @@ demand:
   the typical false positives.
 - `references/architecture.md` — the vocabulary for refactor
   proposals: module depth (Ousterhout), layered / hexagonal
-  architecture (Cockburn, Evans), DDD (Evans, Vernon), plus the
+  architecture (Cockburn, Evans), DDD (Evans, Vernon), the leverage
+  hierarchy of refactor patterns, the trap catalogue, plus the
   rules for _respecting the codebase_ the proposals must pass.
+- `references/readability.md` — the *positive* criterion for
+  proposals: the goal hierarchy (readability → maintainability →
+  metric), readability principles (Boswell, Ousterhout, Beck,
+  Knuth), and the 5-question judgement test.
 
 `/heal-code-review` proposes only — it never edits source. The write
 counterpart is `/heal-code-patch`.
@@ -110,11 +118,13 @@ Pre-flight (refuses to start when these fail):
 3. **Calibration exists.** Without `calibration.toml`, every Finding
    is `Severity::Ok` — nothing actionable.
 
-The loop:
+The loop drains **T0 (`must`) only** — T1 / Advisory are surfaced for
+review but never auto-drained. End the session when T0 is empty rather
+than silently extending into T1.
 
 ```
-while there are non-Ok findings in the cache:
-    pick the next one (Severity order: Critical🔥 → Critical → High🔥 → High → Medium)
+while there are findings in T0 of the cache:
+    pick the next one (Severity 🔥 desc within T0)
     read the file(s); plan the smallest fix that addresses the metric
     apply the change
     run tests / type-check / linter (best effort)
@@ -125,10 +135,12 @@ while there are non-Ok findings in the cache:
     else: continue
 ```
 
-Stop conditions: cache empty, user interrupts (Ctrl+C / Stop), or the
+Stop conditions: T0 empty, user interrupts (Ctrl+C / Stop), or the
 skill hits a finding that needs human judgement (architectural
 decision, business rule). In the last case, it surfaces the
-trade-offs and asks before applying.
+trade-offs and asks before applying. When T0 is empty but T1 / Advisory
+findings remain, the skill ends with a summary and recommends running
+`/heal-code-review` for proposal-level discussion.
 
 Per-metric, `/heal-code-patch` maps to established refactoring vocabulary
 (Fowler, Tornhill):

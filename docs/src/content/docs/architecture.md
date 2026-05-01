@@ -232,8 +232,8 @@ heal fix show <check_id> --json
 for every Severity-aware metric. `heal init` computes it from the
 initial scan; `heal calibrate --force` refreshes it on demand. The
 post-commit nudge reads it through `Calibration::with_overrides(config)`
-so any `floor_critical` set in `config.toml` wins over the calibrated
-percentile.
+so any `floor_critical` / `floor_ok` set in `config.toml` wins over the
+calibrated percentile.
 
 Recalibration is **never automatic**. The default `heal calibrate`
 invocation evaluates the auto-detect triggers (90-day age, ±20%
@@ -244,3 +244,52 @@ The audit trail lives in `.heal/snapshots/` as
 `event = "calibrate"`. `MetricsSnapshot::latest_in_segments`
 silently skips records that don't decode as a snapshot, so the two
 event shapes coexist without interfering.
+
+## Calibration vs policy: two layers
+
+heal separates the *measurement* of code health from the *intent* of
+what to act on:
+
+- **Calibration layer** (`.heal/calibration.toml` + per-metric
+  `[metrics.<m>]` overrides) decides "is this finding red?". The
+  three-way classifier — `floor_critical` (escape hatch) +
+  `floor_ok` (graduation gate, proxy metrics only) + percentile
+  breaks — produces a Severity. This layer answers a measurement
+  question: where does this value sit relative to literature
+  thresholds and the project's own distribution.
+- **Policy layer** (`[policy.drain]` in `config.toml`) decides "is
+  this finding actionable?". A `(Severity, hotspot)` tuple maps to
+  one of three drain tiers: T0 / `must`, T1 / `should`, or
+  Advisory. This layer answers an intent question: what does the
+  team commit to draining.
+
+The two layers are orthogonal — re-calibration shifts where Severity
+boundaries fall but never touches policy; a stricter or looser policy
+changes drain semantics without re-running observers. Teams typically
+keep calibration close to literature defaults and tune `[policy.drain]`
+for their bandwidth.
+
+## Drain queue model
+
+`heal check` partitions every non-Ok finding into one of three
+buckets driven by `[policy.drain]`:
+
+| Tier | Default specs | Renderer behaviour | Skill behaviour |
+| --- | --- | --- | --- |
+| **T0 / Drain queue** | `must = ["critical:hotspot"]` | Always shown, sorted Severity 🔥 desc. | `/heal-code-patch` drains one finding per commit. |
+| **T1 / Should drain** | `should = ["critical", "high:hotspot"]` | Shown by default, separate section. | Surfaced for review; not auto-drained. |
+| **Advisory** | everything else above Ok | Hidden unless `--all`. | Never drained; review when convenient. |
+
+Findings classified as `Severity::Ok` are excluded from drain entirely;
+the renderer surfaces them via a dedicated Ok 🔥 pre-section (top-10%
+hotspot but below the metric floor) and a hidden-summary count.
+
+Override visibility: when `[metrics.<m>] floor_ok` or `floor_critical`
+deviates from the literature default, `heal check` emits a header line
+like `override: ccn floor_ok=15 [override from 11]` so policy moves are
+auditable in CI logs and PR diffs.
+
+The `[policy.drain]` DSL is `<severity>` (any hotspot) or
+`<severity>:hotspot` (hotspot=true required). Severity tokens are
+lowercase: `critical / high / medium / ok`. See
+[Configuration › Drain policy](/heal/configuration/#drain-policy).
