@@ -703,7 +703,9 @@ mod tests {
 
     impl PathGuard {
         fn set(value: std::ffi::OsString) -> Self {
-            let lock = PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let lock = PATH_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let original = std::env::var_os("PATH");
             std::env::set_var("PATH", value);
             Self {
