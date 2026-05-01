@@ -31,6 +31,11 @@ pub enum Command {
         /// don't have Claude Code installed, or for CI invocations.
         #[arg(long)]
         no_skills: bool,
+        /// Emit a machine-readable JSON summary of the init outcome
+        /// instead of the human-readable text. Stable contract for
+        /// scripts and the `heal-config` skill.
+        #[arg(long)]
+        json: bool,
     },
     /// Hook entrypoint invoked by git hooks and the Claude plugin.
     Hook {
@@ -91,6 +96,12 @@ pub enum Command {
         /// even when one already exists.
         #[arg(long)]
         force: bool,
+        /// Emit a JSON summary (calibration thresholds when `--force`,
+        /// recalibration-check verdict otherwise) instead of the
+        /// human-readable text. Stable contract for the `heal-config`
+        /// skill and CI scripts.
+        #[arg(long)]
+        json: bool,
     },
     /// Compact `.heal/{snapshots,logs,checks}/` segments. Files older
     /// than 90 days are gzipped in place; files older than 365 days
@@ -100,6 +111,10 @@ pub enum Command {
         /// Print one line per touched file instead of just the summary.
         #[arg(long)]
         verbose: bool,
+        /// Emit a JSON summary of gzipped / deleted segments instead
+        /// of the human-readable text.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -338,6 +353,9 @@ pub enum FixAction {
         /// SHA of the commit that resolved the finding.
         #[arg(long, value_name = "SHA")]
         commit_sha: String,
+        /// Emit a JSON summary of the recorded fix entry.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -348,17 +366,31 @@ pub enum SkillsAction {
         /// Overwrite existing assets even if they were edited locally.
         #[arg(long)]
         force: bool,
+        /// Emit a JSON summary of the install outcome.
+        #[arg(long)]
+        json: bool,
     },
     /// Refresh plugin assets after a binary upgrade. Skips files the user
     /// has edited locally; pass `--force` to overwrite them too.
     Update {
         #[arg(long)]
         force: bool,
+        /// Emit a JSON summary of the update outcome.
+        #[arg(long)]
+        json: bool,
     },
     /// Show installed plugin version, bundled version, and any drift.
-    Status,
+    Status {
+        /// Emit a JSON view of the install status (versions, drift list).
+        #[arg(long)]
+        json: bool,
+    },
     /// Remove the plugin from `.claude/plugins/heal/`.
-    Uninstall,
+    Uninstall {
+        /// Emit a JSON summary of what was removed.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 impl Cli {
@@ -371,7 +403,8 @@ impl Cli {
                 force,
                 yes,
                 no_skills,
-            } => commands::init::run(&project, force, yes, no_skills),
+                json,
+            } => commands::init::run(&project, force, yes, no_skills, json),
             Command::Hook { event } => commands::hook::run(&project, event),
             Command::Status { json, metric } => commands::status::run(&project, json, metric),
             Command::Logs(args) => commands::logs::run_logs(&project, &args),
@@ -380,8 +413,8 @@ impl Cli {
             Command::Check(args) => commands::check::run(&project, &args),
             Command::Fix { action } => commands::fix::run(&project, action),
             Command::Skills { action } => commands::skills::run(&project, action),
-            Command::Calibrate { force } => commands::calibrate::run(&project, force),
-            Command::Compact { verbose } => commands::compact::run(&project, verbose),
+            Command::Calibrate { force, json } => commands::calibrate::run(&project, force, json),
+            Command::Compact { verbose, json } => commands::compact::run(&project, verbose, json),
         }
     }
 }

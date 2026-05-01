@@ -115,7 +115,7 @@ pub fn run(project: &Path, args: &CheckArgs) -> Result<()> {
     };
 
     if args.json {
-        emit_json(&record);
+        super::emit_json(&record);
         return Ok(());
     }
     let cfg = cfg.expect("cfg loaded above when not args.json");
@@ -147,12 +147,6 @@ pub(super) fn build_fresh_record(
     };
     let findings = classify(&reports, cal_ref, cfg);
     CheckRecord::new(head_sha, worktree_clean, config_hash, findings)
-}
-
-fn emit_json(record: &CheckRecord) {
-    let body =
-        serde_json::to_string_pretty(record).expect("CheckRecord serialization is infallible");
-    println!("{body}");
 }
 
 /// Resolved filters for the renderer.

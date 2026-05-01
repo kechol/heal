@@ -28,6 +28,7 @@ use crate::observer::git;
 use crate::observer::loc::LocObserver;
 use crate::plugin_assets::{self, plugin_dest, ExtractMode, ExtractStats};
 use anyhow::{Context, Result};
+use serde::Serialize;
 
 use crate::observers::{build_calibration, run_all};
 use crate::snapshot;
@@ -45,7 +46,11 @@ fi
 exit 0
 ";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Outcome of writing the project's `config.toml`. The `tag = "action"`
+/// attribute makes this safe to `#[serde(flatten)]` next to a `path:`
+/// sibling — unit variants serialise as `{ "action": "wrote" }`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
 enum ConfigAction {
     Wrote,
     Overwrote,
@@ -62,7 +67,10 @@ impl fmt::Display for ConfigAction {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Same shape as [`ConfigAction`] — internally tagged so it flattens
+/// safely under `path:` in the JSON contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
 enum HookAction {
     Installed,
     Overwrote,
@@ -85,30 +93,26 @@ impl fmt::Display for HookAction {
     }
 }
 
-/// Outcome of the optional Claude-skills install step. The path is the
-/// destination directory; the rendering layer composes
-/// "<path> (<verb>)" lines from this.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Outcome of the optional Claude-skills install step. Doubles as the
+/// JSON shape under `init --json`'s `plugin` field — the variant
+/// discriminator becomes `action: "<snake_case>"` and the `Installed`
+/// variant's fields flatten in alongside it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
 enum SkillsAction {
-    /// Bundled plugin extracted; per-bucket counts pulled from the
-    /// extract summary so the user sees what landed.
     Installed {
         added: usize,
         updated: usize,
         unchanged: usize,
     },
-    /// User declined the prompt.
     Declined,
-    /// `--no-skills` was passed.
     SuppressedByFlag,
-    /// `claude` not on `PATH` — silently skipped (no prompt).
     SkippedNoClaude,
-    /// stdin is not a TTY and `--yes` wasn't passed — skipped with a
-    /// hint pointing at `heal skills install`.
     SkippedNonInteractive,
 }
 
-pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool) -> Result<()> {
+#[allow(clippy::fn_params_excessive_bools)] // each flag is independent CLI surface
+pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool, as_json: bool) -> Result<()> {
     let paths = HealPaths::new(project);
     paths
         .ensure()
@@ -121,6 +125,21 @@ pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool) -> Result<()
     let plugin_dest = plugin_dest(project);
     let skills_action = handle_skills_install(project, &plugin_dest, force, yes, no_skills)?;
 
+    if as_json {
+        super::emit_json(&InitReport::new(
+            project,
+            &paths,
+            primary_language.as_deref(),
+            &config_action,
+            &hook_action,
+            hook_path.as_deref(),
+            &plugin_dest,
+            &skills_action,
+            severity_counts.as_ref(),
+        ));
+        return Ok(());
+    }
+
     print_summary(
         &paths,
         primary_language.as_deref(),
@@ -132,6 +151,77 @@ pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool) -> Result<()
         severity_counts.as_ref(),
     );
     Ok(())
+}
+
+/// Stable JSON contract for `heal init --json`. Mirrors the lines the
+/// human renderer emits but in a typed shape so scripts and the
+/// `heal-config` skill can act on it without parsing free-form text.
+#[derive(Debug, Serialize)]
+struct InitReport<'a> {
+    project: String,
+    heal_dir: String,
+    primary_language: Option<&'a str>,
+    config: PathAction<'a, ConfigAction>,
+    calibration_path: String,
+    snapshots_dir: String,
+    post_commit_hook: PathAction<'a, HookAction>,
+    plugin: PluginReport<'a>,
+    severity_counts: Option<&'a SeverityCounts>,
+}
+
+/// Common shape for "we did something to a file" — used twice in
+/// `InitReport` (config, `post_commit_hook`). The `path` field is
+/// `Option<String>` so the hook entry can omit it when no git repo
+/// was present.
+#[derive(Debug, Serialize)]
+struct PathAction<'a, A: Serialize> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    #[serde(flatten)]
+    action: &'a A,
+}
+
+#[derive(Debug, Serialize)]
+struct PluginReport<'a> {
+    dest: String,
+    #[serde(flatten)]
+    action: &'a SkillsAction,
+}
+
+impl<'a> InitReport<'a> {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        project: &Path,
+        paths: &HealPaths,
+        primary_language: Option<&'a str>,
+        config_action: &'a ConfigAction,
+        hook_action: &'a HookAction,
+        hook_path: Option<&Path>,
+        plugin_dest: &Path,
+        skills_action: &'a SkillsAction,
+        severity_counts: Option<&'a SeverityCounts>,
+    ) -> Self {
+        Self {
+            project: project.display().to_string(),
+            heal_dir: paths.root().display().to_string(),
+            primary_language,
+            config: PathAction {
+                path: Some(paths.config().display().to_string()),
+                action: config_action,
+            },
+            calibration_path: paths.calibration().display().to_string(),
+            snapshots_dir: paths.snapshots_dir().display().to_string(),
+            post_commit_hook: PathAction {
+                path: hook_path.map(|p| p.display().to_string()),
+                action: hook_action,
+            },
+            plugin: PluginReport {
+                dest: plugin_dest.display().to_string(),
+                action: skills_action,
+            },
+            severity_counts,
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -416,7 +506,7 @@ mod tests {
     /// suite never depends on whether `claude` happens to be on the
     /// runner's PATH.
     fn run_no_skills(project: &Path, force: bool) -> Result<()> {
-        run(project, force, false, true)
+        run(project, force, false, true, false)
     }
 
     #[test]

@@ -10,13 +10,18 @@ use std::path::Path;
 
 use anyhow::Result;
 use chrono::Utc;
+use serde::Serialize;
 
 use crate::core::compaction::{compact_all, CompactionPolicy, CompactionStats};
 use crate::core::HealPaths;
 
-pub fn run(project: &Path, verbose: bool) -> Result<()> {
+pub fn run(project: &Path, verbose: bool, as_json: bool) -> Result<()> {
     let paths = HealPaths::new(project);
     let per_dir = compact_all(&paths, &CompactionPolicy::default(), Utc::now())?;
+    if as_json {
+        super::emit_json(&CompactReport::new(&per_dir));
+        return Ok(());
+    }
     print_summary(&per_dir, verbose);
     Ok(())
 }
@@ -43,6 +48,52 @@ fn print_summary(per_dir: &[(&'static str, CompactionStats)], verbose: bool) {
         }
         for path in &stats.deleted {
             println!("    delete {}", path.display());
+        }
+    }
+}
+
+/// Stable JSON contract for `heal compact --json`. Lists each touched
+/// directory with its gzipped / deleted segment paths so callers can
+/// reason about what was rotated without re-globbing the layout.
+#[derive(Debug, Serialize)]
+struct CompactReport<'a> {
+    gzipped: usize,
+    deleted: usize,
+    dirs: Vec<CompactDir<'a>>,
+}
+
+#[derive(Debug, Serialize)]
+struct CompactDir<'a> {
+    name: &'a str,
+    gzipped: Vec<String>,
+    deleted: Vec<String>,
+}
+
+impl<'a> CompactReport<'a> {
+    fn new(per_dir: &'a [(&'static str, CompactionStats)]) -> Self {
+        let (gzipped, deleted) = per_dir.iter().fold((0, 0), |(g, d), (_, s)| {
+            (g + s.gzipped.len(), d + s.deleted.len())
+        });
+        let dirs = per_dir
+            .iter()
+            .map(|(label, stats)| CompactDir {
+                name: label,
+                gzipped: stats
+                    .gzipped
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect(),
+                deleted: stats
+                    .deleted
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect(),
+            })
+            .collect();
+        Self {
+            gzipped,
+            deleted,
+            dirs,
         }
     }
 }

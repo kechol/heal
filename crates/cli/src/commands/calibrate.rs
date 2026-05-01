@@ -19,6 +19,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use chrono::Utc;
+use serde::Serialize;
 
 use crate::core::calibration::{Calibration, RecalibrationCheck};
 use crate::core::config::load_from_project;
@@ -31,7 +32,7 @@ use crate::observers::{build_calibration, run_all};
 /// audit-log schema stable for external readers.
 const CALIBRATE_REASON: &str = "manual";
 
-pub fn run(project: &Path, force: bool) -> Result<()> {
+pub fn run(project: &Path, force: bool, as_json: bool) -> Result<()> {
     let paths = HealPaths::new(project);
     let cfg = load_from_project(project).with_context(|| {
         format!(
@@ -42,7 +43,7 @@ pub fn run(project: &Path, force: bool) -> Result<()> {
 
     let calibration_path = paths.calibration();
     if !force && calibration_path.exists() {
-        run_check(&paths);
+        run_check(&paths, as_json);
         return Ok(());
     }
 
@@ -54,6 +55,16 @@ pub fn run(project: &Path, force: bool) -> Result<()> {
     let payload =
         serde_json::to_value(&event).expect("CalibrationEvent serialization is infallible");
     EventLog::new(paths.snapshots_dir()).append(&Event::new("calibrate", payload))?;
+
+    if as_json {
+        super::emit_json(&CalibrateReport {
+            kind: "recalibrated",
+            path: calibration_path.display().to_string(),
+            calibration: Some(&calibration),
+            recalibration_check: None,
+        });
+        return Ok(());
+    }
 
     println!("Recalibrated {}", calibration_path.display());
     println!("  codebase_files: {}", calibration.meta.codebase_files);
@@ -69,19 +80,43 @@ pub fn run(project: &Path, force: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_check(paths: &HealPaths) {
+fn run_check(paths: &HealPaths, as_json: bool) {
     let calibration_path = paths.calibration();
     let Ok(calibration) = Calibration::load(&calibration_path) else {
         // The path-exists guard above already filtered this out; if a
         // race deleted the file we still want to fail soft and prompt.
-        println!(
-            "no calibration at {} — re-run `heal calibrate --force` to create one",
-            calibration_path.display(),
-        );
+        if as_json {
+            super::emit_json(&CalibrateReport {
+                kind: "missing",
+                path: calibration_path.display().to_string(),
+                calibration: None,
+                recalibration_check: None,
+            });
+        } else {
+            println!(
+                "no calibration at {} — re-run `heal calibrate --force` to create one",
+                calibration_path.display(),
+            );
+        }
         return;
     };
     let snapshots = EventLog::new(paths.snapshots_dir());
     let check = RecalibrationCheck::evaluate(&snapshots, &calibration, Utc::now());
+
+    if as_json {
+        super::emit_json(&CalibrateReport {
+            kind: if check.fired() {
+                "recalibration_recommended"
+            } else {
+                "ok"
+            },
+            path: calibration_path.display().to_string(),
+            calibration: Some(&calibration),
+            recalibration_check: Some(RecalibrationCheckJson::from(&check)),
+        });
+        return;
+    }
+
     let colorize = std::io::stdout().is_terminal();
 
     if !check.fired() {
@@ -116,6 +151,41 @@ fn run_check(paths: &HealPaths) {
     println!("Run `heal calibrate --force` to refresh.");
 }
 
+/// Stable JSON contract for `heal calibrate --json`. `kind` distinguishes
+/// the four reachable states so callers can branch without parsing prose.
+#[derive(Debug, Serialize)]
+struct CalibrateReport<'a> {
+    /// One of `recalibrated`, `ok`, `recalibration_recommended`, `missing`.
+    kind: &'static str,
+    path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    calibration: Option<&'a Calibration>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recalibration_check: Option<RecalibrationCheckJson>,
+}
+
+#[derive(Debug, Serialize)]
+struct RecalibrationCheckJson {
+    fired: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    age_exceeded_days: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    file_count_delta_pct: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    critical_clean_streak_days: Option<i64>,
+}
+
+impl From<&RecalibrationCheck> for RecalibrationCheckJson {
+    fn from(c: &RecalibrationCheck) -> Self {
+        Self {
+            fired: c.fired(),
+            age_exceeded_days: c.age_exceeded_days,
+            file_count_delta_pct: c.file_count_delta_pct,
+            critical_clean_streak_days: c.critical_clean_streak_days,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,7 +211,7 @@ mod tests {
         let paths = HealPaths::new(dir.path());
 
         // No calibration file yet — default run should generate it.
-        run(dir.path(), false).unwrap();
+        run(dir.path(), false, false).unwrap();
 
         assert!(
             paths.calibration().exists(),
@@ -168,7 +238,7 @@ mod tests {
 
         // Seed a calibration via --force so the second invocation hits
         // the read-only check path.
-        run(dir.path(), true).unwrap();
+        run(dir.path(), true, false).unwrap();
 
         // Append a fresh commit-like snapshot so `latest_in_segments`
         // resolves; mimic what `heal hook commit` would write.
@@ -189,7 +259,7 @@ mod tests {
             .count();
 
         // Default run: must NOT append a new calibrate event.
-        run(dir.path(), false).unwrap();
+        run(dir.path(), false, false).unwrap();
 
         let events_after = EvLog::new(paths.snapshots_dir())
             .try_iter()
@@ -209,8 +279,8 @@ mod tests {
         init_project(dir.path());
         let paths = HealPaths::new(dir.path());
 
-        run(dir.path(), false).unwrap();
-        run(dir.path(), true).unwrap();
+        run(dir.path(), false, false).unwrap();
+        run(dir.path(), true, false).unwrap();
 
         let calibrate_count = EvLog::new(paths.snapshots_dir())
             .try_iter()

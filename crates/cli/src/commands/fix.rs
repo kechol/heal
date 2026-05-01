@@ -54,20 +54,40 @@ pub fn run(project: &Path, action: FixAction) -> Result<()> {
         FixAction::Mark {
             finding_id,
             commit_sha,
-        } => run_mark(&paths, &finding_id, &commit_sha),
+            json,
+        } => run_mark(&paths, &finding_id, &commit_sha, json),
     }
 }
 
-fn run_mark(paths: &HealPaths, finding_id: &str, commit_sha: &str) -> Result<()> {
+fn run_mark(paths: &HealPaths, finding_id: &str, commit_sha: &str, as_json: bool) -> Result<()> {
     let entry = FixedFinding {
         finding_id: finding_id.to_owned(),
         commit_sha: commit_sha.to_owned(),
         fixed_at: Utc::now(),
     };
-    append_fixed(&paths.checks_fixed_log(), &entry)?;
+    let log_path = paths.checks_fixed_log();
+    append_fixed(&log_path, &entry)?;
+    if as_json {
+        #[derive(Serialize)]
+        struct MarkReport<'a> {
+            action: &'a str,
+            finding_id: &'a str,
+            commit_sha: &'a str,
+            fixed_at: String,
+            log: String,
+        }
+        super::emit_json(&MarkReport {
+            action: "marked",
+            finding_id,
+            commit_sha,
+            fixed_at: entry.fixed_at.to_rfc3339(),
+            log: log_path.display().to_string(),
+        });
+        return Ok(());
+    }
     println!(
         "marked {finding_id} as fixed by {commit_sha} (logged to {})",
-        paths.checks_fixed_log().display(),
+        log_path.display(),
     );
     Ok(())
 }
@@ -486,8 +506,8 @@ mod tests {
         let paths = HealPaths::new(tmp.path());
         paths.ensure().unwrap();
 
-        run_mark(&paths, "ccn:src/a.rs:foo:abc", "deadbeef").unwrap();
-        run_mark(&paths, "ccn:src/b.rs:bar:def", "cafebabe").unwrap();
+        run_mark(&paths, "ccn:src/a.rs:foo:abc", "deadbeef", false).unwrap();
+        run_mark(&paths, "ccn:src/b.rs:bar:def", "cafebabe", false).unwrap();
 
         let entries = read_fixed(&paths.checks_fixed_log()).unwrap();
         assert_eq!(entries.len(), 2);
@@ -512,11 +532,11 @@ mod tests {
         assert!(all_marked_hint(&paths, &from).unwrap().is_none());
 
         // Mark only one of two → still no hint.
-        run_mark(&paths, &a.id, "abc1234").unwrap();
+        run_mark(&paths, &a.id, "abc1234", false).unwrap();
         assert!(all_marked_hint(&paths, &from).unwrap().is_none());
 
         // Mark the second → hint fires.
-        run_mark(&paths, &b.id, "def5678").unwrap();
+        run_mark(&paths, &b.id, "def5678", false).unwrap();
         let hint = all_marked_hint(&paths, &from).unwrap().expect("hint");
         assert!(
             hint.contains("heal check --refresh"),

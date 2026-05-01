@@ -98,7 +98,7 @@ impl ExtractStats {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, Serialize)]
 pub struct ExtractSummary {
     pub added: usize,
     pub updated: usize,
