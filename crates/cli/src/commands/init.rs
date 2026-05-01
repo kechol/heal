@@ -688,20 +688,28 @@ mod tests {
         );
     }
 
-    /// RAII guard so individual tests can mutate `PATH` without
-    /// leaking the change into siblings. `cargo test` runs tests on
-    /// shared threads, so a leaked `PATH` would reach into unrelated
-    /// suites — single-threaded scopes within `mod tests` keep this
-    /// safe; the guard restores the original value on drop.
+    /// RAII guard so individual tests can mutate `PATH` without leaking
+    /// the change into siblings. The static `Mutex` serializes
+    /// PathGuard-holding tests so concurrent ones don't trample each
+    /// other's expected `claude_on_path()` outcome; `test_support::git`
+    /// caches the git binary path so non-PathGuard tests that shell out
+    /// to git don't observe transient `PATH=""` either.
     struct PathGuard {
         original: Option<std::ffi::OsString>,
+        _lock: std::sync::MutexGuard<'static, ()>,
     }
+
+    static PATH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     impl PathGuard {
         fn set(value: std::ffi::OsString) -> Self {
+            let lock = PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
             let original = std::env::var_os("PATH");
             std::env::set_var("PATH", value);
-            Self { original }
+            Self {
+                original,
+                _lock: lock,
+            }
         }
     }
 
