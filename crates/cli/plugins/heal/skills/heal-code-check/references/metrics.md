@@ -65,6 +65,22 @@ day-to-day verdict.
   CCN says how many paths there are; Cognitive says how hard it is to
   follow. A function high in **both** is the strongest candidate for
   decomposition.
+- **CCN vs Cognitive — when they disagree.** Cognitive penalises depth
+  while CCN counts decisions equally regardless of nesting. Three
+  forms produce three different signals:
+
+  | Form | CCN | Cognitive |
+  |---|---:|---:|
+  | `if (A && B && C) { … }` (flat) | 3 | 3 |
+  | `if (!A) return; if (!B) return; if (!C) return; …` (guard chain) | 3 | 3 |
+  | `if (A) { if (B) { if (C) { … } } }` (nested) | 3 | **6** (1+2+3) |
+
+  Only the third form benefits from guard-clause flattening. Converting
+  the *first* form to a guard chain inverts a positive composite into a
+  negative chain without reducing either metric — and often *increases*
+  reader load (the reader must mentally re-negate each guard to
+  reconstruct the rule). See `architecture.md` §6 for the guard-clause
+  anti-pattern.
 - **False positives.** Mathematical kernels with intentional control
   flow (e.g. a parser combinator). Confirm with the user before
   recommending decomposition.

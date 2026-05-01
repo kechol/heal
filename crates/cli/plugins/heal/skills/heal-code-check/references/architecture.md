@@ -248,6 +248,212 @@ present the trade-off and let the user decide. Do not auto-recommend.
 
 ---
 
+## 5. Pattern leverage hierarchy
+
+Patterns differ sharply in how much they shrink the global heal score.
+Rule of thumb: patterns targeting `duplication` are *Goodhart-safe* (the
+metric is the real target); patterns targeting `ccn` / `cognitive` alone
+often only relocate complexity. When ranking proposals, pick the highest
+tier that fits — leverage drops between tiers.
+
+Names follow Fowler's *Refactoring* (2nd ed., 2018), with additions from
+Hammant, Newman, and Evans for cross-module and strategic moves.
+
+### Tier 1 — Duplication elimination (Goodhart-safe, highest leverage)
+
+These patterns directly remove the thing the metric measures. heal's score
+genuinely shrinks; new findings rarely appear in the helpers.
+
+- **Form Template Method.** N call sites share the same shape; vary only a
+  predicate, transform, or message. Collapse into one helper that takes the
+  varying part as a parameter. Each caller becomes a declarative spec.
+  Reduces global token count, CCN, and Cognitive simultaneously.
+- **Pull Up Method / Pull Up Field / Pull Up Constructor Body.** Two
+  parallel classes / files / sibling components have diverged accidentally.
+  Hoist the common body to a shared parent or shared module. Removes
+  connascence-by-replication.
+- **Replace Conditional with Lookup Table / Map.** A cascading
+  `if (x === "A") return 1; if (x === "B") return 2; …` becomes
+  `LOOKUP[x]` with one fallback branch. Each entry's evolution is
+  independent; CCN drops to ~3 regardless of table size.
+- **Substitute Algorithm.** Two implementations achieve the same intent
+  via different code paths — heal's `duplication` observer ships only
+  Type-1 (verbatim) detection, so Type-2 / Type-3 clones go unflagged.
+  When you spot one during exploration, replace one side with the other.
+- **Consolidate Duplicate Conditional Fragments.** The same side-effect
+  appears in every branch of an if-else. Hoist it outside the conditional.
+- **Consolidate Conditional Expression.** Multiple if-checks return the
+  same result. Combine into one boolean expression, then often Decompose
+  Conditional with a named helper.
+
+### Tier 2 — Structural division (moderate metric movement, large qualitative win)
+
+These produce *deeper* modules (Ousterhout §1) — interface stays small while
+implementation absorbs the variant behaviour. Metric improvement is moderate
+but maintainability improvement is large.
+
+- **Replace Conditional with Polymorphism.** A function branches on a type
+  tag and each branch has meaningfully different behaviour. Split per type
+  into separate components / classes / strategies. Each variant becomes a
+  deep module hidden behind a thin dispatcher.
+- **Replace Type Code with Subclasses / Strategy / State.** A class
+  switches behaviour on a `kind: string` field. Extract one class per
+  kind, polymorphic over the operation. Often reveals which fields belong
+  with which kind (LCOM clusters become visible).
+- **Extract Class.** A class has two cohesion clusters (`lcom >= 2`).
+  Splitting along the seam usually drops `change_coupling` on surrounding
+  modules at the same time.
+- **Move Function / Move Field.** `change_coupling` shows two files
+  always editing together because a function lives on the wrong side.
+  Moving it removes the coupling.
+- **Introduce Parameter Object.** A function takes 5+ parameters and
+  callers always pass the same coherent group. The group is a hidden
+  type. Naming it deepens the function's interface and often unlocks
+  further moves.
+- **Combine Functions into Class / Combine Functions into Transform.**
+  Several free functions take the same data shape and compute related
+  derived values. Group them as a class or as a build-once transform
+  pipeline.
+
+### Tier 3 — Naming and intermediate structure (readability win, modest metric movement)
+
+These improve the code's vocabulary without major restructuring. Metric
+movement is small but reader load drops.
+
+- **Decompose Conditional.** Pull boolean composites into named helpers
+  (`isExpired`, `hasOpenSession`). Useful when the composite carries a
+  domain concept. Beware: in TS/JS, `||` and `??` count as decisions —
+  helper extraction can relocate CCN if the helper itself contains a
+  non-trivial chain.
+- **Extract Variable / Introduce Variable.** Give an intermediate
+  computation a name. Reduces cognitive load even when CCN is unchanged.
+- **Replace Magic Number / String with Named Constant.** Doesn't move
+  CCN; helps reader and gives a single edit point for changes.
+- **Split Phase.** A function does two coherent phases in sequence
+  (parse, then transform; collect, then aggregate). Split with an
+  intermediate data structure between the phases. Cognitive on the
+  orchestrator drops without N-way splitting.
+- **Replace Inline Code with Function Call.** A snippet exists already
+  as a named function elsewhere; replace the inlined copy with a call.
+  Subset of duplication elimination but less mechanical.
+
+### Tier 4 — Procedural decomposition (low leverage; relocate-trap risk)
+
+Use sparingly. Often relocates rather than reduces — see §6.
+
+- **Extract Function.** Pull out a coherent sub-block. Justifiable only
+  when the original mixes responsibilities (a real seam exists). When
+  the original is a single coherent procedure, Extract Function moves
+  CCN from the caller to the callee without reducing global count.
+- **Replace Nested Conditional with Guard Clauses.** Apply ONLY when the
+  original is genuinely deeply nested (see `metrics.md`'s CCN-vs-Cognitive
+  table and §6's reflexive guard-clause trap). On flat positive composites
+  this refactoring is pure noise — or actively worse.
+- **Replace Method with Method Object.** When a function has so many
+  parameters that Introduce Parameter Object isn't enough, promote the
+  whole function to a class. High cost; consider whether the
+  parameter-list growth indicates a missing concept first.
+
+### Tier 5 — Architectural / strategic (cross-module; not single-symbol)
+
+When findings span layers, contexts, or a hub file, per-symbol patterns
+don't fit. These operate at a coarser scope and require human judgement;
+heal-code-check should *propose* them as questions, not auto-apply.
+
+- **Strangler Fig** (Fowler / Newman). Replace a legacy subsystem
+  incrementally by routing new functionality through a new
+  implementation while old continues to serve existing flows. Used
+  when in-place rewriting is too risky.
+- **Branch by Abstraction** (Hammant). Introduce an interface,
+  implement the new behaviour in parallel, switch call sites
+  one-by-one, then remove the old implementation. Useful when changes
+  span many files and continuous deployment is a constraint.
+- **Parallel Change / Expand-Contract.** Add the new shape, migrate
+  callers, remove the old shape — in three separate releases. The
+  alternative to "big-bang" rename / signature changes.
+- **Anti-Corruption Layer** (Evans). Two contexts must communicate but
+  use incompatible models. The ACL is the translator; protects the
+  inner domain from leaking outer terminology.
+- **Bounded Context split** (Evans). A single context has accreted two
+  domains. Draw the boundary, give each its own ubiquitous language.
+  Surface as a question — the answer depends on roadmap and team
+  ownership, not the code alone.
+- **Split Hub File.** One file has 5+ `change_coupling` partners and
+  acts as a facade. Decompose along the natural layer boundary
+  (persistence vs application, view vs controller). The hub itself
+  may become an empty re-export.
+- **Introduce Port / push interface into the inner layer.** A
+  `change_coupling` finding between `application/` and
+  `infrastructure/` whose direction is wrong (inner depending on
+  outer). The fix is hexagonal: the inner layer declares the trait;
+  the outer layer implements it.
+
+### Patterns that look helpful but rarely move heal score
+
+These improve specific situations but do not address heal's metrics.
+Don't propose them in response to a finding unless the user explicitly
+asks.
+
+- **Inline Function / Inline Variable.** The reverse of Extract; valid
+  when an existing helper is shallow (interface ≈ implementation). The
+  inlining reduces indirection but doesn't shrink the metric.
+- **Slide Statements.** Reorders related statements to be adjacent.
+  Reads cleaner; metric-neutral.
+- **Encapsulate Field / Encapsulate Variable.** Replaces direct access
+  with getter/setter. Modern languages with property syntax (Kotlin,
+  C#, TypeScript accessors) make this largely automatic; heal won't
+  notice.
+- **Hide Delegate / Remove Middle Man.** Trade-off between exposing a
+  collaborator and exposing its method. Doesn't directly affect
+  duplication, CCN, or coupling at scale.
+- **Rename Variable / Rename Function / Rename Field.** Improves
+  ubiquitous-language alignment (DDD §3) but heal does not measure
+  naming quality. Worth doing on the way past, not as a heal target.
+
+---
+
+## 6. Refactor traps to recognise
+
+Three common failure modes when fixing findings mechanically. Recognise them
+before they consume effort.
+
+**The relocate trap.** Extract Function on a procedurally cohesive function
+moves CCN from the original symbol to the new helper(s) without reducing
+global count. Signal: after the refactor, the new helper itself appears as
+critical or high in the cache, and the global severity counts barely move.
+Diagnosis: the original complexity was *intrinsic* (a single coherent
+pipeline / state machine / dispatcher), not symptomatic of mixed
+responsibility. Action: stop splitting; accept the score; move to a
+different finding.
+
+**The reflexive guard-clause trap.** Converting `if (A && B && C) { ... }`
+to `if (!A) return; if (!B) return; if (!C) return; ...` does **not** improve
+Cognitive Complexity if the original was already flat (a single non-nested
+`if`). It only inverts a positive composite predicate into a negative chain,
+which often *increases* cognitive load — readers must mentally re-negate
+each guard to reconstruct the rule. Apply guard clauses only when the
+original is genuinely deeply-nested. Positive composite predicates are
+usually clearer left as-is, optionally with a named boolean
+(`const isRisky = ...`).
+
+**The drain-to-zero trap.** Goodhart's Law: when a measure becomes a target,
+it ceases to be a good measure. Do not aim to drain the cache to zero
+critical findings. Beyond the symptomatic findings, the remainder are
+intrinsic or cohesive — refactoring them would damage the code. Surface
+them as deferred questions, propose `metrics.exclude_paths` for clear false
+positives, and stop. ROI on heal-driven refactoring drops sharply after the
+symptomatic findings are addressed.
+
+**The data-shaped CCN false positive.** A function that exists to enumerate
+fallback values — `String(row[a] ?? row[b] ?? "")` repeated for many fields,
+or a `clsx(...)` call mapping booleans to class names — scores high CCN
+because each `??` / `&&` is a decision point. But it is *data declaration*
+shaped like control flow. Decomposing it into per-field helpers produces
+shallow modules. Treat as intrinsic; consider excluding the symbol or
+accepting the score.
+
+---
+
 ## How `heal-code-check` should use this reference
 
 When proposing a refactor:
@@ -259,10 +465,14 @@ When proposing a refactor:
 2. Validate against §4 *before* surfacing. A proposal that
    conflicts with the codebase's existing style is a question for
    the user, not a recommendation.
-3. Name the pattern with its established term (Extract Function,
+3. Apply §5 to rank between candidates — prefer high-leverage
+   patterns (Form Template Method, Pull Up Method) over
+   low-leverage ones (Extract Function), and warn the user when
+   a §6 trap is likely.
+4. Name the pattern with its established term (Extract Function,
    Anti-Corruption Layer, Aggregate split). Do not invent new
    words.
-4. If the diagnosis is uncertain, present it as a *grilling
+5. If the diagnosis is uncertain, present it as a *grilling
    question* — "Is `app/orders/service.ts` really one service, or
    has it accreted two unrelated workflows?" — and let the user
    answer before acting.

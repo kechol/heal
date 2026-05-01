@@ -33,7 +33,7 @@ template (see `references/architecture.md` §4).
 
 ## References (load on demand)
 
-Two reference files live next to this `SKILL.md`. Load them when
+Three reference files live next to this `SKILL.md`. Load them when
 the skill body says "see references/…" — they're kept out of the
 main prompt so it stays terse.
 
@@ -43,8 +43,14 @@ main prompt so it stays terse.
   the typical false positives.
 - `references/architecture.md` — the vocabulary used for refactor
   proposals: module depth (Ousterhout), layered / hexagonal
-  architecture (Cockburn, Evans), DDD (Evans, Vernon), plus the
+  architecture (Cockburn, Evans), DDD (Evans, Vernon), the leverage
+  hierarchy of refactor patterns, the trap catalogue, plus the
   rules for *respecting the codebase* the proposals must pass.
+- `references/readability.md` — the *positive* criterion for
+  proposals: the goal hierarchy (readability → maintainability →
+  metric), readability principles (Boswell, Ousterhout, Beck,
+  Knuth), and the 5-question judgement test for whether a refactor
+  proposal is worth making.
 
 ## Mental model
 
@@ -78,6 +84,21 @@ same id across runs. The cache is therefore a TODO list — the
 skill's job is to read it as a *system* (not walk it linearly) and
 surface the dominant signal, the highest-leverage moves, and the
 findings that are architectural questions rather than refactors.
+
+## Goal hierarchy
+
+Metrics are proxies. Priority order for any proposal:
+
+1. **Readability** — time-to-comprehend for a future reader.
+2. **Maintainability** — boundaries, coupling, blast radius.
+3. **Heal score** — improves because (1) or (2) improved, never as the
+   goal itself.
+
+When the metric and (1)/(2) disagree (the *intrinsic* and *cohesive
+procedural* cases in the triage taxonomy below), trust readability and
+maintainability. See `references/readability.md` §1 for the full
+hierarchy and §3 for the 5-question judgement test that every Phase 2
+proposal must pass.
 
 ## Pre-flight
 
@@ -231,10 +252,31 @@ into "and now I'll do all of them" — the next step is either
 `heal-code-fix` (per-finding mechanical refactors) or a human-led
 architectural change.
 
+## Triage: classify before fixing
+
+Most bad refactors come from misclassifying a finding. Place each candidate
+in one of three buckets before proposing.
+
+| Category | Trigger examples | Verdict |
+|---|---|---|
+| **Symptomatic** | duplicated logic across N sites; mixed-responsibility class; `change_coupling` between layers | **Fix.** Pick a pattern from `references/architecture.md` §5. |
+| **Intrinsic** | graph traversal; statistical aggregation; exhaustive `match` over a closed enum; data-shaped `??` / `&&` chains | **Skip.** Refactor relocates or destroys meaning. Propose `metrics.exclude_paths`. |
+| **Cohesive procedural** | event handler with sequential phases; emit pipeline; orchestrator with N coherent steps | **Accept score.** Extract Function relocates here. Surface as a deferred question if the user insists. |
+
+Diagnostic for misclassification: after Extract Function on what you took
+to be Symptomatic, the new helper itself appears Critical / High in the
+next cache. The original was Intrinsic or Cohesive — stop splitting.
+
+When ranking Symptomatic candidates against each other, follow the
+leverage hierarchy in `architecture.md` §5: duplication-driven patterns
+(Form Template Method, Pull Up Method) cascade; Extract Function alone
+barely moves the global score.
+
 ## When NOT to act on a finding
 
-Per-metric false-positive lists live in `references/metrics.md`. At
-the system level the categorical skips are:
+Per-metric false-positive lists live in `references/metrics.md`. The
+Triage section above is the system-level frame; the items below are
+the categorical skips that fall under *Intrinsic* or *Cohesive*:
 
 - **Generated code.** Parser tables, AST visitors, schema-derived
   types, vendored deps. High CCN / duplication is the generator's

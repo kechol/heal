@@ -23,6 +23,29 @@ re-numbered).
 again, the entry moves to `regressed.jsonl` and the renderer warns. So
 the loop is self-correcting: a botched fix surfaces on the next round.
 
+## Role boundary: mechanical fixes only
+
+`heal-code-fix` applies *mechanical* refactorings — those whose
+transformation rule is deterministic, locally-scoped, and does not
+require domain knowledge to apply correctly. It does **not** make
+architectural decisions, choose between names, or split modules along
+domain seams. The judgement layer lives in `heal-code-check` and the
+readability criteria in its `references/readability.md`.
+
+When the next finding requires architectural judgement (which name to
+pick, which boundary to draw, whether to split a hub file, whether two
+contexts should merge), the loop:
+
+1. Stops and surfaces the trade-off to the user.
+2. Defers the finding to `heal-code-check` for proposal-level discussion
+   instead of attempting an in-loop fix.
+
+The allow-list / escalate-list under "Per-metric fix patterns" below
+codify which refactor patterns are mechanical and which require
+escalation. When the only remaining findings need Escalate-list
+patterns, end the session with a summary and recommend the user run
+`heal-code-check`.
+
 ## Pre-flight (refuse to start when these fail)
 
 1. **Clean worktree.** Run `git status --porcelain`. If anything is
@@ -80,32 +103,105 @@ selection to that metric. Default = no filter.
 
 ## Per-metric fix patterns
 
-Map metric → established refactoring:
+Catalogue of patterns relevant to each metric. **Not all are mechanical** —
+the Allow-list / Escalate-list below decide what this loop applies vs
+surfaces. Always consult both before acting.
 
-- **`ccn` / `cognitive`** — Extract Function (Fowler), Replace Nested
-  Conditional with Guard Clauses, Decompose Conditional, Replace
-  Conditional with Polymorphism. Pull out a coherent sub-block first;
-  re-run `heal check` and see the number drop.
-- **`duplication`** — Extract Function / Method, Pull Up Method, Form
-  Template Method, Introduce Parameter Object. Confirm the duplication
-  is *real* (same intent), not coincidental (license headers,
-  generated code, similar boilerplate). Apply Rule of Three: if it's
-  the second occurrence, leave it; you need three to inform the
-  abstraction.
-- **`change_coupling`** — Look for the hidden architectural seam. The
-  fix is rarely "extract a helper"; it's usually "the boundary
-  between A and B is wrong". Surface the trade-off to the user
-  rather than guessing — this metric often signals a design call,
-  not a refactor target.
-- **`hotspot`** — Hotspot is a *flag*, not a problem. The actionable
-  finding is the underlying CCN / duplication / coupling on the same
-  file. Walk the file's other findings and pick from those.
+- **`ccn` / `cognitive`** — Decompose Conditional, Extract Function,
+  Replace Nested Conditional with Guard Clauses, Replace Conditional
+  with Polymorphism. Mostly escalate; only Decompose Conditional with
+  a genuinely deep helper is allow.
+- **`duplication`** — Form Template Method, Pull Up Method, Replace
+  Conditional with Lookup Table, Consolidate Duplicate Conditional
+  Fragments, Extract Function. Confirm the duplication is *real*
+  (same intent), not coincidental (license headers, generated code,
+  boilerplate). Apply Rule of Three: extract on the third occurrence,
+  not the second.
+- **`change_coupling`** — Almost always escalate. Signals a boundary
+  question, not a helper extraction. Surface the trade-off; do not
+  guess.
+- **`hotspot`** — A *flag*, not a problem. Walk the file's other
+  findings and pick from those.
 
-For each finding, read the file before making the change. Don't trust
-the summary alone — the metric might be measuring something that's
-intentional (parser tables, exhaustive `match` arms, generated code).
-If the finding is a false positive, log it in your session notes and
+Read the file before making the change. The metric might be measuring
+something intentional (parser tables, exhaustive `match` arms, generated
+code). If the finding is a false positive, log it in session notes and
 move on without committing.
+
+### Allow-list (apply mechanically)
+
+The following patterns from `heal-code-check/references/architecture.md`
+§5 are mechanical — apply without asking, after reading the file to
+confirm the pattern fits:
+
+- **Form Template Method.** Apply when N call sites are byte-identical
+  except for the varying parameter (predicate, transform, message).
+  Verify identity by reading at least two sites in full.
+- **Replace Conditional with Lookup Table / Map.** Apply when the
+  conditional chain is a pure equality cascade (no side-effect, no
+  fall-through, no early-return semantics).
+- **Consolidate Duplicate Conditional Fragments.** Apply when every
+  branch ends with the same statement(s).
+- **Decompose Conditional.** Apply when the named helper's interface
+  (its signature) is at least three times narrower than its body — the
+  deep-module test passes (cf. `architecture.md` §1).
+- **Extract Variable.** Apply for an intermediate computation reused 2+
+  times within the same function, where naming reveals intent.
+- **Replace Magic Number / String with Named Constant.** Apply when
+  the value appears in multiple places and its meaning is fixed.
+
+### Escalate-list (stop and ask the user)
+
+These patterns require judgement that this skill should not make alone.
+When the next finding's best-fit pattern is here, stop the loop, surface
+the trade-off, and let the user (or `heal-code-check`) decide:
+
+- **Replace Conditional with Polymorphism.** Picks the dispatch axis,
+  which is an architectural choice with downstream consequences.
+- **Extract Class.** Picks the seam between cohesion clusters; the
+  resulting names are domain-language calls.
+- **Move Function / Move Field.** Changes module boundaries; affects
+  imports across the codebase.
+- **Substitute Algorithm.** Requires behavioural-equivalence
+  confirmation that this skill cannot make safely.
+- **Replace Nested Conditional with Guard Clauses.** Only safe when
+  the original is genuinely deeply-nested (see "Anti-patterns to stop
+  on mid-loop" below). Reflexive application damages the rule's
+  visibility.
+- **Anything in Tier 5** of the leverage hierarchy — Strangler Fig,
+  Branch by Abstraction, Anti-Corruption Layer, Bounded Context split,
+  Split Hub File, Introduce Port. Strategic moves spanning the
+  codebase, always architectural.
+
+If the only remaining findings require Escalate-list patterns, end the
+session with the summary format below and recommend the user run
+`heal-code-check` to discuss the architectural moves at the proposal
+level.
+
+## Anti-patterns to stop on mid-loop
+
+Three failure modes that compound damage if you don't stop early. Theory
+in `heal-code-check/references/architecture.md` §6 — here, only the
+operational signals.
+
+- **Relocate trap.** Signal: after Extract Function, a new helper itself
+  appears critical / high; global severity barely moves. Diagnosis: the
+  original complexity was intrinsic (coherent pipeline / state machine /
+  dispatcher). Action: stop splitting; accept the score; move to a
+  different finding.
+
+- **Reflexive guard-clause trap.** Signal: you're about to convert a flat
+  `if (A && B && C)` to `if (!A) return; …`. The original is not nested,
+  so Cognitive does not drop — and inverting positives into negatives
+  raises reader load. Action: only flatten genuinely nested code; leave
+  flat composites alone (optionally name them: `const isRisky = …`).
+
+- **Drain-to-zero trap.** Signal: only intrinsic / cohesive findings
+  remain. Action: stop. Surface the remainder as `metrics.exclude_paths`
+  candidates or deferred design questions. ROI on heal-driven refactoring
+  drops sharply once symptomatic findings are gone.
+
+Surface the trade-off **before** committing further fixes, not after.
 
 ## Verification per commit
 
