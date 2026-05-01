@@ -375,7 +375,7 @@ mod tests {
 
     #[test]
     fn bundled_version_reads_plugin_json() {
-        assert_eq!(bundled_version().as_deref(), Some("0.1.0"));
+        assert_eq!(bundled_version().as_deref(), Some("0.2.0"));
     }
 
     #[test]
@@ -470,7 +470,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let dest = dir.path();
         let (_, manifest) = extract(dest, ExtractMode::InstallSafe).unwrap();
-        assert_eq!(manifest.heal_version, "0.1.0");
+        assert_eq!(manifest.heal_version, bundled_version().unwrap());
         assert_eq!(manifest.source, "bundled");
         assert!(manifest.assets.contains_key("plugin.json"));
         // Loadable from disk too.
@@ -485,6 +485,6 @@ mod tests {
         extract(dest, ExtractMode::InstallSafe).unwrap();
         let body = std::fs::read_to_string(dest.join("skills/heal-code-check/SKILL.md")).unwrap();
         assert!(body.contains("metadata:"));
-        assert!(body.contains("heal-version: 0.1.0"));
+        assert!(body.contains(&format!("heal-version: {}", bundled_version().unwrap())));
     }
 }
