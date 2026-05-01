@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-plugin",
   "name": "heal",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "HEAL — code health monitoring & maintenance via Claude Code hooks and skills.",
   "author": "kechol",
   "license": "MIT",
