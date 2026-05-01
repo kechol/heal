@@ -387,7 +387,7 @@ mod tests {
 
     #[test]
     fn bundled_version_reads_plugin_json() {
-        assert_eq!(bundled_version().as_deref(), Some("0.2.0"));
+        assert_eq!(bundled_version().as_deref(), Some("0.2.1"));
     }
 
     #[test]
