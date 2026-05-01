@@ -262,6 +262,28 @@ pub struct FilePair {
     /// written before v0.2 added the symmetric / one-way split.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direction: Option<PairDirection>,
+    /// Pair-class taxonomy, applied post-collection so the v0.3 noise
+    /// filter (`Lockfile` / `Generated` / `Manifest` are dropped before
+    /// they reach the report) and the demote tier (`TestSrc` / `DocSrc`
+    /// stay in the report but skip Finding emission, reserved for v0.4
+    /// drift detection) work without touching the per-commit walk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class: Option<PairClass>,
+}
+
+/// Pair-class taxonomy. Built-in language-aware patterns drop pure-noise
+/// pairs (`Lockfile` / `Generated` / `Manifest`) before they enter the
+/// report; `TestSrc` / `DocSrc` pairs are preserved for future drift
+/// detection but skipped from the drain queue.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PairClass {
+    Genuine,
+    TestSrc,
+    DocSrc,
+    Manifest,
+    Lockfile,
+    Generated,
 }
 
 /// Whether a co-changing pair behaves as a single unit (`Symmetric`)
@@ -317,6 +339,11 @@ impl IntoFindings for ChangeCouplingReport {
     /// the metric tag `change_coupling.symmetric` so the renderer can
     /// surface the responsibility-mixing signal separately; everything
     /// else stays under `change_coupling`.
+    ///
+    /// Emits one Finding per pair regardless of class so the zip in
+    /// `ChangeCouplingFeature::lower` stays index-aligned. The lower
+    /// pass drops `TestSrc` / `DocSrc` Findings so they never reach
+    /// the drain queue.
     fn into_findings(&self) -> Vec<Finding> {
         self.pairs
             .iter()
@@ -371,6 +398,7 @@ fn collect_pairs(
                 b,
                 count,
                 direction: Some(direction),
+                class: None,
             }
         })
         .collect();
@@ -432,6 +460,203 @@ fn compute_file_sums(pairs: &[FilePair]) -> Vec<FileSum> {
     file_sums
 }
 
+/// Apply [`PairClass`] tags to every pair in `report`, then drop pure-
+/// noise classes (`Lockfile` / `Generated` / `Manifest`). `TestSrc` and
+/// `DocSrc` pairs are kept (tagged) for v0.4 drift detection — the
+/// `IntoFindings` lift will skip them so they don't enter the drain
+/// queue. `primary_lang` comes from `LocReport::primary` and gates the
+/// language-specific pattern bundle.
+pub(crate) fn classify_and_filter(report: &mut ChangeCouplingReport, primary_lang: Option<&str>) {
+    for pair in &mut report.pairs {
+        pair.class = Some(classify_pair(&pair.a, &pair.b, primary_lang));
+    }
+    report.pairs.retain(|p| {
+        !matches!(
+            p.class,
+            Some(PairClass::Lockfile | PairClass::Generated | PairClass::Manifest)
+        )
+    });
+    report.file_sums = compute_file_sums(&report.pairs);
+    report.totals.pairs = report.pairs.len();
+    report.totals.files = report.file_sums.len();
+}
+
+/// Classify a pair against language-aware path patterns. Strongest
+/// exclusions first (Lockfile / Generated win over any co-occurring
+/// Doc or Test marker), then Manifest (mod.rs / index.ts / __init__.py
+/// living next to a sibling), then any pair touching a test or doc
+/// file, then Genuine.
+///
+/// `TestSrc` / `DocSrc` use OR semantics — any pair where at least one
+/// side is a test or a doc demotes (e.g. doc ↔ doc EN/JA mirror is
+/// expected hygiene; test ↔ test in a shared scaffold likewise).
+fn classify_pair(a: &Path, b: &Path, primary_lang: Option<&str>) -> PairClass {
+    let a_role = file_role(a, primary_lang);
+    let b_role = file_role(b, primary_lang);
+
+    if matches!(a_role, FileRole::Lockfile) || matches!(b_role, FileRole::Lockfile) {
+        return PairClass::Lockfile;
+    }
+    if matches!(a_role, FileRole::Generated) || matches!(b_role, FileRole::Generated) {
+        return PairClass::Generated;
+    }
+    if is_manifest_pair(a, b) {
+        return PairClass::Manifest;
+    }
+    if matches!(a_role, FileRole::Test) || matches!(b_role, FileRole::Test) {
+        return PairClass::TestSrc;
+    }
+    if matches!(a_role, FileRole::Doc) || matches!(b_role, FileRole::Doc) {
+        return PairClass::DocSrc;
+    }
+    PairClass::Genuine
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FileRole {
+    Source,
+    Test,
+    Doc,
+    Lockfile,
+    Generated,
+}
+
+fn file_role(path: &Path, primary_lang: Option<&str>) -> FileRole {
+    let path_str = path.to_string_lossy();
+    let basename = path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or_default();
+
+    if is_lockfile(basename, primary_lang) {
+        return FileRole::Lockfile;
+    }
+    if is_generated(&path_str, basename, primary_lang) {
+        return FileRole::Generated;
+    }
+    if is_test(&path_str, basename) {
+        return FileRole::Test;
+    }
+    if is_doc(&path_str, basename) {
+        return FileRole::Doc;
+    }
+    FileRole::Source
+}
+
+// Lockfile / generated / test / doc filenames are convention, always
+// lowercase in practice. The lint about case-sensitive extension
+// comparison would force `eq_ignore_ascii_case` rituals that add no
+// signal.
+#[allow(clippy::case_sensitive_file_extension_comparisons)]
+fn is_lockfile(basename: &str, _primary_lang: Option<&str>) -> bool {
+    // Generic suffixes (`*.lock`, `*.lockb`, `go.sum`) catch most
+    // ecosystems. Well-known basenames are matched unconditionally
+    // because monorepos commonly mix languages — a Rust workspace's
+    // `docs/` may still carry a `package-lock.json`, and the primary
+    // language detection is project-wide.
+    if basename.ends_with(".lock") || basename.ends_with(".lockb") || basename == "go.sum" {
+        return true;
+    }
+    matches!(
+        basename,
+        "package-lock.json"
+            | "yarn.lock"
+            | "pnpm-lock.yaml"
+            | "bun.lock"
+            | "bun.lockb"
+            | "poetry.lock"
+            | "Pipfile.lock"
+            | "uv.lock"
+            | "composer.lock"
+            | "Gemfile.lock"
+    )
+}
+
+#[allow(clippy::case_sensitive_file_extension_comparisons)]
+fn is_generated(path_str: &str, basename: &str, primary_lang: Option<&str>) -> bool {
+    // Cross-language directory markers — covers most tooling output.
+    // Match both "<root>/dir/" (sub-path) and "dir/" at the start of the
+    // path (no leading slash).
+    const COMMON_DIRS: &[&str] = &[
+        "dist/",
+        "build/",
+        "__generated__/",
+        "generated/",
+        "__pycache__/",
+        "node_modules/",
+        "vendor/",
+    ];
+    if dir_marker_matches(path_str, COMMON_DIRS) {
+        return true;
+    }
+    // Generated artefacts that ship next to source instead of in dist/.
+    if basename.ends_with(".min.js")
+        || basename.ends_with(".min.css")
+        || basename.contains(".bundle.")
+        || basename.ends_with(".snap")
+    {
+        return true;
+    }
+    match primary_lang {
+        Some("rust") => dir_marker_matches(path_str, &["target/"]),
+        Some("python") => path_str.contains(".egg-info/"),
+        _ => false,
+    }
+}
+
+/// True iff any of `dirs` (each a `name/` form, no leading slash)
+/// appears as a path component — either at the start of the string or
+/// preceded by `/`.
+fn dir_marker_matches(path_str: &str, dirs: &[&str]) -> bool {
+    dirs.iter()
+        .any(|d| path_str.starts_with(d) || path_str.contains(&format!("/{d}")))
+}
+
+#[allow(clippy::case_sensitive_file_extension_comparisons)]
+fn is_test(path_str: &str, basename: &str) -> bool {
+    // Suffix-based: `foo.test.ts`, `foo_test.go`, `test_foo.py`, `foo.spec.ts`.
+    if basename.contains(".test.")
+        || basename.contains(".spec.")
+        || basename.starts_with("test_")
+        || basename.ends_with("_test.go")
+        || basename.ends_with("_test.rs")
+        || basename.ends_with("_test.py")
+    {
+        return true;
+    }
+    dir_marker_matches(path_str, &["tests/", "__tests__/", "spec/", "test/"])
+}
+
+#[allow(clippy::case_sensitive_file_extension_comparisons)]
+fn is_doc(path_str: &str, basename: &str) -> bool {
+    if basename.ends_with(".md") || basename.ends_with(".mdx") || basename.ends_with(".rst") {
+        return true;
+    }
+    dir_marker_matches(path_str, &["docs/"])
+}
+
+/// True iff the pair is a module manifest paired with a sibling — the
+/// vertical "re-export" coupling that's a structural artefact, not a
+/// design problem. Both files must share the same parent directory.
+fn is_manifest_pair(a: &Path, b: &Path) -> bool {
+    let (Some(a_parent), Some(b_parent)) = (a.parent(), b.parent()) else {
+        return false;
+    };
+    if a_parent != b_parent {
+        return false;
+    }
+    let a_name = a.file_name().and_then(|f| f.to_str()).unwrap_or_default();
+    let b_name = b.file_name().and_then(|f| f.to_str()).unwrap_or_default();
+    is_module_manifest(a_name) ^ is_module_manifest(b_name)
+}
+
+fn is_module_manifest(basename: &str) -> bool {
+    matches!(
+        basename,
+        "mod.rs" | "lib.rs" | "main.rs" | "__init__.py" | "index.ts" | "index.tsx" | "index.js"
+    )
+}
+
 pub struct ChangeCouplingFeature;
 
 impl Feature for ChangeCouplingFeature {
@@ -458,9 +683,154 @@ impl Feature for ChangeCouplingFeature {
         let cal_cc = cal.calibration.change_coupling.as_ref();
         let mut out = Vec::with_capacity(cc.pairs.len());
         for (pair, finding) in cc.pairs.iter().zip(cc.into_findings()) {
+            // TestSrc / DocSrc pairs stay in the report (v0.4 drift
+            // detection consumes them) but don't enter the drain queue —
+            // co-changing tests/docs is the expected hygiene, not a defect.
+            if matches!(pair.class, Some(PairClass::TestSrc | PairClass::DocSrc)) {
+                continue;
+            }
             let severity = cal_cc.map_or(Severity::Ok, |c| c.classify(f64::from(pair.count)));
             out.push(decorate(finding, severity, hotspot));
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod pair_class_tests {
+    use super::*;
+
+    fn pair(a: &str, b: &str, count: u32) -> FilePair {
+        // Canonical: a is the lex-smaller path (matches collect_pairs).
+        let (a, b) = if a <= b { (a, b) } else { (b, a) };
+        FilePair {
+            a: PathBuf::from(a),
+            b: PathBuf::from(b),
+            count,
+            direction: None,
+            class: None,
+        }
+    }
+
+    fn report(pairs: Vec<FilePair>) -> ChangeCouplingReport {
+        ChangeCouplingReport {
+            pairs,
+            file_sums: Vec::new(),
+            totals: CouplingTotals::default(),
+            since_days: 90,
+            min_coupling: 3,
+        }
+    }
+
+    #[test]
+    fn lockfile_pair_dropped_for_typescript_project() {
+        let mut r = report(vec![
+            pair("package.json", "bun.lock", 5),
+            pair("src/foo.ts", "src/bar.ts", 4),
+        ]);
+        classify_and_filter(&mut r, Some("typescript"));
+        assert_eq!(r.pairs.len(), 1, "lockfile pair must be dropped");
+        assert_eq!(r.pairs[0].class, Some(PairClass::Genuine));
+    }
+
+    #[test]
+    fn generic_lock_suffix_matches_any_language() {
+        // Cargo.lock + target/ both flagged for a Rust project.
+        let mut r = report(vec![
+            pair("Cargo.lock", "src/lib.rs", 5),
+            pair("target/debug/build", "src/lib.rs", 5),
+        ]);
+        classify_and_filter(&mut r, Some("rust"));
+        assert_eq!(r.pairs.len(), 0, "lockfile + target/ both dropped");
+    }
+
+    #[test]
+    fn dist_artefact_pair_dropped() {
+        let mut r = report(vec![
+            pair("src/index.ts", "dist/index.css", 8),
+            pair("src/foo.ts", "src/bar.ts", 4),
+        ]);
+        classify_and_filter(&mut r, Some("typescript"));
+        assert_eq!(r.pairs.len(), 1);
+        assert_eq!(r.pairs[0].a, PathBuf::from("src/bar.ts"));
+    }
+
+    #[test]
+    fn doc_pair_demoted_not_dropped() {
+        let mut r = report(vec![
+            pair("CLAUDE.md", "src/lib.rs", 7),
+            pair("src/foo.rs", "src/bar.rs", 4),
+        ]);
+        classify_and_filter(&mut r, Some("rust"));
+        assert_eq!(r.pairs.len(), 2, "DocSrc pairs stay in the report");
+        let doc_pair = r
+            .pairs
+            .iter()
+            .find(|p| p.a == Path::new("CLAUDE.md") || p.b == Path::new("CLAUDE.md"))
+            .expect("doc pair preserved");
+        assert_eq!(doc_pair.class, Some(PairClass::DocSrc));
+    }
+
+    #[test]
+    fn test_pair_demoted_not_dropped() {
+        let mut r = report(vec![pair("src/foo.test.ts", "src/foo.ts", 6)]);
+        classify_and_filter(&mut r, Some("typescript"));
+        assert_eq!(r.pairs.len(), 1);
+        assert_eq!(r.pairs[0].class, Some(PairClass::TestSrc));
+    }
+
+    #[test]
+    fn manifest_pair_dropped() {
+        // mod.rs paired with sibling in same dir = vertical re-export.
+        let mut r = report(vec![pair(
+            "crates/cli/src/observer/mod.rs",
+            "crates/cli/src/observer/loc.rs",
+            5,
+        )]);
+        classify_and_filter(&mut r, Some("rust"));
+        assert_eq!(r.pairs.len(), 0, "mod.rs ↔ sibling dropped as Manifest");
+    }
+
+    #[test]
+    fn manifest_pair_requires_same_directory() {
+        // mod.rs in a different directory is NOT a manifest pair.
+        let mut r = report(vec![pair(
+            "crates/cli/src/observer/mod.rs",
+            "crates/cli/src/cli.rs",
+            5,
+        )]);
+        classify_and_filter(&mut r, Some("rust"));
+        assert_eq!(r.pairs.len(), 1);
+        assert_eq!(r.pairs[0].class, Some(PairClass::Genuine));
+    }
+
+    #[test]
+    fn into_findings_emits_for_all_pairs_lower_filters_demoted() {
+        // The report carries a Genuine + DocSrc pair after filter.
+        let mut r = report(vec![
+            pair("README.md", "src/lib.rs", 6),
+            pair("src/foo.rs", "src/bar.rs", 5),
+        ]);
+        classify_and_filter(&mut r, Some("rust"));
+        // into_findings emits one per surviving pair (zip alignment).
+        let findings = r.into_findings();
+        assert_eq!(findings.len(), 2);
+    }
+
+    #[test]
+    fn python_specific_lockfiles() {
+        for lf in ["poetry.lock", "Pipfile.lock", "uv.lock"] {
+            let mut r = report(vec![pair(lf, "src/main.py", 5)]);
+            classify_and_filter(&mut r, Some("python"));
+            assert_eq!(r.pairs.len(), 0, "{lf} must be dropped");
+        }
+    }
+
+    #[test]
+    fn unknown_language_still_drops_generic_lockfiles() {
+        // Generic *.lock suffix triggers regardless of primary_lang.
+        let mut r = report(vec![pair("foo.lock", "src/main.kt", 5)]);
+        classify_and_filter(&mut r, None);
+        assert_eq!(r.pairs.len(), 0);
     }
 }

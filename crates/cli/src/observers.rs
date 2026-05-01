@@ -66,7 +66,14 @@ pub(crate) fn run_all(project: &Path, cfg: &Config, only: Option<StatusMetric>) 
         .then(|| ChurnObserver::from_config(cfg).scan(project));
     let change_coupling = (want(StatusMetric::ChangeCoupling)
         && cfg.metrics.change_coupling.enabled)
-        .then(|| ChangeCouplingObserver::from_config(cfg).scan(project));
+        .then(|| ChangeCouplingObserver::from_config(cfg).scan(project))
+        .map(|mut report| {
+            crate::observer::change_coupling::classify_and_filter(
+                &mut report,
+                loc.primary.as_deref(),
+            );
+            report
+        });
     let duplication = (want(StatusMetric::Duplication) && cfg.metrics.duplication.enabled)
         .then(|| DuplicationObserver::from_config(cfg).scan(project));
     let hotspot = match (
@@ -326,6 +333,7 @@ mod tests {
                 b: PathBuf::from("src/hot.rs"),
                 count: 12,
                 direction: None,
+                class: None,
             }],
             file_sums: Vec::new(),
             totals: CouplingTotals {
