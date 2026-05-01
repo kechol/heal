@@ -25,6 +25,9 @@ fn observer(min_coupling: u32) -> ChangeCouplingObserver {
         excluded: Vec::new(),
         since_days: 90,
         min_coupling,
+        // Existing tests pre-date the lift filter; turning it off keeps
+        // their hand-built repos passing without rebuilding for chance.
+        min_lift: 0.0,
         symmetric_threshold: 0.5,
     }
 }
@@ -242,6 +245,7 @@ fn excluded_substrings_skip_paths() {
         excluded: vec!["vendor".to_string()],
         since_days: 90,
         min_coupling: 1,
+        min_lift: 0.0,
         symmetric_threshold: 0.5,
     };
     let report = observer.scan(dir.path());
@@ -341,6 +345,7 @@ fn symmetric_threshold_above_one_forces_one_way() {
         excluded: Vec::new(),
         since_days: 90,
         min_coupling: 2,
+        min_lift: 0.0,
         symmetric_threshold: 1.5,
     };
     let report = strict.scan(dir.path());

@@ -62,6 +62,9 @@ pub struct ChangeCouplingObserver {
     /// Pairs with fewer than `min_coupling` co-occurrences are dropped from
     /// the report. Sourced from `metrics.change_coupling.min_coupling`.
     pub min_coupling: u32,
+    /// Pairs whose co-occurrence is below `min_lift × chance` are
+    /// dropped. See [`ChangeCouplingConfig::min_lift`]. Default 2.0.
+    pub min_lift: f64,
     /// Threshold both `P(B|A)` and `P(A|B)` must meet for a pair to
     /// classify as `Symmetric`. Default 0.5 — at least half of each
     /// file's edits must coincide with the partner. Below it, the pair
@@ -76,6 +79,7 @@ impl Default for ChangeCouplingObserver {
             excluded: Vec::new(),
             since_days: 0,
             min_coupling: 0,
+            min_lift: 0.0,
             symmetric_threshold: default_symmetric_threshold(),
         }
     }
@@ -89,6 +93,7 @@ impl ChangeCouplingObserver {
             excluded: cfg.observer_excluded_paths(),
             since_days: cfg.git.since_days,
             min_coupling: cfg.metrics.change_coupling.min_coupling,
+            min_lift: cfg.metrics.change_coupling.min_lift,
             symmetric_threshold: cfg.metrics.change_coupling.symmetric_threshold,
         }
     }
@@ -136,7 +141,9 @@ impl ChangeCouplingObserver {
         let pairs = collect_pairs(
             pair_counts,
             self.min_coupling,
+            self.min_lift,
             &file_commits,
+            commits_considered,
             self.symmetric_threshold,
         );
         let file_sums = compute_file_sums(&pairs);
@@ -382,12 +389,19 @@ fn render_metric_and_arrow(pair: &FilePair) -> (&'static str, &'static str) {
 fn collect_pairs(
     pair_counts: HashMap<(PathBuf, PathBuf), u32>,
     min_coupling: u32,
+    min_lift: f64,
     file_commits: &HashMap<PathBuf, u32>,
+    commits_considered: u32,
     symmetric_threshold: f64,
 ) -> Vec<FilePair> {
     let mut pairs: Vec<FilePair> = pair_counts
         .into_iter()
         .filter(|(_, count)| *count >= min_coupling)
+        .filter(|((a, b), count)| {
+            let count_a = file_commits.get(a).copied().unwrap_or(0).max(*count);
+            let count_b = file_commits.get(b).copied().unwrap_or(0).max(*count);
+            lift(*count, count_a, count_b, commits_considered) >= min_lift
+        })
         .map(|((a, b), count)| {
             let count_a = file_commits.get(&a).copied().unwrap_or(0).max(count);
             let count_b = file_commits.get(&b).copied().unwrap_or(0).max(count);
@@ -409,6 +423,23 @@ fn collect_pairs(
             .then_with(|| x.b.cmp(&y.b))
     });
     pairs
+}
+
+/// Lift = `P(A∩B) / (P(A) × P(B))` — how much more often the pair
+/// co-occurs than chance. `>1.0` means above-chance association,
+/// `2.0` is the conventional "interesting" threshold in association-
+/// rule mining. Returns `f64::INFINITY` when the universe is empty
+/// (degenerate; the pair filter would have dropped the pair via
+/// `min_coupling` long before this).
+fn lift(pair_count: u32, count_a: u32, count_b: u32, commits_considered: u32) -> f64 {
+    if commits_considered == 0 || count_a == 0 || count_b == 0 {
+        return f64::INFINITY;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    {
+        f64::from(pair_count) * f64::from(commits_considered)
+            / (f64::from(count_a) * f64::from(count_b))
+    }
 }
 
 /// Classify the pair from per-file totals. `count_a` / `count_b` are
@@ -832,5 +863,26 @@ mod pair_class_tests {
         let mut r = report(vec![pair("foo.lock", "src/main.kt", 5)]);
         classify_and_filter(&mut r, None);
         assert_eq!(r.pairs.len(), 0);
+    }
+
+    #[test]
+    fn lift_above_chance() {
+        // 5 co-occurrences out of 10 commits where each file appears
+        // 5 times: lift = 5×10 / (5×5) = 2.0 — at the threshold.
+        assert!((lift(5, 5, 5, 10) - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn lift_below_chance_for_widespread_files() {
+        // Each file in 50 of 100 commits, 5 overlap: lift = 5×100/(50×50) = 0.2.
+        assert!((lift(5, 50, 50, 100) - 0.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn lift_handles_empty_universe() {
+        // Degenerate inputs return INFINITY so the filter never drops the
+        // pair on a math edge case (min_coupling will have caught it first).
+        assert!(lift(0, 0, 0, 0).is_infinite());
+        assert!(lift(5, 0, 5, 100).is_infinite());
     }
 }

@@ -267,6 +267,13 @@ pub struct ChangeCouplingConfig {
     pub enabled: bool,
     #[serde(default = "default_min_coupling")]
     pub min_coupling: u32,
+    /// Lift threshold for filtering coincidental pairs. Lift =
+    /// `P(A∩B) / (P(A) × P(B))` — a value of 1.0 means the pair
+    /// co-occurs at chance, 2.0 means twice as often as chance. Pairs
+    /// below this drop before ranking; default 2.0 keeps strong
+    /// associations only.
+    #[serde(default = "default_min_lift")]
+    pub min_lift: f64,
     /// Threshold both `P(B|A)` and `P(A|B)` must meet for a pair to
     /// classify as `Symmetric` rather than `OneWay`. 0.5 (default) =
     /// each file's edits coincide with the partner at least half the
@@ -291,6 +298,7 @@ impl Default for ChangeCouplingConfig {
         Self {
             enabled: false,
             min_coupling: default_min_coupling(),
+            min_lift: default_min_lift(),
             symmetric_threshold: default_symmetric_threshold(),
             top_n: None,
             floor_critical: None,
@@ -303,6 +311,7 @@ impl Toggle for ChangeCouplingConfig {
         Self {
             enabled: true,
             min_coupling: default_min_coupling(),
+            min_lift: default_min_lift(),
             symmetric_threshold: default_symmetric_threshold(),
             top_n: None,
             floor_critical: None,
@@ -312,6 +321,10 @@ impl Toggle for ChangeCouplingConfig {
 
 fn default_min_coupling() -> u32 {
     3
+}
+
+fn default_min_lift() -> f64 {
+    2.0
 }
 
 fn default_symmetric_threshold() -> f64 {
