@@ -15,23 +15,24 @@
 //!
 //! ## Post-commit nudge
 //!
-//! After persisting the snapshot, `run_commit` writes a short nudge to
-//! stdout listing every `Severity::Critical` and `Severity::High`
-//! finding (Medium and Ok are silent). Hotspot-flagged entries lead.
-//! No cool-down or dedup — the same problem reappears every commit
-//! until it's fixed, which is the point. `RecalibrationCheck` is
-//! consulted opportunistically; if it fires, a single hint line is
-//! prepended.
+//! After persisting the snapshot, `run_commit` writes one compact line
+//! to stdout: that the snapshot was recorded, the current
+//! Critical/High count, and a `heal check` nudge when those counts
+//! aren't zero. Per-finding listings and the recalibration banner
+//! moved to `heal status` / `heal check` so the post-commit output
+//! never exceeds two lines.
 
 use std::io::{IsTerminal, Read, Write};
 use std::path::Path;
 
-use crate::core::calibration::{Calibration, RecalibrationCheck};
+use crate::core::calibration::Calibration;
 use crate::core::config::load_from_project;
 use crate::core::eventlog::{Event, EventLog};
 use crate::core::finding::Finding;
 use crate::core::severity::Severity;
-use crate::core::snapshot::{ansi_wrap, MetricsSnapshot, ANSI_RED, ANSI_YELLOW};
+use crate::core::snapshot::{
+    ansi_wrap, MetricsSnapshot, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW,
+};
 use crate::core::HealPaths;
 use crate::observers::run_all;
 use anyhow::Result;
@@ -99,93 +100,58 @@ fn run_commit(project: &Path, paths: &HealPaths, logs: &EventLog) -> Result<()> 
     .ok();
     // Best-effort nudge — the user just committed and the snapshot is
     // already persisted, so don't fail the hook on rendering issues.
-    write_nudge(
-        paths,
-        calibration.as_ref(),
-        &findings,
-        &mut std::io::stdout(),
-    )
-    .ok();
+    write_nudge(calibration.as_ref(), &findings, &mut std::io::stdout()).ok();
     Ok(())
 }
 
-/// Compose and emit the post-commit Severity nudge to `out`. `findings`
-/// is the already-classified Vec from `snapshot::classify_with_calibration`;
-/// nothing is recomputed here.
+/// Emit a single-line post-commit summary: snapshot recorded, current
+/// Critical/High counts, and a `heal check` pointer when there's
+/// something to act on. Stays silent on uncalibrated projects so a
+/// fresh `heal init` flow doesn't pollute the commit output.
 fn write_nudge(
-    paths: &HealPaths,
     calibration: Option<&Calibration>,
     findings: &[Finding],
     out: &mut impl Write,
 ) -> Result<()> {
-    let Some(calibration) = calibration else {
-        // No calibration yet — nothing actionable to nudge about.
+    if calibration.is_none() {
         return Ok(());
-    };
-
-    // Recalibration banner first so the user sees it before the
-    // per-finding lines, even when Critical/High is empty.
-    let snapshots = EventLog::new(paths.snapshots_dir());
-    let check = RecalibrationCheck::evaluate(&snapshots, calibration, chrono::Utc::now());
-    let colorize = std::io::stdout().is_terminal();
-    if check.fired() {
-        if let Some(days) = check.age_exceeded_days {
-            writeln!(
-                out,
-                "{} recalibration suggested ({days} days since last calibration)",
-                ansi_wrap(ANSI_YELLOW, "note:", colorize),
-            )?;
-        }
-        if let Some(pct) = check.file_count_delta_pct {
-            writeln!(
-                out,
-                "{} recalibration suggested (codebase size {:+.0}% since last calibration)",
-                ansi_wrap(ANSI_YELLOW, "note:", colorize),
-                pct * 100.0,
-            )?;
-        }
-        if let Some(streak) = check.critical_clean_streak_days {
-            writeln!(
-                out,
-                "{} recalibration suggested ({streak} days of zero Critical — thresholds may be too lenient)",
-                ansi_wrap(ANSI_YELLOW, "note:", colorize),
-            )?;
-        }
     }
-
-    let mut surfaced: Vec<&Finding> = findings
+    let critical = findings
         .iter()
-        .filter(|f| matches!(f.severity, Severity::Critical | Severity::High))
-        .collect();
-    if surfaced.is_empty() {
-        return Ok(());
-    }
-    // hotspot=true first; then Critical before High; then by file for
-    // determinism. Matches the `heal check` ordering.
-    surfaced.sort_by(|a, b| {
-        b.hotspot
-            .cmp(&a.hotspot)
-            .then_with(|| b.severity.cmp(&a.severity))
-            .then_with(|| a.location.file.cmp(&b.location.file))
-    });
+        .filter(|f| matches!(f.severity, Severity::Critical))
+        .count();
+    let high = findings
+        .iter()
+        .filter(|f| matches!(f.severity, Severity::High))
+        .count();
+    let colorize = std::io::stdout().is_terminal();
 
-    writeln!(out)?;
-    for f in &surfaced {
-        let label = match (f.severity, f.hotspot) {
-            (Severity::Critical, true) => ansi_wrap(ANSI_RED, "🔴 Critical 🔥", colorize),
-            (Severity::Critical, false) => ansi_wrap(ANSI_RED, "🔴 Critical", colorize),
-            (Severity::High, true) => ansi_wrap(ANSI_YELLOW, "🟠 High 🔥", colorize),
-            (Severity::High, false) => ansi_wrap(ANSI_YELLOW, "🟠 High", colorize),
-            _ => continue,
-        };
+    if critical == 0 && high == 0 {
         writeln!(
             out,
-            "{label} {} {}",
-            f.location.file.display(),
-            f.short_label(),
+            "heal: recorded · {}",
+            ansi_wrap(ANSI_GREEN, "clean", colorize),
         )?;
+        return Ok(());
     }
-    writeln!(out, "Next: `heal check` / `claude /heal-code-fix`")?;
+
+    let mut counts: Vec<String> = Vec::with_capacity(2);
+    if critical > 0 {
+        counts.push(ansi_wrap(
+            ANSI_RED,
+            &format!("{critical} critical"),
+            colorize,
+        ));
+    }
+    if high > 0 {
+        counts.push(ansi_wrap(ANSI_YELLOW, &format!("{high} high"), colorize));
+    }
+    writeln!(
+        out,
+        "heal: recorded · {} · {}",
+        counts.join(", "),
+        ansi_wrap(ANSI_CYAN, "heal check", colorize),
+    )?;
     Ok(())
 }
 
@@ -316,7 +282,7 @@ mod tests {
             crate::snapshot::classify_with_calibration(&paths, &cfg, &reports);
 
         let mut buf: Vec<u8> = Vec::new();
-        write_nudge(&paths, calibration.as_ref(), &findings, &mut buf).unwrap();
+        write_nudge(calibration.as_ref(), &findings, &mut buf).unwrap();
         assert!(
             buf.is_empty(),
             "no calibration → no nudge, got: {}",
@@ -326,7 +292,7 @@ mod tests {
 
     #[cfg(feature = "lang-rust")]
     #[test]
-    fn nudge_lists_critical_finding_with_metric_label() {
+    fn nudge_summarises_critical_count_in_one_line() {
         // Synthesize a project where the only function trips the
         // calibration's floor, so write_nudge has something to surface.
         let dir = TempDir::new().unwrap();
@@ -343,23 +309,50 @@ mod tests {
         paths.ensure().unwrap();
         let cfg = crate::core::config::Config::default();
         cfg.save(&paths.config()).unwrap();
-        // Calibrate inline so a calibration.toml exists.
         crate::commands::calibrate::run(dir.path(), false).unwrap();
         let reports = run_all(dir.path(), &cfg, None);
         let (calibration, findings) =
             crate::snapshot::classify_with_calibration(&paths, &cfg, &reports);
 
         let mut buf: Vec<u8> = Vec::new();
-        write_nudge(&paths, calibration.as_ref(), &findings, &mut buf).unwrap();
+        write_nudge(calibration.as_ref(), &findings, &mut buf).unwrap();
         let out = String::from_utf8(buf).unwrap();
-        assert!(
-            out.contains("Critical") || out.contains("High"),
-            "expected a Severity nudge line, got: {out}",
+        assert_eq!(
+            out.lines().count(),
+            1,
+            "post-commit summary must be a single line, got: {out}",
         );
         assert!(
-            out.contains("CCN=") || out.contains("Cognitive="),
-            "metric value missing from nudge: {out}",
+            out.starts_with("heal: recorded · "),
+            "unexpected prefix: {out}"
         );
-        assert!(out.contains("Next:"), "next-steps hint missing: {out}");
+        assert!(
+            out.contains("critical") || out.contains("high"),
+            "expected a critical/high count, got: {out}",
+        );
+        assert!(
+            out.contains("heal check"),
+            "missing nudge to heal check: {out}"
+        );
+    }
+
+    #[test]
+    fn nudge_says_clean_when_no_critical_or_high() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit(dir.path(), "lib.rs", "fn ok() {}\n", "a@b.c", "init");
+        let paths = HealPaths::new(dir.path());
+        paths.ensure().unwrap();
+        let cfg = crate::core::config::Config::default();
+        cfg.save(&paths.config()).unwrap();
+        crate::commands::calibrate::run(dir.path(), false).unwrap();
+        let reports = run_all(dir.path(), &cfg, None);
+        let (calibration, findings) =
+            crate::snapshot::classify_with_calibration(&paths, &cfg, &reports);
+
+        let mut buf: Vec<u8> = Vec::new();
+        write_nudge(calibration.as_ref(), &findings, &mut buf).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert_eq!(out.trim_end(), "heal: recorded · clean");
     }
 }
