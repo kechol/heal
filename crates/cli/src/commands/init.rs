@@ -89,10 +89,13 @@ impl fmt::Display for HookAction {
 /// "<path> (<verb>)" lines from this.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum SkillsAction {
-    /// Bundled plugin extracted; carries the `(added, unchanged)` count
-    /// pulled from the extract summary so the user sees how many files
-    /// landed.
-    Installed { added: usize, unchanged: usize },
+    /// Bundled plugin extracted; per-bucket counts pulled from the
+    /// extract summary so the user sees what landed.
+    Installed {
+        added: usize,
+        updated: usize,
+        unchanged: usize,
+    },
     /// User declined the prompt.
     Declined,
     /// `--no-skills` was passed.
@@ -115,7 +118,7 @@ pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool) -> Result<()
     let (hook_action, hook_path) = install_post_commit_hook(project, force)?;
     let severity_counts = run_initial_scan(project, &paths)?;
     let plugin_dest = plugin_dest(project);
-    let skills_action = handle_skills_install(&plugin_dest, yes, no_skills)?;
+    let skills_action = handle_skills_install(&plugin_dest, force, yes, no_skills)?;
 
     print_summary(
         &paths,
@@ -194,10 +197,18 @@ fn print_summary(
 
 fn render_skills_line(dest: &Path, action: &SkillsAction) -> String {
     match action {
-        SkillsAction::Installed { added, unchanged } => format!(
-            "{}/  (extracted: {added} new, {unchanged} unchanged)",
-            dest.display()
-        ),
+        SkillsAction::Installed {
+            added,
+            updated,
+            unchanged,
+        } => {
+            let mut parts = vec![format!("{added} new")];
+            if *updated > 0 {
+                parts.push(format!("{updated} updated"));
+            }
+            parts.push(format!("{unchanged} unchanged"));
+            format!("{}/  (extracted: {})", dest.display(), parts.join(", "))
+        }
         SkillsAction::Declined => "skipped (declined)".to_string(),
         SkillsAction::SuppressedByFlag => "skipped (--no-skills)".to_string(),
         SkillsAction::SkippedNoClaude => "skipped (no `claude` command on PATH)".to_string(),
@@ -307,7 +318,17 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<Option<Severity
 ///   4. stdin is a TTY → prompt the user (default `Y`).
 ///   5. otherwise → `SkippedNonInteractive` (with a hint in the
 ///      summary).
-fn handle_skills_install(dest: &Path, yes: bool, no_skills: bool) -> Result<SkillsAction> {
+///
+/// `force` matches `heal init --force` semantics: when on, refresh the
+/// plugin tree (overwriting drift / locally edited files) so a binary
+/// upgrade actually picks up the latest skill set. When off, leave
+/// existing files alone (initial-install behaviour).
+fn handle_skills_install(
+    dest: &Path,
+    force: bool,
+    yes: bool,
+    no_skills: bool,
+) -> Result<SkillsAction> {
     if no_skills {
         return Ok(SkillsAction::SuppressedByFlag);
     }
@@ -315,11 +336,11 @@ fn handle_skills_install(dest: &Path, yes: bool, no_skills: bool) -> Result<Skil
         return Ok(SkillsAction::SkippedNoClaude);
     }
     if yes {
-        return install_skills(dest);
+        return install_skills(dest, force);
     }
     if std::io::stdin().is_terminal() {
         if confirm_skills_install()? {
-            install_skills(dest)
+            install_skills(dest, force)
         } else {
             Ok(SkillsAction::Declined)
         }
@@ -328,16 +349,22 @@ fn handle_skills_install(dest: &Path, yes: bool, no_skills: bool) -> Result<Skil
     }
 }
 
-fn install_skills(dest: &Path) -> Result<SkillsAction> {
-    let (stats, _) = plugin_assets::extract(dest, ExtractMode::InstallSafe)?;
-    let summary = extract_counts(&stats);
-    Ok(summary)
+fn install_skills(dest: &Path, force: bool) -> Result<SkillsAction> {
+    let mode = if force {
+        // `Update` keeps the manifest in sync; `InstallForce` is reserved for `heal skills install --force`.
+        ExtractMode::Update { force: true }
+    } else {
+        ExtractMode::InstallSafe
+    };
+    let (stats, _) = plugin_assets::extract(dest, mode)?;
+    Ok(extract_counts(&stats))
 }
 
 fn extract_counts(stats: &ExtractStats) -> SkillsAction {
     let s = stats.summary();
     SkillsAction::Installed {
         added: s.added,
+        updated: s.updated,
         unchanged: s.unchanged + s.skipped,
     }
 }
@@ -551,7 +578,7 @@ mod tests {
     fn handle_skills_install_respects_no_skills_flag() {
         let dir = TempDir::new().unwrap();
         let dest = plugin_dest(dir.path());
-        let action = handle_skills_install(&dest, false, true).unwrap();
+        let action = handle_skills_install(&dest, false, false, true).unwrap();
         assert_eq!(action, SkillsAction::SuppressedByFlag);
         assert!(!dest.exists());
     }
@@ -578,7 +605,7 @@ mod tests {
 
         let dir = TempDir::new().unwrap();
         let dest = plugin_dest(dir.path());
-        let action = handle_skills_install(&dest, true, false).unwrap();
+        let action = handle_skills_install(&dest, false, true, false).unwrap();
         assert!(matches!(action, SkillsAction::Installed { .. }));
         assert!(dest.exists(), "yes path must extract the plugin");
         assert!(dest.join("plugin.json").exists());
@@ -591,9 +618,74 @@ mod tests {
         let _guard = PathGuard::set(std::ffi::OsString::new());
         let dir = TempDir::new().unwrap();
         let dest = plugin_dest(dir.path());
-        let action = handle_skills_install(&dest, true, false).unwrap();
+        let action = handle_skills_install(&dest, false, true, false).unwrap();
         assert_eq!(action, SkillsAction::SkippedNoClaude);
         assert!(!dest.exists());
+    }
+
+    #[test]
+    fn install_skills_force_overwrites_drifted_files() {
+        // First install: clean extraction.
+        let dir = TempDir::new().unwrap();
+        let dest = dir.path().join("plugin");
+        let initial = install_skills(&dest, false).unwrap();
+        let SkillsAction::Installed {
+            added: initial_added,
+            updated: initial_updated,
+            ..
+        } = initial
+        else {
+            panic!("expected Installed, got {initial:?}");
+        };
+        assert!(initial_added > 0);
+        assert_eq!(initial_updated, 0, "no drift on first install");
+
+        // Tamper with a known-shipped skill file.
+        let skill = dest.join("skills/heal-code-fix/SKILL.md");
+        assert!(skill.exists(), "fixture should have shipped this skill");
+        std::fs::write(&skill, "tampered\n").unwrap();
+
+        // Refresh path: force=true should overwrite even drifted files.
+        let refreshed = install_skills(&dest, true).unwrap();
+        let SkillsAction::Installed {
+            updated: refreshed_updated,
+            ..
+        } = refreshed
+        else {
+            panic!("expected Installed, got {refreshed:?}");
+        };
+        assert!(
+            refreshed_updated > 0,
+            "force refresh must report updated files"
+        );
+        assert_ne!(
+            std::fs::read_to_string(&skill).unwrap(),
+            "tampered\n",
+            "force refresh must overwrite drifted skill content"
+        );
+    }
+
+    #[test]
+    fn install_skills_no_force_preserves_existing_files() {
+        // First install seeds the manifest.
+        let dir = TempDir::new().unwrap();
+        let dest = dir.path().join("plugin");
+        install_skills(&dest, false).unwrap();
+
+        // Tamper with a skill — without --force we expect it preserved.
+        let skill = dest.join("skills/heal-code-fix/SKILL.md");
+        std::fs::write(&skill, "tampered\n").unwrap();
+
+        let action = install_skills(&dest, false).unwrap();
+        let SkillsAction::Installed { updated, .. } = action else {
+            panic!("expected Installed, got {action:?}");
+        };
+        assert_eq!(updated, 0, "InstallSafe must not overwrite anything");
+        assert_eq!(
+            std::fs::read_to_string(&skill).unwrap(),
+            "tampered\n",
+            "non-force install must leave the user-edited file alone"
+        );
     }
 
     /// RAII guard so individual tests can mutate `PATH` without
