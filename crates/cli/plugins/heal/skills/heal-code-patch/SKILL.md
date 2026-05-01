@@ -86,20 +86,26 @@ ask before applying.
 
 ## Picking the next finding
 
-Read the cache JSON; iterate in this order:
+`heal check` classifies every finding into a drain tier via
+`[policy.drain]`. The default loop drains **only T0** (`must`):
 
-1. `severity == "critical"` AND `hotspot == true`  ← biggest leverage
-2. `severity == "critical"` AND `hotspot == false`
-3. `severity == "high"` AND `hotspot == true`
-4. `severity == "high"` AND `hotspot == false`
-5. `severity == "medium"`  ← only if the user passed `--all` or asked for "everything"
+1. **T0 — Drain queue** (default `["critical:hotspot"]`). The loop
+   targets these and only these.
+2. **T1 — Should drain** (default `["critical", "high:hotspot"]`).
+   Treat as advisory; surface the trade-off and ask before draining.
+3. **Advisory** — anything else above Ok. Never drain in-loop.
 
-Skip findings already present in `.heal/checks/fixed.jsonl` (the next
-`heal check` would have moved them out, but a session in progress
-might still have stale entries — match by `finding_id`).
+Within T0, iterate in `Severity 🔥` order: `Critical 🔥` first, then
+any other entries the user's `must` policy admits. Skip findings
+already present in `.heal/checks/fixed.jsonl` (match by `finding_id`).
 
 If the user invoked `/heal-code-patch --metric <name>`, restrict the
 selection to that metric. Default = no filter.
+
+When T0 is empty, end the session — do **not** silently extend into T1
+or Advisory. Surface the remaining tiers in the summary, recommend the
+user run `heal-code-review` if they want to act on the architectural
+items, and stop.
 
 ## Per-metric fix patterns
 

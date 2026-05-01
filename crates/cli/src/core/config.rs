@@ -21,7 +21,7 @@ pub struct Config {
     #[serde(default)]
     pub metrics: MetricsConfig,
     #[serde(default)]
-    pub policy: BTreeMap<String, PolicyConfig>,
+    pub policy: PolicyConfig,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -485,14 +485,197 @@ pub enum PolicyAction {
     Execute,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Top-level `[policy]` block. Holds the v0.3 `drain` queue policy plus
+/// the reserved-for-future user-defined `rules` map.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PolicyConfig {
+    #[serde(default)]
+    pub drain: PolicyDrainConfig,
+    /// User-defined named policies under `[policy.rules.<name>]`.
+    /// Currently parse-only; reserved for v0.4 metric-drift actions.
+    #[serde(default)]
+    pub rules: BTreeMap<String, PolicyRuleConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PolicyRuleConfig {
     pub action: PolicyAction,
     #[serde(default)]
     pub threshold: BTreeMap<String, toml::Value>,
     #[serde(default)]
     pub trigger: Option<String>,
+}
+
+/// `[policy.drain]` — which `(severity, hotspot)` combinations the
+/// `heal-code-patch` skill must drain (`must`, T0) vs may drain when
+/// bandwidth allows (`should`, T1). Anything not matched falls into
+/// the Advisory tier (rendered separately, never auto-drained).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PolicyDrainConfig {
+    /// T0 — drain to zero. Default: `["critical:hotspot"]`.
+    #[serde(default = "default_drain_must")]
+    pub must: Vec<DrainSpec>,
+    /// T1 — drain when convenient. Default:
+    /// `["critical", "high:hotspot"]`.
+    #[serde(default = "default_drain_should")]
+    pub should: Vec<DrainSpec>,
+}
+
+impl Default for PolicyDrainConfig {
+    fn default() -> Self {
+        Self {
+            must: default_drain_must(),
+            should: default_drain_should(),
+        }
+    }
+}
+
+fn default_drain_must() -> Vec<DrainSpec> {
+    vec![DrainSpec {
+        severity: crate::core::severity::Severity::Critical,
+        hotspot: HotspotMatch::Required,
+    }]
+}
+
+fn default_drain_should() -> Vec<DrainSpec> {
+    vec![
+        DrainSpec {
+            severity: crate::core::severity::Severity::Critical,
+            hotspot: HotspotMatch::Any,
+        },
+        DrainSpec {
+            severity: crate::core::severity::Severity::High,
+            hotspot: HotspotMatch::Required,
+        },
+    ]
+}
+
+/// One entry in a `must` / `should` list. The DSL on disk is
+/// `<severity>` (any hotspot) or `<severity>:hotspot` (hotspot=true
+/// required). Both halves accept lowercase severity names
+/// (`critical`, `high`, `medium`, `ok`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DrainSpec {
+    pub severity: crate::core::severity::Severity,
+    pub hotspot: HotspotMatch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HotspotMatch {
+    /// Match the spec regardless of the finding's hotspot flag.
+    Any,
+    /// Match only when the finding has `hotspot = true`.
+    Required,
+}
+
+impl DrainSpec {
+    /// True iff the finding is in scope for this spec (severity and
+    /// hotspot constraints both satisfied).
+    #[must_use]
+    pub fn matches(&self, finding: &crate::core::finding::Finding) -> bool {
+        if finding.severity != self.severity {
+            return false;
+        }
+        match self.hotspot {
+            HotspotMatch::Any => true,
+            HotspotMatch::Required => finding.hotspot,
+        }
+    }
+}
+
+/// Which drain bucket a finding belongs to under a given drain policy.
+/// `Must` is the "drain to zero" target; `Should` is the bandwidth-
+/// permitting tier; `Advisory` is everything else above `Severity::Ok`.
+/// Findings classified as `Severity::Ok` are not surfaced as drain
+/// candidates and never reach `Advisory` — see `tier_for`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DrainTier {
+    Must,
+    Should,
+    Advisory,
+}
+
+impl PolicyDrainConfig {
+    /// Classify a finding into its drain tier. Returns `None` for
+    /// `Severity::Ok` findings — those are excluded from drain queues
+    /// entirely (the renderer surfaces them via the separate Ok summary).
+    #[must_use]
+    pub fn tier_for(&self, finding: &crate::core::finding::Finding) -> Option<DrainTier> {
+        if finding.severity == crate::core::severity::Severity::Ok {
+            return None;
+        }
+        if self.must.iter().any(|s| s.matches(finding)) {
+            return Some(DrainTier::Must);
+        }
+        if self.should.iter().any(|s| s.matches(finding)) {
+            return Some(DrainTier::Should);
+        }
+        Some(DrainTier::Advisory)
+    }
+}
+
+impl std::str::FromStr for DrainSpec {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let mut parts = s.split(':');
+        let severity_token = parts
+            .next()
+            .ok_or_else(|| format!("drain spec '{s}' is empty"))?;
+        let severity = match severity_token {
+            "critical" => crate::core::severity::Severity::Critical,
+            "high" => crate::core::severity::Severity::High,
+            "medium" => crate::core::severity::Severity::Medium,
+            "ok" => crate::core::severity::Severity::Ok,
+            other => {
+                return Err(format!(
+                    "drain spec '{s}' has unknown severity '{other}' (expected one of \
+                     critical / high / medium / ok)"
+                ));
+            }
+        };
+        let hotspot = match parts.next() {
+            None => HotspotMatch::Any,
+            Some("hotspot") => HotspotMatch::Required,
+            Some(other) => {
+                return Err(format!(
+                    "drain spec '{s}' has unknown flag '{other}' (only 'hotspot' is supported)"
+                ));
+            }
+        };
+        if parts.next().is_some() {
+            return Err(format!(
+                "drain spec '{s}' has too many ':' segments (expected at most one)"
+            ));
+        }
+        Ok(Self { severity, hotspot })
+    }
+}
+
+impl serde::Serialize for DrainSpec {
+    fn serialize<S: serde::Serializer>(&self, ser: S) -> std::result::Result<S::Ok, S::Error> {
+        let severity = match self.severity {
+            crate::core::severity::Severity::Critical => "critical",
+            crate::core::severity::Severity::High => "high",
+            crate::core::severity::Severity::Medium => "medium",
+            crate::core::severity::Severity::Ok => "ok",
+        };
+        let body = match self.hotspot {
+            HotspotMatch::Any => severity.to_owned(),
+            HotspotMatch::Required => format!("{severity}:hotspot"),
+        };
+        ser.serialize_str(&body)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for DrainSpec {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> std::result::Result<Self, D::Error> {
+        let s = String::deserialize(de)?;
+        s.parse::<Self>().map_err(serde::de::Error::custom)
+    }
 }
 
 impl Config {

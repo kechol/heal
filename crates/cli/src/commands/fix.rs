@@ -94,7 +94,8 @@ fn run_show(paths: &HealPaths, check_id: &str, as_json: bool) -> Result<()> {
         all: true,
         ..Filters::default()
     };
-    render(&record, &[], &filters, colorize, &mut stdout)?;
+    let cfg = crate::core::config::Config::default();
+    render(&record, &[], &filters, &cfg, colorize, &mut stdout)?;
     Ok(())
 }
 

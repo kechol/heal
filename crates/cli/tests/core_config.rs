@@ -1,4 +1,7 @@
-use heal_cli::core::config::{Config, PolicyAction};
+use heal_cli::core::config::{Config, DrainSpec, DrainTier, HotspotMatch, PolicyAction};
+use heal_cli::core::finding::{Finding, Location};
+use heal_cli::core::severity::Severity;
+use std::path::PathBuf;
 
 #[test]
 fn empty_toml_yields_recommended_metric_defaults() {
@@ -96,11 +99,11 @@ fn deny_unknown_fields_in_metrics() {
 #[test]
 fn policy_action_is_kebab_case() {
     let cfg = r#"
-        [policy.high_complexity_new_function]
+        [policy.rules.high_complexity_new_function]
         action = "report-only"
     "#;
     let parsed = Config::from_toml_str(cfg).unwrap();
-    let policy = &parsed.policy["high_complexity_new_function"];
+    let policy = &parsed.policy.rules["high_complexity_new_function"];
     assert!(matches!(policy.action, PolicyAction::ReportOnly));
 }
 
@@ -112,6 +115,144 @@ fn save_then_load_roundtrips() {
     cfg.save(&path).unwrap();
     let reloaded = Config::load(&path).unwrap();
     assert_eq!(cfg, reloaded);
+}
+
+#[test]
+fn drain_spec_dsl_round_trip() {
+    let cfg = r#"
+        [policy.drain]
+        must = ["critical:hotspot"]
+        should = ["critical", "high:hotspot"]
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    assert_eq!(
+        parsed.policy.drain.must,
+        vec![DrainSpec {
+            severity: Severity::Critical,
+            hotspot: HotspotMatch::Required,
+        }]
+    );
+    assert_eq!(
+        parsed.policy.drain.should,
+        vec![
+            DrainSpec {
+                severity: Severity::Critical,
+                hotspot: HotspotMatch::Any,
+            },
+            DrainSpec {
+                severity: Severity::High,
+                hotspot: HotspotMatch::Required,
+            },
+        ]
+    );
+}
+
+#[test]
+fn drain_spec_defaults_when_omitted() {
+    // Empty config produces the v0.3 default drain policy:
+    // must = critical:hotspot, should = critical + high:hotspot.
+    let cfg: Config = Config::from_toml_str("").unwrap();
+    assert_eq!(cfg.policy.drain.must.len(), 1);
+    assert_eq!(cfg.policy.drain.should.len(), 2);
+    assert_eq!(cfg.policy.drain.must[0].hotspot, HotspotMatch::Required);
+}
+
+#[test]
+fn drain_spec_rejects_unknown_severity() {
+    let cfg = r#"
+        [policy.drain]
+        must = ["urgent:hotspot"]
+    "#;
+    let err = Config::from_toml_str(cfg).unwrap_err().to_string();
+    assert!(err.contains("unknown severity"), "got: {err}");
+}
+
+#[test]
+fn drain_spec_rejects_unknown_flag() {
+    let cfg = r#"
+        [policy.drain]
+        must = ["critical:churned"]
+    "#;
+    let err = Config::from_toml_str(cfg).unwrap_err().to_string();
+    assert!(err.contains("unknown flag"), "got: {err}");
+}
+
+fn finding_with(severity: Severity, hotspot: bool) -> Finding {
+    let mut f = Finding::new(
+        "ccn",
+        Location {
+            file: PathBuf::from("src/x.ts"),
+            line: Some(1),
+            symbol: Some("fn".into()),
+        },
+        "CCN=42 fn".into(),
+        "ccn",
+    );
+    f.severity = severity;
+    f.hotspot = hotspot;
+    f
+}
+
+#[test]
+fn tier_for_default_policy_buckets_findings() {
+    let cfg: Config = Config::from_toml_str("").unwrap();
+    let drain = &cfg.policy.drain;
+
+    // Critical 🔥 → must (T0)
+    assert_eq!(
+        drain.tier_for(&finding_with(Severity::Critical, true)),
+        Some(DrainTier::Must)
+    );
+    // Critical (no hotspot) → should (T1) via "critical" spec
+    assert_eq!(
+        drain.tier_for(&finding_with(Severity::Critical, false)),
+        Some(DrainTier::Should)
+    );
+    // High 🔥 → should via "high:hotspot"
+    assert_eq!(
+        drain.tier_for(&finding_with(Severity::High, true)),
+        Some(DrainTier::Should)
+    );
+    // High (no hotspot) → advisory
+    assert_eq!(
+        drain.tier_for(&finding_with(Severity::High, false)),
+        Some(DrainTier::Advisory)
+    );
+    // Medium → advisory
+    assert_eq!(
+        drain.tier_for(&finding_with(Severity::Medium, false)),
+        Some(DrainTier::Advisory)
+    );
+    // Ok → excluded entirely
+    assert_eq!(drain.tier_for(&finding_with(Severity::Ok, false)), None);
+    assert_eq!(drain.tier_for(&finding_with(Severity::Ok, true)), None);
+}
+
+#[test]
+fn tier_for_must_takes_precedence_over_should() {
+    // If a custom policy lists "critical" in both must and should, must
+    // wins (the iteration order in PolicyDrainConfig is must-then-should).
+    let cfg = r#"
+        [policy.drain]
+        must = ["critical"]
+        should = ["critical"]
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    let drain = &parsed.policy.drain;
+    assert_eq!(
+        drain.tier_for(&finding_with(Severity::Critical, false)),
+        Some(DrainTier::Must)
+    );
+}
+
+#[test]
+fn drain_spec_rejects_extra_segments() {
+    let cfg = r#"
+        [policy.drain]
+        must = ["critical:hotspot:extra"]
+    "#;
+    let err = Config::from_toml_str(cfg).unwrap_err().to_string();
+    assert!(err.contains("too many"), "got: {err}");
 }
 
 #[test]

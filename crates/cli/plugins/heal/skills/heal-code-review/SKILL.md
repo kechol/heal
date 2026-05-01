@@ -187,10 +187,20 @@ highest-Severity items individually.
 
 #### Prioritised TODO list
 
-Order: `Critical 🔥` → `Critical` → `High 🔥` → `High` →
-`Medium 🔥` (Medium-without-hotspot only when the user asked for
-"everything"). Cap at the top 8 by default — beyond that the list
-dilutes.
+`heal check` groups findings into three drain tiers driven by
+`[policy.drain]`:
+
+- **T0 — Drain queue** (default `["critical:hotspot"]`). The TODO list
+  is **only T0** by default. These are the must-fix items.
+- **T1 — Should drain** (default `["critical", "high:hotspot"]`).
+  Surface as a separate "If bandwidth permits" section after the TODO,
+  not as TODO entries.
+- **Advisory** — everything else above `Severity::Ok`. Mention as a
+  count, never as TODO entries.
+
+Within T0, sort `Critical 🔥` first. Cap the TODO list at the top 8 —
+beyond that the list dilutes. If the user asked for "everything", you
+may extend into T1; never auto-extend into Advisory.
 
 Each entry is exactly **5 lines**:
 
@@ -307,18 +317,24 @@ Cap total output at **~40 lines** for the default cache.
 Architectural reading
   <3–6 lines>
 
-TODO  (top N of M actionable findings)
+TODO  (T0 / Drain queue — top N of M)
   [1] <5-line entry>
   [2] ...
   ...
+
+If bandwidth permits  (T1 / Should drain — only if any)
+  - <one-line summary per finding, no 5-line block>
+
+Advisory  (count only)
+  + N findings below T1 — review when convenient
 
 Deferred questions  (only if any)
   - <one-sentence framing>:  <files>  <why it's a call, not a fix>
 
 Next step
-  Run `claude /heal-code-patch` to drain the mechanical fixes (one commit
-  each, in Severity order). Architecture-level entries above need a
-  human call — pick one and I'll walk it with you.
+  Run `claude /heal-code-patch` to drain T0 one commit at a time. T1 /
+  Advisory items are not part of the loop — pick one explicitly if you
+  want to act on it.
 ```
 
 Numbers belong in the TODO entries, not in the architectural
