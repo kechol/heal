@@ -217,7 +217,15 @@ pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> C
 /// `Severity::Ok`; the `hotspot` flag is `false` whenever the project
 /// has no hotspot calibration.
 pub(crate) fn classify(reports: &ObserverReports, cal: &Calibration, cfg: &Config) -> Vec<Finding> {
-    crate::feature::FeatureRegistry::builtin().lower_all(reports, cfg, cal)
+    let mut findings = crate::feature::FeatureRegistry::builtin().lower_all(reports, cfg, cal);
+    let workspaces = &cfg.project.workspaces;
+    if !workspaces.is_empty() {
+        for f in &mut findings {
+            f.workspace = crate::core::config::assign_workspace(&f.location.file, workspaces)
+                .map(str::to_owned);
+        }
+    }
+    findings
 }
 
 /// Tally Findings by Severity. Pass the same `Vec<Finding>` you used

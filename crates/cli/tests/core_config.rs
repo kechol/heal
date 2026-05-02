@@ -1,7 +1,9 @@
-use heal_cli::core::config::{Config, DrainSpec, DrainTier, HotspotMatch, PolicyAction};
+use heal_cli::core::config::{
+    assign_workspace, Config, DrainSpec, DrainTier, HotspotMatch, PolicyAction,
+};
 use heal_cli::core::finding::{Finding, Location};
 use heal_cli::core::severity::Severity;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[test]
 fn empty_toml_yields_recommended_metric_defaults() {
@@ -327,5 +329,187 @@ fn load_missing_returns_config_missing() {
     assert!(
         matches!(err, heal_cli::core::Error::ConfigMissing(_)),
         "got: {err}"
+    );
+}
+
+#[test]
+fn workspaces_default_is_empty() {
+    let cfg: Config = Config::from_toml_str("").unwrap();
+    assert!(cfg.project.workspaces.is_empty());
+}
+
+#[test]
+fn workspaces_round_trip() {
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "packages/web"
+        primary_language = "typescript"
+        exclude_paths = ["dist/**"]
+
+        [[project.workspaces]]
+        path = "services/api"
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    assert_eq!(parsed.project.workspaces.len(), 2);
+    assert_eq!(parsed.project.workspaces[0].path, "packages/web");
+    assert_eq!(
+        parsed.project.workspaces[0].primary_language.as_deref(),
+        Some("typescript")
+    );
+    assert_eq!(
+        parsed.project.workspaces[0].exclude_paths,
+        vec!["dist/**".to_string()]
+    );
+    assert_eq!(parsed.project.workspaces[1].path, "services/api");
+    assert!(parsed.project.workspaces[1].primary_language.is_none());
+}
+
+#[test]
+fn workspaces_unknown_field_rejected() {
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "packages/web"
+        bogus = "x"
+    "#;
+    assert!(Config::from_toml_str(cfg).is_err());
+}
+
+#[test]
+fn workspaces_validate_rejects_empty_path() {
+    let cfg = r#"
+        [[project.workspaces]]
+        path = ""
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    let err = parsed.validate(Path::new("/heal/config.toml")).unwrap_err();
+    assert!(
+        matches!(err, heal_cli::core::Error::ConfigInvalid { .. }),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn workspaces_validate_rejects_absolute_path() {
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "/etc/heal"
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    assert!(parsed.validate(Path::new("/heal/config.toml")).is_err());
+}
+
+#[test]
+fn workspaces_validate_rejects_dotdot() {
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "packages/../etc"
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    assert!(parsed.validate(Path::new("/heal/config.toml")).is_err());
+}
+
+#[test]
+fn workspaces_validate_rejects_duplicates() {
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "packages/web"
+        [[project.workspaces]]
+        path = "packages/web"
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    assert!(parsed.validate(Path::new("/heal/config.toml")).is_err());
+}
+
+#[test]
+fn workspaces_validate_rejects_nesting() {
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "packages"
+        [[project.workspaces]]
+        path = "packages/web"
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    let err = parsed.validate(Path::new("/heal/config.toml")).unwrap_err();
+    assert!(
+        format!("{err}").contains("nest"),
+        "expected nesting error, got: {err}"
+    );
+}
+
+#[test]
+fn workspaces_validate_allows_sibling_prefixes() {
+    // `pkg/web` is NOT a prefix of `pkg/webapp` (segment-wise), so
+    // they coexist fine.
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "pkg/web"
+        [[project.workspaces]]
+        path = "pkg/webapp"
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    parsed
+        .validate(Path::new("/heal/config.toml"))
+        .expect("sibling prefixes are valid");
+}
+
+#[test]
+fn assign_workspace_returns_none_when_no_workspaces_declared() {
+    let result = assign_workspace(Path::new("packages/web/foo.ts"), &[]);
+    assert!(result.is_none());
+}
+
+#[test]
+fn assign_workspace_picks_matching_workspace() {
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "packages/web"
+        [[project.workspaces]]
+        path = "services/api"
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    parsed.validate(Path::new("/heal/config.toml")).unwrap();
+    assert_eq!(
+        assign_workspace(
+            Path::new("packages/web/src/foo.ts"),
+            &parsed.project.workspaces
+        ),
+        Some("packages/web")
+    );
+    assert_eq!(
+        assign_workspace(Path::new("services/api/x.py"), &parsed.project.workspaces),
+        Some("services/api")
+    );
+}
+
+#[test]
+fn assign_workspace_returns_none_for_files_outside_any_workspace() {
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "packages/web"
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    parsed.validate(Path::new("/heal/config.toml")).unwrap();
+    assert_eq!(
+        assign_workspace(Path::new("README.md"), &parsed.project.workspaces),
+        None,
+    );
+    assert_eq!(
+        assign_workspace(Path::new("scripts/build.sh"), &parsed.project.workspaces),
+        None,
+    );
+}
+
+#[test]
+fn assign_workspace_segment_wise_match_not_substring() {
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "pkg/web"
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    parsed.validate(Path::new("/heal/config.toml")).unwrap();
+    // `pkg/webapp/...` must NOT match `pkg/web` workspace (segment-wise).
+    assert_eq!(
+        assign_workspace(Path::new("pkg/webapp/index.ts"), &parsed.project.workspaces),
+        None,
     );
 }

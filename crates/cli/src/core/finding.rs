@@ -60,6 +60,15 @@ pub struct Finding {
     pub severity: Severity,
     #[serde(default)]
     pub hotspot: bool,
+    /// Workspace path (project-root relative) when the finding's
+    /// `location.file` lives under a declared `[[project.workspaces]]`
+    /// entry. `None` for files outside every declared workspace, or
+    /// when no workspaces are declared. Tagged post-classify by
+    /// [`crate::core::config::assign_workspace`]; not part of the id
+    /// hash, so reclassifying a workspace boundary doesn't churn the
+    /// fix-tracking history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
     pub location: Location,
     /// Sites beyond the canonical `location`. Populated for duplication
     /// blocks (other duplicates) and coupling pairs (the partner file).
@@ -85,6 +94,7 @@ impl Finding {
             metric: metric.to_owned(),
             severity: Severity::Ok,
             hotspot: false,
+            workspace: None,
             location,
             locations: Vec::new(),
             summary,
@@ -266,6 +276,7 @@ mod tests {
             metric: "ccn".into(),
             severity: Severity::Ok,
             hotspot: false,
+            workspace: None,
             location: loc("src/foo.rs", Some("bar"), Some(1)),
             locations: vec![],
             summary: "hi".into(),
@@ -274,5 +285,6 @@ mod tests {
         let json = serde_json::to_string(&f).unwrap();
         assert!(!json.contains("locations"));
         assert!(!json.contains("fix_hint"));
+        assert!(!json.contains("workspace"));
     }
 }

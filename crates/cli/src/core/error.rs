@@ -12,6 +12,9 @@ pub enum Error {
         source: toml::de::Error,
     },
 
+    #[error("invalid config at {path}: {message}")]
+    ConfigInvalid { path: PathBuf, message: String },
+
     #[error("invalid event-log record at {path}: {source}")]
     EventLogParse {
         path: PathBuf,

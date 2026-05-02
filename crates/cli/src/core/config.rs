@@ -33,6 +33,34 @@ pub struct ProjectConfig {
     /// passed verbatim to the model. `None` keeps the model default.
     #[serde(default)]
     pub response_language: Option<String>,
+    /// Declared sub-projects inside a monorepo. Each overlay scopes a
+    /// path prefix and (optionally) overrides the auto-detected
+    /// `primary_language` for that subtree. Empty (the v0.1+ default)
+    /// means the whole repo is one cohort, exactly matching pre-monorepo
+    /// behaviour. See `[[project.workspaces]]` in `references/config.md`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub workspaces: Vec<WorkspaceOverlay>,
+}
+
+/// One entry under `[[project.workspaces]]`. The path is project-root
+/// relative ("packages/web", not "/abs/path/packages/web"); validation
+/// happens in [`Config::validate`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceOverlay {
+    /// Path prefix relative to the project root, slash-separated.
+    /// Example: `"packages/web"` or `"services/api"`.
+    pub path: String,
+    /// Override the auto-detected primary language for this workspace.
+    /// Free-form, lowercased on write — same shape as the field
+    /// `LocReport::primary` produces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary_language: Option<String>,
+    /// Workspace-local extra excludes layered on top of
+    /// `git.exclude_paths` and `metrics.loc.exclude_paths`. Paths are
+    /// relative to the workspace root, not the project root.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -749,16 +777,31 @@ impl Config {
                 }
             }
         })?;
-        Self::from_toml_str(&raw).map_err(|source| Error::ConfigParse {
+        let cfg = Self::from_toml_str(&raw).map_err(|source| Error::ConfigParse {
             path: path.to_path_buf(),
             source,
-        })
+        })?;
+        cfg.validate(path)?;
+        Ok(cfg)
     }
 
     /// Parse a TOML body. Useful for tests and for round-trip checks.
+    /// Does **not** run [`Self::validate`] — call it explicitly when
+    /// the values come from outside a trusted producer.
     #[must_use = "ignoring the parse result will silently swallow schema errors"]
     pub fn from_toml_str(s: &str) -> std::result::Result<Self, toml::de::Error> {
         toml::from_str(s)
+    }
+
+    /// Cross-field invariants. Currently checks `[[project.workspaces]]`:
+    /// paths are non-empty, slash-separated, repo-root-relative, no
+    /// duplicates, no nesting (one workspace path being a strict
+    /// prefix of another).
+    pub fn validate(&self, path: &Path) -> Result<()> {
+        validate_workspaces(&self.project.workspaces).map_err(|message| Error::ConfigInvalid {
+            path: path.to_path_buf(),
+            message,
+        })
     }
 
     /// Serialize back to TOML. The struct is owned so this is infallible
@@ -795,4 +838,83 @@ impl Config {
 /// Convenience: load from `.heal/config.toml` under a project root.
 pub fn load_from_project(project_root: &Path) -> Result<Config> {
     Config::load(&crate::core::paths::HealPaths::new(project_root).config())
+}
+
+/// Reject malformed `[[project.workspaces]]` entries before they reach
+/// the rest of the system. Errors are returned as a single string so
+/// the caller can wrap with the file `path` for context.
+fn validate_workspaces(workspaces: &[WorkspaceOverlay]) -> std::result::Result<(), String> {
+    let mut normalized: Vec<String> = Vec::with_capacity(workspaces.len());
+    for w in workspaces {
+        let p = w.path.trim();
+        if p.is_empty() {
+            return Err("[[project.workspaces]] entry has empty `path`".into());
+        }
+        if p.starts_with('/') {
+            return Err(format!(
+                "[[project.workspaces]] path `{p}` must be repo-root relative (no leading `/`)"
+            ));
+        }
+        if p.split('/').any(|seg| seg == "..") {
+            return Err(format!(
+                "[[project.workspaces]] path `{p}` must not contain `..`"
+            ));
+        }
+        let canonical = p.trim_end_matches('/').to_string();
+        normalized.push(canonical);
+    }
+    for (i, a) in normalized.iter().enumerate() {
+        for b in normalized.iter().skip(i + 1) {
+            if a == b {
+                return Err(format!(
+                    "[[project.workspaces]] declares `{a}` more than once"
+                ));
+            }
+            if is_strict_prefix(a, b) || is_strict_prefix(b, a) {
+                return Err(format!(
+                    "[[project.workspaces]] `{a}` and `{b}` nest; one workspace cannot live inside another"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// True iff `a` is a strict path-prefix of `b` (segment-wise so
+/// `"pkg/web"` is **not** a prefix of `"pkg/webapp"`). Used by
+/// [`validate_workspaces`] to reject nested workspaces and by
+/// [`assign_workspace`] to find the deepest matching workspace.
+fn is_strict_prefix(a: &str, b: &str) -> bool {
+    if a.len() >= b.len() {
+        return false;
+    }
+    let after = &b[a.len()..];
+    b.starts_with(a) && after.starts_with('/')
+}
+
+/// Resolve a finding's file path to the workspace it belongs to (if
+/// any). Longest-prefix match: with workspaces `["pkg", "pkg/web"]` a
+/// file at `pkg/web/foo.ts` resolves to `"pkg/web"`. Returns `None`
+/// when the file lives outside every declared workspace, or when the
+/// list is empty (the v0.1+ default).
+///
+/// `file` is interpreted relative to the project root (which is how
+/// observers store paths in `Location.file`). Comparisons are
+/// segment-wise so `pkg/web` does not match `pkg/webapp`.
+#[must_use]
+pub fn assign_workspace<'a>(file: &Path, workspaces: &'a [WorkspaceOverlay]) -> Option<&'a str> {
+    let path_str = file
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/");
+    let mut best: Option<&str> = None;
+    for w in workspaces {
+        let candidate = w.path.trim_end_matches('/');
+        let matches = path_str == candidate || is_strict_prefix(candidate, &path_str);
+        if matches && best.is_none_or(|b: &str| candidate.len() > b.len()) {
+            best = Some(candidate);
+        }
+    }
+    best
 }
