@@ -712,18 +712,45 @@ impl Feature for ChangeCouplingFeature {
             return Vec::new();
         };
         let workspaces = cfg.project.workspaces.as_slice();
+        let cross_policy = cfg.metrics.change_coupling.cross_workspace;
         let mut out = Vec::with_capacity(cc.pairs.len());
-        for (pair, finding) in cc.pairs.iter().zip(cc.into_findings()) {
+        for (pair, mut finding) in cc.pairs.iter().zip(cc.into_findings()) {
             // TestSrc / DocSrc pairs stay in the report (v0.4 drift
             // detection consumes them) but don't enter the drain queue —
             // co-changing tests/docs is the expected hygiene, not a defect.
             if matches!(pair.class, Some(PairClass::TestSrc | PairClass::DocSrc)) {
                 continue;
             }
+            // A pair is cross-workspace iff both files resolve to a
+            // declared workspace AND the two workspaces differ. Files
+            // outside every workspace are *not* cross-workspace (they
+            // belong to the implicit global cohort).
+            let cross = if workspaces.is_empty() {
+                false
+            } else {
+                let ws_a = crate::core::config::assign_workspace(&pair.a, workspaces);
+                let ws_b = crate::core::config::assign_workspace(&pair.b, workspaces);
+                matches!((ws_a, ws_b), (Some(a), Some(b)) if a != b)
+            };
+            if cross {
+                match cross_policy {
+                    crate::core::config::CrossWorkspacePolicy::Hide => continue,
+                    crate::core::config::CrossWorkspacePolicy::Surface => {
+                        // Retag so the drain policy can route it to its
+                        // own bucket. Default policy parks
+                        // `change_coupling.cross_workspace` in Advisory.
+                        finding.metric = "change_coupling.cross_workspace".into();
+                        finding.id = Finding::make_id(
+                            &finding.metric,
+                            &finding.location,
+                            &format!("count:{}", pair.count),
+                        );
+                    }
+                }
+            }
             // Calibration follows the finding's primary site. Pairs
             // straddling workspaces still use whichever side is
-            // canonical; PR4 surfaces them in a separate Advisory
-            // bucket regardless of the breaks here.
+            // canonical for percentile lookup.
             let cal_cc = cal
                 .metrics_for_file(&finding.location.file, workspaces)
                 .change_coupling
@@ -892,5 +919,115 @@ mod pair_class_tests {
         // pair on a math edge case (min_coupling will have caught it first).
         assert!(lift(0, 0, 0, 0).is_infinite());
         assert!(lift(5, 0, 5, 100).is_infinite());
+    }
+
+    mod cross_workspace_lower {
+        use super::*;
+        use crate::core::calibration::Calibration;
+        use crate::core::config::{Config, CrossWorkspacePolicy, WorkspaceOverlay};
+        use crate::feature::{Feature, HotspotIndex};
+        use crate::observers::ObserverReports;
+
+        fn cfg(workspaces: Vec<&str>, policy: CrossWorkspacePolicy) -> Config {
+            let mut c = Config::default();
+            c.metrics.change_coupling.enabled = true;
+            c.metrics.change_coupling.cross_workspace = policy;
+            c.project.workspaces = workspaces
+                .into_iter()
+                .map(|p| WorkspaceOverlay {
+                    path: p.into(),
+                    primary_language: None,
+                    exclude_paths: Vec::new(),
+                })
+                .collect();
+            c
+        }
+
+        fn reports_with(pairs: Vec<FilePair>) -> ObserverReports {
+            ObserverReports {
+                loc: crate::observer::loc::LocReport::default(),
+                complexity: crate::observer::complexity::ComplexityReport::default(),
+                complexity_observer: crate::observer::complexity::ComplexityObserver::default(),
+                churn: None,
+                change_coupling: Some(report(pairs)),
+                duplication: None,
+                hotspot: None,
+                lcom: None,
+            }
+        }
+
+        #[test]
+        fn cross_workspace_pair_retagged_when_surface() {
+            let pairs = vec![pair("packages/api/server.ts", "packages/web/client.ts", 5)];
+            let r = reports_with(pairs);
+            let c = cfg(
+                vec!["packages/api", "packages/web"],
+                CrossWorkspacePolicy::Surface,
+            );
+            let f = ChangeCouplingFeature.lower(
+                &r,
+                &c,
+                &Calibration::default(),
+                &HotspotIndex::default(),
+            );
+            assert_eq!(f.len(), 1);
+            assert_eq!(f[0].metric, "change_coupling.cross_workspace");
+            // id rebuilt from the new metric tag.
+            assert!(f[0].id.starts_with("change_coupling.cross_workspace:"));
+        }
+
+        #[test]
+        fn cross_workspace_pair_dropped_when_hide() {
+            let pairs = vec![
+                pair("packages/api/server.ts", "packages/web/client.ts", 5),
+                pair("packages/api/a.ts", "packages/api/b.ts", 5),
+            ];
+            let r = reports_with(pairs);
+            let c = cfg(
+                vec!["packages/api", "packages/web"],
+                CrossWorkspacePolicy::Hide,
+            );
+            let f = ChangeCouplingFeature.lower(
+                &r,
+                &c,
+                &Calibration::default(),
+                &HotspotIndex::default(),
+            );
+            assert_eq!(f.len(), 1, "only the same-workspace pair survives");
+            assert_eq!(f[0].metric, "change_coupling");
+        }
+
+        #[test]
+        fn pair_with_one_unscoped_file_not_cross_workspace() {
+            // One file lives outside every declared workspace —
+            // treat as same-workspace (no special tagging).
+            let pairs = vec![pair("packages/api/server.ts", "scripts/ci.sh", 5)];
+            let r = reports_with(pairs);
+            let c = cfg(vec!["packages/api"], CrossWorkspacePolicy::Surface);
+            let f = ChangeCouplingFeature.lower(
+                &r,
+                &c,
+                &Calibration::default(),
+                &HotspotIndex::default(),
+            );
+            assert_eq!(f.len(), 1);
+            assert_eq!(f[0].metric, "change_coupling");
+        }
+
+        #[test]
+        fn no_workspaces_declared_means_no_cross_workspace_tag() {
+            let pairs = vec![pair("a/x.ts", "b/y.ts", 5)];
+            let r = reports_with(pairs);
+            let mut c = Config::default();
+            c.metrics.change_coupling.enabled = true;
+            let f = ChangeCouplingFeature.lower(
+                &r,
+                &c,
+                &Calibration::default(),
+                &HotspotIndex::default(),
+            );
+            assert_eq!(f.len(), 1);
+            assert_eq!(f[0].metric, "change_coupling");
+        }
     }
 }

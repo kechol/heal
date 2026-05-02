@@ -1,5 +1,6 @@
 use heal_cli::core::config::{
-    assign_workspace, Config, DrainSpec, DrainTier, HotspotMatch, PolicyAction,
+    assign_workspace, Config, CrossWorkspacePolicy, DrainSpec, DrainTier, HotspotMatch,
+    PolicyAction,
 };
 use heal_cli::core::finding::{Finding, Location};
 use heal_cli::core::severity::Severity;
@@ -309,6 +310,58 @@ fn tier_for_must_takes_precedence_over_should() {
         drain.tier_for(&finding_with(Severity::Critical, false)),
         Some(DrainTier::Must)
     );
+}
+
+#[test]
+fn cross_workspace_default_is_surface() {
+    let cfg = Config::from_toml_str("").unwrap();
+    assert_eq!(
+        cfg.metrics.change_coupling.cross_workspace,
+        CrossWorkspacePolicy::Surface,
+    );
+}
+
+#[test]
+fn cross_workspace_hide_round_trips() {
+    let cfg = r#"
+        [metrics.change_coupling]
+        enabled = true
+        cross_workspace = "hide"
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    assert_eq!(
+        parsed.metrics.change_coupling.cross_workspace,
+        CrossWorkspacePolicy::Hide,
+    );
+}
+
+#[test]
+fn tier_for_cross_workspace_metric_routes_to_advisory_by_default() {
+    // A finding tagged change_coupling.cross_workspace at Critical
+    // severity must land in Advisory under default policy — the metric
+    // is a "for awareness" surface, not a drain target. The parent
+    // change_coupling spec (which would normally route critical→Must
+    // via the global must list) must NOT take effect for this sub-metric.
+    let cfg = Config::from_toml_str("").unwrap();
+    let drain = &cfg.policy.drain;
+    let mut f = finding_with(Severity::Critical, true);
+    f.metric = "change_coupling.cross_workspace".into();
+    assert_eq!(drain.tier_for(&f), Some(DrainTier::Advisory));
+}
+
+#[test]
+fn tier_for_cross_workspace_metric_respects_explicit_override() {
+    // Once the user adds a per-metric override, the default Advisory
+    // routing yields and the override is honored normally.
+    let cfg = r#"
+        [policy.drain.metrics."change_coupling.cross_workspace"]
+        must = ["critical:hotspot"]
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    let drain = &parsed.policy.drain;
+    let mut f = finding_with(Severity::Critical, true);
+    f.metric = "change_coupling.cross_workspace".into();
+    assert_eq!(drain.tier_for(&f), Some(DrainTier::Must));
 }
 
 #[test]

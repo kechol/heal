@@ -124,6 +124,7 @@ impl Finding {
             "duplication" => "duplication".to_owned(),
             "change_coupling" => "coupled".to_owned(),
             "change_coupling.symmetric" => "coupled (sym)".to_owned(),
+            "change_coupling.cross_workspace" => "coupled (cross-ws)".to_owned(),
             "hotspot" => "hotspot".to_owned(),
             "lcom" => extract_leading_number(&self.summary, "LCOM=")
                 .map_or_else(|| "LCOM".to_owned(), |v| format!("LCOM={v}")),

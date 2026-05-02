@@ -317,6 +317,24 @@ pub struct ChangeCouplingConfig {
     /// practice — leave `None` to defer entirely to percentile breaks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub floor_critical: Option<f64>,
+    /// What to do with pairs whose two files belong to *different*
+    /// declared workspaces. `Surface` (default) retags such pairs as
+    /// `change_coupling.cross_workspace` so they collect in their own
+    /// Advisory bucket — surfacing module-boundary leaks without
+    /// pushing them into the drain queue. `Hide` drops them entirely;
+    /// useful for monorepos where the cross-workspace coupling is
+    /// expected (shared schema, intentionally co-evolving APIs).
+    /// Ignored when `[[project.workspaces]]` is empty.
+    #[serde(default)]
+    pub cross_workspace: CrossWorkspacePolicy,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CrossWorkspacePolicy {
+    #[default]
+    Surface,
+    Hide,
 }
 
 impl Eq for ChangeCouplingConfig {}
@@ -330,6 +348,7 @@ impl Default for ChangeCouplingConfig {
             symmetric_threshold: default_symmetric_threshold(),
             top_n: None,
             floor_critical: None,
+            cross_workspace: CrossWorkspacePolicy::default(),
         }
     }
 }
@@ -343,6 +362,7 @@ impl Toggle for ChangeCouplingConfig {
             symmetric_threshold: default_symmetric_threshold(),
             top_n: None,
             floor_critical: None,
+            cross_workspace: CrossWorkspacePolicy::default(),
         }
     }
 }
@@ -675,6 +695,16 @@ impl PolicyDrainConfig {
     pub fn tier_for(&self, finding: &crate::core::finding::Finding) -> Option<DrainTier> {
         if finding.severity == crate::core::severity::Severity::Ok {
             return None;
+        }
+        // Cross-workspace coupling is parked in Advisory by default
+        // regardless of severity — the right fix is usually an
+        // architectural conversation, not a single-commit drain. Users
+        // can opt back in with an explicit
+        // `[policy.drain.metrics."change_coupling.cross_workspace"]`.
+        if finding.metric == "change_coupling.cross_workspace"
+            && !self.metrics.contains_key(&finding.metric)
+        {
+            return Some(DrainTier::Advisory);
         }
         let (must, should) = self.specs_for(&finding.metric);
         if must.iter().any(|s| s.matches(finding)) {
