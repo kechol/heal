@@ -304,11 +304,7 @@ pub(crate) fn classify(reports: &ObserverReports, cal: &Calibration, cfg: &Confi
 /// single command (once for the snapshot, once for the post-commit
 /// nudge) was the v0.2.0 cost; this slice form is the deliberate fix.
 pub fn tally_severity(findings: &[Finding]) -> SeverityCounts {
-    let mut counts = SeverityCounts::default();
-    for f in findings {
-        counts.tally(f.severity);
-    }
-    counts
+    SeverityCounts::from_findings(findings)
 }
 
 fn non_empty(values: &[f64]) -> bool {

@@ -151,7 +151,17 @@ impl Calibration {
         file: &Path,
         workspaces: &[WorkspaceOverlay],
     ) -> &MetricCalibrations {
-        if let Some(ws) = assign_workspace(file, workspaces) {
+        self.metrics_for_workspace(assign_workspace(file, workspaces))
+    }
+
+    /// Variant of [`Self::metrics_for_file`] for callers that already
+    /// resolved the workspace name (via [`assign_workspace`]) and don't
+    /// need a second lookup. `change_coupling` resolves both pair
+    /// endpoints to detect the cross-workspace case before calibration,
+    /// so re-resolving on the canonical side would be wasted work.
+    #[must_use]
+    pub fn metrics_for_workspace(&self, workspace: Option<&str>) -> &MetricCalibrations {
+        if let Some(ws) = workspace {
             if let Some(table) = self.workspaces.get(ws) {
                 return table;
             }

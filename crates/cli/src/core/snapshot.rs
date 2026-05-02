@@ -110,6 +110,16 @@ impl SeverityCounts {
         *bucket = bucket.saturating_add(1);
     }
 
+    /// Build a `SeverityCounts` from a slice of findings.
+    #[must_use]
+    pub fn from_findings(findings: &[crate::core::finding::Finding]) -> Self {
+        let mut counts = Self::default();
+        for f in findings {
+            counts.tally(f.severity);
+        }
+        counts
+    }
+
     /// Inline summary line for human-facing CLI output, e.g.
     /// `[critical] 3   [high] 12   [medium] 28   [ok] 412`. When
     /// `colorize` is true the four labels carry ANSI SGR codes (red /

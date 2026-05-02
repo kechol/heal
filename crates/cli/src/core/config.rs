@@ -701,7 +701,7 @@ impl PolicyDrainConfig {
         // architectural conversation, not a single-commit drain. Users
         // can opt back in with an explicit
         // `[policy.drain.metrics."change_coupling.cross_workspace"]`.
-        if finding.metric == "change_coupling.cross_workspace"
+        if finding.metric == crate::core::finding::Finding::METRIC_CHANGE_COUPLING_CROSS_WORKSPACE
             && !self.metrics.contains_key(&finding.metric)
         {
             return Some(DrainTier::Advisory);
@@ -933,15 +933,16 @@ fn is_strict_prefix(a: &str, b: &str) -> bool {
 /// segment-wise so `pkg/web` does not match `pkg/webapp`.
 #[must_use]
 pub fn assign_workspace<'a>(file: &Path, workspaces: &'a [WorkspaceOverlay]) -> Option<&'a str> {
-    let path_str = file
-        .components()
-        .map(|c| c.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/");
+    // Forward-slash on the comparison side so `WorkspaceOverlay.path`
+    // (always slash-separated, validated at load) matches against the
+    // file path without per-call normalization. `to_string_lossy()`
+    // returns a borrowed `Cow` on Unix where paths are valid UTF-8 —
+    // no allocation in the common case.
+    let path_str = file.to_string_lossy();
     let mut best: Option<&str> = None;
     for w in workspaces {
         let candidate = w.path.trim_end_matches('/');
-        let matches = path_str == candidate || is_strict_prefix(candidate, &path_str);
+        let matches = *path_str == *candidate || is_strict_prefix(candidate, &path_str);
         if matches && best.is_none_or(|b: &str| candidate.len() > b.len()) {
             best = Some(candidate);
         }

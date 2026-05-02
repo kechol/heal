@@ -379,10 +379,14 @@ impl IntoFindings for ChangeCouplingReport {
 /// direction variant only touches one site.
 fn render_metric_and_arrow(pair: &FilePair) -> (&'static str, &'static str) {
     match &pair.direction {
-        Some(PairDirection::Symmetric) => ("change_coupling.symmetric", "↔ (symmetric)"),
-        Some(PairDirection::OneWay { from, .. }) if from == &pair.a => ("change_coupling", "→"),
-        Some(PairDirection::OneWay { .. }) => ("change_coupling", "←"),
-        None => ("change_coupling", "↔"),
+        Some(PairDirection::Symmetric) => {
+            (Finding::METRIC_CHANGE_COUPLING_SYMMETRIC, "↔ (symmetric)")
+        }
+        Some(PairDirection::OneWay { from, .. }) if from == &pair.a => {
+            (Finding::METRIC_CHANGE_COUPLING, "→")
+        }
+        Some(PairDirection::OneWay { .. }) => (Finding::METRIC_CHANGE_COUPLING, "←"),
+        None => (Finding::METRIC_CHANGE_COUPLING, "↔"),
     }
 }
 
@@ -724,14 +728,15 @@ impl Feature for ChangeCouplingFeature {
             // A pair is cross-workspace iff both files resolve to a
             // declared workspace AND the two workspaces differ. Files
             // outside every workspace are *not* cross-workspace (they
-            // belong to the implicit global cohort).
-            let cross = if workspaces.is_empty() {
-                false
-            } else {
-                let ws_a = crate::core::config::assign_workspace(&pair.a, workspaces);
-                let ws_b = crate::core::config::assign_workspace(&pair.b, workspaces);
-                matches!((ws_a, ws_b), (Some(a), Some(b)) if a != b)
-            };
+            // belong to the implicit global cohort). `ws_a` doubles as
+            // the calibration table key below — `pair.a` is also the
+            // finding's canonical site (see `IntoFindings`).
+            let ws_a = (!workspaces.is_empty())
+                .then(|| crate::core::config::assign_workspace(&pair.a, workspaces))
+                .flatten();
+            let cross = ws_a.is_some_and(|a| {
+                crate::core::config::assign_workspace(&pair.b, workspaces).is_some_and(|b| a != b)
+            });
             if cross {
                 match cross_policy {
                     crate::core::config::CrossWorkspacePolicy::Hide => continue,
@@ -739,7 +744,7 @@ impl Feature for ChangeCouplingFeature {
                         // Retag so the drain policy can route it to its
                         // own bucket. Default policy parks
                         // `change_coupling.cross_workspace` in Advisory.
-                        finding.metric = "change_coupling.cross_workspace".into();
+                        finding.metric = Finding::METRIC_CHANGE_COUPLING_CROSS_WORKSPACE.into();
                         finding.id = Finding::make_id(
                             &finding.metric,
                             &finding.location,
@@ -748,13 +753,10 @@ impl Feature for ChangeCouplingFeature {
                     }
                 }
             }
-            // Calibration follows the finding's primary site. Pairs
-            // straddling workspaces still use whichever side is
-            // canonical for percentile lookup.
-            let cal_cc = cal
-                .metrics_for_file(&finding.location.file, workspaces)
-                .change_coupling
-                .as_ref();
+            // Calibration follows the finding's primary site (`pair.a`).
+            // We already resolved its workspace above — reuse rather
+            // than walk the path components a second time.
+            let cal_cc = cal.metrics_for_workspace(ws_a).change_coupling.as_ref();
             let severity = cal_cc.map_or(Severity::Ok, |c| c.classify(f64::from(pair.count)));
             out.push(decorate(finding, severity, hotspot));
         }

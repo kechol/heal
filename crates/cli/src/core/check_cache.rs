@@ -84,10 +84,9 @@ pub struct CheckRecord {
     pub findings: Vec<Finding>,
 }
 
-/// Per-workspace severity tally, ordered the same as
-/// `[[project.workspaces]]` entries appear in `config.toml`. Lives on
-/// `CheckRecord` so skills don't have to re-derive it from
-/// `findings[].workspace`.
+/// Per-workspace severity tally, alphabetic by path so the JSON shape
+/// is reproducible across runs. Lives on `CheckRecord` so skills don't
+/// have to re-derive it from `findings[].workspace`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceSummary {
     pub path: String,
@@ -106,7 +105,7 @@ impl CheckRecord {
         findings: Vec<Finding>,
     ) -> Self {
         let started_at = Utc::now();
-        let severity_counts = tally_findings(&findings);
+        let severity_counts = SeverityCounts::from_findings(&findings);
         let workspaces = workspace_summaries(&findings);
         Self {
             version: CHECK_RECORD_VERSION,
@@ -134,7 +133,7 @@ impl CheckRecord {
             .filter(|f| f.workspace.as_deref() == Some(workspace))
             .cloned()
             .collect();
-        let severity_counts = tally_findings(&findings);
+        let severity_counts = SeverityCounts::from_findings(&findings);
         let workspaces = self
             .workspaces
             .iter()
@@ -169,14 +168,6 @@ impl CheckRecord {
         }
         self.head_sha.as_deref() == head_sha && self.config_hash == config_hash
     }
-}
-
-fn tally_findings(findings: &[Finding]) -> SeverityCounts {
-    let mut counts = SeverityCounts::default();
-    for f in findings {
-        counts.tally(f.severity);
-    }
-    counts
 }
 
 /// Group findings by `Finding.workspace`, drop the unwined bucket, and

@@ -108,6 +108,14 @@ impl Finding {
         self
     }
 
+    /// Pure change-coupling pair (any direction except Symmetric).
+    pub const METRIC_CHANGE_COUPLING: &str = "change_coupling";
+    /// Symmetric change-coupling — both files almost never move alone.
+    pub const METRIC_CHANGE_COUPLING_SYMMETRIC: &str = "change_coupling.symmetric";
+    /// Cross-workspace coupling — pair straddles two `[[project.workspaces]]`
+    /// declarations. Routed to Advisory by default.
+    pub const METRIC_CHANGE_COUPLING_CROSS_WORKSPACE: &str = "change_coupling.cross_workspace";
+
     /// Compact "metric=N" tag used by `heal status` rows and the
     /// post-commit nudge. The numeric tail is recovered from
     /// `summary` so observers don't have to expose a second value
@@ -122,9 +130,9 @@ impl Finding {
             "cognitive" => extract_leading_number(&self.summary, "Cognitive=")
                 .map_or_else(|| "Cognitive".to_owned(), |v| format!("Cognitive={v}")),
             "duplication" => "duplication".to_owned(),
-            "change_coupling" => "coupled".to_owned(),
-            "change_coupling.symmetric" => "coupled (sym)".to_owned(),
-            "change_coupling.cross_workspace" => "coupled (cross-ws)".to_owned(),
+            Self::METRIC_CHANGE_COUPLING => "coupled".to_owned(),
+            Self::METRIC_CHANGE_COUPLING_SYMMETRIC => "coupled (sym)".to_owned(),
+            Self::METRIC_CHANGE_COUPLING_CROSS_WORKSPACE => "coupled (cross-ws)".to_owned(),
             "hotspot" => "hotspot".to_owned(),
             "lcom" => extract_leading_number(&self.summary, "LCOM=")
                 .map_or_else(|| "LCOM".to_owned(), |v| format!("LCOM={v}")),
