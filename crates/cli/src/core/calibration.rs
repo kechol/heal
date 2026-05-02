@@ -67,8 +67,15 @@ pub const FLOOR_DUPLICATION_PCT: f64 = 30.0;
 /// - `FLOOR_OK_CCN`: `McCabe` (1976) — CCN 1–10 is "simple, low risk".
 /// - `FLOOR_OK_COGNITIVE`: `Sonar` (2017) — under ~8 there's no nesting
 ///   penalty signal worth surfacing.
+/// - `FLOOR_OK_HOTSPOT`: composite floor — `2 × FLOOR_OK_CCN = 22`.
+///   Hotspot score = `commits × ccn_sum`; below this product we're
+///   either looking at a barely-touched file or a low-complexity one,
+///   neither of which should be flagged regardless of where the file
+///   sits in the codebase's distribution. Without this gate, a
+///   uniformly-cold repo's "top 10%" still gets flagged as hotspots.
 pub const FLOOR_OK_CCN: f64 = 11.0;
 pub const FLOOR_OK_COGNITIVE: f64 = 8.0;
+pub const FLOOR_OK_HOTSPOT: f64 = 22.0;
 
 /// Bundles the absolute floors a metric carries. `critical` is the
 /// "structurally indefensible" Critical escape hatch; `ok` is the
@@ -335,25 +342,48 @@ pub struct HotspotCalibration {
     pub p75: f64,
     pub p90: f64,
     pub p95: f64,
+    /// Absolute graduation floor — scores strictly below this never
+    /// flag as hotspots, even when they happen to sit in the top
+    /// decile of a uniformly-cold codebase. See [`FLOOR_OK_HOTSPOT`]
+    /// for the literature-anchored default. `None` disables the gate
+    /// (legacy snapshots before v0.3+).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor_ok: Option<f64>,
 }
 
 impl HotspotCalibration {
-    /// True iff `score >= p90` — i.e. the file sits in the top 10% of
-    /// hotspot scores. Hotspot is a **flag**, not a Severity (TODO
-    /// §「Severity と Hotspot は直交した属性」).
+    /// True iff `score >= p90` AND `score >= floor_ok` (when set) —
+    /// i.e. the file sits in the top 10% AND its absolute composite
+    /// score is non-trivial. Hotspot is a **flag**, not a Severity
+    /// (TODO §「Severity と Hotspot は直交した属性」).
     #[must_use]
     pub fn flag(&self, score: f64) -> bool {
+        if let Some(floor) = self.floor_ok {
+            if score < floor {
+                return false;
+            }
+        }
         score >= self.p90
     }
 
     #[must_use]
     pub fn from_distribution(scores: &[f64]) -> Self {
+        Self::from_distribution_with_floor(scores, Some(FLOOR_OK_HOTSPOT))
+    }
+
+    /// Variant that takes an explicit `floor_ok` so tests and callers
+    /// that want to opt out (legacy behaviour) can pass `None`. The
+    /// default constructor [`Self::from_distribution`] applies the
+    /// literature-anchored [`FLOOR_OK_HOTSPOT`].
+    #[must_use]
+    pub fn from_distribution_with_floor(scores: &[f64], floor_ok: Option<f64>) -> Self {
         if scores.len() < MIN_SAMPLES_FOR_PERCENTILES {
             return Self {
                 p50: f64::NAN,
                 p75: f64::NAN,
                 p90: f64::NAN,
                 p95: f64::NAN,
+                floor_ok,
             };
         }
         let mut sorted: Vec<f64> = scores.iter().copied().filter(|v| v.is_finite()).collect();
@@ -363,6 +393,7 @@ impl HotspotCalibration {
             p75: percentile(&sorted, 75.0),
             p90: percentile(&sorted, 90.0),
             p95: percentile(&sorted, 95.0),
+            floor_ok,
         }
     }
 }
@@ -515,6 +546,11 @@ fn apply_metric_overrides(table: &mut MetricCalibrations, config: &Config) {
     if let Some(c) = table.lcom.as_mut() {
         if let Some(f) = config.metrics.lcom.floor_critical {
             c.floor_critical = Some(f);
+        }
+    }
+    if let Some(c) = table.hotspot.as_mut() {
+        if let Some(f) = config.metrics.hotspot.floor_ok {
+            c.floor_ok = Some(f);
         }
     }
 }
@@ -962,12 +998,49 @@ mod tests {
     }
 
     #[test]
+    fn hotspot_floor_ok_blocks_top_decile_in_cold_codebase() {
+        // Uniformly-cold codebase: top 10% sit at score=15, but
+        // FLOOR_OK_HOTSPOT (=22) prevents flagging — these files just
+        // aren't hotspots in absolute terms.
+        let h = HotspotCalibration {
+            p50: 3.0,
+            p75: 8.0,
+            p90: 15.0,
+            p95: 18.0,
+            floor_ok: Some(FLOOR_OK_HOTSPOT),
+        };
+        // Score 15 ≥ p90 but < floor_ok → not a hotspot.
+        assert!(!h.flag(15.0));
+        assert!(!h.flag(20.0));
+        // Above the absolute floor → hotspot once it's also above p90.
+        assert!(h.flag(25.0));
+    }
+
+    #[test]
+    fn hotspot_floor_ok_disabled_falls_back_to_percentile() {
+        // Legacy snapshots before v0.3+ have floor_ok = None; the
+        // ancient percentile-only behaviour is preserved.
+        let h = HotspotCalibration {
+            p50: 3.0,
+            p75: 8.0,
+            p90: 15.0,
+            p95: 18.0,
+            floor_ok: None,
+        };
+        assert!(h.flag(15.0));
+        assert!(!h.flag(14.0));
+    }
+
+    #[test]
     fn hotspot_flag_at_p90() {
         let h = HotspotCalibration {
             p50: 5.0,
             p75: 18.0,
             p90: 67.0,
             p95: 145.0,
+            // High enough that p90 (67) is above floor — the percentile
+            // gate decides the boundary case for this test.
+            floor_ok: Some(FLOOR_OK_HOTSPOT),
         };
         assert!(!h.flag(50.0));
         assert!(h.flag(67.0));
@@ -996,6 +1069,7 @@ mod tests {
                     p75: 18.0,
                     p90: 67.0,
                     p95: 145.0,
+                    floor_ok: Some(FLOOR_OK_HOTSPOT),
                 }),
                 ..MetricCalibrations::default()
             },

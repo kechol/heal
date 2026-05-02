@@ -522,6 +522,7 @@ mod tests {
                     p75: 20.0,
                     p90: 100.0,
                     p95: 500.0,
+                    floor_ok: Some(crate::core::calibration::FLOOR_OK_HOTSPOT),
                 }),
                 lcom: None,
             },

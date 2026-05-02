@@ -50,6 +50,16 @@ out-of-workspace files; git-based observers (Churn / ChangeCoupling)
 recompute `commits_considered` against the in-workspace universe so
 lift / churn totals stay consistent.
 
+### Hotspot graduation floor
+
+`HotspotCalibration` gains `floor_ok: Option<f64>` (default
+`FLOOR_OK_HOTSPOT = 22 = 2 × FLOOR_OK_CCN`). Composite scores
+strictly below the floor never flag as hotspots even when they sit
+in the top decile of a uniformly-cold codebase. Override per project
+via `[metrics.hotspot] floor_ok = 50.0`. Legacy snapshots written
+before v0.3+ have `floor_ok = None` and fall back to pure
+percentile-rank behaviour.
+
 ### Per-workspace calibration floor overrides
 
 `[[project.workspaces]] [project.workspaces.metrics.<metric>]

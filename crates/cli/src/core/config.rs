@@ -335,6 +335,13 @@ pub struct HotspotConfig {
     /// drives the new-in-top-N membership diff in `SnapshotDelta`.
     #[serde(default)]
     pub top_n: Option<usize>,
+    /// Absolute graduation floor on the composite `commits × ccn_sum`
+    /// score. Scores strictly below this never flag as hotspots even
+    /// when they sit in the top 10% of a uniformly-cold codebase.
+    /// `None` defers to the literature-anchored default
+    /// (`FLOOR_OK_HOTSPOT = 22 = 2 × FLOOR_OK_CCN`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor_ok: Option<f64>,
 }
 
 impl Eq for HotspotConfig {}
@@ -346,6 +353,7 @@ impl Default for HotspotConfig {
             weight_churn: default_weight(),
             weight_complexity: default_weight(),
             top_n: None,
+            floor_ok: None,
         }
     }
 }

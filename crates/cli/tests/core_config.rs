@@ -506,6 +506,17 @@ fn workspaces_validate_allows_sibling_prefixes() {
 }
 
 #[test]
+fn hotspot_floor_ok_override_round_trips() {
+    let cfg = r"
+        [metrics.hotspot]
+        enabled = true
+        floor_ok = 50.0
+    ";
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    assert_eq!(parsed.metrics.hotspot.floor_ok, Some(50.0));
+}
+
+#[test]
 fn workspace_metric_overrides_round_trip() {
     let cfg = r#"
         [[project.workspaces]]
