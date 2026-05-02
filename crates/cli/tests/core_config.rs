@@ -506,25 +506,33 @@ fn workspaces_validate_allows_sibling_prefixes() {
 }
 
 #[test]
-fn workspace_exclude_paths_validate_rejects_empty() {
-    let cfg = r#"
+fn workspace_exclude_paths_validate_accepts_empty_and_comment_lines() {
+    // Gitignore lets empty lines and `#` comments pass through; both
+    // are no-ops at match time but keep config blocks readable.
+    let cfg = r##"
         [[project.workspaces]]
         path = "packages/web"
-        exclude_paths = [""]
-    "#;
+        exclude_paths = ["", "# hand-curated below", "vendor/"]
+    "##;
     let parsed = Config::from_toml_str(cfg).unwrap();
-    assert!(parsed.validate(Path::new("/heal/config.toml")).is_err());
+    parsed
+        .validate(Path::new("/heal/config.toml"))
+        .expect("empty + comment lines should validate");
 }
 
 #[test]
-fn workspace_exclude_paths_validate_rejects_absolute() {
+fn workspace_exclude_paths_validate_accepts_anchored_pattern() {
+    // Leading `/` is gitignore-significant (anchor to workspace
+    // root) — the translator preserves it as `/<workspace>/<rest>`.
     let cfg = r#"
         [[project.workspaces]]
         path = "packages/web"
-        exclude_paths = ["/abs/path"]
+        exclude_paths = ["/build", "/dist/"]
     "#;
     let parsed = Config::from_toml_str(cfg).unwrap();
-    assert!(parsed.validate(Path::new("/heal/config.toml")).is_err());
+    parsed
+        .validate(Path::new("/heal/config.toml"))
+        .expect("anchored workspace excludes are valid");
 }
 
 #[test]
@@ -539,10 +547,11 @@ fn workspace_exclude_paths_validate_rejects_dotdot() {
 }
 
 #[test]
-fn observer_excluded_paths_prefixes_workspace_excludes() {
-    // `vendor/` declared inside `packages/web` becomes the substring
-    // `packages/web/vendor/` so `is_path_excluded` only fires inside
-    // that workspace — `packages/api/vendor/foo.ts` is unaffected.
+fn exclude_lines_translates_unanchored_workspace_excludes() {
+    // `vendor/` is unanchored — under workspace `packages/web` it
+    // becomes `packages/web/**/vendor/` so a gitignore matcher fires
+    // on `packages/web/foo/vendor/x.ts`. `packages/api/vendor/...`
+    // is unaffected (the prefix doesn't match).
     let cfg = r#"
         [git]
         exclude_paths = ["target/"]
@@ -555,33 +564,70 @@ fn observer_excluded_paths_prefixes_workspace_excludes() {
         path = "packages/api"
     "#;
     let parsed = Config::from_toml_str(cfg).unwrap();
-    let excluded = parsed.observer_excluded_paths();
-    // git.exclude_paths preserved.
-    assert!(excluded.iter().any(|p| p == "target/"));
-    // Workspace excludes prefixed.
-    assert!(excluded.iter().any(|p| p == "packages/web/vendor/"));
-    assert!(excluded.iter().any(|p| p == "packages/web/generated/"));
-    // packages/api has no exclude_paths → no extra entries for it.
-    assert!(!excluded.iter().any(|p| p.starts_with("packages/api/")));
+    let lines = parsed.exclude_lines();
+    assert!(lines.iter().any(|p| p == "target/"));
+    assert!(lines.iter().any(|p| p == "packages/web/**/vendor/"));
+    assert!(lines.iter().any(|p| p == "packages/web/**/generated/"));
+    // packages/api declared no exclude_paths.
+    assert!(!lines.iter().any(|p| p.starts_with("packages/api/")));
 }
 
 #[test]
-fn observer_excluded_paths_handles_leading_slash_in_workspace_exclude() {
-    // Even if the user accidentally writes `/vendor`, the resulting
-    // pattern strips the leading slash so the prefix join produces a
-    // clean substring `pkg/web/vendor`.
+fn exclude_lines_translates_anchored_workspace_excludes() {
+    // Leading `/` under a workspace anchors at workspace root; the
+    // translation re-anchors at project root via `/<ws>/<rest>`.
     let cfg = r#"
         [[project.workspaces]]
         path = "pkg/web"
-        exclude_paths = ["vendor"]
+        exclude_paths = ["/build", "/dist/"]
     "#;
-    // ^ This config validates fine. We rely on the trim_start_matches
-    // in observer_excluded_paths to handle a leading slash if it
-    // somehow got through (validate now rejects it, but the prefix
-    // join is defensive).
     let parsed = Config::from_toml_str(cfg).unwrap();
-    let excluded = parsed.observer_excluded_paths();
-    assert!(excluded.iter().any(|p| p == "pkg/web/vendor"));
+    let lines = parsed.exclude_lines();
+    assert!(lines.iter().any(|p| p == "/pkg/web/build"));
+    assert!(lines.iter().any(|p| p == "/pkg/web/dist/"));
+}
+
+#[test]
+fn exclude_lines_preserves_workspace_negation() {
+    // `!keep.log` should re-attach the `!` after body translation.
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "pkg/web"
+        exclude_paths = ["*.log", "!keep.log"]
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    let lines = parsed.exclude_lines();
+    assert!(lines.iter().any(|p| p == "pkg/web/**/*.log"));
+    assert!(lines.iter().any(|p| p == "!pkg/web/**/keep.log"));
+}
+
+#[test]
+fn validate_accepts_well_formed_gitignore_patterns() {
+    // Sanity: every common gitignore feature parses through the
+    // validation step. Glob, anchored, directory-only, negation,
+    // workspace-translated patterns all build cleanly. The
+    // `r##".."##` delimiter lets us embed `"#` (a literal hash inside
+    // the gitignore comment line) without prematurely closing the
+    // raw string.
+    let cfg = r##"
+        [git]
+        exclude_paths = [
+            "target/",
+            "*.log",
+            "/build",
+            "**/__snapshots__/",
+            "!keep.log",
+            "# comment line",
+        ]
+
+        [[project.workspaces]]
+        path = "pkg/web"
+        exclude_paths = ["vendor/", "**/*.tmp", "/dist", "!keep.tmp"]
+    "##;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    parsed
+        .validate(Path::new("/heal/config.toml"))
+        .expect("well-formed gitignore patterns should validate");
 }
 
 #[test]

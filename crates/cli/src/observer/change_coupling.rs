@@ -45,7 +45,7 @@ use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
-use crate::observer::walk::{is_path_excluded, since_cutoff};
+use crate::observer::walk::{since_cutoff, ExcludeMatcher};
 use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
 
@@ -98,7 +98,7 @@ impl ChangeCouplingObserver {
     pub fn from_config(cfg: &Config) -> Self {
         Self {
             enabled: cfg.metrics.change_coupling.enabled,
-            excluded: cfg.observer_excluded_paths(),
+            excluded: cfg.exclude_lines(),
             since_days: cfg.git.since_days,
             min_coupling: cfg.metrics.change_coupling.min_coupling,
             min_lift: cfg.metrics.change_coupling.min_lift,
@@ -136,6 +136,8 @@ impl ChangeCouplingObserver {
         // loop.
         let workspace_target =
             crate::observer::walk::resolve_workspace_target(root, self.workspace.as_deref(), false);
+        let matcher = ExcludeMatcher::compile(root, &self.excluded)
+            .expect("exclude patterns validated at config load");
 
         for oid_res in revwalk {
             let Ok(oid) = oid_res else {
@@ -151,6 +153,7 @@ impl ChangeCouplingObserver {
                 &repo,
                 &commit,
                 workspace_target.as_deref(),
+                &matcher,
                 &mut pair_counts,
                 &mut file_commits,
             ) {
@@ -184,11 +187,13 @@ impl ChangeCouplingObserver {
     /// Also bumps every surviving file's individual commit counter
     /// (`file_commits`) so the post-pass can distinguish symmetric pairs
     /// from one-way ones.
+    #[allow(clippy::unused_self)] // method form keeps the call site `self.absorb_commit(...)` readable.
     fn absorb_commit(
         &self,
         repo: &Repository,
         commit: &git2::Commit<'_>,
         workspace_target: Option<&Path>,
+        matcher: &ExcludeMatcher,
         pair_counts: &mut HashMap<(PathBuf, PathBuf), u32>,
         file_commits: &mut HashMap<PathBuf, u32>,
     ) -> bool {
@@ -209,14 +214,12 @@ impl ChangeCouplingObserver {
             if path.as_os_str().is_empty() {
                 continue;
             }
-            // Workspace check first (single strip_prefix on already-
-            // resolved target); is_path_excluded allocates a
-            // to_string_lossy + iterates patterns, so it runs only on
-            // paths that survive workspace scoping.
+            // Workspace check (single strip_prefix on already-resolved
+            // target) first — cheaper than the gitignore matcher.
             if !crate::observer::walk::path_under(path, workspace_target) {
                 continue;
             }
-            if is_path_excluded(path, &self.excluded) {
+            if matcher.is_excluded(path, false) {
                 continue;
             }
             paths.insert(path.to_path_buf());

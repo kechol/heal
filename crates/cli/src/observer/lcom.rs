@@ -48,7 +48,7 @@ use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 use crate::observer::complexity::{parse, ParsedFile};
 use crate::observer::lang::Language;
-use crate::observer::walk::walk_supported_files_under;
+use crate::observer::walk::{walk_supported_files_under, ExcludeMatcher};
 use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
 
@@ -68,7 +68,7 @@ impl LcomObserver {
     pub fn from_config(cfg: &Config) -> Self {
         Self {
             enabled: cfg.metrics.lcom.enabled,
-            excluded: cfg.observer_excluded_paths(),
+            excluded: cfg.exclude_lines(),
             min_cluster_count: cfg.metrics.lcom.min_cluster_count,
             workspace: None,
         }
@@ -83,7 +83,9 @@ impl LcomObserver {
         if !self.enabled {
             return report;
         }
-        for path in walk_supported_files_under(root, &self.excluded, self.workspace.as_deref()) {
+        let matcher = ExcludeMatcher::compile(root, &self.excluded)
+            .expect("exclude patterns validated at config load");
+        for path in walk_supported_files_under(root, &matcher, self.workspace.as_deref()) {
             let Some(lang) = Language::from_path(&path) else {
                 continue;
             };

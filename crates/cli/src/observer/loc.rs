@@ -57,7 +57,10 @@ impl LocReport {
 #[derive(Debug, Clone, Default)]
 pub struct LocObserver {
     /// Substrings checked against every visited path; matches are skipped.
-    /// (tokei's `excluded` argument is substring-based, not glob-based.)
+    /// Gitignore-style exclude lines applied to the post-tokei file
+    /// list (tokei's own `excluded` argument has substring semantics
+    /// that don't match HEAL's gitignore contract; we filter
+    /// `lang.reports` ourselves and re-aggregate).
     pub excluded: Vec<String>,
     /// Language names (matching `LanguageType::name`) to drop from the report
     /// entirely. Useful for excluding lockfiles, JSON dumps, etc.
@@ -72,7 +75,7 @@ impl LocObserver {
     #[must_use]
     pub fn from_config(cfg: &Config) -> Self {
         Self {
-            excluded: cfg.observer_excluded_paths(),
+            excluded: cfg.exclude_lines(),
             exclude_languages: Vec::new(),
         }
     }
@@ -80,16 +83,17 @@ impl LocObserver {
     /// Run the scan and produce a `LocReport`. Pure function over `root`.
     pub fn scan(&self, root: &Path) -> LocReport {
         let mut languages = Languages::new();
-        let excluded_refs: Vec<&str> = self.excluded.iter().map(String::as_str).collect();
         let paths = [root];
-        languages.get_statistics(&paths, &excluded_refs, &TokeiConfig::default());
+        // Pass an empty exclude list to tokei — its `&[&str]` substring
+        // semantics don't match HEAL's gitignore DSL. Filter the
+        // per-file `reports` ourselves below and re-aggregate.
+        languages.get_statistics(&paths, &[], &TokeiConfig::default());
+        let matcher = crate::observer::walk::ExcludeMatcher::compile(root, &self.excluded)
+            .expect("exclude patterns validated at config load");
 
         let mut entries = Vec::with_capacity(languages.len());
         let mut totals = LineCounts::default();
         for (lang_type, lang) in &languages {
-            if lang.reports.is_empty() {
-                continue;
-            }
             let name = lang_type.name().to_string();
             if self
                 .exclude_languages
@@ -98,16 +102,37 @@ impl LocObserver {
             {
                 continue;
             }
-            totals.code += lang.code;
-            totals.comments += lang.comments;
-            totals.blanks += lang.blanks;
+            // Re-aggregate from the surviving per-file reports so the
+            // language totals reflect post-exclude counts. tokei keeps
+            // `lang.code` etc. as the unfiltered sum, which would
+            // overstate after a `vendor/` exclusion drops half the
+            // files.
+            let mut code = 0usize;
+            let mut comments = 0usize;
+            let mut blanks = 0usize;
+            let mut files = 0usize;
+            for report in &lang.reports {
+                if matcher.is_excluded(&report.name, false) {
+                    continue;
+                }
+                code += report.stats.code;
+                comments += report.stats.comments;
+                blanks += report.stats.blanks;
+                files += 1;
+            }
+            if files == 0 {
+                continue;
+            }
+            totals.code += code;
+            totals.comments += comments;
+            totals.blanks += blanks;
             entries.push(LanguageStats {
                 name,
-                files: lang.reports.len(),
+                files,
                 counts: LineCounts {
-                    code: lang.code,
-                    comments: lang.comments,
-                    blanks: lang.blanks,
+                    code,
+                    comments,
+                    blanks,
                 },
             });
         }

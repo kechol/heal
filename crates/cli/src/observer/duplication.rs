@@ -32,7 +32,7 @@ use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
 use crate::observer::complexity::{parse, ParsedFile};
 use crate::observer::lang::Language;
-use crate::observer::walk::walk_supported_files_under;
+use crate::observer::walk::{walk_supported_files_under, ExcludeMatcher};
 use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
 
@@ -62,7 +62,7 @@ impl DuplicationObserver {
     pub fn from_config(cfg: &Config) -> Self {
         Self {
             enabled: cfg.metrics.duplication.enabled,
-            excluded: cfg.observer_excluded_paths(),
+            excluded: cfg.exclude_lines(),
             min_tokens: cfg.metrics.duplication.min_tokens,
             workspace: None,
         }
@@ -77,9 +77,11 @@ impl DuplicationObserver {
         if !self.enabled || self.min_tokens == 0 {
             return report;
         }
+        let matcher = ExcludeMatcher::compile(root, &self.excluded)
+            .expect("exclude patterns validated at config load");
         let window = self.min_tokens as usize;
         let mut files: Vec<FileTokens> = Vec::new();
-        for path in walk_supported_files_under(root, &self.excluded, self.workspace.as_deref()) {
+        for path in walk_supported_files_under(root, &matcher, self.workspace.as_deref()) {
             let Some(lang) = Language::from_path(&path) else {
                 continue;
             };

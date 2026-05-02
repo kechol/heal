@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::config::Config;
 
-use crate::observer::walk::{is_path_excluded, path_under, resolve_workspace_target, since_cutoff};
+use crate::observer::walk::{path_under, resolve_workspace_target, since_cutoff, ExcludeMatcher};
 use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 
 impl_workspace_builder!(ChurnObserver);
@@ -44,7 +44,7 @@ impl ChurnObserver {
     pub fn from_config(cfg: &Config) -> Self {
         Self {
             enabled: cfg.metrics.churn.enabled,
-            excluded: cfg.observer_excluded_paths(),
+            excluded: cfg.exclude_lines(),
             since_days: cfg.git.since_days,
             workspace: None,
         }
@@ -81,6 +81,8 @@ impl ChurnObserver {
         // target is resolved as relative too — no per-call `root.join`
         // inside the diff loop.
         let workspace_target = resolve_workspace_target(root, self.workspace.as_deref(), false);
+        let matcher = ExcludeMatcher::compile(root, &self.excluded)
+            .expect("exclude patterns validated at config load");
 
         for oid_res in revwalk {
             let Ok(oid) = oid_res else {
@@ -94,8 +96,13 @@ impl ChurnObserver {
                 // window we're done.
                 break;
             }
-            let contributed =
-                self.absorb_commit(&repo, &commit, workspace_target.as_deref(), &mut per_file);
+            let contributed = self.absorb_commit(
+                &repo,
+                &commit,
+                workspace_target.as_deref(),
+                &matcher,
+                &mut per_file,
+            );
             // Without a workspace filter, count every in-window commit;
             // with one, count only commits that touched ≥1 in-workspace
             // file so the number reflects activity *in* this workspace.
@@ -126,11 +133,13 @@ impl ChurnObserver {
     /// list and optional workspace) and contributed to `per_file`.
     /// Callers use the bool to decide whether the commit should count
     /// toward `totals.commits` under workspace scoping.
+    #[allow(clippy::unused_self)] // method form keeps the call site `self.absorb_commit(...)` readable.
     fn absorb_commit(
         &self,
         repo: &Repository,
         commit: &git2::Commit<'_>,
         workspace_target: Option<&Path>,
+        matcher: &ExcludeMatcher,
         per_file: &mut BTreeMap<PathBuf, FileChurn>,
     ) -> bool {
         let Ok(commit_tree) = commit.tree() else {
@@ -153,7 +162,8 @@ impl ChurnObserver {
             if !path_under(path, workspace_target) {
                 continue;
             }
-            if is_path_excluded(path, &self.excluded) {
+            // git2 yields files only (no dir deltas), so is_dir = false.
+            if matcher.is_excluded(path, false) {
                 continue;
             }
             paths_in_commit.insert(path.to_path_buf());

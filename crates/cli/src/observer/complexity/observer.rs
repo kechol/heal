@@ -13,7 +13,7 @@ use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
 use crate::observer::complexity::{analyze, parse, FunctionMetric};
 use crate::observer::lang::Language;
-use crate::observer::walk::walk_supported_files_under;
+use crate::observer::walk::{walk_supported_files_under, ExcludeMatcher};
 use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
 
@@ -21,7 +21,7 @@ impl_workspace_builder!(ComplexityObserver);
 
 #[derive(Debug, Clone, Default)]
 pub struct ComplexityObserver {
-    /// Substrings checked against every visited path; matches are skipped.
+    /// Gitignore-style exclude lines applied to every visited path.
     /// Mirrors `LocObserver::excluded` so excludes behave consistently.
     pub excluded: Vec<String>,
     pub ccn_enabled: bool,
@@ -39,7 +39,7 @@ impl ComplexityObserver {
     #[must_use]
     pub fn from_config(cfg: &Config) -> Self {
         Self {
-            excluded: cfg.observer_excluded_paths(),
+            excluded: cfg.exclude_lines(),
             ccn_enabled: cfg.metrics.ccn.enabled,
             cognitive_enabled: cfg.metrics.cognitive.enabled,
             workspace: None,
@@ -54,9 +54,11 @@ impl ComplexityObserver {
             return ComplexityReport::default();
         }
 
+        let matcher = ExcludeMatcher::compile(root, &self.excluded)
+            .expect("exclude patterns validated at config load");
         let mut files: Vec<FileComplexity> = Vec::new();
         let mut totals = ComplexityTotals::default();
-        for path in walk_supported_files_under(root, &self.excluded, self.workspace.as_deref()) {
+        for path in walk_supported_files_under(root, &matcher, self.workspace.as_deref()) {
             let lang = Language::from_path(&path).expect("walker filters by Language::from_path");
             let Ok(source) = std::fs::read_to_string(&path) else {
                 continue;

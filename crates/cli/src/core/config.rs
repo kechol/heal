@@ -57,11 +57,13 @@ pub struct WorkspaceOverlay {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primary_language: Option<String>,
     /// Workspace-local extra excludes layered on top of
-    /// `git.exclude_paths` and `metrics.loc.exclude_paths`. Paths are
-    /// **workspace-relative** — `["vendor/"]` under
-    /// `path = "packages/web"` excludes `packages/web/vendor/...` but
-    /// leaves other workspaces alone. Substring match (same semantics
-    /// as the global lists), not glob.
+    /// `git.exclude_paths` and `metrics.loc.exclude_paths`. Each entry
+    /// is a `.gitignore` line **relative to the workspace root**:
+    /// `["vendor/"]` under `path = "packages/web"` excludes
+    /// `packages/web/**/vendor/`. Leading `/` anchors at the
+    /// workspace root (translated to project-root + workspace path),
+    /// `!pat` negates a prior exclusion, glob (`*`, `**`, `?`,
+    /// `[abc]`) and `#` comments work as in `.gitignore`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude_paths: Vec<String>,
 }
@@ -71,6 +73,10 @@ pub struct WorkspaceOverlay {
 pub struct GitConfig {
     #[serde(default = "default_since_days")]
     pub since_days: u32,
+    /// Project-wide exclude lines, evaluated as `.gitignore` syntax:
+    /// `target/`, `*.log`, `/build`, `**/__snapshots__/`, `!keep.log`,
+    /// `# comment` all behave as in a real `.gitignore` file. Every
+    /// observer applies these.
     #[serde(default)]
     pub exclude_paths: Vec<String>,
 }
@@ -174,6 +180,9 @@ impl MetricsConfig {
 pub struct LocConfig {
     #[serde(default = "default_true")]
     pub inherit_git_excludes: bool,
+    /// Additional `.gitignore`-style exclude lines layered on top of
+    /// `git.exclude_paths`. Same syntax (glob, anchored, negation,
+    /// directory-only).
     #[serde(default)]
     pub exclude_paths: Vec<String>,
     /// Per-metric override for `metrics.top_n` — only the top languages list.
@@ -828,13 +837,21 @@ impl Config {
 
     /// Cross-field invariants. Currently checks `[[project.workspaces]]`:
     /// paths are non-empty, slash-separated, repo-root-relative, no
-    /// duplicates, no nesting (one workspace path being a strict
-    /// prefix of another).
+    /// duplicates, no nesting; and that every entry in
+    /// `git.exclude_paths`, `metrics.loc.exclude_paths`, and each
+    /// workspace's `exclude_paths` parses as `.gitignore` syntax.
     pub fn validate(&self, path: &Path) -> Result<()> {
         validate_workspaces(&self.project.workspaces).map_err(|message| Error::ConfigInvalid {
             path: path.to_path_buf(),
-            message,
-        })
+            message: message.clone(),
+        })?;
+        validate_gitignore_lines(&self.exclude_lines()).map_err(|message| {
+            Error::ConfigInvalid {
+                path: path.to_path_buf(),
+                message,
+            }
+        })?;
+        Ok(())
     }
 
     /// Serialize back to TOML. The struct is owned so this is infallible
@@ -852,32 +869,86 @@ impl Config {
         atomic_write(path, body.as_bytes())
     }
 
-    /// The exclude-path list every observer should honor: `git.exclude_paths`
-    /// (when `metrics.loc.inherit_git_excludes` is true) followed by
-    /// `metrics.loc.exclude_paths`. The LOC config holds the canonical
-    /// project-wide exclude set so a single `[metrics.loc]` edit propagates.
+    /// Gitignore lines every observer should honor, in source-order
+    /// precedence: `git.exclude_paths` (when
+    /// `metrics.loc.inherit_git_excludes` is true) followed by
+    /// `metrics.loc.exclude_paths`, then each workspace's
+    /// `[[project.workspaces]].exclude_paths` translated to project-
+    /// root-relative patterns. Each entry is a single `.gitignore`
+    /// line — see `ExcludeMatcher` for the syntax.
+    ///
+    /// Workspace pattern translation:
+    /// - `vendor/` under `pkg/web` → `pkg/web/**/vendor/` (match the
+    ///   directory anywhere inside the workspace).
+    /// - `/build` (anchored) under `pkg/web` → `/pkg/web/build` (anchor
+    ///   propagates to the project root + workspace path).
+    /// - `!keep.log` under `pkg/web` → `!pkg/web/**/keep.log` (negation
+    ///   re-attaches after body translation).
     #[must_use]
-    pub fn observer_excluded_paths(&self) -> Vec<String> {
-        let mut excluded: Vec<String> = if self.metrics.loc.inherit_git_excludes {
+    pub fn exclude_lines(&self) -> Vec<String> {
+        let mut lines: Vec<String> = if self.metrics.loc.inherit_git_excludes {
             self.git.exclude_paths.clone()
         } else {
             Vec::new()
         };
-        excluded.extend(self.metrics.loc.exclude_paths.iter().cloned());
-        // Workspace-local excludes are stored relative to the workspace
-        // root (e.g. `vendor/` under `packages/web`). Prepend the
-        // workspace path so the substring-match in `is_path_excluded`
-        // only fires on files inside that workspace — no observer-side
-        // scoping is needed because `pkg/web/vendor/` simply won't
-        // appear in `pkg/api/...` paths.
+        lines.extend(self.metrics.loc.exclude_paths.iter().cloned());
         for ws in &self.project.workspaces {
             let prefix = ws.path.trim_end_matches('/');
             for ex in &ws.exclude_paths {
-                let suffix = ex.trim_start_matches('/');
-                excluded.push(format!("{prefix}/{suffix}"));
+                lines.push(translate_workspace_pattern(prefix, ex));
             }
         }
-        excluded
+        lines
+    }
+}
+
+/// Verify each line parses as `.gitignore` syntax. Builds a throwaway
+/// matcher against an arbitrary root since we only care about parser
+/// errors, not match results — `Path::new("/")` works on every
+/// platform we support. Returns the first malformed line so the
+/// caller can surface a precise schema error at config-load time.
+fn validate_gitignore_lines(lines: &[String]) -> std::result::Result<(), String> {
+    if lines.is_empty() {
+        return Ok(());
+    }
+    let mut builder = ignore::gitignore::GitignoreBuilder::new(Path::new("/"));
+    for line in lines {
+        if let Err(e) = builder.add_line(None, line) {
+            return Err(format!("invalid gitignore pattern `{line}`: {e}"));
+        }
+    }
+    builder
+        .build()
+        .map(|_| ())
+        .map_err(|e| format!("gitignore matcher build failed: {e}"))
+}
+
+/// Rewrite a workspace-relative `.gitignore` line so it works as a
+/// project-root-relative pattern. `!`-negation is preserved by stripping
+/// it before translation and re-attaching it after; comments and empty
+/// lines pass through unchanged so users can keep them in workspace
+/// `exclude_paths` arrays for clarity.
+#[must_use]
+pub(crate) fn translate_workspace_pattern(workspace_path: &str, line: &str) -> String {
+    let trimmed = line.trim_start();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return line.to_owned();
+    }
+    let (negated, body) = trimmed
+        .strip_prefix('!')
+        .map_or((false, trimmed), |rest| (true, rest));
+    let translated = if let Some(anchored) = body.strip_prefix('/') {
+        // `/foo` under `pkg/web` → `/pkg/web/foo`. Anchor propagates
+        // from "workspace root" to "project root + workspace path".
+        format!("/{workspace_path}/{anchored}")
+    } else {
+        // Unanchored → match anywhere inside the workspace.
+        format!("{workspace_path}/**/{body}")
+    };
+    if negated {
+        format!("!{translated}")
+    } else {
+        translated
     }
 }
 
@@ -908,17 +979,18 @@ fn validate_workspaces(workspaces: &[WorkspaceOverlay]) -> std::result::Result<(
         }
         for ex in &w.exclude_paths {
             let e = ex.trim();
-            if e.is_empty() {
-                return Err(format!(
-                    "[[project.workspaces]] `{p}` has an empty `exclude_paths` entry"
-                ));
+            // Comments and empty lines are valid gitignore content;
+            // pass them through. Leading `!` is negation — strip it
+            // before semantic checks so the body decides.
+            let body = e.strip_prefix('!').unwrap_or(e);
+            if body.is_empty() || body.starts_with('#') {
+                continue;
             }
-            if e.starts_with('/') {
-                return Err(format!(
-                    "[[project.workspaces]] `{p}` exclude `{e}` must be workspace-relative (no leading `/`)"
-                ));
-            }
-            if e.split('/').any(|seg| seg == "..") {
+            // Leading `/` is gitignore-significant ("anchor to
+            // workspace root"); the translator preserves it. Only
+            // reject `..` since the workspace-prefix translation
+            // can't represent escaping the workspace cleanly.
+            if body.split('/').any(|seg| seg == "..") {
                 return Err(format!(
                     "[[project.workspaces]] `{p}` exclude `{e}` must not contain `..`"
                 ));

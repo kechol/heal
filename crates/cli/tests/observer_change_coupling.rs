@@ -243,7 +243,10 @@ fn excluded_substrings_skip_paths() {
 
     let observer = ChangeCouplingObserver {
         enabled: true,
-        excluded: vec!["vendor".to_string()],
+        // Gitignore directory pattern: `vendor/` matches the
+        // `vendor` directory anywhere, dropping `vendor/v.rs` from
+        // the diff.
+        excluded: vec!["vendor/".to_string()],
         since_days: 90,
         min_coupling: 1,
         min_lift: 0.0,

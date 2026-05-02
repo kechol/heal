@@ -2,19 +2,76 @@
 //!
 //! Uses `ignore::WalkBuilder` (the same crate `tokei` uses internally) so the
 //! walk respects `.gitignore`, skips `.git/`, and ignores hidden files by
-//! default. The optional `excluded` substring list overlays user-configured
-//! excludes (mirroring `LocObserver::scan`'s contract).
+//! default. User-configured excludes are evaluated through
+//! [`ExcludeMatcher`], which interprets patterns as `.gitignore` syntax —
+//! the same DSL every developer already knows from `.gitignore`,
+//! `.dockerignore`, ripgrep, etc.
 
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use ignore::WalkBuilder;
 
 use crate::observer::lang::Language;
 
+/// Compiled `.gitignore`-style exclusion matcher used by every observer.
+/// Patterns understand the full gitignore DSL: glob (`*`, `?`, `**`),
+/// directory-only (`foo/`), root anchoring (`/foo`), negation (`!keep`),
+/// `#` comments. Empty pattern lists short-circuit to "match nothing"
+/// without paying the matcher cost.
+#[derive(Debug)]
+pub struct ExcludeMatcher {
+    inner: Option<Gitignore>,
+}
+
+impl ExcludeMatcher {
+    /// Empty matcher — `is_excluded` always returns `false`. Used by
+    /// observers that haven't (or don't need to) read the user's
+    /// config.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self { inner: None }
+    }
+
+    /// Compile `patterns` against `root`. Each entry is a single
+    /// `.gitignore` line (relative to `root`). Returns the first
+    /// `globset` build error if any pattern is malformed so callers can
+    /// surface a precise schema error at config-load time.
+    pub fn compile(root: &Path, patterns: &[String]) -> Result<Self, ignore::Error> {
+        if patterns.is_empty() {
+            return Ok(Self::empty());
+        }
+        let mut builder = GitignoreBuilder::new(root);
+        for line in patterns {
+            builder.add_line(None, line)?;
+        }
+        Ok(Self {
+            inner: Some(builder.build()?),
+        })
+    }
+
+    /// True iff `path` matches an exclude rule (and isn't whitelisted
+    /// by a later `!pattern`). Walks ancestors so a directory pattern
+    /// like `vendor/` correctly excludes `vendor/foo.ts` — the
+    /// straight `matched` check only fires on the directory entry
+    /// itself, missing files nested inside.
+    ///
+    /// `path` may be absolute (walk-based observers from
+    /// `WalkBuilder`) or relative to the repo root (git2 diff
+    /// observers); both work because `Gitignore` accepts either, with
+    /// relative paths interpreted against the builder's `root`.
+    #[must_use]
+    pub fn is_excluded(&self, path: &Path, is_dir: bool) -> bool {
+        let Some(gi) = self.inner.as_ref() else {
+            return false;
+        };
+        gi.matched_path_or_any_parents(path, is_dir).is_ignore()
+    }
+}
+
 /// Walk `root`, returning every file whose extension dispatches to a
-/// supported `Language` and whose stringified path doesn't contain any of the
-/// `excluded` substrings.
+/// supported `Language` and which isn't excluded by `matcher`.
 ///
 /// `include_under` (when set) drops any path that doesn't lie under the
 /// given sub-path; the check is segment-wise so `pkg/web` does not
@@ -23,7 +80,7 @@ use crate::observer::lang::Language;
 #[must_use]
 pub(crate) fn walk_supported_files_under(
     root: &Path,
-    excluded: &[String],
+    matcher: &ExcludeMatcher,
     include_under: Option<&Path>,
 ) -> Vec<PathBuf> {
     // Resolve the workspace target once (an absolute join with `root`)
@@ -42,14 +99,12 @@ pub(crate) fn walk_supported_files_under(
         .filter_map(|entry| {
             let path = entry.into_path();
             Language::from_path(&path)?;
-            // Workspace check first — it's a single strip_prefix on
-            // already-resolved targets, while is_path_excluded
-            // allocates a `to_string_lossy` then iterates patterns.
-            // Fast filter before slow filter.
+            // Workspace check first — single strip_prefix on already-
+            // resolved targets is cheaper than a gitignore match.
             if !path_under(&path, target.as_deref()) {
                 return None;
             }
-            if is_path_excluded(&path, excluded) {
+            if matcher.is_excluded(&path, /*is_dir=*/ false) {
                 return None;
             }
             Some(path)
@@ -91,17 +146,6 @@ pub(crate) fn resolve_workspace_target(
 #[must_use]
 pub(crate) fn path_under(path: &Path, target: Option<&Path>) -> bool {
     target.is_none_or(|t| path.strip_prefix(t).is_ok())
-}
-
-/// Substring-match exclusion check shared by every observer that walks
-/// project paths. Empty `patterns` is the fast path.
-#[must_use]
-pub(crate) fn is_path_excluded(path: &Path, patterns: &[String]) -> bool {
-    if patterns.is_empty() {
-        return false;
-    }
-    let s = path.to_string_lossy();
-    patterns.iter().any(|pat| s.contains(pat.as_str()))
 }
 
 /// Unix-second cutoff for git-history observers: "anything older than
