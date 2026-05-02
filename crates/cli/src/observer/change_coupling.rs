@@ -70,6 +70,11 @@ pub struct ChangeCouplingObserver {
     /// file's edits must coincide with the partner. Below it, the pair
     /// is a `OneWay` flow.
     pub symmetric_threshold: f64,
+    /// Optional workspace sub-path. When set, files outside drop from
+    /// the per-commit changeset *before* pair counting; the resulting
+    /// `commits_considered` shrinks to commits that touched ≥1 in-
+    /// workspace file. Lift naturally reflects the smaller universe.
+    pub workspace: Option<PathBuf>,
 }
 
 impl Default for ChangeCouplingObserver {
@@ -81,6 +86,7 @@ impl Default for ChangeCouplingObserver {
             min_coupling: 0,
             min_lift: 0.0,
             symmetric_threshold: default_symmetric_threshold(),
+            workspace: None,
         }
     }
 }
@@ -95,7 +101,14 @@ impl ChangeCouplingObserver {
             min_coupling: cfg.metrics.change_coupling.min_coupling,
             min_lift: cfg.metrics.change_coupling.min_lift,
             symmetric_threshold: cfg.metrics.change_coupling.symmetric_threshold,
+            workspace: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_workspace(mut self, workspace: Option<PathBuf>) -> Self {
+        self.workspace = workspace;
+        self
     }
 
     #[must_use]
@@ -133,7 +146,7 @@ impl ChangeCouplingObserver {
             if commit.time().seconds() < cutoff_secs {
                 break;
             }
-            if self.absorb_commit(&repo, &commit, &mut pair_counts, &mut file_commits) {
+            if self.absorb_commit(&repo, root, &commit, &mut pair_counts, &mut file_commits) {
                 commits_considered = commits_considered.saturating_add(1);
             }
         }
@@ -167,6 +180,7 @@ impl ChangeCouplingObserver {
     fn absorb_commit(
         &self,
         repo: &Repository,
+        root: &Path,
         commit: &git2::Commit<'_>,
         pair_counts: &mut HashMap<(PathBuf, PathBuf), u32>,
         file_commits: &mut HashMap<PathBuf, u32>,
@@ -180,12 +194,20 @@ impl ChangeCouplingObserver {
             return false;
         };
 
+        let workspace = self.workspace.as_deref();
         let mut paths: BTreeSet<PathBuf> = BTreeSet::new();
         for delta in diff.deltas() {
             let Some(path) = delta.new_file().path() else {
                 continue;
             };
             if path.as_os_str().is_empty() || is_path_excluded(path, &self.excluded) {
+                continue;
+            }
+            // Workspace scoping: drop files outside the requested
+            // sub-path before pair counting, so cross-workspace pairs
+            // never enter `pair_counts` and `file_commits` reflect only
+            // the in-workspace activity.
+            if !crate::observer::walk::path_inside(path, root, workspace) {
                 continue;
             }
             paths.insert(path.to_path_buf());

@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::config::Config;
 
-use crate::observer::walk::{is_path_excluded, since_cutoff};
+use crate::observer::walk::{is_path_excluded, path_inside, since_cutoff};
 use crate::observer::{ObservationMeta, Observer};
 
 /// Observer toggle + window inputs. Stateless; constructing one is cheap.
@@ -30,6 +30,11 @@ pub struct ChurnObserver {
     pub excluded: Vec<String>,
     /// Inclusive lookback window in days, sourced from `git.since_days`.
     pub since_days: u32,
+    /// Optional workspace sub-path. When set, files outside drop from
+    /// per-file rows AND `totals.commits` recounts to "commits that
+    /// touched ≥1 in-workspace file" so the number reflects activity
+    /// in this workspace specifically.
+    pub workspace: Option<PathBuf>,
 }
 
 impl ChurnObserver {
@@ -39,7 +44,14 @@ impl ChurnObserver {
             enabled: cfg.metrics.churn.enabled,
             excluded: cfg.observer_excluded_paths(),
             since_days: cfg.git.since_days,
+            workspace: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_workspace(mut self, workspace: Option<PathBuf>) -> Self {
+        self.workspace = workspace;
+        self
     }
 
     /// Walk the repository at (or above) `root` and accumulate per-file
@@ -82,8 +94,14 @@ impl ChurnObserver {
                 // window we're done.
                 break;
             }
-            commit_oids.insert(oid);
-            self.absorb_commit(&repo, &commit, &mut per_file);
+            let contributed = self.absorb_commit(&repo, root, &commit, &mut per_file);
+            // Without a workspace filter, count every in-window commit
+            // (preserves pre-PR-M2 behaviour). With one, count only
+            // commits that touched ≥1 in-workspace file so the number
+            // reflects activity *in* this workspace.
+            if self.workspace.is_none() || contributed {
+                commit_oids.insert(oid);
+            }
         }
 
         let mut files: Vec<FileChurn> = per_file.into_values().collect();
@@ -103,21 +121,28 @@ impl ChurnObserver {
     /// Diff `commit` against its first parent and fold per-file commit
     /// counts + line stats into `per_file`. Errors and zero-delta commits
     /// are silently skipped — churn is best-effort over historical data.
+    ///
+    /// Returns `true` if at least one path passed every filter (exclude
+    /// list and optional workspace) and contributed to `per_file`.
+    /// Callers use the bool to decide whether the commit should count
+    /// toward `totals.commits` under workspace scoping.
     fn absorb_commit(
         &self,
         repo: &Repository,
+        root: &Path,
         commit: &git2::Commit<'_>,
         per_file: &mut BTreeMap<PathBuf, FileChurn>,
-    ) {
+    ) -> bool {
         let Ok(commit_tree) = commit.tree() else {
-            return;
+            return false;
         };
         let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
         let Ok(diff) = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit_tree), None)
         else {
-            return;
+            return false;
         };
 
+        let workspace = self.workspace.as_deref();
         let mut paths_in_commit: BTreeSet<PathBuf> = BTreeSet::new();
         for delta in diff.deltas() {
             let Some(path) = delta.new_file().path() else {
@@ -126,10 +151,13 @@ impl ChurnObserver {
             if path.as_os_str().is_empty() || is_path_excluded(path, &self.excluded) {
                 continue;
             }
+            if !path_inside(path, root, workspace) {
+                continue;
+            }
             paths_in_commit.insert(path.to_path_buf());
         }
         if paths_in_commit.is_empty() {
-            return;
+            return false;
         }
 
         let mut local_added: HashMap<PathBuf, u32> = HashMap::new();
@@ -171,6 +199,7 @@ impl ChurnObserver {
                 .lines_deleted
                 .saturating_add(local_deleted.get(path).copied().unwrap_or(0));
         }
+        true
     }
 }
 

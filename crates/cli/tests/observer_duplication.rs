@@ -11,6 +11,7 @@ fn observer(min_tokens: u32) -> DuplicationObserver {
         enabled: true,
         excluded: Vec::new(),
         min_tokens,
+        workspace: None,
     }
 }
 
@@ -107,6 +108,7 @@ fn excluded_substrings_skip_files() {
         enabled: true,
         excluded: vec!["vendor".to_string()],
         min_tokens: 20,
+        workspace: None,
     };
     let report = observer.scan(dir.path());
     // Only one file remains after exclusion → nothing to compare against.

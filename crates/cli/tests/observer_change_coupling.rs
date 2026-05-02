@@ -29,6 +29,7 @@ fn observer(min_coupling: u32) -> ChangeCouplingObserver {
         // their hand-built repos passing without rebuilding for chance.
         min_lift: 0.0,
         symmetric_threshold: 0.5,
+        workspace: None,
     }
 }
 
@@ -247,6 +248,7 @@ fn excluded_substrings_skip_paths() {
         min_coupling: 1,
         min_lift: 0.0,
         symmetric_threshold: 0.5,
+        workspace: None,
     };
     let report = observer.scan(dir.path());
     assert_eq!(report.pairs.len(), 1);
@@ -347,6 +349,7 @@ fn symmetric_threshold_above_one_forces_one_way() {
         min_coupling: 2,
         min_lift: 0.0,
         symmetric_threshold: 1.5,
+        workspace: None,
     };
     let report = strict.scan(dir.path());
     assert_eq!(report.pairs.len(), 1);

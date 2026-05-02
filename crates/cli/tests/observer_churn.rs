@@ -23,6 +23,7 @@ fn enabled_observer() -> ChurnObserver {
         enabled: true,
         excluded: Vec::new(),
         since_days: 90,
+        workspace: None,
     }
 }
 
@@ -101,6 +102,7 @@ fn since_days_excludes_old_commits() {
         enabled: true,
         excluded: Vec::new(),
         since_days: 90,
+        workspace: None,
     }
     .scan(dir.path());
 
@@ -131,6 +133,7 @@ fn excluded_substrings_skip_paths() {
         enabled: true,
         excluded: vec!["vendor".to_string()],
         since_days: 90,
+        workspace: None,
     };
     let report = observer.scan(dir.path());
     let paths: Vec<String> = report
@@ -139,4 +142,45 @@ fn excluded_substrings_skip_paths() {
         .map(|f| f.path.to_string_lossy().into_owned())
         .collect();
     assert_eq!(paths, vec!["src/keep.rs".to_string()]);
+}
+
+#[test]
+fn workspace_scope_filters_files_and_recomputes_commits() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = init_repo(dir.path());
+    let now = now_secs();
+
+    // Three commits: two touch packages/web only, one touches packages/api only.
+    commit_files(
+        &repo,
+        &[("packages/web/a.ts", "1\n")],
+        "web only 1",
+        now - 30,
+    );
+    commit_files(
+        &repo,
+        &[("packages/web/b.ts", "1\n")],
+        "web only 2",
+        now - 20,
+    );
+    commit_files(&repo, &[("packages/api/c.ts", "1\n")], "api only", now - 10);
+
+    let report = ChurnObserver {
+        enabled: true,
+        excluded: Vec::new(),
+        since_days: 90,
+        workspace: Some(std::path::PathBuf::from("packages/web")),
+    }
+    .scan(dir.path());
+
+    // Only the two web files survive; api commit drops entirely.
+    let paths: Vec<String> = report
+        .files
+        .iter()
+        .map(|f| f.path.to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(paths.len(), 2);
+    assert!(paths.iter().all(|p| p.starts_with("packages/web/")));
+    // commits_in_workspace recount: 2, not 3.
+    assert_eq!(report.totals.commits, 2);
 }

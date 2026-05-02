@@ -53,6 +53,16 @@ pub enum Command {
         /// narrowing focus.
         #[arg(long, value_enum)]
         metric: Option<MetricKind>,
+        /// Restrict every observer to files under `<path>` (relative
+        /// to the project root). Matches the `[[project.workspaces]]`
+        /// path of one declared workspace; segment-wise prefix so
+        /// `pkg/web` does not match `pkg/webapp`. Each observer scopes
+        /// itself: Loc walks only that sub-tree, walk-based observers
+        /// drop out-of-workspace files, and git-based observers
+        /// recompute `commits_considered` against the in-workspace
+        /// universe so lift / churn totals stay consistent.
+        #[arg(long, value_name = "PATH")]
+        workspace: Option<std::path::PathBuf>,
     },
     /// Browse `.heal/logs/` event entries (commit/edit/stop hook
     /// records). Lightweight metadata; the metric series live in
@@ -406,7 +416,11 @@ impl Cli {
                 json,
             } => commands::init::run(&project, force, yes, no_skills, json),
             Command::Hook { event } => commands::hook::run(&project, event),
-            Command::Metrics { json, metric } => commands::metrics::run(&project, json, metric),
+            Command::Metrics {
+                json,
+                metric,
+                workspace,
+            } => commands::metrics::run(&project, json, metric, workspace.as_deref()),
             Command::Logs(args) => commands::logs::run_logs(&project, &args),
             Command::Snapshots(args) => commands::logs::run_snapshots(&project, &args),
             Command::Checks(args) => commands::logs::run_checks(&project, &args),

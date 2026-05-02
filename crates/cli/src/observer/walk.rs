@@ -15,8 +15,17 @@ use crate::observer::lang::Language;
 /// Walk `root`, returning every file whose extension dispatches to a
 /// supported `Language` and whose stringified path doesn't contain any of the
 /// `excluded` substrings.
+///
+/// `include_under` (when set) drops any path that doesn't lie under the
+/// given sub-path; the check is segment-wise so `pkg/web` does not
+/// match `pkg/webapp`. Used by `heal metrics --workspace <path>` to
+/// scope walk-based observers (Complexity, Lcom, Duplication).
 #[must_use]
-pub(crate) fn walk_supported_files(root: &Path, excluded: &[String]) -> Vec<PathBuf> {
+pub(crate) fn walk_supported_files_under(
+    root: &Path,
+    excluded: &[String],
+    include_under: Option<&Path>,
+) -> Vec<PathBuf> {
     WalkBuilder::new(root)
         // Honor .gitignore even outside a git repo — running `heal metrics`
         // inside a non-git project (or a sub-tree) should still respect the
@@ -31,9 +40,43 @@ pub(crate) fn walk_supported_files(root: &Path, excluded: &[String]) -> Vec<Path
             if is_path_excluded(&path, excluded) {
                 return None;
             }
+            if !path_inside(&path, root, include_under) {
+                return None;
+            }
             Some(path)
         })
         .collect()
+}
+
+/// True when `path` lies inside `under` (segment-wise) or `under` is
+/// `None`. Handles both absolute paths (filesystem walks via
+/// `walk_supported_files_under`) and relative paths (`git2` diffs,
+/// which emit paths relative to the repo root). When `path` is
+/// relative, the comparison is against `under` directly; when
+/// absolute, `under` is joined onto `root` first.
+#[must_use]
+pub(crate) fn path_inside(path: &Path, root: &Path, under: Option<&Path>) -> bool {
+    let Some(under) = under else {
+        return true;
+    };
+    let target = if path.is_absolute() {
+        if under.is_absolute() {
+            under.to_path_buf()
+        } else {
+            root.join(under)
+        }
+    } else {
+        // Relative path — always compare against the relative form of
+        // `under`. An absolute `under` against a relative `path` cannot
+        // match, so bail.
+        if under.is_absolute() {
+            return false;
+        }
+        under.to_path_buf()
+    };
+    // strip_prefix is segment-wise: `pkg/web` matches `pkg/web/foo.ts`
+    // but not `pkg/webapp/foo.ts`.
+    path.strip_prefix(&target).is_ok()
 }
 
 /// Substring-match exclusion check shared by every observer that walks
@@ -57,4 +100,46 @@ pub(crate) fn since_cutoff(since_days: u32) -> i64 {
     };
     let secs = i64::try_from(now.as_secs()).unwrap_or(i64::MAX);
     secs.saturating_sub(i64::from(since_days).saturating_mul(86_400))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn path_inside_returns_true_when_under_unset() {
+        let root = PathBuf::from("/proj");
+        assert!(path_inside(Path::new("/proj/anywhere"), &root, None));
+    }
+
+    #[test]
+    fn path_inside_segment_wise_match() {
+        // `pkg/web` should NOT match `pkg/webapp/foo.ts` even though
+        // the byte-prefix matches — strip_prefix is segment-wise.
+        let root = PathBuf::from("/proj");
+        let under = PathBuf::from("pkg/web");
+        assert!(path_inside(
+            Path::new("/proj/pkg/web/foo.ts"),
+            &root,
+            Some(&under),
+        ));
+        assert!(!path_inside(
+            Path::new("/proj/pkg/webapp/foo.ts"),
+            &root,
+            Some(&under),
+        ));
+    }
+
+    #[test]
+    fn path_inside_handles_absolute_under() {
+        let root = PathBuf::from("/proj");
+        let under = PathBuf::from("/other/loc");
+        assert!(path_inside(
+            Path::new("/other/loc/x.ts"),
+            &root,
+            Some(&under),
+        ));
+        assert!(!path_inside(Path::new("/proj/x.ts"), &root, Some(&under)));
+    }
 }

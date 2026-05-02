@@ -16,6 +16,7 @@ fn enabled_observer() -> ComplexityObserver {
         excluded: Vec::new(),
         ccn_enabled: true,
         cognitive_enabled: true,
+        workspace: None,
     }
 }
 
@@ -28,6 +29,7 @@ fn returns_empty_report_when_both_metrics_disabled() {
         excluded: Vec::new(),
         ccn_enabled: false,
         cognitive_enabled: false,
+        workspace: None,
     };
     let report = observer.scan(dir.path());
     assert!(report.files.is_empty());
@@ -82,6 +84,7 @@ fn excluded_substrings_skip_files() {
         excluded: vec!["vendor".to_string()],
         ccn_enabled: true,
         cognitive_enabled: true,
+        workspace: None,
     };
     let report = observer.scan(dir.path());
     assert_eq!(report.files.len(), 1);

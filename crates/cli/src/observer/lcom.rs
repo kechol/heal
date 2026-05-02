@@ -48,7 +48,7 @@ use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 use crate::observer::complexity::{parse, ParsedFile};
 use crate::observer::lang::Language;
-use crate::observer::walk::walk_supported_files;
+use crate::observer::walk::walk_supported_files_under;
 use crate::observer::{ObservationMeta, Observer};
 use crate::observers::ObserverReports;
 
@@ -57,6 +57,8 @@ pub struct LcomObserver {
     pub enabled: bool,
     pub excluded: Vec<String>,
     pub min_cluster_count: u32,
+    /// Optional workspace sub-path; see `ComplexityObserver::workspace`.
+    pub workspace: Option<PathBuf>,
 }
 
 impl LcomObserver {
@@ -66,7 +68,14 @@ impl LcomObserver {
             enabled: cfg.metrics.lcom.enabled,
             excluded: cfg.observer_excluded_paths(),
             min_cluster_count: cfg.metrics.lcom.min_cluster_count,
+            workspace: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_workspace(mut self, workspace: Option<PathBuf>) -> Self {
+        self.workspace = workspace;
+        self
     }
 
     #[must_use]
@@ -78,7 +87,7 @@ impl LcomObserver {
         if !self.enabled {
             return report;
         }
-        for path in walk_supported_files(root, &self.excluded) {
+        for path in walk_supported_files_under(root, &self.excluded, self.workspace.as_deref()) {
             let Some(lang) = Language::from_path(&path) else {
                 continue;
             };

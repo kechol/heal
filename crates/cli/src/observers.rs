@@ -41,6 +41,20 @@ pub struct ObserverReports {
 /// is built on top of them. The skipped observers' fields fall back to
 /// `Default` (or `None` for the optional ones).
 pub(crate) fn run_all(project: &Path, cfg: &Config, only: Option<MetricKind>) -> ObserverReports {
+    run_all_scoped(project, cfg, only, None)
+}
+
+/// Variant of [`run_all`] that scopes every observer to a sub-path.
+/// `workspace = None` is identical to `run_all`. Used by
+/// `heal metrics --workspace <path>` so each observer's internal walk
+/// or git diff drops out-of-workspace files before producing totals,
+/// pair counts, and so on.
+pub(crate) fn run_all_scoped(
+    project: &Path,
+    cfg: &Config,
+    only: Option<MetricKind>,
+    workspace: Option<&Path>,
+) -> ObserverReports {
     let want = |m: MetricKind| match only {
         None => true,
         Some(o) if o == m => true,
@@ -50,21 +64,34 @@ pub(crate) fn run_all(project: &Path, cfg: &Config, only: Option<MetricKind>) ->
         _ => false,
     };
 
+    let ws_buf = workspace.map(Path::to_path_buf);
+    // Loc bypasses the per-observer `workspace` field — tokei is
+    // pointed at the workspace dir directly so it walks only that
+    // sub-tree. `.gitignore` resolution still climbs to project root
+    // as before via `WalkBuilder::require_git(false)`.
+    let loc_root = workspace.unwrap_or(project);
     let loc = if want(MetricKind::Loc) {
-        LocObserver::from_config(cfg).scan(project)
+        LocObserver::from_config(cfg).scan(loc_root)
     } else {
         LocReport::default()
     };
-    let complexity_observer = ComplexityObserver::from_config(cfg);
+    let complexity_observer = ComplexityObserver::from_config(cfg).with_workspace(ws_buf.clone());
     let complexity = if want(MetricKind::Complexity) {
         complexity_observer.scan(project)
     } else {
         ComplexityReport::default()
     };
-    let churn = (want(MetricKind::Churn) && cfg.metrics.churn.enabled)
-        .then(|| ChurnObserver::from_config(cfg).scan(project));
+    let churn = (want(MetricKind::Churn) && cfg.metrics.churn.enabled).then(|| {
+        ChurnObserver::from_config(cfg)
+            .with_workspace(ws_buf.clone())
+            .scan(project)
+    });
     let change_coupling = (want(MetricKind::ChangeCoupling) && cfg.metrics.change_coupling.enabled)
-        .then(|| ChangeCouplingObserver::from_config(cfg).scan(project))
+        .then(|| {
+            ChangeCouplingObserver::from_config(cfg)
+                .with_workspace(ws_buf.clone())
+                .scan(project)
+        })
         .map(|mut report| {
             crate::observer::change_coupling::classify_and_filter(
                 &mut report,
@@ -72,8 +99,12 @@ pub(crate) fn run_all(project: &Path, cfg: &Config, only: Option<MetricKind>) ->
             );
             report
         });
-    let duplication = (want(MetricKind::Duplication) && cfg.metrics.duplication.enabled)
-        .then(|| DuplicationObserver::from_config(cfg).scan(project));
+    let duplication =
+        (want(MetricKind::Duplication) && cfg.metrics.duplication.enabled).then(|| {
+            DuplicationObserver::from_config(cfg)
+                .with_workspace(ws_buf.clone())
+                .scan(project)
+        });
     let hotspot = match (
         want(MetricKind::Hotspot) && cfg.metrics.hotspot.enabled,
         churn.as_ref(),
@@ -88,8 +119,11 @@ pub(crate) fn run_all(project: &Path, cfg: &Config, only: Option<MetricKind>) ->
         )),
         _ => None,
     };
-    let lcom = (want(MetricKind::Lcom) && cfg.metrics.lcom.enabled)
-        .then(|| LcomObserver::from_config(cfg).scan(project));
+    let lcom = (want(MetricKind::Lcom) && cfg.metrics.lcom.enabled).then(|| {
+        LcomObserver::from_config(cfg)
+            .with_workspace(ws_buf)
+            .scan(project)
+    });
     ObserverReports {
         loc,
         complexity,

@@ -197,11 +197,13 @@ fn scan_runs_underlying_observers() {
             enabled: true,
             excluded: Vec::new(),
             since_days: 90,
+            workspace: None,
         },
         complexity: ComplexityObserver {
             excluded: Vec::new(),
             ccn_enabled: true,
             cognitive_enabled: true,
+            workspace: None,
         },
     };
     let report = observer.scan(dir.path());

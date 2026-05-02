@@ -13,7 +13,7 @@ use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
 use crate::observer::complexity::{analyze, parse, FunctionMetric};
 use crate::observer::lang::Language;
-use crate::observer::walk::walk_supported_files;
+use crate::observer::walk::walk_supported_files_under;
 use crate::observer::{ObservationMeta, Observer};
 use crate::observers::ObserverReports;
 
@@ -24,6 +24,10 @@ pub struct ComplexityObserver {
     pub excluded: Vec<String>,
     pub ccn_enabled: bool,
     pub cognitive_enabled: bool,
+    /// Optional workspace sub-path. When set, the walk skips files
+    /// outside this directory (segment-wise prefix). Used by
+    /// `heal metrics --workspace <path>`.
+    pub workspace: Option<PathBuf>,
 }
 
 impl ComplexityObserver {
@@ -36,7 +40,16 @@ impl ComplexityObserver {
             excluded: cfg.observer_excluded_paths(),
             ccn_enabled: cfg.metrics.ccn.enabled,
             cognitive_enabled: cfg.metrics.cognitive.enabled,
+            workspace: None,
         }
+    }
+
+    /// Restrict the scan to files under `workspace` (relative to `root`
+    /// in `scan`). `None` clears the filter — the default.
+    #[must_use]
+    pub fn with_workspace(mut self, workspace: Option<PathBuf>) -> Self {
+        self.workspace = workspace;
+        self
     }
 
     /// Walk `root`, parse every supported file, and return per-file metrics.
@@ -49,7 +62,7 @@ impl ComplexityObserver {
 
         let mut files: Vec<FileComplexity> = Vec::new();
         let mut totals = ComplexityTotals::default();
-        for path in walk_supported_files(root, &self.excluded) {
+        for path in walk_supported_files_under(root, &self.excluded, self.workspace.as_deref()) {
             let lang = Language::from_path(&path).expect("walker filters by Language::from_path");
             let Ok(source) = std::fs::read_to_string(&path) else {
                 continue;

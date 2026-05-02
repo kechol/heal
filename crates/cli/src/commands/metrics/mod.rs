@@ -27,11 +27,16 @@ use crate::core::config::load_from_project;
 use crate::core::eventlog::{Event, EventLog};
 use crate::core::snapshot::{MetricsSnapshot, SnapshotDelta};
 use crate::core::HealPaths;
-use crate::observers::run_all;
+use crate::observers::run_all_scoped;
 
 use section::{all_sections, SectionCtx};
 
-pub fn run(project: &Path, json_output: bool, metric: Option<MetricKind>) -> Result<()> {
+pub fn run(
+    project: &Path,
+    json_output: bool,
+    metric: Option<MetricKind>,
+    workspace: Option<&Path>,
+) -> Result<()> {
     let paths = HealPaths::new(project);
     let cfg_exists = paths.config().exists();
     let snapshot_segments = EventLog::new(paths.snapshots_dir()).segments()?;
@@ -50,7 +55,9 @@ pub fn run(project: &Path, json_output: bool, metric: Option<MetricKind>) -> Res
     } else {
         None
     };
-    let reports = cfg.as_ref().map(|c| run_all(project, c, metric));
+    let reports = cfg
+        .as_ref()
+        .map(|c| run_all_scoped(project, c, metric, workspace));
 
     let sections = all_sections();
 
@@ -65,6 +72,7 @@ pub fn run(project: &Path, json_output: bool, metric: Option<MetricKind>) -> Res
                 reports.as_ref(),
                 delta.as_ref(),
                 metric,
+                workspace,
                 &sections,
             ))?,
         );
@@ -84,7 +92,14 @@ pub fn run(project: &Path, json_output: bool, metric: Option<MetricKind>) -> Res
 
     let stdout = std::io::stdout();
     let mut w = stdout.lock();
-    write_header(&mut w, project, &paths, segment_count, snapshot_count)?;
+    write_header(
+        &mut w,
+        project,
+        &paths,
+        segment_count,
+        snapshot_count,
+        workspace,
+    )?;
     for s in &sections {
         if !matches_metric(metric, s.metric()) {
             continue;
@@ -103,11 +118,15 @@ fn write_header(
     paths: &HealPaths,
     segment_count: usize,
     snapshot_count: usize,
+    workspace: Option<&Path>,
 ) -> io::Result<()> {
     writeln!(w, "HEAL metrics (project: {})", project.display())?;
     writeln!(w, "  config:            {}", paths.config().display())?;
     writeln!(w, "  snapshot segments: {segment_count}")?;
     writeln!(w, "  snapshots:         {snapshot_count}")?;
+    if let Some(ws) = workspace {
+        writeln!(w, "  workspace:         {}", ws.display())?;
+    }
     Ok(())
 }
 
@@ -126,6 +145,7 @@ fn build_json(
     reports: Option<&crate::observers::ObserverReports>,
     delta: Option<&SnapshotDelta>,
     metric: Option<MetricKind>,
+    workspace: Option<&Path>,
     sections: &[Box<dyn section::MetricSection>],
 ) -> serde_json::Value {
     let mut payload = serde_json::Map::new();
@@ -134,6 +154,9 @@ fn build_json(
     payload.insert("snapshots".into(), json!(snapshot_count));
     if let Some(m) = metric {
         payload.insert("metric".into(), json!(m.json_key()));
+    }
+    if let Some(ws) = workspace {
+        payload.insert("workspace".into(), json!(ws.display().to_string()));
     }
     if let (Some(cfg), Some(reports)) = (cfg, reports) {
         let ctx = SectionCtx { cfg, reports };
