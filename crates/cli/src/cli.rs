@@ -73,19 +73,28 @@ pub enum Command {
     /// — Critical / High view by default. Runs a fresh scan only when
     /// the cache is missing; pass `--refresh` to force a rescan and
     /// overwrite the cache. The single source of truth that
-    /// `/heal-code-patch` (Claude side) and `heal fix *` consume.
+    /// `/heal-code-patch` (Claude side) and `heal diff` consume.
     Status(StatusArgs),
     /// Diff the current findings against a cached `CheckRecord` whose
     /// `head_sha` matches the resolved git ref (default: `HEAD`).
     /// Outputs Resolved / Regressed / Improved / New / Unchanged
     /// buckets — like `git diff`, but for the TODO list.
     Diff(DiffArgs),
-    /// Update the fix-tracking state attached to `.heal/checks/`:
-    /// `show` renders one historical `CheckRecord`, `mark` records
-    /// a finding as resolved by a commit (used by `/heal-code-patch`).
-    Fix {
-        #[command(subcommand)]
-        action: FixAction,
+    /// Append a `FixedFinding` to `.heal/checks/fixed.jsonl`. Called by
+    /// `/heal-code-patch` after each commit-per-fix; the next
+    /// `heal status --refresh` reconciles the entry against fresh
+    /// findings. Hidden from `--help` because no human ever runs this.
+    #[command(hide = true)]
+    MarkFixed {
+        /// `Finding.id` from `heal status --json` output.
+        #[arg(long, value_name = "ID")]
+        finding_id: String,
+        /// SHA of the commit that resolved the finding.
+        #[arg(long, value_name = "SHA")]
+        commit_sha: String,
+        /// Emit a JSON summary of the recorded fix entry.
+        #[arg(long)]
+        json: bool,
     },
     /// Manage the bundled Claude skill set under `.claude/skills/`.
     Skills {
@@ -316,32 +325,6 @@ pub struct ChecksFilters {
     pub json: bool,
 }
 
-#[derive(Debug, Subcommand)]
-pub enum FixAction {
-    /// Render one `CheckRecord` by its ULID. **Unstable**: the human
-    /// view may change. For a stable contract use `--json` (same shape
-    /// as `heal status --json`).
-    Show {
-        check_id: String,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Append a `FixedFinding` to `.heal/checks/fixed.jsonl`. Called by
-    /// `/heal-code-patch` (or any skill that commits a fix) so the next
-    /// `heal status --refresh` can warn if the same finding re-appears.
-    Mark {
-        /// `Finding.id` from `heal status --json` output.
-        #[arg(long, value_name = "ID")]
-        finding_id: String,
-        /// SHA of the commit that resolved the finding.
-        #[arg(long, value_name = "SHA")]
-        commit_sha: String,
-        /// Emit a JSON summary of the recorded fix entry.
-        #[arg(long)]
-        json: bool,
-    },
-}
-
 /// Args for `heal diff`. The positional `revspec` accepts anything
 /// `git rev-parse` understands — `HEAD` (default), `main`, `v0.2.1`,
 /// `HEAD~3`, or a partial / full SHA.
@@ -417,7 +400,11 @@ impl Cli {
             Command::Diff(args) => {
                 commands::diff::run(&project, args.revspec.as_deref(), args.all, args.json)
             }
-            Command::Fix { action } => commands::fix::run(&project, action),
+            Command::MarkFixed {
+                finding_id,
+                commit_sha,
+                json,
+            } => commands::mark_fixed::run(&project, &finding_id, &commit_sha, json),
             Command::Skills { action } => commands::skills::run(&project, action),
             Command::Calibrate { force, json } => commands::calibrate::run(&project, force, json),
             Command::Compact { verbose, json } => commands::compact::run(&project, verbose, json),

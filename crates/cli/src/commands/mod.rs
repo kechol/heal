@@ -1,10 +1,10 @@
 pub mod calibrate;
 pub mod compact;
 pub mod diff;
-pub mod fix;
 pub mod hook;
 pub mod init;
 pub mod logs;
+pub mod mark_fixed;
 pub mod metrics;
 pub mod skills;
 pub mod status;

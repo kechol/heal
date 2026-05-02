@@ -71,7 +71,7 @@ while there are non-Ok findings in the cache:
     apply the change
     run tests / type-check / linter (best effort, see "Verification")
     git add -p / git add <file>; git commit -m "<conventional message>"
-    heal fix mark --finding-id <id> --commit-sha <new SHA>
+    heal mark-fixed --finding-id <id> --commit-sha <new SHA>
     heal status --refresh --json   # re-scan and overwrite latest.json
     if the finding is back (regressed warning):
         leave it for now; record in session notes; continue with next finding
@@ -252,7 +252,7 @@ movement. Trailer: `Refs: F#<finding_id>` (the full id from cache JSON).
 After the commit succeeds:
 
 ```
-heal fix mark \
+heal mark-fixed \
   --finding-id "<finding_id from cache JSON>" \
   --commit-sha "$(git rev-parse HEAD)"
 ```

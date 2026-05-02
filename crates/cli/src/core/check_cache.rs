@@ -3,8 +3,8 @@
 //! `heal status` is the **single writer** of `<root>/.heal/checks/YYYY-MM.jsonl`
 //! and `latest.json`: every run produces a [`CheckRecord`] which is
 //! appended to the segment and mirrored atomically into `latest.json`.
-//! `heal checks` and `heal fix show|diff` are pure readers. The only
-//! other writer is `heal fix mark`, which appends to `fixed.jsonl`.
+//! `heal checks` and `heal diff` are pure readers. The only other
+//! writer is `heal mark-fixed`, which appends to `fixed.jsonl`.
 //!
 //! The cache models a TODO list: each `Finding.id` is decision-stable
 //! (see `crate::core::finding`), so the *same* unfixed problem keeps the
@@ -54,8 +54,8 @@ use crate::core::snapshot::SeverityCounts;
 pub const CHECK_RECORD_VERSION: u32 = 1;
 
 /// One execution of `heal status`. The unit of read in the cache:
-/// `heal checks` enumerates records, `heal fix show <id>` retrieves
-/// one, `heal fix diff <a> <b>` compares two.
+/// `heal checks` enumerates records and `heal diff <git-ref>` looks
+/// one up by `head_sha` to bucket-diff against the live worktree.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CheckRecord {
     pub version: u32,

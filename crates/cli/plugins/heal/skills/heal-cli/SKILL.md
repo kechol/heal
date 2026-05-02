@@ -28,7 +28,7 @@ Conventions used below:
 heal init                       # one-time: write .heal/, install hook, calibrate
 heal status                      # render the TODO list (cached)
 heal status --refresh --json     # rescan + emit machine-readable findings
-heal fix mark --finding-id … --commit-sha …    # after committing a fix
+heal mark-fixed --finding-id … --commit-sha …  # agent-only: after committing a fix
 heal calibrate --force          # re-baseline thresholds when codebase shifted
 ```
 
@@ -130,11 +130,6 @@ best-effort. JSON shape:
 }
 ```
 
-### `heal fix show <CHECK_ID> [--json]`
-
-Render one historical `CheckRecord`. `--json` is the stable contract;
-the human view is unstable.
-
 ### `heal diff [<git-ref>] [--all] [--json]`
 
 Diff the current findings against a cached `CheckRecord` whose
@@ -170,10 +165,12 @@ Unchanged. JSON shape:
 }
 ```
 
-### `heal fix mark --finding-id <ID> --commit-sha <SHA> [--json]`
+### `heal mark-fixed --finding-id <ID> --commit-sha <SHA> [--json]`
 
-Append a `FixedFinding` to `.heal/checks/fixed.jsonl`. Call after each
-fix-per-commit so the next `heal status --refresh` reconciles. JSON:
+**Agent-only.** Hidden from the top-level `--help`. Append a
+`FixedFinding` to `.heal/checks/fixed.jsonl` after committing a fix
+so the next `heal status --refresh` either retires the entry
+(genuinely fixed) or moves it to `regressed.jsonl`. JSON:
 
 ```jsonc
 {
@@ -304,7 +301,7 @@ spec (default: Critical-with-`hotspot=true`), pick one, fix it, then:
 
 ```sh
 git commit -m "fix: …"
-heal fix mark --finding-id "<id>" --commit-sha "$(git rev-parse HEAD)"
+heal mark-fixed --finding-id "<id>" --commit-sha "$(git rev-parse HEAD)"
 heal status --refresh --json    # re-scan; the finding either disappears or surfaces in regressed.jsonl
 ```
 
