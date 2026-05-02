@@ -522,7 +522,7 @@ pub struct PolicyRuleConfig {
 }
 
 /// `[policy.drain]` — which `(severity, hotspot)` combinations the
-/// `heal-code-patch` skill must drain (`must`, T0) vs may drain when
+/// `/heal-code-patch` skill must drain (`must`, T0) vs may drain when
 /// bandwidth allows (`should`, T1). Anything not matched falls into
 /// the Advisory tier (rendered separately, never auto-drained).
 ///

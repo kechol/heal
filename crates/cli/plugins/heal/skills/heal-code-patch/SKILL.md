@@ -7,7 +7,7 @@ description: Drain the cache produced by `heal check`, fixing one finding per co
 
 Drain the cache that `heal check` produced. One finding per commit,
 in Severity order, until the cache is empty (or the user stops). This
-is the **write** counterpart to `heal-code-review` — that one proposes,
+is the **write** counterpart to `/heal-code-review` — that one proposes,
 this one applies.
 
 ## Mental model
@@ -25,11 +25,11 @@ the loop is self-correcting: a botched fix surfaces on the next round.
 
 ## Role boundary: mechanical fixes only
 
-`heal-code-patch` applies *mechanical* refactorings — those whose
+`/heal-code-patch` applies *mechanical* refactorings — those whose
 transformation rule is deterministic, locally-scoped, and does not
 require domain knowledge to apply correctly. It does **not** make
 architectural decisions, choose between names, or split modules along
-domain seams. The judgement layer lives in `heal-code-review` and the
+domain seams. The judgement layer lives in `/heal-code-review` and the
 readability criteria in its `references/readability.md`.
 
 When the next finding requires architectural judgement (which name to
@@ -37,14 +37,14 @@ pick, which boundary to draw, whether to split a hub file, whether two
 contexts should merge), the loop:
 
 1. Stops and surfaces the trade-off to the user.
-2. Defers the finding to `heal-code-review` for proposal-level discussion
+2. Defers the finding to `/heal-code-review` for proposal-level discussion
    instead of attempting an in-loop fix.
 
 The allow-list / escalate-list under "Per-metric fix patterns" below
 codify which refactor patterns are mechanical and which require
 escalation. When the only remaining findings need Escalate-list
 patterns, end the session with a summary and recommend the user run
-`heal-code-review`.
+`/heal-code-review`.
 
 ## Pre-flight (refuse to start when these fail)
 
@@ -104,7 +104,7 @@ selection to that metric. Default = no filter.
 
 When T0 is empty, end the session — do **not** silently extend into T1
 or Advisory. Surface the remaining tiers in the summary, recommend the
-user run `heal-code-review` if they want to act on the architectural
+user run `/heal-code-review` if they want to act on the architectural
 items, and stop.
 
 ## Per-metric fix patterns
@@ -160,7 +160,7 @@ confirm the pattern fits:
 
 These patterns require judgement that this skill should not make alone.
 When the next finding's best-fit pattern is here, stop the loop, surface
-the trade-off, and let the user (or `heal-code-review`) decide:
+the trade-off, and let the user (or `/heal-code-review`) decide:
 
 - **Replace Conditional with Polymorphism.** Picks the dispatch axis,
   which is an architectural choice with downstream consequences.
@@ -181,7 +181,7 @@ the trade-off, and let the user (or `heal-code-review`) decide:
 
 If the only remaining findings require Escalate-list patterns, end the
 session with the summary format below and recommend the user run
-`heal-code-review` to discuss the architectural moves at the proposal
+`/heal-code-review` to discuss the architectural moves at the proposal
 level.
 
 ## Anti-patterns to stop on mid-loop

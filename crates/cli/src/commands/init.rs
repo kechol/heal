@@ -478,7 +478,7 @@ fn claude_on_path() -> bool {
 
 fn confirm_skills_install() -> Result<bool> {
     print!(
-        "Install the bundled Claude skills (heal-cli, heal-config, /heal-code-review, /heal-code-patch)? [Y/n] ",
+        "Install the bundled Claude skills (/heal-cli, /heal-config, /heal-code-review, /heal-code-patch)? [Y/n] ",
     );
     std::io::stdout()
         .flush()

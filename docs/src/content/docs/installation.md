@@ -70,8 +70,7 @@ shell `PATH`.
 | Shell          | re-run the installer command   |
 
 After upgrading, run `heal skills update` inside any project that has
-the Claude plugin installed, so the bundled skills stay in sync with
-the binary.
+the Claude skills installed, so they stay in sync with the binary.
 
 ## Uninstall
 

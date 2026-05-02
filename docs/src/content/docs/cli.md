@@ -15,7 +15,7 @@ the lower entries are for investigation and maintenance.
 | Command          | Purpose                                                                                 |
 | ---------------- | --------------------------------------------------------------------------------------- |
 | `heal init`      | Set up `.heal/`, calibrate, and install the post-commit hook in the current repository. |
-| `heal skills`    | Install / update / inspect / remove the bundled Claude plugin.                          |
+| `heal skills`    | Install / update / inspect / remove the bundled Claude skill set.                       |
 | `heal check`     | Render the cached `CheckRecord` from `.heal/checks/latest.json` (or refresh it).        |
 | `heal status`    | Per-metric summary plus the delta since the previous snapshot.                          |
 | `heal calibrate` | Recalibrate codebase-relative Severity thresholds.                                      |
@@ -27,12 +27,12 @@ the lower entries are for investigation and maintenance.
 
 ## Automation commands
 
-Invoked automatically by the git post-commit hook and the Claude
-plugin. You do not normally call them by hand.
+Invoked automatically by the git post-commit hook and Claude Code's
+`settings.json` hook commands. You do not normally call them by hand.
 
-| Command     | Called by                 | Purpose                                                              |
-| ----------- | ------------------------- | -------------------------------------------------------------------- |
-| `heal hook` | git and the Claude plugin | Run observers, write snapshots, emit the post-commit Severity nudge. |
+| Command     | Called by                                       | Purpose                                                              |
+| ----------- | ----------------------------------------------- | -------------------------------------------------------------------- |
+| `heal hook` | git post-commit + Claude `PostToolUse` / `Stop` | Run observers, write snapshots / event log, emit the Severity nudge. |
 
 ---
 
@@ -41,9 +41,9 @@ plugin. You do not normally call them by hand.
 Bootstraps heal inside a git repository:
 
 ```sh
-heal init                # interactive — prompts to install Claude skills
-heal init --yes          # also extract the Claude plugin (no prompt)
-heal init --no-skills    # skip the plugin entirely (CI / non-Claude users)
+heal init                # interactive — prompts to install the Claude skills
+heal init --yes          # also extract the Claude skills (no prompt)
+heal init --no-skills    # skip the skills entirely (CI / non-Claude users)
 heal init --force        # overwrite an existing config.toml / hook
 ```
 
@@ -59,15 +59,15 @@ heal init --force        # overwrite an existing config.toml / hook
 4. Append the first `MetricsSnapshot` to `.heal/snapshots/`, including
    the Severity tally.
 5. If the `claude` CLI is on `PATH`, prompt to extract the bundled
-   Claude plugin into `.claude/plugins/heal/`. The prompt defaults to
-   `Y`; pass `--yes` to skip the prompt and install, or `--no-skills`
-   to skip without prompting. When `claude` is **not** on `PATH`, the
-   prompt is suppressed silently (the plugin would have nothing to
-   talk to).
+   skill set into `.claude/skills/` and merge HEAL's hook commands
+   into `.claude/settings.json`. The prompt defaults to `Y`; pass
+   `--yes` to skip the prompt and install, or `--no-skills` to skip
+   without prompting. When `claude` is **not** on `PATH`, the prompt
+   is suppressed silently (the skills would have nothing to talk to).
 
 When done, `heal init` prints an "Installed:" summary listing every
 file it wrote — config, calibration, initial snapshot, post-commit
-hook, and the Claude plugin path (or the reason it was skipped).
+hook, and the Claude skills path (or the reason it was skipped).
 
 Re-running is safe: `config.toml` is left in place unless `--force` is
 passed; the post-commit hook is replaced only when it carries the heal
@@ -76,31 +76,39 @@ leaves it alone — pass `--force` to overwrite.
 
 ## `heal skills`
 
-Manages the bundled Claude plugin under `.claude/plugins/heal/`:
+Manages the bundled Claude skill set under `.claude/skills/` and the
+HEAL hook commands inside `.claude/settings.json`:
 
 ```sh
-heal skills install     # extract the plugin (run once per repository)
+heal skills install     # extract the skills + merge hook commands (run once per repo)
 heal skills update      # refresh after upgrading the heal binary
 heal skills status      # compare installed vs. bundled
-heal skills uninstall   # remove .claude/plugins/heal/
+heal skills uninstall   # remove the skills, the manifest, and HEAL's hook commands
 ```
 
-The plugin tree is embedded in the `heal` binary at compile time, so
+The skill set is embedded in the `heal` binary at compile time, so
 `heal skills install` always extracts the version matching the binary
 in use. `update` is drift-aware: files that have been hand-edited are
 left in place (use `--force` to overwrite anyway).
 
-The bundled plugin ships:
+The bundled set ships four skills:
 
-- one read-only skill `heal-code-review` that ingests `heal check --all
---json`, deep-reads the flagged code, and produces an architectural
-  reading plus a prioritised refactor TODO list (with reference docs
-  under `skills/heal-code-review/references/`).
-- one write skill `heal-code-patch` that drains
-  `.heal/checks/latest.json` one finding per commit (Severity order;
-  `Critical 🔥` first).
+- `/heal-code-review` (read-only) ingests `heal check --all --json`,
+  deep-reads the flagged code, and produces an architectural reading
+  plus a prioritised refactor TODO list (reference docs under
+  `.claude/skills/heal-code-review/references/`).
+- `/heal-code-patch` (write) drains `.heal/checks/latest.json` one
+  finding per commit (Severity order; `Critical 🔥` first).
+- `/heal-cli` is a concise reference for the `heal` CLI surface.
+- `/heal-config` calibrates the project, asks for a strictness level,
+  and writes `config.toml` accordingly.
 
-See [Claude plugin](/heal/claude-plugin/) for the full skill contracts.
+`uninstall` also sweeps the legacy plugin/marketplace install layout
+(old `.claude/plugins/heal/`, `.claude-plugin/marketplace.json`, and
+the `heal@heal-local` settings entries) so users upgrading from an
+older heal can land cleanly with one uninstall + reinstall.
+
+See [Claude skills](/heal/claude-skills/) for the full skill contracts.
 
 ## `heal check`
 

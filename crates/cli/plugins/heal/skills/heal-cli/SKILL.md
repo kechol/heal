@@ -302,8 +302,8 @@ caller's job (parse `--json`).
 
 ## Where to look next
 
-- `heal-config` — calibrate + survey the codebase, then write or update
+- `/heal-config` — calibrate + survey the codebase, then write or update
   `.heal/config.toml` with thresholds tuned to a chosen strictness.
-- `heal-code-review` — read the cache as a system; produce an
+- `/heal-code-review` — read the cache as a system; produce an
   architectural reading + prioritised TODO.
-- `heal-code-patch` — drain the TODO list one finding per commit.
+- `/heal-code-patch` — drain the TODO list one finding per commit.

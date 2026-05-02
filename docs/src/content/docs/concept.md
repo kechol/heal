@@ -179,5 +179,5 @@ manage.
   `.heal/calibration.toml` reference
 - [Architecture](/heal/architecture/) — on-disk layout, event
   streams, the cache contract
-- [Claude plugin](/heal/claude-plugin/) — `/heal-code-review` and
-  `/heal-code-patch`
+- [Claude skills](/heal/claude-skills/) — `/heal-code-review`,
+  `/heal-code-patch`, `/heal-cli`, and `/heal-config`

@@ -79,9 +79,9 @@ export default defineConfig({
               slug: 'metrics',
             },
             {
-              label: 'Claude plugin',
-              translations: { ja: 'Claude プラグイン' },
-              slug: 'claude-plugin',
+              label: 'Claude skills',
+              translations: { ja: 'Claude スキル' },
+              slug: 'claude-skills',
             },
             {
               label: 'Architecture',

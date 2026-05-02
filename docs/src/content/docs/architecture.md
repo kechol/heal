@@ -69,7 +69,13 @@ After `heal init`:
 │
 ├── .git/hooks/post-commit         # one-line shim: calls `heal hook commit`
 │
-└── .claude/plugins/heal/          # Claude plugin (after `heal skills install`)
+├── .claude/skills/                # Claude skills (after `heal skills install`)
+│   ├── heal-cli/
+│   ├── heal-code-patch/
+│   ├── heal-code-review/
+│   └── heal-config/
+│
+└── .claude/settings.json          # PostToolUse + Stop hooks call `heal hook edit/stop`
 ```
 
 ## What gets written and when
@@ -84,7 +90,9 @@ After `heal init`:
 | `.heal/checks/latest.json`      | `heal check`                                 | Atomic mirror; refreshed on every fresh run. |
 | `.heal/checks/fixed.jsonl`      | `heal fix mark` (called by `/heal-code-patch`) | Each commit `/heal-code-patch` lands.          |
 | `.heal/checks/regressed.jsonl`  | `heal check` (reconcile pass)                | When a fixed finding is re-detected.         |
-| `.claude/plugins/heal/`         | `heal skills install`                        | Once; updated with `heal skills update`.     |
+| `.claude/skills/heal-*/`        | `heal skills install`                        | Once; updated with `heal skills update`.     |
+| `.claude/settings.json` (HEAL hooks) | `heal skills install`                   | Additive merge; uninstall removes only HEAL command lines. |
+| `.heal/skills-install.json`     | `heal skills install` / `update`             | Drift-detection manifest.                    |
 
 The pre-v0.2 `.heal/state.json` was retired along with the
 SessionStart nudge — `EventLog::iter_segments` over `snapshots/` is

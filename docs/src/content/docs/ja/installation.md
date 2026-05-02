@@ -71,8 +71,8 @@ heal --help
 | Cargo            | `cargo install heal-cli` を再実行 |
 | Shell            | インストーラーコマンドを再実行    |
 
-アップグレード後は、Claude プラグインを入れているプロジェクトで
-`heal skills update` を実行し、同梱スキルをバイナリに追従させてく
+アップグレード後は、Claude スキルを入れているプロジェクトで
+`heal skills update` を実行し、スキルセットをバイナリに追従させてく
 ださい。
 
 ## アンインストール

@@ -69,7 +69,13 @@ heal check  ──►  calibration.toml で Finding を分類
 │
 ├── .git/hooks/post-commit         # `heal hook commit` を呼ぶ 1 行のシム
 │
-└── .claude/plugins/heal/          # Claude プラグイン（`heal skills install` 後）
+├── .claude/skills/                # Claude スキル群（`heal skills install` 後）
+│   ├── heal-cli/
+│   ├── heal-code-patch/
+│   ├── heal-code-review/
+│   └── heal-config/
+│
+└── .claude/settings.json          # PostToolUse + Stop が `heal hook edit/stop` を呼ぶ
 ```
 
 ## 何がいつ書かれるか
@@ -84,7 +90,9 @@ heal check  ──►  calibration.toml で Finding を分類
 | `.heal/checks/latest.json`      | `heal check`                                 | アトミックミラー；新規実行ごとにリフレッシュ。    |
 | `.heal/checks/fixed.jsonl`      | `heal fix mark`（`/heal-code-patch` から呼出） | `/heal-code-patch` のコミット着地ごと。             |
 | `.heal/checks/regressed.jsonl`  | `heal check`（整合パス）                     | 修正済み Finding が再検出されたとき。             |
-| `.claude/plugins/heal/`         | `heal skills install`                        | 一度だけ。`heal skills update` で更新。           |
+| `.claude/skills/heal-*/`        | `heal skills install`                        | 一度だけ。`heal skills update` で更新。           |
+| `.claude/settings.json` の HEAL フック | `heal skills install`                 | 加算的マージ。uninstall は HEAL の command 行のみ削除。 |
+| `.heal/skills-install.json`     | `heal skills install` / `update`             | ドリフト検出マニフェスト。                        |
 
 v0.2 以前の `.heal/state.json` は SessionStart ナッジとともに廃止
 されました — 履歴状態の問い合わせは `EventLog::iter_segments` で

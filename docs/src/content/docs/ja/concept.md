@@ -186,5 +186,5 @@ heal には 7 つのメトリクスが付属しています。
   `.heal/calibration.toml` のリファレンス
 - [アーキテクチャ](/heal/ja/architecture/) — オンディスクレイアウ
   ト、イベントストリーム、キャッシュ契約
-- [Claude プラグイン](/heal/ja/claude-plugin/) — `/heal-code-review`
-  と `/heal-code-patch`
+- [Claude スキル](/heal/ja/claude-skills/) — `/heal-code-review`、
+  `/heal-code-patch`、`/heal-cli`、`/heal-config`

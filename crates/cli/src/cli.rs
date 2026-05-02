@@ -49,7 +49,7 @@ pub enum Command {
         #[arg(long)]
         json: bool,
         /// Restrict output to a single metric. Used by the
-        /// `heal-code-review` skill under `.claude/skills/` when
+        /// `/heal-code-review` skill under `.claude/skills/` when
         /// narrowing focus.
         #[arg(long, value_enum)]
         metric: Option<StatusMetric>,

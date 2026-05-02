@@ -1,19 +1,22 @@
 ---
-title: Claude plugin
-description: How the bundled Claude Code plugin connects heal's metrics to Claude sessions, with the /heal-code-review audit and /heal-code-patch repair loop.
+title: Claude skills
+description: How heal's bundled Claude Code skills connect heal's metrics to Claude sessions, with the /heal-code-review audit and /heal-code-patch repair loop, plus heal-cli and heal-config helper skills.
 ---
 
-heal ships with a Claude Code plugin so the metrics it collects flow
-into Claude sessions automatically. The plugin is installed once per
-repository with `heal skills install`. From that point on:
+heal ships with a bundled set of Claude Code skills so the metrics it
+collects flow into Claude sessions automatically. They are installed
+once per repository with `heal skills install`. From that point on:
 
-- Every Claude edit and turn-end is logged to `.heal/logs/`.
+- Every Claude edit and turn-end is logged to `.heal/logs/` via inline
+  `settings.json` hooks (no shell-script wrappers).
 - A read-only skill `/heal-code-review` audits
   `.heal/checks/latest.json` and produces an architectural reading
   plus a prioritised refactor TODO list.
 - A write skill `/heal-code-patch` drains the same cache one finding
   per commit, in Severity order, until the cache is empty or you
   stop the session.
+- Two helper skills, `/heal-cli` and `/heal-config`, give Claude
+  reference material for driving the CLI and tuning `config.toml`.
 
 The pre-v0.2 SessionStart nudge has been retired. The post-commit
 hook (run by `heal init`'s git installation) handles the same role
@@ -26,32 +29,53 @@ with simpler semantics — see
 heal skills install
 ```
 
-This extracts the plugin tree to `.claude/plugins/heal/`:
+This extracts each skill directly under `<project>/.claude/skills/`,
+where Claude Code natively discovers project-scope skills:
 
 ```
-.claude/plugins/heal/
-├── plugin.json
-├── hooks/
-│   ├── claude-post-tool-use.sh
-│   └── claude-stop.sh
-└── skills/
-    ├── heal-code-review/
-    │   ├── SKILL.md
-    │   └── references/
-    │       ├── metrics.md
-    │       └── architecture.md
-    └── heal-code-patch/
-        └── SKILL.md
+.claude/skills/
+├── heal-cli/
+│   └── SKILL.md
+├── heal-code-patch/
+│   └── SKILL.md
+├── heal-code-review/
+│   ├── SKILL.md
+│   └── references/
+│       ├── architecture.md
+│       ├── metrics.md
+│       └── readability.md
+└── heal-config/
+    ├── SKILL.md
+    └── references/
+        └── config.md
 ```
 
-The plugin tree is embedded in the `heal` binary at compile time, so
+The skill set is embedded in the `heal` binary at compile time, so
 the version installed always matches the binary. After upgrading
 `heal`, run `heal skills update` to refresh.
 
-## What the hooks do
+## How the hooks are wired
 
-Two hooks ship with the plugin. Both call back into the same
-`heal hook` entrypoint.
+`heal skills install` also merges two entries into
+`<project>/.claude/settings.json`:
+
+```jsonc
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "command": "heal hook edit" }]
+      }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "heal hook stop" }] }
+    ]
+  }
+}
+```
+
+Both call back into the same `heal hook` entrypoint:
 
 | Hook event    | Behaviour                                                                        |
 | ------------- | -------------------------------------------------------------------------------- |
@@ -60,6 +84,17 @@ Two hooks ship with the plugin. Both call back into the same
 
 Both are pure logging — they do not run any observer, so they add no
 measurable latency to a Claude turn.
+
+The merge is **additive**: existing user hook entries are preserved
+(deduped by exact `command` match), and `heal skills uninstall`
+removes only HEAL's own command lines. Other entries you wrote stay.
+
+`heal hook` itself is robust against being invoked in a project
+without `.heal/`: it silently no-ops, so a stray Claude session in an
+un-opted-in repository never materialises HEAL state. Edit / Stop
+swallow internal failures so the inline command never blocks Claude's
+loop; `commit` (invoked from a git hook) preserves the original error
+path.
 
 The repair loop runs through the `heal-code-patch` skill (below), not
 a SessionStart nudge.
@@ -162,7 +197,27 @@ Constraints (enforced by the skill):
 - Never extends the loop beyond the cache. New findings the user wants
   addressed go into a fresh `heal check` run.
 
-## Updating the plugin
+## The helper skills: `/heal-cli` and `/heal-config`
+
+Two non-loop skills round out the bundle, aimed at giving Claude
+direct reference material rather than a multi-step procedure.
+
+`/heal-cli` is a concise, complete reference for the `heal` CLI —
+every subcommand, every `--json` shape, and the `.heal/` files each
+command reads or writes. Claude loads it before shelling out to
+`heal` from any other skill, so the CLI surface is treated as a
+stable contract instead of being inferred from `--help` text.
+
+`/heal-config` calibrates the project, surveys the codebase, asks the
+user to pick a strictness level (Strict / Default / Lenient), and
+writes or updates `.heal/config.toml` accordingly. Its
+`references/config.md` is the complete schema for every key in
+`config.toml` plus the per-strictness recipe table. Use it when
+setting heal up for the first time, after a structural change to the
+codebase (a new vendored tree, a layer rewrite), or when you want to
+shift the quality bar without remembering every threshold.
+
+## Updating the skills
 
 After upgrading the `heal` binary:
 
@@ -171,7 +226,7 @@ heal skills update
 ```
 
 **Drift-aware**. heal records the fingerprint of every installed file
-in `.claude/plugins/heal/.heal-install.json`. On update:
+in `.heal/skills-install.json`. On update:
 
 - Files matching the recorded bundled fingerprint are overwritten
   with the new bundled version.
@@ -187,15 +242,35 @@ in `.claude/plugins/heal/.heal-install.json`. On update:
 heal skills uninstall
 ```
 
-Removes `.claude/plugins/heal/` and nothing else. Project data under
-`.heal/` is left untouched.
+Removes:
+
+- Every skill directory under `.claude/skills/heal-*` that the
+  manifest recorded.
+- `.heal/skills-install.json`.
+- HEAL's own command entries in `.claude/settings.json`. Other user
+  hooks survive untouched; if no other entries remain the file is
+  deleted.
+- Any **legacy** install layout left over from older heal versions
+  that distributed via a marketplace plugin: the old
+  `.claude/plugins/heal/` tree, `.claude-plugin/marketplace.json`,
+  and the `extraKnownMarketplaces["heal-local"]` /
+  `enabledPlugins["heal@heal-local"]` entries in `settings.json`.
+
+Project data under `.heal/` is otherwise left untouched.
+
+If you are upgrading from a heal version that still distributed via a
+plugin marketplace, the safe migration path is one
+`heal skills uninstall` followed by `heal skills install`. (`install`
+and `update` intentionally do not migrate the old layout — running
+the new binary alongside the old one will fire hooks twice until you
+uninstall.)
 
 ## Why it is bundled
 
 A single distribution channel — `cargo install heal-cli` — provides
-both the CLI and the matching plugin. Lock-step versioning prevents
-accidentally pairing mismatched plugin and binary versions. The
-trade-off is that the plugin is exactly as fresh as the `heal`
+both the CLI and the matching skills. Lock-step versioning prevents
+accidentally pairing mismatched skill and binary versions. The
+trade-off is that the skill set is exactly as fresh as the `heal`
 binary; to revise skill prompts independently, hand-edit
-`.claude/plugins/heal/`, with the understanding that
+`.claude/skills/heal-*/`, with the understanding that
 `heal skills update` will then mark those files as drifted.

@@ -1,20 +1,24 @@
 ---
-title: Claude プラグイン
-description: 同梱の Claude Code プラグインが、heal のメトリクスをどのように Claude セッションに繋ぐか — `/heal-code-review` 監査と `/heal-code-patch` 修復ループを含む。
+title: Claude スキル
+description: heal が同梱する Claude Code スキル群が、heal のメトリクスをどのように Claude セッションに繋ぐか — `/heal-code-review` 監査と `/heal-code-patch` 修復ループ、加えて `/heal-cli` と `/heal-config` のヘルパースキル。
 ---
 
-heal には Claude Code 用のプラグインが同梱されています。これにより、
-heal が収集するメトリクスを Claude セッションに自動で流し込めます。
-プラグインは `heal skills install` でリポジトリごとに一度だけインス
-トールします。それ以降:
+heal には Claude Code 向けのスキルセットが同梱されています。これに
+より、heal が収集するメトリクスを Claude セッションに自動で流し込
+めます。`heal skills install` でリポジトリごとに一度だけインストー
+ルします。それ以降:
 
-- Claude のすべての編集とターン終了が `.heal/logs/` に記録されます。
+- Claude のすべての編集とターン終了が `settings.json` に直書きされ
+  たフック経由で `.heal/logs/` に記録されます（シェルスクリプトラッ
+  パーは介在しません）。
 - リードオンリースキル `/heal-code-review` が
   `.heal/checks/latest.json` を監査し、アーキテクチャレベルの所見と
   優先度付きのリファクタ TODO リストを返します。
 - write スキル `/heal-code-patch` が同じキャッシュを Severity 順に
   1 コミット 1 Finding ずつ消化していきます。キャッシュが空になる
   か、セッションを止めるまで続きます。
+- ヘルパースキル `/heal-cli` と `/heal-config` が、CLI 駆動と
+  `config.toml` チューニングのリファレンスを Claude に渡します。
 
 v0.2 以前の SessionStart ナッジは廃止されました。同じ役割は
 post-commit フック（`heal init` の git インストールが設置）がより
@@ -27,33 +31,56 @@ post-commit フック（`heal init` の git インストールが設置）がよ
 heal skills install
 ```
 
-これでプラグインツリーが `.claude/plugins/heal/` に展開されます。
+これで各スキルが直接 `<project>/.claude/skills/` 配下に展開されます。
+Claude Code はプロジェクトスコープのスキルをここからネイティブに発
+見します:
 
 ```
-.claude/plugins/heal/
-├── plugin.json
-├── hooks/
-│   ├── claude-post-tool-use.sh
-│   └── claude-stop.sh
-└── skills/
-    ├── heal-code-review/
-    │   ├── SKILL.md
-    │   └── references/
-    │       ├── metrics.md
-    │       └── architecture.md
-    └── heal-code-patch/
-        └── SKILL.md
+.claude/skills/
+├── heal-cli/
+│   └── SKILL.md
+├── heal-code-patch/
+│   └── SKILL.md
+├── heal-code-review/
+│   ├── SKILL.md
+│   └── references/
+│       ├── architecture.md
+│       ├── metrics.md
+│       └── readability.md
+└── heal-config/
+    ├── SKILL.md
+    └── references/
+        └── config.md
 ```
 
-プラグインツリーはコンパイル時に `heal` バイナリに埋め込まれている
-ため、インストールされるバージョンは常にバイナリと一致します。
+スキルセットはコンパイル時に `heal` バイナリに埋め込まれているた
+め、インストールされるバージョンは常にバイナリと一致します。
 `heal` をアップグレードした後は `heal skills update` でリフレッシュ
 してください。
 
-## フックがすること
+## フックの組み込み方
 
-プラグインには 2 つのフックが同梱されており、どちらも同じ
-`heal hook` エントリポイントに戻って呼び出します。
+`heal skills install` は同時に
+`<project>/.claude/settings.json` にも 2 つのエントリをマージしま
+す:
+
+```jsonc
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "command": "heal hook edit" }]
+      }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "heal hook stop" }] }
+    ]
+  }
+}
+```
+
+どちらも同じ `heal hook` エントリポイントを呼び戻します:
 
 | フックイベント | 振る舞い                                                                              |
 | -------------- | ------------------------------------------------------------------------------------- |
@@ -63,7 +90,19 @@ heal skills install
 どちらも純粋なログ記録です — オブザーバーを動かさないので、Claude
 のターンに測定可能なレイテンシは追加しません。
 
-修復ループは SessionStart ナッジではなく `heal-code-patch` スキル
+マージは **加算的** です: ユーザーの既存フックは正確な `command`
+一致による dedupe で温存され、`heal skills uninstall` は HEAL 自身
+の command 行のみを削除します。あなたが書いたほかのエントリはその
+まま残ります。
+
+`heal hook` 自体も、`.heal/` がないプロジェクトで呼び出されたとき
+は静かに no-op します。HEAL を導入していないリポジトリで Claude
+セッションを動かしても、勝手に HEAL 状態を書き起こすことはありませ
+ん。Edit / Stop は内部失敗を握りつぶすので、インライン command が
+Claude のループをブロックすることもありません。`commit`（git フッ
+クから呼び出される）は元のエラー伝播パスを保ちます。
+
+修復ループは SessionStart ナッジではなく `/heal-code-patch` スキル
 （後述）を通じて動きます。
 
 ## 監査スキル: `/heal-code-review`
@@ -162,7 +201,27 @@ T1 に黙って延長せず、セッションを終了します。
 - キャッシュを超えてループを延長しない。新しい Finding を扱いたい
   場合は新しい `heal check` 実行に渡す。
 
-## プラグインの更新
+## ヘルパースキル: `/heal-cli` と `/heal-config`
+
+ループには関わらない 2 つのスキルが、手続きではなく直接的なリファ
+レンスを Claude に渡す目的で同梱されています。
+
+`/heal-cli` は `heal` CLI の簡潔かつ完全なリファレンスです — すべ
+てのサブコマンド、すべての `--json` 形状、そして各コマンドが読み書
+きする `.heal/` 内ファイルを網羅します。Claude は別のスキルから
+`heal` を実行する前にこれを読み込むので、CLI 表面は `--help` から
+推測するのではなく安定した契約として扱われます。
+
+`/heal-config` はプロジェクトを calibrate し、コードベースを調査し、
+strictness レベル（Strict / Default / Lenient）を選んでもらった上
+で `.heal/config.toml` を作成または更新します。
+`references/config.md` には `config.toml` の全キーの完全なスキーマ
+と、strictness ごとのレシピ表が載っています。最初のセットアップ、
+コードベースの構造変化（vendor ツリー追加、レイヤ書き換え）の後、
+あるいは品質バーをしきい値を覚えなおさずにシフトしたいときに使いま
+す。
+
+## スキルの更新
 
 `heal` バイナリをアップグレードした後:
 
@@ -171,8 +230,8 @@ heal skills update
 ```
 
 **ドリフトを意識**します。heal はインストールしたファイルそれぞれ
-のフィンガープリントを `.claude/plugins/heal/.heal-install.json` に
-記録します。更新時:
+のフィンガープリントを `.heal/skills-install.json` に記録します。
+更新時:
 
 - 記録された同梱フィンガープリントと一致するファイルは、新しい同梱
   バージョンで上書きされます。
@@ -188,15 +247,34 @@ heal skills update
 heal skills uninstall
 ```
 
-`.claude/plugins/heal/` を削除します。それ以外は触りません。`.heal/`
-配下のプロジェクトデータはそのまま残ります。
+以下を削除します:
+
+- マニフェストに記録されている `.claude/skills/heal-*` 配下のスキル
+  ディレクトリ。
+- `.heal/skills-install.json`。
+- `.claude/settings.json` 内の HEAL 自身の command エントリ。それ
+   以外のユーザーフックはそのまま残し、エントリが他に何もなければ
+  ファイルごと削除されます。
+- 古いバージョンの heal がマーケットプレイス経由で配布していた頃の
+  **レガシーレイアウト**: 旧 `.claude/plugins/heal/` ツリー、
+  `.claude-plugin/marketplace.json`、および `settings.json` 内の
+  `extraKnownMarketplaces["heal-local"]` /
+  `enabledPlugins["heal@heal-local"]` エントリ。
+
+`.heal/` 配下のプロジェクトデータは触られません。
+
+マーケットプレイス経由で配布していた古い heal からアップグレードす
+るときの安全な移行手順は、`heal skills uninstall` を一度走らせて
+から `heal skills install` です。（`install` と `update` は意図的
+に旧レイアウトを移行しません。新しいバイナリを旧レイアウトと共存
+させたままにすると、uninstall するまでフックが二重発火します。）
 
 ## なぜ同梱なのか
 
-`cargo install heal-cli` という単一の配信チャネルが、CLI と対応プ
-ラグインを同時に提供します。バージョンを揃えてリリースすることで、
-プラグインとバイナリのバージョンミスマッチを防ぎます。トレードオフ
-は、プラグインが `heal` バイナリと同じ鮮度であるという点です。スキ
-ルプロンプトを独立に書き換えたい場合は `.claude/plugins/heal/` を
-手で編集してください — `heal skills update` 時にそれらがドリフトと
+`cargo install heal-cli` という単一の配信チャネルが、CLI と対応ス
+キルを同時に提供します。バージョンを揃えてリリースすることで、ス
+キルとバイナリのバージョンミスマッチを防ぎます。トレードオフは、ス
+キルセットが `heal` バイナリと同じ鮮度であるという点です。スキル
+プロンプトを独立に書き換えたい場合は `.claude/skills/heal-*/` を手
+で編集してください — `heal skills update` 時にそれらがドリフトと
 してマークされる前提で。
