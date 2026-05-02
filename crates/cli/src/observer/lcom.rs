@@ -601,14 +601,14 @@ impl Feature for LcomFeature {
     fn lower(
         &self,
         reports: &ObserverReports,
-        _cfg: &Config,
+        cfg: &Config,
         cal: &crate::core::calibration::Calibration,
         hotspot: &HotspotIndex,
     ) -> Vec<Finding> {
         let Some(lc) = reports.lcom.as_ref() else {
             return Vec::new();
         };
-        let cal_lcom = cal.calibration.lcom.as_ref();
+        let workspaces = cfg.project.workspaces.as_slice();
         let kept: Vec<_> = lc
             .classes
             .iter()
@@ -616,6 +616,7 @@ impl Feature for LcomFeature {
             .collect();
         let mut out = Vec::with_capacity(kept.len());
         for (class, finding) in kept.iter().zip(lc.into_findings()) {
+            let cal_lcom = cal.metrics_for_file(&class.file, workspaces).lcom.as_ref();
             let severity =
                 cal_lcom.map_or(Severity::Ok, |c| c.classify(f64::from(class.cluster_count)));
             out.push(decorate(finding, severity, hotspot));

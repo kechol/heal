@@ -2,6 +2,7 @@
 //! status` and the post-commit snapshot writer call this so a new
 //! observer or enable-flag only needs editing in one place.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::core::calibration::{
@@ -111,7 +112,65 @@ pub(crate) fn run_all(project: &Path, cfg: &Config, only: Option<MetricKind>) ->
 /// Caller supplies `&Config` so disabled metrics skip calibration even
 /// when the underlying complexity scan still produced raw values
 /// (CCN/Cognitive share parsing, so both arrive together).
+///
+/// When `[[project.workspaces]]` is non-empty, the global
+/// `Calibration::calibration` table holds breaks for files **outside**
+/// every declared workspace (the leftover cohort) and a per-workspace
+/// table is added under `Calibration::workspaces.<path>`. With no
+/// workspaces declared, the global table holds the whole-repo
+/// distribution exactly as before.
 pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> Calibration {
+    let workspaces = &config.project.workspaces;
+
+    let global_filter = |file: &Path| -> bool {
+        // No workspaces → whole repo is one cohort.
+        // With workspaces → only count files outside every declared one.
+        workspaces.is_empty() || crate::core::config::assign_workspace(file, workspaces).is_none()
+    };
+    let global_metrics = build_metric_calibrations(reports, config, &global_filter);
+
+    let mut workspace_metrics: BTreeMap<String, MetricCalibrations> = BTreeMap::new();
+    for ws in workspaces {
+        let ws_path = ws.path.trim_end_matches('/').to_string();
+        let in_workspace = |file: &Path| -> bool {
+            crate::core::config::assign_workspace(file, workspaces).is_some_and(|w| w == ws_path)
+        };
+        let table = build_metric_calibrations(reports, config, &in_workspace);
+        if has_any_table(&table) {
+            workspace_metrics.insert(ws_path, table);
+        }
+    }
+
+    let codebase_files = u32::try_from(
+        reports
+            .complexity
+            .totals
+            .files
+            .max(reports.loc.total_files()),
+    )
+    .unwrap_or(u32::MAX);
+
+    Calibration {
+        meta: CalibrationMeta {
+            created_at: chrono::Utc::now(),
+            codebase_files,
+            strategy: STRATEGY_PERCENTILE.to_owned(),
+        },
+        calibration: global_metrics,
+        workspaces: workspace_metrics,
+    }
+    .with_overrides(config)
+}
+
+/// Produce a [`MetricCalibrations`] table from the subset of `reports`
+/// values whose owning file passes `file_filter`. The same logic backs
+/// both the global cohort and each per-workspace cohort — only the
+/// filter changes.
+fn build_metric_calibrations(
+    reports: &ObserverReports,
+    config: &Config,
+    file_filter: &dyn Fn(&Path) -> bool,
+) -> MetricCalibrations {
     let ccn_floors = MetricFloors {
         critical: Some(FLOOR_CCN),
         ok: Some(FLOOR_OK_CCN),
@@ -130,6 +189,7 @@ pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> C
             .complexity
             .files
             .iter()
+            .filter(|f| file_filter(&f.path))
             .flat_map(|f| f.functions.iter().map(|fun| f64::from(fun.ccn)))
             .collect();
         non_empty(&values).then(|| MetricCalibration::from_distribution(&values, ccn_floors))
@@ -142,6 +202,7 @@ pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> C
             .complexity
             .files
             .iter()
+            .filter(|f| file_filter(&f.path))
             .flat_map(|f| f.functions.iter().map(|fun| f64::from(fun.cognitive)))
             .collect();
         non_empty(&values).then(|| MetricCalibration::from_distribution(&values, cognitive_floors))
@@ -150,22 +211,39 @@ pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> C
     };
 
     let duplication = reports.duplication.as_ref().and_then(|d| {
-        let values: Vec<f64> = d.files.iter().map(|f| f.duplicate_pct).collect();
+        let values: Vec<f64> = d
+            .files
+            .iter()
+            .filter(|f| file_filter(&f.path))
+            .map(|f| f.duplicate_pct)
+            .collect();
         non_empty(&values)
             .then(|| MetricCalibration::from_distribution(&values, duplication_floors))
     });
 
     // change_coupling: `min_coupling` already gates pairs at scan time so
     // the absolute floor is rare in practice. lcom: `min_cluster_count`
-    // serves the same role.
+    // serves the same role. A pair contributes to a cohort iff **both**
+    // files pass the filter — cross-cohort pairs are out of scope here
+    // (PR4 surfaces them in their own Advisory bucket).
     let change_coupling = reports.change_coupling.as_ref().and_then(|c| {
-        let values: Vec<f64> = c.pairs.iter().map(|p| f64::from(p.count)).collect();
+        let values: Vec<f64> = c
+            .pairs
+            .iter()
+            .filter(|p| file_filter(&p.a) && file_filter(&p.b))
+            .map(|p| f64::from(p.count))
+            .collect();
         non_empty(&values)
             .then(|| MetricCalibration::from_distribution(&values, MetricFloors::default()))
     });
 
     let hotspot = reports.hotspot.as_ref().and_then(|h| {
-        let scores: Vec<f64> = h.entries.iter().map(|e| e.score).collect();
+        let scores: Vec<f64> = h
+            .entries
+            .iter()
+            .filter(|e| file_filter(&e.path))
+            .map(|e| e.score)
+            .collect();
         non_empty(&scores).then(|| HotspotCalibration::from_distribution(&scores))
     });
 
@@ -173,37 +251,30 @@ pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> C
         let values: Vec<f64> = l
             .classes
             .iter()
+            .filter(|c| file_filter(&c.file))
             .map(|c| f64::from(c.cluster_count))
             .collect();
         non_empty(&values)
             .then(|| MetricCalibration::from_distribution(&values, MetricFloors::default()))
     });
 
-    let codebase_files = u32::try_from(
-        reports
-            .complexity
-            .totals
-            .files
-            .max(reports.loc.total_files()),
-    )
-    .unwrap_or(u32::MAX);
-
-    Calibration {
-        meta: CalibrationMeta {
-            created_at: chrono::Utc::now(),
-            codebase_files,
-            strategy: STRATEGY_PERCENTILE.to_owned(),
-        },
-        calibration: MetricCalibrations {
-            ccn,
-            cognitive,
-            duplication,
-            change_coupling,
-            hotspot,
-            lcom,
-        },
+    MetricCalibrations {
+        ccn,
+        cognitive,
+        duplication,
+        change_coupling,
+        hotspot,
+        lcom,
     }
-    .with_overrides(config)
+}
+
+fn has_any_table(m: &MetricCalibrations) -> bool {
+    m.ccn.is_some()
+        || m.cognitive.is_some()
+        || m.duplication.is_some()
+        || m.change_coupling.is_some()
+        || m.hotspot.is_some()
+        || m.lcom.is_some()
 }
 
 /// Compose every enabled Feature's lowered Findings into one Vec,
@@ -428,6 +499,7 @@ mod tests {
                 }),
                 lcom: None,
             },
+            workspaces: BTreeMap::new(),
         };
 
         (reports, cal)
@@ -545,6 +617,7 @@ mod tests {
                 strategy: STRATEGY_PERCENTILE.to_owned(),
             },
             calibration: MetricCalibrations::default(),
+            workspaces: BTreeMap::new(),
         };
         let findings = classify(&reports, &bare, &Config::default());
         assert!(

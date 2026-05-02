@@ -704,14 +704,14 @@ impl Feature for ChangeCouplingFeature {
     fn lower(
         &self,
         reports: &ObserverReports,
-        _cfg: &Config,
+        cfg: &Config,
         cal: &crate::core::calibration::Calibration,
         hotspot: &HotspotIndex,
     ) -> Vec<Finding> {
         let Some(cc) = reports.change_coupling.as_ref() else {
             return Vec::new();
         };
-        let cal_cc = cal.calibration.change_coupling.as_ref();
+        let workspaces = cfg.project.workspaces.as_slice();
         let mut out = Vec::with_capacity(cc.pairs.len());
         for (pair, finding) in cc.pairs.iter().zip(cc.into_findings()) {
             // TestSrc / DocSrc pairs stay in the report (v0.4 drift
@@ -720,6 +720,14 @@ impl Feature for ChangeCouplingFeature {
             if matches!(pair.class, Some(PairClass::TestSrc | PairClass::DocSrc)) {
                 continue;
             }
+            // Calibration follows the finding's primary site. Pairs
+            // straddling workspaces still use whichever side is
+            // canonical; PR4 surfaces them in a separate Advisory
+            // bucket regardless of the breaks here.
+            let cal_cc = cal
+                .metrics_for_file(&finding.location.file, workspaces)
+                .change_coupling
+                .as_ref();
             let severity = cal_cc.map_or(Severity::Ok, |c| c.classify(f64::from(pair.count)));
             out.push(decorate(finding, severity, hotspot));
         }

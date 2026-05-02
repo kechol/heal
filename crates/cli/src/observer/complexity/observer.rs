@@ -236,10 +236,12 @@ impl Feature for ComplexityFeature {
         cal: &crate::core::calibration::Calibration,
         hotspot: &HotspotIndex,
     ) -> Vec<Finding> {
-        let cal_ccn = cal.calibration.ccn.as_ref();
-        let cal_cog = cal.calibration.cognitive.as_ref();
+        let workspaces = cfg.project.workspaces.as_slice();
         let mut out = Vec::new();
         for file in &reports.complexity.files {
+            let metrics = cal.metrics_for_file(&file.path, workspaces);
+            let cal_ccn = metrics.ccn.as_ref();
+            let cal_cog = metrics.cognitive.as_ref();
             for fun in &file.functions {
                 let span = fun.end_line.saturating_sub(fun.start_line);
                 let location = Location {

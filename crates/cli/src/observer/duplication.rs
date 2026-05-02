@@ -539,14 +539,14 @@ impl Feature for DuplicationFeature {
     fn lower(
         &self,
         reports: &ObserverReports,
-        _cfg: &Config,
+        cfg: &Config,
         cal: &crate::core::calibration::Calibration,
         hotspot: &HotspotIndex,
     ) -> Vec<Finding> {
         let Some(dup) = reports.duplication.as_ref() else {
             return Vec::new();
         };
-        let cal_dup = cal.calibration.duplication.as_ref();
+        let workspaces = cfg.project.workspaces.as_slice();
         let pct_by_file: HashMap<&Path, f64> = dup
             .files
             .iter()
@@ -559,6 +559,12 @@ impl Feature for DuplicationFeature {
                 .iter()
                 .filter_map(|l| pct_by_file.get(l.path.as_path()).copied())
                 .fold(0.0_f64, f64::max);
+            // Calibration follows the finding's primary location — the
+            // block's first site, which is what carries the `Finding.id`.
+            let cal_dup = cal
+                .metrics_for_file(&finding.location.file, workspaces)
+                .duplication
+                .as_ref();
             let severity = cal_dup.map_or(Severity::Ok, |c| c.classify(max_pct));
             out.push(decorate(finding, severity, hotspot));
         }

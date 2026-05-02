@@ -39,12 +39,13 @@
 //! overridden, and that override lives in `config.toml` so a re-
 //! calibration doesn't clobber it.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::core::config::Config;
+use crate::core::config::{assign_workspace, Config, WorkspaceOverlay};
 use crate::core::error::{Error, Result};
 use crate::core::eventlog::EventLog;
 use crate::core::severity::Severity;
@@ -122,8 +123,41 @@ const CALIBRATION_HEADER: &str = "\
 #[serde(deny_unknown_fields)]
 pub struct Calibration {
     pub meta: CalibrationMeta,
+    /// Global / fallback breaks. When `[[project.workspaces]]` is empty
+    /// (the v0.1+ default) this holds the whole-repo distribution.
+    /// With workspaces declared, it holds the breaks for files outside
+    /// every declared workspace — the minority cohort.
     #[serde(default)]
     pub calibration: MetricCalibrations,
+    /// Per-workspace overrides keyed by the same path string the
+    /// `[[project.workspaces]]` config uses. Empty when no workspaces
+    /// are declared. Findings tagged with a workspace classify against
+    /// the matching table here; everything else falls back to
+    /// [`Self::calibration`].
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub workspaces: BTreeMap<String, MetricCalibrations>,
+}
+
+impl Calibration {
+    /// Pick the right [`MetricCalibrations`] table to classify a
+    /// finding at `file` against. Looks up the file's workspace via
+    /// [`assign_workspace`] and prefers the per-workspace table when
+    /// one exists; falls back to the global / fallback breaks
+    /// (`self.calibration`) for files outside every declared workspace
+    /// or when the workspace's table is missing.
+    #[must_use]
+    pub fn metrics_for_file(
+        &self,
+        file: &Path,
+        workspaces: &[WorkspaceOverlay],
+    ) -> &MetricCalibrations {
+        if let Some(ws) = assign_workspace(file, workspaces) {
+            if let Some(table) = self.workspaces.get(ws) {
+                return table;
+            }
+        }
+        &self.calibration
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -373,38 +407,50 @@ impl Calibration {
     /// preference.
     #[must_use]
     pub fn with_overrides(mut self, config: &Config) -> Self {
-        if let Some(c) = self.calibration.ccn.as_mut() {
-            if let Some(f) = config.metrics.ccn.floor_critical {
-                c.floor_critical = Some(f);
-            }
-            if let Some(f) = config.metrics.ccn.floor_ok {
-                c.floor_ok = Some(f);
-            }
-        }
-        if let Some(c) = self.calibration.cognitive.as_mut() {
-            if let Some(f) = config.metrics.cognitive.floor_critical {
-                c.floor_critical = Some(f);
-            }
-            if let Some(f) = config.metrics.cognitive.floor_ok {
-                c.floor_ok = Some(f);
-            }
-        }
-        if let Some(c) = self.calibration.duplication.as_mut() {
-            if let Some(f) = config.metrics.duplication.floor_critical {
-                c.floor_critical = Some(f);
-            }
-        }
-        if let Some(c) = self.calibration.change_coupling.as_mut() {
-            if let Some(f) = config.metrics.change_coupling.floor_critical {
-                c.floor_critical = Some(f);
-            }
-        }
-        if let Some(c) = self.calibration.lcom.as_mut() {
-            if let Some(f) = config.metrics.lcom.floor_critical {
-                c.floor_critical = Some(f);
-            }
+        apply_metric_overrides(&mut self.calibration, config);
+        for table in self.workspaces.values_mut() {
+            apply_metric_overrides(table, config);
         }
         self
+    }
+}
+
+/// Layer config-side `floor_critical` / `floor_ok` overrides onto a
+/// `MetricCalibrations` table. Shared by [`Calibration::with_overrides`]
+/// across the global cohort and every per-workspace cohort so the
+/// behaviour stays uniform: `[metrics.<m>] floor_*` settings take
+/// effect everywhere a calibration table exists.
+fn apply_metric_overrides(table: &mut MetricCalibrations, config: &Config) {
+    if let Some(c) = table.ccn.as_mut() {
+        if let Some(f) = config.metrics.ccn.floor_critical {
+            c.floor_critical = Some(f);
+        }
+        if let Some(f) = config.metrics.ccn.floor_ok {
+            c.floor_ok = Some(f);
+        }
+    }
+    if let Some(c) = table.cognitive.as_mut() {
+        if let Some(f) = config.metrics.cognitive.floor_critical {
+            c.floor_critical = Some(f);
+        }
+        if let Some(f) = config.metrics.cognitive.floor_ok {
+            c.floor_ok = Some(f);
+        }
+    }
+    if let Some(c) = table.duplication.as_mut() {
+        if let Some(f) = config.metrics.duplication.floor_critical {
+            c.floor_critical = Some(f);
+        }
+    }
+    if let Some(c) = table.change_coupling.as_mut() {
+        if let Some(f) = config.metrics.change_coupling.floor_critical {
+            c.floor_critical = Some(f);
+        }
+    }
+    if let Some(c) = table.lcom.as_mut() {
+        if let Some(f) = config.metrics.lcom.floor_critical {
+            c.floor_critical = Some(f);
+        }
     }
 }
 
@@ -638,6 +684,7 @@ mod tests {
                 )),
                 ..MetricCalibrations::default()
             },
+            workspaces: BTreeMap::new(),
         };
         let mut config = Config::default();
         config.metrics.ccn.floor_ok = Some(15.0);
@@ -819,6 +866,7 @@ mod tests {
                 }),
                 ..MetricCalibrations::default()
             },
+            workspaces: BTreeMap::new(),
         };
         let s = toml::to_string_pretty(&cal).unwrap();
         assert!(s.contains("created_at"));
@@ -840,6 +888,7 @@ mod tests {
                 strategy: STRATEGY_PERCENTILE.to_owned(),
             },
             calibration: MetricCalibrations::default(),
+            workspaces: BTreeMap::new(),
         };
         cal.save(&path).unwrap();
 
@@ -870,6 +919,7 @@ mod tests {
                 )),
                 ..MetricCalibrations::default()
             },
+            workspaces: BTreeMap::new(),
         };
         let s = toml::to_string_pretty(&cal).unwrap();
         let back: Calibration = toml::from_str(&s).unwrap();
@@ -890,6 +940,7 @@ mod tests {
                 strategy: STRATEGY_PERCENTILE.to_owned(),
             },
             calibration: MetricCalibrations::default(),
+            workspaces: BTreeMap::new(),
         }
     }
 
