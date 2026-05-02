@@ -265,13 +265,13 @@ fn print_summary(
         println!();
         println!("Findings: {}", counts.render_inline(colorize));
         if counts.critical > 0 {
-            println!("  → goal: bring [critical] to 0 (try `heal check --severity critical`)");
+            println!("  → goal: bring [critical] to 0 (try `heal status --severity critical`)");
         }
     }
 
     println!();
     println!("Next steps:");
-    println!("  heal check               # render the Severity-grouped TODO list");
+    println!("  heal status               # render the Severity-grouped TODO list");
     println!("  heal metrics             # see metric trends");
     if matches!(
         skills_action,

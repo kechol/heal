@@ -1,5 +1,5 @@
 //! Cross-observer `Finding` abstraction — promoted to `core` as the
-//! prerequisite for v0.2 (Calibration, `heal check` cache,
+//! prerequisite for v0.2 (Calibration, `heal status` cache,
 //! `/heal-code-patch`).
 //!
 //! Every observer's report can be lowered into `Vec<Finding>` via the
@@ -98,7 +98,7 @@ impl Finding {
         self
     }
 
-    /// Compact "metric=N" tag used by `heal check` rows and the
+    /// Compact "metric=N" tag used by `heal status` rows and the
     /// post-commit nudge. The numeric tail is recovered from
     /// `summary` so observers don't have to expose a second value
     /// channel; metrics whose summary doesn't carry a leading number

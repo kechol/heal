@@ -169,7 +169,7 @@ The drain queue + reserved-for-future user-defined rules.
 
 ### `[policy.drain]` — drain tier policy
 
-`heal check` classifies every Finding into a tier:
+`heal status` classifies every Finding into a tier:
 
 - **T0 (`must`)** — drain to zero. The `heal-code-patch` skill iterates only over T0.
 - **T1 (`should`)** — drain when bandwidth permits. Surfaced separately in renderings.
@@ -289,7 +289,7 @@ The skill preserves keys outside its recipe. If you hand-edit the
 file:
 
 - Don't introduce keys that `deny_unknown_fields` will reject. Run
-  `heal check --refresh --json` once after editing to confirm the
+  `heal status --refresh --json` once after editing to confirm the
   loader accepts the file.
 - Treat `.heal/calibration.toml` as machine-owned. Override floors via
   `config.toml` (the per-metric sections) so a recalibration doesn't

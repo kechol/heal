@@ -1,5 +1,4 @@
 pub mod calibrate;
-pub mod check;
 pub mod compact;
 pub mod fix;
 pub mod hook;
@@ -7,6 +6,7 @@ pub mod init;
 pub mod logs;
 pub mod metrics;
 pub mod skills;
+pub mod status;
 
 /// Print a `Serialize`able payload as pretty-printed JSON to stdout.
 /// Used by every `--json` handler — owned data is infallible to

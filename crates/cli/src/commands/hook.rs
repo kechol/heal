@@ -17,9 +17,9 @@
 //!
 //! After persisting the snapshot, `run_commit` writes one compact line
 //! to stdout: that the snapshot was recorded, the current
-//! Critical/High count, and a `heal check` nudge when those counts
+//! Critical/High count, and a `heal status` nudge when those counts
 //! aren't zero. Per-finding listings and the recalibration banner
-//! moved to `heal metrics` / `heal check` so the post-commit output
+//! moved to `heal metrics` / `heal status` so the post-commit output
 //! never exceeds two lines.
 
 use std::io::{IsTerminal, Read, Write};
@@ -121,7 +121,7 @@ fn run_commit(project: &Path, paths: &HealPaths, logs: &EventLog) -> Result<()> 
 }
 
 /// Emit a single-line post-commit summary: snapshot recorded, current
-/// Critical/High counts, and a `heal check` pointer when there's
+/// Critical/High counts, and a `heal status` pointer when there's
 /// something to act on. Stays silent on uncalibrated projects so a
 /// fresh `heal init` flow doesn't pollute the commit output.
 fn write_nudge(
@@ -166,7 +166,7 @@ fn write_nudge(
         out,
         "heal: recorded · {} · {}",
         counts.join(", "),
-        ansi_wrap(ANSI_CYAN, "heal check", colorize),
+        ansi_wrap(ANSI_CYAN, "heal status", colorize),
     )?;
     Ok(())
 }
@@ -347,8 +347,8 @@ mod tests {
             "expected a critical/high count, got: {out}",
         );
         assert!(
-            out.contains("heal check"),
-            "missing nudge to heal check: {out}"
+            out.contains("heal status"),
+            "missing nudge to heal status: {out}"
         );
     }
 

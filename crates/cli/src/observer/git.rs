@@ -18,7 +18,7 @@ pub fn head_sha(root: &Path) -> Option<String> {
 
 /// True iff the working tree has no uncommitted changes (no untracked,
 /// modified, staged, or conflicted entries). `None` when `root` isn't a
-/// git repo — callers (`heal check` cache layer) treat that as "can't
+/// git repo — callers (`heal status` cache layer) treat that as "can't
 /// claim cleanliness, so don't reuse a clean cache".
 #[must_use]
 pub fn worktree_clean(root: &Path) -> Option<bool> {

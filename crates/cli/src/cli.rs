@@ -73,7 +73,7 @@ pub enum Command {
     /// the cache is missing; pass `--refresh` to force a rescan and
     /// overwrite the cache. The single source of truth that
     /// `/heal-code-patch` (Claude side) and `heal fix *` consume.
-    Check(CheckArgs),
+    Status(StatusArgs),
     /// Update the fix-tracking state attached to `.heal/checks/`:
     /// `show` renders one historical `CheckRecord`, `diff` buckets
     /// findings across two, `mark` records a finding as resolved by
@@ -157,11 +157,11 @@ impl MetricKind {
     }
 }
 
-/// Filter for `heal check --metric`. Distinct from [`MetricKind`]
+/// Filter for `heal status --metric`. Distinct from [`MetricKind`]
 /// because `complexity` here is an alias that selects both `ccn` and
 /// `cognitive` findings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub enum CheckMetric {
+pub enum FindingMetric {
     Ccn,
     Cognitive,
     /// CCN + Cognitive together.
@@ -174,7 +174,7 @@ pub enum CheckMetric {
     Lcom,
 }
 
-impl CheckMetric {
+impl FindingMetric {
     /// Does a `Finding.metric` string belong to this filter? Used by
     /// the renderer when narrowing the displayed list.
     #[must_use]
@@ -240,11 +240,11 @@ impl HookEvent {
 
 #[derive(Debug, clap::Args)]
 #[allow(clippy::struct_excessive_bools)] // every flag is independent CLI surface
-pub struct CheckArgs {
+pub struct StatusArgs {
     /// Restrict the rendered list to one metric (or one metric family —
     /// `complexity` covers both CCN and Cognitive).
     #[arg(long, value_enum)]
-    pub metric: Option<CheckMetric>,
+    pub metric: Option<FindingMetric>,
     /// Restrict to findings under a path prefix (e.g.
     /// `--feature src/payments`). Matched against `Finding.location.file`.
     #[arg(long)]
@@ -414,7 +414,7 @@ impl Cli {
             Command::Logs(args) => commands::logs::run_logs(&project, &args),
             Command::Snapshots(args) => commands::logs::run_snapshots(&project, &args),
             Command::Checks(args) => commands::logs::run_checks(&project, &args),
-            Command::Check(args) => commands::check::run(&project, &args),
+            Command::Status(args) => commands::status::run(&project, &args),
             Command::Fix { action } => commands::fix::run(&project, action),
             Command::Skills { action } => commands::skills::run(&project, action),
             Command::Calibrate { force, json } => commands::calibrate::run(&project, force, json),

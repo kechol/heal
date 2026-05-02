@@ -428,7 +428,7 @@ mod tests {
     /// Drift detector — `classify` must produce the **same** id set as
     /// the observers' own `IntoFindings::into_findings()` output. If
     /// this ever fails, the cache layer's `Finding.id` matching breaks
-    /// silently across `heal check` runs.
+    /// silently across `heal status` runs.
     #[test]
     fn classify_id_set_matches_into_findings() {
         let (reports, cal) = fixture();

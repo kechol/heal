@@ -1,4 +1,4 @@
-//! `heal check` — render `.heal/checks/latest.json` and, when needed,
+//! `heal status` — render `.heal/checks/latest.json` and, when needed,
 //! produce it.
 //!
 //! Default flow reads the cached `CheckRecord` from `latest.json` if
@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use crate::cli::{CheckArgs, CheckMetric, SeverityFilter};
+use crate::cli::{FindingMetric, SeverityFilter, StatusArgs};
 use crate::core::calibration::{
     Calibration, FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_OK_CCN, FLOOR_OK_COGNITIVE,
 };
@@ -42,7 +42,7 @@ use crate::core::HealPaths;
 use crate::observer::git;
 use crate::observers::{classify, run_all};
 
-pub fn run(project: &Path, args: &CheckArgs) -> Result<()> {
+pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     let paths = HealPaths::new(project);
     paths.ensure().with_context(|| {
         format!(
@@ -152,7 +152,7 @@ pub(super) fn build_fresh_record(
 /// Resolved filters for the renderer.
 #[derive(Debug, Clone, Default)]
 pub(super) struct Filters {
-    pub(super) metric: Option<CheckMetric>,
+    pub(super) metric: Option<FindingMetric>,
     pub(super) feature: Option<String>,
     pub(super) severity: Option<Severity>,
     pub(super) all: bool,
@@ -160,7 +160,7 @@ pub(super) struct Filters {
 }
 
 impl Filters {
-    fn from_args(args: &CheckArgs) -> Self {
+    fn from_args(args: &StatusArgs) -> Self {
         Self {
             metric: args.metric,
             feature: args.feature.clone(),
@@ -533,7 +533,7 @@ mod tests {
             finding("duplication", "src/b.ts", Severity::Critical, false),
         ]);
         let mut filters = default_filters();
-        filters.metric = Some(CheckMetric::Ccn);
+        filters.metric = Some(FindingMetric::Ccn);
         let out = render_to_string(&rec, &filters);
         assert!(out.contains("src/a.ts"));
         assert!(!out.contains("src/b.ts"));

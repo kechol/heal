@@ -27,7 +27,7 @@ pub struct Config {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectConfig {
-    /// Natural language for AI-generated explanations (`heal check`
+    /// Natural language for AI-generated explanations (`heal status`
     /// output, future `run-*` proposals). Free-form so users can write
     /// `"Japanese"`, `"日本語"`, `"ja"`, `"français"` — the value is
     /// passed verbatim to the model. `None` keeps the model default.

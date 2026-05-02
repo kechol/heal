@@ -1,11 +1,11 @@
 ---
 name: heal-code-review
-description: Read every finding produced by `heal check --all --json`, deeply investigate the user's codebase, and return one architectural reading plus a prioritised refactor TODO list — grounded in the metric literature and module-depth / layering / DDD vocabulary. Works on any language and shape of project; respects the codebase's existing design. Read-only — proposes only. The write counterpart is `/heal-code-patch`. Trigger on "what does heal say?", "review the codebase health", "where should we refactor?", "/heal-code-review".
+description: Read every finding produced by `heal status --all --json`, deeply investigate the user's codebase, and return one architectural reading plus a prioritised refactor TODO list — grounded in the metric literature and module-depth / layering / DDD vocabulary. Works on any language and shape of project; respects the codebase's existing design. Read-only — proposes only. The write counterpart is `/heal-code-patch`. Trigger on "what does heal say?", "review the codebase health", "where should we refactor?", "/heal-code-review".
 ---
 
 # heal-code-review
 
-One entry point for *understanding* what `heal check` has found.
+One entry point for *understanding* what `heal status` has found.
 Runs across every metric in a single pass and returns one ranked
 TODO list with architecture-level reasoning, instead of fragmenting
 the same data into per-metric views.
@@ -54,7 +54,7 @@ main prompt so it stays terse.
 
 ## Mental model
 
-`heal check --all --json` emits a `CheckRecord` containing every
+`heal status --all --json` emits a `CheckRecord` containing every
 classified `Finding`:
 
 ```jsonc
@@ -104,7 +104,7 @@ proposal must pass.
 
 Stop and ask before proceeding if any of these are off:
 
-1. **Cache exists.** Run `heal check --all --json`. If the cache is
+1. **Cache exists.** Run `heal status --all --json`. If the cache is
    missing or stale, the same invocation refreshes it. Capture the
    full payload.
 2. **Calibrated.** If every finding has `severity: "ok"`, the
@@ -187,7 +187,7 @@ highest-Severity items individually.
 
 #### Prioritised TODO list
 
-`heal check` groups findings into three drain tiers driven by
+`heal status` groups findings into three drain tiers driven by
 `[policy.drain]`:
 
 - **T0 — Drain queue** (default `["critical:hotspot"]`). The TODO list
@@ -209,7 +209,7 @@ Each entry is exactly **5 lines**:
     What this code does:    <one sentence after reading it>
     Why it scores:          <root cause: nesting / mixed responsibilities / hidden seam / hub / etc>
     Proposed move:          <named pattern from references/architecture.md, with target>
-    Expected drop:          <which metric(s) move, by roughly how much; or "verifies on next heal check">
+    Expected drop:          <which metric(s) move, by roughly how much; or "verifies on next heal status">
     finding-id:             <id from CheckRecord — exact, so heal-code-patch can pick it up>
 ```
 
@@ -255,7 +255,7 @@ the move:
 4. **Name the next concrete step.** "If you accept this,
    `/heal-code-patch` can drain finding `<id>` next. For
    architecture-level moves you'll write the change yourself, then
-   `heal check --refresh` to confirm the scores moved."
+   `heal status --refresh` to confirm the scores moved."
 
 Stop when the user has decided which moves to act on. Don't slide
 into "and now I'll do all of them" — the next step is either
@@ -353,7 +353,7 @@ reading. The reading leads with intent; numbers support it.
 
 - **Read freely; do not edit.** The skill is read-only at the file
   level; you may open any flagged file to ground your explanation.
-- **One contract — `heal check --all --json`.** Don't shell out to
+- **One contract — `heal status --all --json`.** Don't shell out to
   other observers, don't reimplement a metric. The cache is the
   source of truth.
 - **Keep `finding-id:` lines exact.** `/heal-code-patch` reads them

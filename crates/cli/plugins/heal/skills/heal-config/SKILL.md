@@ -52,7 +52,7 @@ Before changing anything:
    reason about whether a metric has signal at all
    (see `references/config.md` § "Calibration interplay").
 3. **Capture the survey.** Run
-   `heal metrics --json` and `heal check --refresh --json`. Both feed
+   `heal metrics --json` and `heal status --refresh --json`. Both feed
    the survey phase.
 4. **Worktree state noted.** A dirty worktree is fine for *reading*
    the codebase, but the calibration scan should reflect committed
@@ -95,7 +95,7 @@ Read these without editing:
      informs which metric's strictness to dial up.
    - Per-metric top lists — which file paths repeatedly show up as
      hotspots / churn / duplication.
-3. **`heal check --refresh --json`.** Specifically `findings[]`:
+3. **`heal status --refresh --json`.** Specifically `findings[]`:
    - Files that show up in many findings → probably structural
      hotspots; don't exclude them, they are the point.
    - Files that show up in *one* metric's findings only because of
@@ -174,12 +174,12 @@ Build the config in memory, then write it:
    per-metric tunes from the "Tune candidates" list.
 4. **Validate.** `Config::from_toml_str` (the heal binary's loader)
    uses `deny_unknown_fields`, so a typo will surface immediately.
-   The simplest sanity check is to call `heal check --refresh --json`
+   The simplest sanity check is to call `heal status --refresh --json`
    after writing — if the file is malformed `heal` will fail with a
    precise schema error before the scan starts.
 5. **Show the diff.** Don't just write. Render a short summary of:
    - What changed vs the previous config.
-   - What `heal check --refresh --json` reports as the new
+   - What `heal status --refresh --json` reports as the new
      `severity_counts`.
    - Whether any previously-flagged findings now classify as Ok (a
      loosening) or Critical (a tightening).
@@ -207,7 +207,7 @@ Effect:
   before: critical=3 high=11 medium=22 ok=0
   after:  critical=4 high=15 medium=18 ok=0
   → 1 finding promoted to critical, 4 medium reclassified as high.
-  Run `heal check --refresh` to inspect the new ranking.
+  Run `heal status --refresh` to inspect the new ranking.
 ```
 
 ## Constraints
@@ -220,7 +220,7 @@ Effect:
   hand, the next run of this skill should re-apply the recipe but keep
   hand-edits to keys outside the recipe table.
 - **`deny_unknown_fields` is on.** Typos break the loader. After
-  writing, run `heal check --refresh --json` once to confirm the file
+  writing, run `heal status --refresh --json` once to confirm the file
   parses; if it fails, surface the error and revert.
 - **English output by default.** The user can ask for translation if
   they prefer another language. The `[project].response_language`

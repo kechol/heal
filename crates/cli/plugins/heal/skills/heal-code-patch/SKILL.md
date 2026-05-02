@@ -1,25 +1,25 @@
 ---
 name: heal-code-patch
-description: Drain the cache produced by `heal check`, fixing one finding per commit in Severity order, until the cache is empty or the user stops. Writes code, runs tests, and commits — does NOT push or open PRs. Refuses to start on a dirty worktree. Trigger on "fix the heal findings", "drain the cache", "work through the TODO list heal produced", "/heal-code-patch".
+description: Drain the cache produced by `heal status`, fixing one finding per commit in Severity order, until the cache is empty or the user stops. Writes code, runs tests, and commits — does NOT push or open PRs. Refuses to start on a dirty worktree. Trigger on "fix the heal findings", "drain the cache", "work through the TODO list heal produced", "/heal-code-patch".
 ---
 
 # heal-code-patch
 
-Drain the cache that `heal check` produced. One finding per commit,
+Drain the cache that `heal status` produced. One finding per commit,
 in Severity order, until the cache is empty (or the user stops). This
 is the **write** counterpart to `/heal-code-review` — that one proposes,
 this one applies.
 
 ## Mental model
 
-`heal check` analyzes the project and writes a `CheckRecord` to
+`heal status` analyzes the project and writes a `CheckRecord` to
 `.heal/checks/latest.json`. Each Finding has a deterministic id —
 the same problem keeps the same id across runs, so a finding that
 disappears from the cache after a commit is genuinely fixed (not
 re-numbered).
 
 `fixed.jsonl` is the audit trail of "skill committed a fix". The
-**next** `heal check` reconciles it: if the same `finding_id` shows up
+**next** `heal status` reconciles it: if the same `finding_id` shows up
 again, the entry moves to `regressed.jsonl` and the renderer warns. So
 the loop is self-correcting: a botched fix surfaces on the next round.
 
@@ -54,10 +54,10 @@ patterns, end the session with a summary and recommend the user run
    commit-per-finding flow assumes a clean baseline. The cache also
    carries `worktree_clean=false` in this case — `heal checks` will
    show it.
-2. **Cache exists.** Run `heal check --json` and capture the
+2. **Cache exists.** Run `heal status --json` and capture the
    `CheckRecord`. The default flow reads `.heal/checks/latest.json`
    directly; a missing cache is auto-populated by the same invocation.
-3. **Calibration exists.** If `heal check --json` shows every finding
+3. **Calibration exists.** If `heal status --json` shows every finding
    as `severity: "ok"`, the project hasn't been calibrated yet — say so
    and suggest `heal init` or `heal calibrate --force`. Don't try to
    fix Ok findings; they're not actionable until thresholds are set.
@@ -72,7 +72,7 @@ while there are non-Ok findings in the cache:
     run tests / type-check / linter (best effort, see "Verification")
     git add -p / git add <file>; git commit -m "<conventional message>"
     heal fix mark --finding-id <id> --commit-sha <new SHA>
-    heal check --refresh --json   # re-scan and overwrite latest.json
+    heal status --refresh --json   # re-scan and overwrite latest.json
     if the finding is back (regressed warning):
         leave it for now; record in session notes; continue with next finding
     else:
@@ -86,7 +86,7 @@ ask before applying.
 
 ## Picking the next finding
 
-`heal check` classifies every finding into a drain tier via
+`heal status` classifies every finding into a drain tier via
 `[policy.drain]`. The default loop drains **only T0** (`must`):
 
 1. **T0 — Drain queue** (default `["critical:hotspot"]`). The loop
@@ -257,9 +257,9 @@ heal fix mark \
   --commit-sha "$(git rev-parse HEAD)"
 ```
 
-Then run `heal check --refresh --json` to re-scan (default `heal check`
+Then run `heal status --refresh --json` to re-scan (default `heal status`
 just re-reads the now-stale cache). The new cache will either confirm
-the finding is gone, or `heal check` itself will print a regressed
+the finding is gone, or `heal status` itself will print a regressed
 warning and move the entry to `regressed.jsonl` automatically.
 
 ## Output format
@@ -270,7 +270,7 @@ finding:
 ```
 [1/12] 🔴 Critical 🔥  src/payments/engine.ts  CCN=28
   Extracting validateOrder() to drop the nested input checks.
-  cargo test → green. Committed: a1b2c3d4. heal check confirms fixed.
+  cargo test → green. Committed: a1b2c3d4. heal status confirms fixed.
 
 [2/12] 🔴 Critical    src/legacy/old_parser.ts  CCN=31
   ...
@@ -311,4 +311,4 @@ record them anywhere persistent.
 - **Never `--no-verify`.** If pre-commit hooks fail, fix the underlying
   issue (or revert and skip).
 - Don't extend the loop beyond what the cache says. New findings the
-  user wants addressed go into a new `heal check` run.
+  user wants addressed go into a new `heal status` run.

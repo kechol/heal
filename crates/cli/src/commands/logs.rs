@@ -54,7 +54,7 @@ pub fn run_checks(project: &Path, args: &ChecksFilters) -> Result<()> {
     }
     if records.is_empty() {
         println!(
-            "no records yet at {} — run `heal check`",
+            "no records yet at {} — run `heal status`",
             paths.checks_dir().display()
         );
         return Ok(());

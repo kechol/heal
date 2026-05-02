@@ -1,6 +1,6 @@
-//! `.heal/checks/` — the result cache for `heal check`.
+//! `.heal/checks/` — the result cache for `heal status`.
 //!
-//! `heal check` is the **single writer** of `<root>/.heal/checks/YYYY-MM.jsonl`
+//! `heal status` is the **single writer** of `<root>/.heal/checks/YYYY-MM.jsonl`
 //! and `latest.json`: every run produces a [`CheckRecord`] which is
 //! appended to the segment and mirrored atomically into `latest.json`.
 //! `heal checks` and `heal fix show|diff` are pure readers. The only
@@ -8,7 +8,7 @@
 //!
 //! The cache models a TODO list: each `Finding.id` is decision-stable
 //! (see `crate::core::finding`), so the *same* unfixed problem keeps the
-//! same id across consecutive `heal check` runs. Skills can diff two
+//! same id across consecutive `heal status` runs. Skills can diff two
 //! records to see what's been resolved, what's new, and what's
 //! regressed.
 //!
@@ -20,7 +20,7 @@
 //! ## Idempotency contract
 //!
 //! [`is_fresh_against`] returns true when `(head_sha, config_hash,
-//! worktree_clean)` matches the supplied baseline — `heal check` short-
+//! worktree_clean)` matches the supplied baseline — `heal status` short-
 //! circuits on a fresh cache and reuses the latest record. Dirty
 //! worktrees never count as fresh (any untracked file invalidates the
 //! cache; we cannot trust the on-disk numbers).
@@ -28,7 +28,7 @@
 //! ## fixed.jsonl reconciliation
 //!
 //! When a skill commits a fix, it appends a [`FixedFinding`] to
-//! `fixed.jsonl`. On the next `heal check`, [`reconcile_fixed`] walks
+//! `fixed.jsonl`. On the next `heal status`, [`reconcile_fixed`] walks
 //! the new findings:
 //!   - if a fixed `finding_id` is **not** present in the new record →
 //!     the entry remains marked fixed.
@@ -53,7 +53,7 @@ use crate::core::snapshot::SeverityCounts;
 /// failing the whole stream.
 pub const CHECK_RECORD_VERSION: u32 = 1;
 
-/// One execution of `heal check`. The unit of read in the cache:
+/// One execution of `heal status`. The unit of read in the cache:
 /// `heal checks` enumerates records, `heal fix show <id>` retrieves
 /// one, `heal fix diff <a> <b>` compares two.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -63,7 +63,7 @@ pub struct CheckRecord {
     /// timestamp, so lexicographic order = chronological order.
     pub check_id: String,
     pub started_at: DateTime<Utc>,
-    /// `None` when `heal check` ran outside a git repo or HEAD is
+    /// `None` when `heal status` ran outside a git repo or HEAD is
     /// unborn. The cache still records the run; the freshness check
     /// just won't match any future invocation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -129,7 +129,7 @@ fn tally_findings(findings: &[Finding]) -> SeverityCounts {
 
 /// "A skill committed a fix that resolves this finding". The skill (or
 /// equivalent caller) appends one of these via [`append_fixed`] when it
-/// lands a commit; the next `heal check` reconciles fixed.jsonl against
+/// lands a commit; the next `heal status` reconciles fixed.jsonl against
 /// the new findings.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FixedFinding {
@@ -139,7 +139,7 @@ pub struct FixedFinding {
 }
 
 /// A previously-fixed finding that was re-detected by a later
-/// `heal check`. Either the skill's commit didn't fully address the
+/// `heal status`. Either the skill's commit didn't fully address the
 /// problem or a separate commit reintroduced it. Surfaced in the renderer.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RegressedEntry {

@@ -16,7 +16,7 @@
 //!
 //! When the diff runs in "vs live" mode and every finding in the
 //! FROM record has been logged to `fixed.jsonl`, the renderer drops
-//! a hint suggesting `heal check --refresh` so the reconciliation
+//! a hint suggesting `heal status --refresh` so the reconciliation
 //! pass can either retire those marks or surface regressions.
 
 use std::collections::HashMap;
@@ -28,7 +28,7 @@ use chrono::Utc;
 use serde::Serialize;
 
 use crate::cli::FixAction;
-use crate::commands::check::{render, Filters};
+use crate::commands::status::{render, Filters};
 use crate::core::calibration::Calibration;
 use crate::core::check_cache::{
     append_fixed, config_hash_from_paths, find_by_id, iter_records, read_latest, CheckRecord,
@@ -151,7 +151,7 @@ fn run_diff(
             .ok_or_else(|| anyhow::anyhow!("no CheckRecord with check_id={id} (FROM)"))?,
         None => read_latest(&paths.checks_latest())?.ok_or_else(|| {
             anyhow::anyhow!(
-                "no cache yet at {} — run `heal check` first",
+                "no cache yet at {} — run `heal status` first",
                 paths.checks_latest().display()
             )
         })?,
@@ -180,7 +180,7 @@ fn run_diff(
 
     // When every finding in the FROM record has been logged to
     // `fixed.jsonl`, the user is sitting on a session whose `mark`s
-    // haven't been reconciled yet — `heal check --refresh` either
+    // haven't been reconciled yet — `heal status --refresh` either
     // drops those entries (genuinely fixed) or moves them to
     // `regressed.jsonl` (the mark was wrong). Only meaningful in
     // vs-live mode against a non-empty FROM.
@@ -205,7 +205,7 @@ fn build_live_record(project: &Path, paths: &HealPaths) -> Result<CheckRecord> {
     let head_sha = git::head_sha(project);
     let worktree_clean = git::worktree_clean(project).unwrap_or(false);
     let config_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
-    Ok(crate::commands::check::build_fresh_record(
+    Ok(crate::commands::status::build_fresh_record(
         project,
         &cfg,
         calibration.as_ref(),
@@ -229,7 +229,7 @@ fn all_marked_hint(paths: &HealPaths, from: &CheckRecord) -> Result<Option<Strin
     if from.findings.iter().all(|f| marked.contains(f.id.as_str())) {
         Ok(Some(
             "Hint: every finding in the cache is marked fixed — run \
-             `heal check --refresh` to reconcile fixed.jsonl ↔ regressed.jsonl."
+             `heal status --refresh` to reconcile fixed.jsonl ↔ regressed.jsonl."
                 .to_owned(),
         ))
     } else {
@@ -539,7 +539,7 @@ mod tests {
         run_mark(&paths, &b.id, "def5678", false).unwrap();
         let hint = all_marked_hint(&paths, &from).unwrap().expect("hint");
         assert!(
-            hint.contains("heal check --refresh"),
+            hint.contains("heal status --refresh"),
             "hint should reference the refresh command: {hint}",
         );
     }

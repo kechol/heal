@@ -26,8 +26,8 @@ Conventions used below:
 
 ```
 heal init                       # one-time: write .heal/, install hook, calibrate
-heal check                      # render the TODO list (cached)
-heal check --refresh --json     # rescan + emit machine-readable findings
+heal status                      # render the TODO list (cached)
+heal status --refresh --json     # rescan + emit machine-readable findings
 heal fix mark --finding-id … --commit-sha …    # after committing a fix
 heal calibrate --force          # re-baseline thresholds when codebase shifted
 ```
@@ -38,7 +38,7 @@ Behind the scenes:
   `.heal/snapshots/YYYY-MM.jsonl` and a lightweight `commit` event to
   `.heal/logs/YYYY-MM.jsonl`. Failures are swallowed so HEAL never blocks
   a commit.
-- `heal check` writes its result to `.heal/checks/latest.json` plus an
+- `heal status` writes its result to `.heal/checks/latest.json` plus an
   append-only `.heal/checks/YYYY-MM.jsonl` segment. Re-running on the
   same `(head_sha, config_hash, worktree_clean=true)` is a free cache
   hit.
@@ -67,7 +67,7 @@ overwrite the file. JSON shape:
 }
 ```
 
-### `heal check [args] [--json]`
+### `heal status [args] [--json]`
 
 The single source of truth for the current TODO list. Renders cached
 findings; pass `--refresh` to rescan first. Useful args:
@@ -150,7 +150,7 @@ Pass `--all` to also surface Improved + Unchanged.
 ### `heal fix mark --finding-id <ID> --commit-sha <SHA> [--json]`
 
 Append a `FixedFinding` to `.heal/checks/fixed.jsonl`. Call after each
-fix-per-commit so the next `heal check --refresh` reconciles. JSON:
+fix-per-commit so the next `heal status --refresh` reconciles. JSON:
 
 ```jsonc
 {
@@ -271,7 +271,7 @@ Silently no-ops when invoked in a project that has no `.heal/`.
 
 ## Common patterns
 
-**Wait for a clean check.** Run `heal check --refresh --json | jq
+**Wait for a clean check.** Run `heal status --refresh --json | jq
 '.severity_counts'`; succeed when `critical = 0` (or whatever your gate
 is). The check is idempotent on a clean worktree — re-running is free.
 
@@ -282,14 +282,14 @@ spec (default: Critical-with-`hotspot=true`), pick one, fix it, then:
 ```sh
 git commit -m "fix: …"
 heal fix mark --finding-id "<id>" --commit-sha "$(git rev-parse HEAD)"
-heal check --refresh --json    # re-scan; the finding either disappears or surfaces in regressed.jsonl
+heal status --refresh --json    # re-scan; the finding either disappears or surfaces in regressed.jsonl
 ```
 
 **Force a fresh scan after policy changes.** Editing `config.toml` or
 `calibration.toml` invalidates every cached `CheckRecord`. Re-run with
 `--refresh` once.
 
-**CI gating.** `heal check --refresh --json --severity critical` and
+**CI gating.** `heal status --refresh --json --severity critical` and
 fail the build if `severity_counts.critical > 0`. Keep `--all` off so
 the tier you're gating on is unambiguous.
 

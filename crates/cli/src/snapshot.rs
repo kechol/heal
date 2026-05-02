@@ -44,7 +44,7 @@ pub(crate) fn pack_with_delta(
 
 /// Classify `reports` once against `paths.calibration()`, returning
 /// both the Findings (for the snapshot's `severity_counts`, the
-/// post-commit nudge, and `heal check`'s renderer) and the loaded
+/// post-commit nudge, and `heal status`'s renderer) and the loaded
 /// calibration. Centralised so callers don't load + classify twice.
 pub(crate) fn classify_with_calibration(
     paths: &HealPaths,
@@ -63,7 +63,7 @@ pub(crate) fn classify_with_calibration(
 
 /// Build a `MetricsSnapshot` from already-computed observer reports
 /// and Findings. The caller threads in the same `findings` it'll use
-/// elsewhere (post-commit nudge, `heal check` renderer) so we don't
+/// elsewhere (post-commit nudge, `heal status` renderer) so we don't
 /// run `classify` twice on a single command.
 pub(crate) fn pack(
     project: &Path,

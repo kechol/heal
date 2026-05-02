@@ -48,7 +48,7 @@ impl HealPaths {
 
     /// Append-only result cache: `<root>/checks/YYYY-MM.jsonl` plus
     /// auxiliary files (`latest.json`, `fixed.jsonl`, `regressed.jsonl`).
-    /// Skill workflows read this; `heal check` writes it. Kept under
+    /// Skill workflows read this; `heal status` writes it. Kept under
     /// `.heal/` (not `.cache/`) so it ships with the project alongside
     /// snapshots/logs.
     #[must_use]
@@ -57,7 +57,7 @@ impl HealPaths {
     }
 
     /// Latest `CheckRecord` mirror, written atomically after every
-    /// `heal check`. Skills that just want "the current TODO list" read
+    /// `heal status`. Skills that just want "the current TODO list" read
     /// this without scanning the JSONL stream.
     #[must_use]
     pub fn checks_latest(&self) -> PathBuf {
@@ -65,7 +65,7 @@ impl HealPaths {
     }
 
     /// "These findings have been fixed by a commit" log. Append-only.
-    /// Reconciled on every `heal check` run — entries that re-detect
+    /// Reconciled on every `heal status` run — entries that re-detect
     /// are removed and surfaced in `regressed.jsonl`.
     #[must_use]
     pub fn checks_fixed_log(&self) -> PathBuf {
