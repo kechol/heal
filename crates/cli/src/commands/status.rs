@@ -100,7 +100,10 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     };
 
     if args.json {
-        super::emit_json(&record);
+        match filters.workspace.as_deref() {
+            None => super::emit_json(&record),
+            Some(ws) => super::emit_json(&record.project_to_workspace(ws)),
+        }
         return Ok(());
     }
     let cfg = cfg.expect("cfg loaded above when not args.json");
@@ -165,6 +168,7 @@ pub(super) fn build_fresh_record(
 pub(super) struct Filters {
     pub(super) metric: Option<FindingMetric>,
     pub(super) feature: Option<String>,
+    pub(super) workspace: Option<String>,
     pub(super) severity: Option<Severity>,
     pub(super) all: bool,
     pub(super) top: Option<usize>,
@@ -175,6 +179,7 @@ impl Filters {
         Self {
             metric: args.metric,
             feature: args.feature.clone(),
+            workspace: args.workspace.clone(),
             severity: args.severity.map(SeverityFilter::into_severity),
             all: args.all,
             top: args.top,
@@ -184,6 +189,11 @@ impl Filters {
     fn passes(&self, finding: &Finding) -> bool {
         if let Some(m) = self.metric {
             if !m.matches(&finding.metric) {
+                return false;
+            }
+        }
+        if let Some(ws) = self.workspace.as_deref() {
+            if finding.workspace.as_deref() != Some(ws) {
                 return false;
             }
         }
@@ -230,6 +240,9 @@ pub(super) fn render(
             "  {} worktree dirty — uncommitted changes are reflected here.",
             ansi_wrap(ANSI_YELLOW, "note:", colorize),
         )?;
+    }
+    if let Some(ws) = filters.workspace.as_deref() {
+        writeln!(out, "  workspace: {ws}")?;
     }
     for line in override_notes(cfg) {
         writeln!(
@@ -475,6 +488,7 @@ mod tests {
         Filters {
             metric: None,
             feature: None,
+            workspace: None,
             severity: None,
             all: false,
             top: None,

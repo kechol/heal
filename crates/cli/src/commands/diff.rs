@@ -27,7 +27,13 @@ use crate::core::snapshot::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YEL
 use crate::core::HealPaths;
 use crate::observer::git;
 
-pub fn run(project: &Path, revspec: &str, show_all: bool, as_json: bool) -> Result<()> {
+pub fn run(
+    project: &Path,
+    revspec: &str,
+    workspace: Option<&str>,
+    show_all: bool,
+    as_json: bool,
+) -> Result<()> {
     let paths = HealPaths::new(project);
     let target_sha = git::resolve_ref(project, revspec).ok_or_else(|| {
         anyhow::anyhow!(
@@ -46,7 +52,7 @@ pub fn run(project: &Path, revspec: &str, show_all: bool, as_json: bool) -> Resu
     })?;
     let to_record = build_live_record(project, &paths)?;
 
-    let diff = compute_diff(&from_record, &to_record);
+    let diff = compute_diff(&from_record, &to_record, workspace);
     if as_json {
         super::emit_json(&DiffReport {
             from_ref: revspec,
@@ -54,6 +60,7 @@ pub fn run(project: &Path, revspec: &str, show_all: bool, as_json: bool) -> Resu
             from_started_at: from_record.started_at.to_rfc3339(),
             to_started_at: to_record.started_at.to_rfc3339(),
             to_head_sha: to_record.head_sha.as_deref(),
+            workspace,
             buckets: &diff,
         });
         return Ok(());
@@ -64,6 +71,7 @@ pub fn run(project: &Path, revspec: &str, show_all: bool, as_json: bool) -> Resu
     render_diff(
         revspec,
         &target_sha,
+        workspace,
         &from_record,
         &to_record,
         &diff,
@@ -108,6 +116,11 @@ struct DiffReport<'a> {
     from_started_at: String,
     to_started_at: String,
     to_head_sha: Option<&'a str>,
+    /// Echo of the user-supplied `--workspace <path>` filter, when any.
+    /// Skipped from JSON when omitted so the unfiltered shape stays
+    /// terse.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    workspace: Option<&'a str>,
     #[serde(flatten)]
     buckets: &'a Diff,
 }
@@ -157,11 +170,25 @@ impl DiffEntry {
     }
 }
 
-pub(crate) fn compute_diff(from: &CheckRecord, to: &CheckRecord) -> Diff {
-    let from_by_id: HashMap<&str, &Finding> =
-        from.findings.iter().map(|f| (f.id.as_str(), f)).collect();
-    let to_by_id: HashMap<&str, &Finding> =
-        to.findings.iter().map(|f| (f.id.as_str(), f)).collect();
+pub(crate) fn compute_diff(from: &CheckRecord, to: &CheckRecord, workspace: Option<&str>) -> Diff {
+    let in_scope = |f: &Finding| -> bool {
+        match workspace {
+            None => true,
+            Some(ws) => f.workspace.as_deref() == Some(ws),
+        }
+    };
+    let from_by_id: HashMap<&str, &Finding> = from
+        .findings
+        .iter()
+        .filter(|f| in_scope(f))
+        .map(|f| (f.id.as_str(), f))
+        .collect();
+    let to_by_id: HashMap<&str, &Finding> = to
+        .findings
+        .iter()
+        .filter(|f| in_scope(f))
+        .map(|f| (f.id.as_str(), f))
+        .collect();
 
     let mut diff = Diff::default();
 
@@ -183,7 +210,7 @@ pub(crate) fn compute_diff(from: &CheckRecord, to: &CheckRecord) -> Diff {
         }
     }
 
-    let total = from.findings.len();
+    let total = from_by_id.len();
     diff.progress_pct = if total == 0 {
         0.0
     } else {
@@ -198,6 +225,7 @@ pub(crate) fn compute_diff(from: &CheckRecord, to: &CheckRecord) -> Diff {
 fn render_diff(
     revspec: &str,
     from_sha: &str,
+    workspace: Option<&str>,
     from: &CheckRecord,
     to: &CheckRecord,
     diff: &Diff,
@@ -209,17 +237,20 @@ fn render_diff(
     let bar: String = "─".repeat(48);
     let short = &from_sha[..from_sha.len().min(8)];
     writeln!(out, "{title} {bar}")?;
+    if let Some(ws) = workspace {
+        writeln!(out, "  workspace: {ws}")?;
+    }
     writeln!(
         out,
         "  from: {revspec} ({short})  recorded {}  ({} findings)",
         from.started_at.format("%Y-%m-%d %H:%M"),
-        from.findings.len(),
+        scoped_count(&from.findings, workspace),
     )?;
     writeln!(
         out,
         "  to:   live scan  HEAD={}  ({} findings)",
         to.head_sha.as_deref().unwrap_or("∅"),
-        to.findings.len(),
+        scoped_count(&to.findings, workspace),
     )?;
     writeln!(out)?;
 
@@ -240,7 +271,7 @@ fn render_diff(
     }
     writeln!(out)?;
     let resolved = diff.resolved.len();
-    let total = from.findings.len();
+    let total = scoped_count(&from.findings, workspace);
     if total == 0 {
         writeln!(out, "  Progress: n/a (prior run had no findings)")?;
     } else {
@@ -255,6 +286,16 @@ fn render_diff(
     let close: String = "─".repeat(60);
     writeln!(out, "{close}")?;
     Ok(())
+}
+
+fn scoped_count(findings: &[Finding], workspace: Option<&str>) -> usize {
+    match workspace {
+        None => findings.len(),
+        Some(ws) => findings
+            .iter()
+            .filter(|f| f.workspace.as_deref() == Some(ws))
+            .count(),
+    }
 }
 
 fn render_bucket(
@@ -330,7 +371,7 @@ mod tests {
         let from = record(vec![dropped.clone(), regressed_a.clone(), stay.clone()]);
         let to = record(vec![regressed_b.clone(), stay.clone(), new_one.clone()]);
 
-        let diff = compute_diff(&from, &to);
+        let diff = compute_diff(&from, &to, None);
 
         assert_eq!(diff.resolved.len(), 1);
         assert_eq!(diff.resolved[0].file, "src/dropped.ts");
@@ -355,10 +396,36 @@ mod tests {
         let mut curr = finding("calm", Severity::Medium);
         curr.severity = Severity::Medium;
         assert_eq!(prev.id, curr.id);
-        let diff = compute_diff(&record(vec![prev]), &record(vec![curr]));
+        let diff = compute_diff(&record(vec![prev]), &record(vec![curr]), None);
         assert_eq!(diff.improved.len(), 1);
         assert!(diff.regressed.is_empty());
         assert!((diff.progress_pct - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn diff_workspace_filter_scopes_buckets_and_total() {
+        // Two findings per side, one in each workspace.
+        let mut a_prev = finding("alpha", Severity::High);
+        a_prev.workspace = Some("packages/web".into());
+        let mut a_curr = finding("alpha", Severity::High);
+        a_curr.workspace = Some("packages/web".into());
+        let mut b_prev = finding("beta", Severity::High);
+        b_prev.workspace = Some("packages/api".into());
+        // beta resolved on the new side — but only counts when api scope active.
+        let from = record(vec![a_prev, b_prev]);
+        let to = record(vec![a_curr]);
+
+        let web = compute_diff(&from, &to, Some("packages/web"));
+        assert!(web.resolved.is_empty());
+        assert_eq!(web.unchanged.len(), 1);
+        // total = 1 (web only); 0 resolved → 0%.
+        assert!((web.progress_pct - 0.0).abs() < 1e-9);
+
+        let api = compute_diff(&from, &to, Some("packages/api"));
+        assert_eq!(api.resolved.len(), 1);
+        assert!(api.unchanged.is_empty());
+        // total = 1 (api only); 1 resolved → 100%.
+        assert!((api.progress_pct - 1.0).abs() < 1e-9);
     }
 
     #[test]
@@ -366,6 +433,7 @@ mod tests {
         let diff = compute_diff(
             &record(Vec::new()),
             &record(vec![finding("only", Severity::High)]),
+            None,
         );
         assert!((diff.progress_pct - 0.0).abs() < 1e-9);
         assert_eq!(diff.new_findings.len(), 1);

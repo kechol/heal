@@ -74,7 +74,24 @@ pub struct CheckRecord {
     /// different hashes and thus distinct records.
     pub config_hash: String,
     pub severity_counts: SeverityCounts,
+    /// Per-workspace tally when `[[project.workspaces]]` is declared,
+    /// keyed by workspace path (the same string as `Finding.workspace`).
+    /// Empty when no workspaces are configured. Findings outside every
+    /// declared workspace are not counted here — they only appear in
+    /// the top-level `severity_counts`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub workspaces: Vec<WorkspaceSummary>,
     pub findings: Vec<Finding>,
+}
+
+/// Per-workspace severity tally, ordered the same as
+/// `[[project.workspaces]]` entries appear in `config.toml`. Lives on
+/// `CheckRecord` so skills don't have to re-derive it from
+/// `findings[].workspace`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkspaceSummary {
+    pub path: String,
+    pub severity_counts: SeverityCounts,
 }
 
 impl CheckRecord {
@@ -90,6 +107,7 @@ impl CheckRecord {
     ) -> Self {
         let started_at = Utc::now();
         let severity_counts = tally_findings(&findings);
+        let workspaces = workspace_summaries(&findings);
         Self {
             version: CHECK_RECORD_VERSION,
             check_id: ulid::Ulid::new().to_string(),
@@ -98,6 +116,40 @@ impl CheckRecord {
             worktree_clean,
             config_hash,
             severity_counts,
+            workspaces,
+            findings,
+        }
+    }
+
+    /// Return a copy with `findings` and `severity_counts` narrowed to
+    /// `workspace`. `workspaces` keeps only the matching summary (or is
+    /// empty if `workspace` matches nothing). Callers use this to make
+    /// `heal status --json --workspace …` mirror the filtered console
+    /// view without forcing skills to re-aggregate the full record.
+    #[must_use]
+    pub fn project_to_workspace(&self, workspace: &str) -> Self {
+        let findings: Vec<Finding> = self
+            .findings
+            .iter()
+            .filter(|f| f.workspace.as_deref() == Some(workspace))
+            .cloned()
+            .collect();
+        let severity_counts = tally_findings(&findings);
+        let workspaces = self
+            .workspaces
+            .iter()
+            .filter(|w| w.path == workspace)
+            .cloned()
+            .collect();
+        Self {
+            version: self.version,
+            check_id: self.check_id.clone(),
+            started_at: self.started_at,
+            head_sha: self.head_sha.clone(),
+            worktree_clean: self.worktree_clean,
+            config_hash: self.config_hash.clone(),
+            severity_counts,
+            workspaces,
             findings,
         }
     }
@@ -125,6 +177,28 @@ fn tally_findings(findings: &[Finding]) -> SeverityCounts {
         counts.tally(f.severity);
     }
     counts
+}
+
+/// Group findings by `Finding.workspace`, drop the unwined bucket, and
+/// produce one [`WorkspaceSummary`] per declared workspace. Output is
+/// alphabetic by path so `heal status --json` is reproducible. Used by
+/// [`CheckRecord::new`].
+fn workspace_summaries(findings: &[Finding]) -> Vec<WorkspaceSummary> {
+    use std::collections::BTreeMap;
+    let mut groups: BTreeMap<String, SeverityCounts> = BTreeMap::new();
+    for f in findings {
+        let Some(ws) = f.workspace.as_deref() else {
+            continue;
+        };
+        groups.entry(ws.to_owned()).or_default().tally(f.severity);
+    }
+    groups
+        .into_iter()
+        .map(|(path, severity_counts)| WorkspaceSummary {
+            path,
+            severity_counts,
+        })
+        .collect()
 }
 
 /// "A skill committed a fix that resolves this finding". The skill (or
@@ -425,6 +499,32 @@ mod tests {
         let r1 = CheckRecord::new(None, false, "h".into(), Vec::new());
         let r2 = CheckRecord::new(None, false, "h".into(), Vec::new());
         assert_ne!(r1.check_id, r2.check_id);
+    }
+
+    #[test]
+    fn project_to_workspace_narrows_findings_summary_and_workspaces() {
+        let mut a = finding("alpha", Severity::High);
+        a.workspace = Some("packages/web".into());
+        let mut b = finding("beta", Severity::Critical);
+        b.workspace = Some("packages/api".into());
+        let c = finding("gamma", Severity::Medium); // unscoped
+        let rec = CheckRecord::new(
+            Some("sha".into()),
+            true,
+            "h".into(),
+            vec![a.clone(), b.clone(), c.clone()],
+        );
+        let web = rec.project_to_workspace("packages/web");
+        assert_eq!(web.findings.len(), 1);
+        assert_eq!(web.findings[0].id, a.id);
+        assert_eq!(web.workspaces.len(), 1);
+        assert_eq!(web.workspaces[0].path, "packages/web");
+        assert_eq!(web.severity_counts.high, 1);
+        assert_eq!(web.severity_counts.critical, 0);
+        // identity bits preserved.
+        assert_eq!(web.head_sha, rec.head_sha);
+        assert_eq!(web.config_hash, rec.config_hash);
+        assert_eq!(web.check_id, rec.check_id);
     }
 
     #[test]

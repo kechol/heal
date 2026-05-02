@@ -261,6 +261,11 @@ pub struct StatusArgs {
     /// `complexity` covers both CCN and Cognitive).
     #[arg(long, value_enum)]
     pub metric: Option<FindingMetric>,
+    /// Restrict to findings inside one declared
+    /// `[[project.workspaces]]` entry. The value is the workspace's
+    /// `path` (the same string `Finding.workspace` carries).
+    #[arg(long, value_name = "PATH")]
+    pub workspace: Option<String>,
     /// Restrict to findings under a path prefix (e.g.
     /// `--feature src/payments`). Matched against `Finding.location.file`.
     #[arg(long)]
@@ -336,6 +341,11 @@ pub struct DiffArgs {
     /// the matching `CheckRecord` must already exist in `.heal/checks/`.
     #[arg(value_name = "GIT_REF", default_value = "HEAD")]
     pub revspec: String,
+    /// Restrict to findings inside one declared
+    /// `[[project.workspaces]]` entry. The value is the workspace's
+    /// `path` (the same string `Finding.workspace` carries).
+    #[arg(long, value_name = "PATH")]
+    pub workspace: Option<String>,
     /// Show the Improved / Unchanged buckets in addition to Resolved /
     /// Regressed / New. (Distinct from `heal status --all`, which
     /// surfaces lower Severity tiers; this flag has no effect on
@@ -401,9 +411,13 @@ impl Cli {
             Command::Snapshots(args) => commands::logs::run_snapshots(&project, &args),
             Command::Checks(args) => commands::logs::run_checks(&project, &args),
             Command::Status(args) => commands::status::run(&project, &args),
-            Command::Diff(args) => {
-                commands::diff::run(&project, &args.revspec, args.all, args.json)
-            }
+            Command::Diff(args) => commands::diff::run(
+                &project,
+                &args.revspec,
+                args.workspace.as_deref(),
+                args.all,
+                args.json,
+            ),
             Command::MarkFixed {
                 finding_id,
                 commit_sha,
