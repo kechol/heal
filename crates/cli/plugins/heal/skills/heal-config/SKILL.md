@@ -57,7 +57,7 @@ Before changing anything:
 4. **Worktree state noted.** A dirty worktree is fine for *reading*
    the codebase, but the calibration scan should reflect committed
    state. Tell the user once if `worktree_clean: false` shows up in
-   the check JSON; don't refuse.
+   the status JSON; don't refuse.
 
 ## Procedure (Calibrate → Survey → Choose → Write)
 

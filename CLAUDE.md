@@ -9,11 +9,12 @@ and the constraints that shape any change you propose.
 HEAL is a Rust CLI (binary: `heal`) that turns code-health signals into
 work for AI coding agents. v0.1 ships the **observe** half of the loop:
 six metric observers (LOC, CCN, Cognitive, Churn, Change Coupling,
-Duplication, Hotspot composition), the post-commit and Claude plugin
-hooks that drive them, and `heal status` / `heal check` / `heal fix`
-for surfacing findings. `heal check` runs the analyzer, classifies by
+Duplication, Hotspot composition), the post-commit git hook and
+Claude Code's `settings.json` hook commands that drive them, and
+`heal status` / `heal metrics` / `heal diff`
+for surfacing findings. `heal status` runs the analyzer, classifies by
 Severity, and writes `.heal/checks/`; `heal checks` (top-level
-browser) and `heal fix show|diff` read it. The autonomous repair loop
+browser) and `heal diff <git-ref>` read it. The autonomous repair loop
 (`heal run`, PR generation) lands in v0.2+.
 
 For the user-facing overview see [`README.md`](./README.md).
@@ -93,11 +94,11 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
   (`YYYY-MM.jsonl` → `YYYY-MM.jsonl.gz`) and deletes them at 365 days.
   Best-effort from `heal hook commit`; idempotent. Older history is
   intentionally not preserved — calibration only looks at 90 days,
-  `heal status` reads recent commits, and trends beyond a year were
+  `heal metrics` reads recent commits, and trends beyond a year were
   never going to be actioned. Don't reintroduce a `.archive/` subdir;
   the original design did and it added complexity for no reader.
 - **`snapshots/`** holds `MetricsSnapshot` events written by the
-  `commit` hook. `heal status` reads these for the metric series and
+  `commit` hook. `heal metrics` reads these for the metric series and
   delta. Decode the latest record with
   `snapshot::MetricsSnapshot::latest_in(&log)`. Records that fail to
   decode (legacy payloads, mid-write truncation) are skipped silently —
@@ -108,13 +109,13 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
   files_changed/insertions/deletions); the heavy metric payload stays
   in `snapshots/`. `heal logs` reads these.
 - `EventLog::iter_segments(segments)` exists so callers that already
-  paid for `segments()` (e.g. `heal status`) don't re-glob the
+  paid for `segments()` (e.g. `heal metrics`) don't re-glob the
   directory. Use it.
 
 ### Result cache (`.heal/checks/`)
-- `heal check` is the **only writer** of `.heal/checks/<segment>.jsonl`
-  and `latest.json`. `heal checks` and `heal fix show|diff` are pure
-  readers. `heal fix mark` is a second writer scoped to `fixed.jsonl`.
+- `heal status` is the **only writer** of `.heal/checks/<segment>.jsonl`
+  and `latest.json`. `heal checks` and `heal diff` are pure readers.
+  `heal mark-fixed` is a second writer scoped to `fixed.jsonl`.
   The cache models a TODO list — every Finding has a deterministic id
   (`<metric>:<file>:<symbol>:<fnv1a>`) so an unfixed problem reappears
   under the same id on the next run.
@@ -122,7 +123,7 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
   `latest.json` (atomic mirror of the most recent record),
   `fixed.jsonl` (skill committed a fix), `regressed.jsonl` (a fix
   was re-detected). `core::check_cache` owns the schema.
-- Idempotency: `heal check` short-circuits when
+- Idempotency: `heal status` short-circuits when
   `(head_sha, config_hash, worktree_clean=true)` matches the latest
   cached record — re-running on the same commit is free. Dirty
   worktrees never count as fresh.

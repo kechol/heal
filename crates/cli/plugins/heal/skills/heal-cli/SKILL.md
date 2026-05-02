@@ -184,7 +184,7 @@ so the next `heal status --refresh` either retires the entry
 ### `heal init [--force] [--yes|--no-skills] [--json]`
 
 One-time setup: `.heal/` layout, default `config.toml`, post-commit
-hook, initial scan + calibration, optional Claude-plugin install.
+hook, initial scan + calibration, optional Claude-skills install.
 
 - `--force` overwrites an existing `config.toml` and refreshes the hook
   (preserving the user-marker check).

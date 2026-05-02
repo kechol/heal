@@ -214,7 +214,7 @@ pub(super) fn render(
     out: &mut impl Write,
 ) -> Result<()> {
     let drain = &cfg.policy.drain;
-    let title = ansi_wrap(ANSI_CYAN, "── HEAL check", colorize);
+    let title = ansi_wrap(ANSI_CYAN, "── HEAL status", colorize);
     let bar: String = "─".repeat(50);
     writeln!(out, "{title} {bar}")?;
     writeln!(

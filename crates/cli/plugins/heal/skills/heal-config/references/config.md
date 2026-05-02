@@ -141,7 +141,7 @@ window).
 |------------------|------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `enabled`        | `bool`           | `true`  |                                                                                                                                                           |
 | `warn_delta_pct` | `u32`            | `30`    | Reserved — Δ-rate threshold for the warning surface (post-commit nudge). Scope-limited to v0.3+.                                                          |
-| `top_n`          | `Option<usize>`  | `None`  | Override the complexity list width (covers both CCN and Cognitive — they share the `complexity:` status section).                                         |
+| `top_n`          | `Option<usize>`  | `None`  | Override the complexity list width (covers both CCN and Cognitive — they share the `complexity:` section in `heal metrics`).                              |
 | `floor_critical` | `Option<f64>`    | `None`  | Override the absolute Critical floor. Default: `core::calibration::FLOOR_CCN` = 25 (McCabe's "untestable").                                              |
 | `floor_ok`       | `Option<f64>`    | `None`  | Override the Ok graduation gate. Default: `core::calibration::FLOOR_OK_CCN` = 11 (McCabe's "simple, low risk"). Values strictly below classify as Ok regardless of percentile. |
 

@@ -63,7 +63,7 @@ pub fn run(project: &Path, json_output: bool, metric: Option<MetricKind>) -> Res
         .expect("cfg_exists branch implies cfg loaded")
         .metrics;
     let reports = reports.expect("cfg present implies reports built");
-    println!("HEAL status (project: {})", project.display());
+    println!("HEAL metrics (project: {})", project.display());
     println!("  config:            {}", paths.config().display());
     println!("  snapshot segments: {segment_count}");
     println!("  snapshots:         {snapshot_count}");

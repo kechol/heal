@@ -1,5 +1,6 @@
-//! `heal hook <commit|edit|stop>` — single entrypoint invoked by git hooks
-//! and the Claude plugin. Each event has a different write target:
+//! `heal hook <commit|edit|stop>` — single entrypoint invoked by git
+//! hooks and Claude Code's `settings.json` hook commands. Each event
+//! has a different write target:
 //!
 //! | event  | snapshots/ | logs/ | observer scan | stdin payload |
 //! | ------ | :--------: | :---: | :-----------: | :-----------: |
@@ -7,8 +8,8 @@
 //! | edit   |     —      |   ✓   |       —       |       ✓       |
 //! | stop   |     —      |   ✓   |       —       |       ✓       |
 //!
-//! `commit` is the only event that runs observers (heavy work) — `edit` and
-//! `stop` stay below ~1ms so the Claude plugin loop isn't slowed down.
+//! `commit` is the only event that runs observers (heavy work) — `edit`
+//! and `stop` stay below ~1ms so Claude Code's loop isn't slowed down.
 //! `commit` also writes a lightweight metadata record to `logs/` so the
 //! event timeline (`heal logs`) is the single source of truth for "what
 //! happened when", while `snapshots/` retains the typed metric series.
@@ -184,8 +185,8 @@ fn commit_log_payload(project: &Path) -> serde_json::Value {
 }
 
 fn capture_stdin() -> Result<serde_json::Value> {
-    // Claude plugin hooks deliver event metadata via stdin (JSON). Skip the
-    // read on a tty so manual invocations don't block on user input.
+    // Claude Code's hooks deliver event metadata via stdin (JSON). Skip
+    // the read on a tty so manual invocations don't block on user input.
     let stdin = std::io::stdin();
     if stdin.is_terminal() {
         return Ok(serde_json::Value::Null);

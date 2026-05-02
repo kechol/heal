@@ -60,9 +60,9 @@ fn default_since_days() -> u32 {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct MetricsConfig {
-    /// Default `worst_n` width for status rankings. Each metric below can
-    /// override this with its own `top_n = N`; absent overrides fall back
-    /// to this value.
+    /// Default `worst_n` width for `heal metrics` rankings. Each metric
+    /// below can override this with its own `top_n = N`; absent overrides
+    /// fall back to this value.
     #[serde(default = "default_top_n")]
     pub top_n: usize,
     #[serde(default)]
@@ -445,7 +445,8 @@ pub struct CcnConfig {
     #[serde(default = "default_warn_delta_pct")]
     pub warn_delta_pct: u32,
     /// Per-metric override for `metrics.top_n` — covers both CCN and
-    /// Cognitive listings since they share the "complexity:" status section.
+    /// Cognitive listings since they share the "complexity:" section in
+    /// `heal metrics`.
     #[serde(default)]
     pub top_n: Option<usize>,
     /// Calibration override — see `core::calibration::FLOOR_CCN` for the
