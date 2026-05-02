@@ -29,10 +29,10 @@ git commit
                                          (Critical / High findings only;
                                           recalibrate hint when a trigger fires)
 
-user: heal check (or `claude /heal-code-patch`)
+user: heal status (or `claude /heal-code-patch`)
     │
     ▼
-heal check  ──►  classify Findings via calibration.toml
+heal status  ──►  classify Findings via calibration.toml
                        │
                        ├──►  .heal/checks/YYYY-MM.jsonl + latest.json
                        │       (CheckRecord — the TODO list)
@@ -86,10 +86,10 @@ After `heal init`:
 | `.heal/calibration.toml`        | `heal init` / `heal calibrate`               | At setup, then on explicit recalibration.    |
 | `.heal/snapshots/YYYY-MM.jsonl` | post-commit hook + `heal calibrate`          | On every `git commit` and recalibration.     |
 | `.heal/logs/YYYY-MM.jsonl`      | post-commit + Claude PostToolUse / Stop      | On every commit and Claude tool event.       |
-| `.heal/checks/YYYY-MM.jsonl`    | `heal check`                                 | Each fresh `heal check` (cache-miss path).   |
-| `.heal/checks/latest.json`      | `heal check`                                 | Atomic mirror; refreshed on every fresh run. |
-| `.heal/checks/fixed.jsonl`      | `heal fix mark` (called by `/heal-code-patch`) | Each commit `/heal-code-patch` lands.          |
-| `.heal/checks/regressed.jsonl`  | `heal check` (reconcile pass)                | When a fixed finding is re-detected.         |
+| `.heal/checks/YYYY-MM.jsonl`    | `heal status`                                 | Each fresh `heal status` (cache-miss path).   |
+| `.heal/checks/latest.json`      | `heal status`                                 | Atomic mirror; refreshed on every fresh run. |
+| `.heal/checks/fixed.jsonl`      | `heal mark-fixed` (called by `/heal-code-patch`) | Each commit `/heal-code-patch` lands.          |
+| `.heal/checks/regressed.jsonl`  | `heal status` (reconcile pass)                | When a fixed finding is re-detected.         |
 | `.claude/skills/heal-*/`        | `heal skills install`                        | Once; updated with `heal skills update`.     |
 | `.claude/settings.json` (HEAL hooks) | `heal skills install`                   | Additive merge; uninstall removes only HEAL command lines. |
 | `.heal/skills-install.json`     | `heal skills install` / `update`             | Drift-detection manifest.                    |
@@ -183,7 +183,7 @@ how many metrics are enabled.
 
 ### `checks/` — the result cache
 
-The TODO list `/heal-code-patch` consumes. `heal check` is the only writer.
+The TODO list `/heal-code-patch` consumes. `heal status` is the only writer.
 
 ```json
 {
@@ -198,7 +198,7 @@ The TODO list `/heal-code-patch` consumes. `heal check` is the only writer.
 }
 ```
 
-`heal check` short-circuits when `(head_sha, config_hash,
+`heal status` short-circuits when `(head_sha, config_hash,
 worktree_clean=true)` matches the latest cached record — re-running on
 the same commit is free.
 
@@ -214,7 +214,7 @@ single-purpose audit trails:
 }
 ```
 
-When a previously-fixed `finding_id` re-appears in a new `heal check`,
+When a previously-fixed `finding_id` re-appears in a new `heal status`,
 the entry moves from `fixed.jsonl` to `regressed.jsonl` and the
 renderer warns.
 
@@ -230,8 +230,8 @@ heal snapshots --json --limit 20
 # every CheckRecord summary
 heal checks --json | jq '.[].check_id'
 
-# raw CheckRecord by id (full Findings list)
-heal fix show <check_id> --json
+# raw CheckRecord (full Findings list) by check_id
+heal checks --json | jq '.[] | select(.check_id == "<check_id>")'
 ```
 
 ## Calibration
@@ -279,7 +279,7 @@ for their bandwidth.
 
 ## Drain queue model
 
-`heal check` partitions every non-Ok finding into one of three
+`heal status` partitions every non-Ok finding into one of three
 buckets driven by `[policy.drain]`:
 
 | Tier | Default specs | Renderer behaviour | Skill behaviour |
@@ -293,7 +293,7 @@ the renderer surfaces them via a dedicated Ok 🔥 pre-section (top-10%
 hotspot but below the metric floor) and a hidden-summary count.
 
 Override visibility: when `[metrics.<m>] floor_ok` or `floor_critical`
-deviates from the literature default, `heal check` emits a header line
+deviates from the literature default, `heal status` emits a header line
 like `override: ccn floor_ok=15 [override from 11]` so policy moves are
 auditable in CI logs and PR diffs.
 

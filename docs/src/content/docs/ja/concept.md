@@ -34,7 +34,7 @@ CI がテストの実行を監視するのと同じ感覚で、heal はコード
 - `MetricsSnapshot` を `.heal/snapshots/` に書き出す。
 - すべての Critical / High Finding を、そのコミット出力の中で
   stdout に出す。
-- オンデマンド（`heal check`）で、Finding を Severity 別に分類し、
+- オンデマンド（`heal status`）で、Finding を Severity 別に分類し、
   同梱の `/heal-code-patch` スキルが消化する TODO リストキャッシュを書き
   出す — 1 コミット 1 Finding ずつ。
 
@@ -69,7 +69,7 @@ post-commit フック ──► heal hook commit
 オンデマンド
 ─────────────────────────────────────────────────
 
-heal check
+heal status
     │
     ├─ .heal/calibration.toml で Finding を分類
     ├─ CheckRecord を書く ──► .heal/checks/latest.json
@@ -117,7 +117,7 @@ claude /heal-code-patch
 - push しない、
 - amend しない。
 
-`heal fix mark` が状態を mutate する唯一の CLI サブコマンドで、
+`heal mark-fixed` が状態を mutate する唯一の CLI サブコマンドで、
 `fixed.jsonl` に 1 行追記します。`/heal-code-patch` がコミット後に呼ぶこ
 とを想定しています。
 
@@ -180,8 +180,8 @@ heal には 7 つのメトリクスが付属しています。
   ンストールから動作確認まで
 - [メトリクス](/heal/ja/metrics/) — 各メトリクスの中身と Severity
   の付け方
-- [CLI](/heal/ja/cli/) — 全コマンド（`heal check`、`heal fix`、
-  `heal calibrate`）
+- [CLI](/heal/ja/cli/) — 全コマンド（`heal status`、`heal diff`、
+  `heal metrics`、`heal calibrate`）
 - [設定](/heal/ja/configuration/) — `.heal/config.toml` と
   `.heal/calibration.toml` のリファレンス
 - [アーキテクチャ](/heal/ja/architecture/) — オンディスクレイアウ

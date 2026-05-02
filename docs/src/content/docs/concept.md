@@ -33,7 +33,7 @@ runs:
 - It writes a `MetricsSnapshot` to `.heal/snapshots/`.
 - It surfaces every Critical / High Finding to stdout right inside
   the commit output.
-- On demand (`heal check`), it classifies findings by Severity and
+- On demand (`heal status`), it classifies findings by Severity and
   writes a TODO list cache that the bundled `/heal-code-patch` skill can
   drain — one finding per commit.
 
@@ -68,7 +68,7 @@ post-commit hook ──► heal hook commit
 On demand
 ─────────────────────────────────────────────────
 
-heal check
+heal status
     │
     ├─ classify findings via .heal/calibration.toml
     ├─ write CheckRecord ──► .heal/checks/latest.json
@@ -116,7 +116,7 @@ through the bundled `/heal-code-patch` Claude skill, which:
 - never pushes,
 - never amends.
 
-`heal fix mark` is the single CLI subcommand that mutates state — it
+`heal mark-fixed` is the single CLI subcommand that mutates state — it
 appends a line to `fixed.jsonl` and is meant to be called by
 `/heal-code-patch` after each commit.
 
@@ -173,8 +173,8 @@ manage.
   repository
 - [Metrics](/heal/metrics/) — what each metric measures and how
   Severity is assigned
-- [CLI](/heal/cli/) — the full command surface (`heal check`,
-  `heal fix`, `heal calibrate`)
+- [CLI](/heal/cli/) — the full command surface (`heal status`,
+  `heal diff`, `heal metrics`, `heal calibrate`)
 - [Configuration](/heal/configuration/) — `.heal/config.toml` and
   `.heal/calibration.toml` reference
 - [Architecture](/heal/architecture/) — on-disk layout, event

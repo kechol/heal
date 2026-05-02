@@ -32,7 +32,7 @@ Three commands inside any git repository:
 
 ```sh
 heal init                     # set up .heal/, calibrate, install hook, offer Claude skills
-heal check                    # render the Severity-grouped TODO list
+heal status                    # render the Severity-grouped TODO list
 claude /heal-code-patch         # drain it, one finding per commit
 ```
 

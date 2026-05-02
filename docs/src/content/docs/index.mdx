@@ -26,7 +26,7 @@ external signal, the human is the only one tracking them.
 
 `heal` fills that gap. A git post-commit hook records a metric
 snapshot on every commit and surfaces every Critical / High finding
-to stdout. `heal check` writes the same findings to a cache the
+to stdout. `heal status` writes the same findings to a cache the
 bundled `/heal-code-patch` Claude skill drains, one finding per commit.
 
 ## At a glance
@@ -52,6 +52,6 @@ bundled `/heal-code-patch` Claude skill drains, one finding per commit.
 
 :::caution[Early-stage project]
 macOS and Linux only. The `.heal/checks/` schema and the
-`heal check` / `heal checks` surfaces stabilised in v0.2; some doc /
+`heal status` / `heal checks` surfaces stabilised in v0.2; some doc /
 coverage features land in v0.3. Feedback is welcome.
 :::

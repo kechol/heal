@@ -101,7 +101,7 @@ a SessionStart nudge.
 
 ## The audit skill: `/heal-code-review`
 
-Read-only. Ingests `heal check --all --json`, deep-reads the flagged
+Read-only. Ingests `heal status --all --json`, deep-reads the flagged
 code, and returns two artefacts:
 
 1. An **architectural reading** of the codebase — what the findings
@@ -149,7 +149,7 @@ Pre-flight (refuses to start when these fail):
    the on-disk source. The skill stops and asks you to commit or
    stash first.
 2. **Cache exists.** If `latest.json` is missing, the skill runs
-   `heal check --json` once to populate it.
+   `heal status --json` once to populate it.
 3. **Calibration exists.** Without `calibration.toml`, every Finding
    is `Severity::Ok` — nothing actionable.
 
@@ -164,8 +164,8 @@ while there are findings in T0 of the cache:
     apply the change
     run tests / type-check / linter (best effort)
     git add ...; git commit -m "<conventional message + Refs: F#<id>>"
-    heal fix mark --finding-id <id> --commit-sha <sha>
-    heal check --refresh --json   # re-scan; reconcile fixed.jsonl ↔ regressed.jsonl
+    heal mark-fixed --finding-id <id> --commit-sha <sha>
+    heal status --refresh --json   # re-scan; reconcile fixed.jsonl ↔ regressed.jsonl
     if the finding regressed: leave it for now, continue with the next
     else: continue
 ```
@@ -195,7 +195,7 @@ Constraints (enforced by the skill):
 - Conventional Commit subject + body + `Refs: F#<finding_id>` trailer.
 - Never push, never amend, never `--no-verify`.
 - Never extends the loop beyond the cache. New findings the user wants
-  addressed go into a fresh `heal check` run.
+  addressed go into a fresh `heal status` run.
 
 ## The helper skills: `/heal-cli` and `/heal-config`
 

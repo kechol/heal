@@ -107,7 +107,7 @@ Claude のループをブロックすることもありません。`commit`（gi
 
 ## 監査スキル: `/heal-code-review`
 
-リードオンリー。`heal check --all --json` を取り込み、フラグ付きの
+リードオンリー。`heal status --all --json` を取り込み、フラグ付きの
 コードを深く読み込んで、2 つの成果物を返します:
 
 1. **アーキテクチャ的な所見** — Finding を _リスト_ ではなく
@@ -152,7 +152,7 @@ Claude のループをブロックすることもありません。`commit`（gi
    `worktree_clean = false` で、記録された数値はディスク上のソース
    と一致しません。スキルは停止し、コミットか stash を求めます。
 2. **キャッシュが存在する。** `latest.json` がなければ、スキルは
-   `heal check --json` を一度実行して populate します。
+   `heal status --json` を一度実行して populate します。
 3. **calibration が存在する。** `calibration.toml` がなければ、
    すべての Finding が `Severity::Ok` になり、対象がありません。
 
@@ -167,8 +167,8 @@ T1 に黙って延長せず、セッションを終了します。
     変更を適用
     テスト / 型検査 / linter を可能な範囲で実行
     git add ...; git commit -m "<conventional message + Refs: F#<id>>"
-    heal fix mark --finding-id <id> --commit-sha <sha>
-    heal check --refresh --json   # 再スキャン; fixed.jsonl ↔ regressed.jsonl を整合
+    heal mark-fixed --finding-id <id> --commit-sha <sha>
+    heal status --refresh --json   # 再スキャン; fixed.jsonl ↔ regressed.jsonl を整合
     Finding が regress していたら今回はそのまま、次へ
     そうでなければ続行
 ```
@@ -199,7 +199,7 @@ T1 に黙って延長せず、セッションを終了します。
   trailer。
 - push しない、amend しない、`--no-verify` しない。
 - キャッシュを超えてループを延長しない。新しい Finding を扱いたい
-  場合は新しい `heal check` 実行に渡す。
+  場合は新しい `heal status` 実行に渡す。
 
 ## ヘルパースキル: `/heal-cli` と `/heal-config`
 
