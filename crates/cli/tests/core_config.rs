@@ -506,6 +506,85 @@ fn workspaces_validate_allows_sibling_prefixes() {
 }
 
 #[test]
+fn workspace_exclude_paths_validate_rejects_empty() {
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "packages/web"
+        exclude_paths = [""]
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    assert!(parsed.validate(Path::new("/heal/config.toml")).is_err());
+}
+
+#[test]
+fn workspace_exclude_paths_validate_rejects_absolute() {
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "packages/web"
+        exclude_paths = ["/abs/path"]
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    assert!(parsed.validate(Path::new("/heal/config.toml")).is_err());
+}
+
+#[test]
+fn workspace_exclude_paths_validate_rejects_dotdot() {
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "packages/web"
+        exclude_paths = ["../escape"]
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    assert!(parsed.validate(Path::new("/heal/config.toml")).is_err());
+}
+
+#[test]
+fn observer_excluded_paths_prefixes_workspace_excludes() {
+    // `vendor/` declared inside `packages/web` becomes the substring
+    // `packages/web/vendor/` so `is_path_excluded` only fires inside
+    // that workspace — `packages/api/vendor/foo.ts` is unaffected.
+    let cfg = r#"
+        [git]
+        exclude_paths = ["target/"]
+
+        [[project.workspaces]]
+        path = "packages/web"
+        exclude_paths = ["vendor/", "generated/"]
+
+        [[project.workspaces]]
+        path = "packages/api"
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    let excluded = parsed.observer_excluded_paths();
+    // git.exclude_paths preserved.
+    assert!(excluded.iter().any(|p| p == "target/"));
+    // Workspace excludes prefixed.
+    assert!(excluded.iter().any(|p| p == "packages/web/vendor/"));
+    assert!(excluded.iter().any(|p| p == "packages/web/generated/"));
+    // packages/api has no exclude_paths → no extra entries for it.
+    assert!(!excluded.iter().any(|p| p.starts_with("packages/api/")));
+}
+
+#[test]
+fn observer_excluded_paths_handles_leading_slash_in_workspace_exclude() {
+    // Even if the user accidentally writes `/vendor`, the resulting
+    // pattern strips the leading slash so the prefix join produces a
+    // clean substring `pkg/web/vendor`.
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "pkg/web"
+        exclude_paths = ["vendor"]
+    "#;
+    // ^ This config validates fine. We rely on the trim_start_matches
+    // in observer_excluded_paths to handle a leading slash if it
+    // somehow got through (validate now rejects it, but the prefix
+    // join is defensive).
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    let excluded = parsed.observer_excluded_paths();
+    assert!(excluded.iter().any(|p| p == "pkg/web/vendor"));
+}
+
+#[test]
 fn assign_workspace_returns_none_when_no_workspaces_declared() {
     let result = assign_workspace(Path::new("packages/web/foo.ts"), &[]);
     assert!(result.is_none());

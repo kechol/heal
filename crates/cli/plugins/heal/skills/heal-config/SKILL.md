@@ -172,8 +172,11 @@ Steps:
    Rust-specific ones) matches reality.
 
 4. **Tune per-workspace recipes** (skip when no override is needed):
-   - **`exclude_paths`**: a vendored subtree inside one workspace
-     (e.g. `pkg/api/third_party/`) excludes only there, not repo-wide.
+   - **`exclude_paths`**: workspace-relative substring patterns layered
+     on top of `git.exclude_paths`. `exclude_paths = ["third_party/"]`
+     under `path = "pkg/api"` excludes `pkg/api/third_party/...` only;
+     other workspaces are unaffected. Substring match (same semantics
+     as the global lists), not glob.
    - **Metric overrides** like `[metrics.churn] since_days = 30` per
      workspace are not yet plumbed (v0.4); for now, surface the gap as
      a doc note and leave the global `since_days` value.

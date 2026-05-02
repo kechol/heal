@@ -58,7 +58,10 @@ pub struct WorkspaceOverlay {
     pub primary_language: Option<String>,
     /// Workspace-local extra excludes layered on top of
     /// `git.exclude_paths` and `metrics.loc.exclude_paths`. Paths are
-    /// relative to the workspace root, not the project root.
+    /// **workspace-relative** — `["vendor/"]` under
+    /// `path = "packages/web"` excludes `packages/web/vendor/...` but
+    /// leaves other workspaces alone. Substring match (same semantics
+    /// as the global lists), not glob.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude_paths: Vec<String>,
 }
@@ -861,6 +864,19 @@ impl Config {
             Vec::new()
         };
         excluded.extend(self.metrics.loc.exclude_paths.iter().cloned());
+        // Workspace-local excludes are stored relative to the workspace
+        // root (e.g. `vendor/` under `packages/web`). Prepend the
+        // workspace path so the substring-match in `is_path_excluded`
+        // only fires on files inside that workspace — no observer-side
+        // scoping is needed because `pkg/web/vendor/` simply won't
+        // appear in `pkg/api/...` paths.
+        for ws in &self.project.workspaces {
+            let prefix = ws.path.trim_end_matches('/');
+            for ex in &ws.exclude_paths {
+                let suffix = ex.trim_start_matches('/');
+                excluded.push(format!("{prefix}/{suffix}"));
+            }
+        }
         excluded
     }
 }
@@ -889,6 +905,24 @@ fn validate_workspaces(workspaces: &[WorkspaceOverlay]) -> std::result::Result<(
             return Err(format!(
                 "[[project.workspaces]] path `{p}` must not contain `..`"
             ));
+        }
+        for ex in &w.exclude_paths {
+            let e = ex.trim();
+            if e.is_empty() {
+                return Err(format!(
+                    "[[project.workspaces]] `{p}` has an empty `exclude_paths` entry"
+                ));
+            }
+            if e.starts_with('/') {
+                return Err(format!(
+                    "[[project.workspaces]] `{p}` exclude `{e}` must be workspace-relative (no leading `/`)"
+                ));
+            }
+            if e.split('/').any(|seg| seg == "..") {
+                return Err(format!(
+                    "[[project.workspaces]] `{p}` exclude `{e}` must not contain `..`"
+                ));
+            }
         }
         let canonical = p.trim_end_matches('/').to_string();
         normalized.push(canonical);
