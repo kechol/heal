@@ -82,22 +82,7 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
 
     let (record, regressed) = if must_scan {
         let cfg = cfg.as_ref().expect("cfg loaded above when must_scan");
-        let calibration = Calibration::load(&paths.calibration())
-            .ok()
-            .map(|c| c.with_overrides(cfg));
-
-        let head_sha = git::head_sha(project);
-        let worktree_clean = git::worktree_clean(project).unwrap_or(false);
-        let config_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
-
-        let record = build_fresh_record(
-            project,
-            cfg,
-            calibration.as_ref(),
-            head_sha,
-            worktree_clean,
-            config_hash,
-        );
+        let record = build_live_record(project, &paths, cfg);
         write_record(&paths.checks_dir(), &paths.checks_latest(), &record)?;
         let regs = reconcile_fixed(
             &paths.checks_fixed_log(),
@@ -125,10 +110,36 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     Ok(())
 }
 
+/// Resolve calibration + git state + config hash, then build a fresh
+/// `CheckRecord`. The shared "live scan" preamble: both `heal status`
+/// (when the cache misses) and `heal diff` (the right-hand side is
+/// always live) call this. Does **not** write anything to disk —
+/// callers decide whether to persist the result.
+pub(super) fn build_live_record(
+    project: &Path,
+    paths: &HealPaths,
+    cfg: &crate::core::config::Config,
+) -> CheckRecord {
+    let calibration = Calibration::load(&paths.calibration())
+        .ok()
+        .map(|c| c.with_overrides(cfg));
+    let head_sha = git::head_sha(project);
+    let worktree_clean = git::worktree_clean(project).unwrap_or(false);
+    let config_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
+    build_fresh_record(
+        project,
+        cfg,
+        calibration.as_ref(),
+        head_sha,
+        worktree_clean,
+        config_hash,
+    )
+}
+
 /// Run every observer + classify, returning a fresh `CheckRecord`
-/// without writing it. Reused by `heal diff` (the right-hand side is
-/// always a live scan) so a half-finished session can compare against
-/// a cached record without polluting `.heal/checks/`.
+/// without writing it. The lower-level primitive that
+/// [`build_live_record`] wraps with the calibration / git / config
+/// preamble.
 pub(super) fn build_fresh_record(
     project: &Path,
     cfg: &crate::core::config::Config,

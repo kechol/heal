@@ -80,10 +80,12 @@ pub enum Command {
     /// Outputs Resolved / Regressed / Improved / New / Unchanged
     /// buckets — like `git diff`, but for the TODO list.
     Diff(DiffArgs),
-    /// Append a `FixedFinding` to `.heal/checks/fixed.jsonl`. Called by
-    /// `/heal-code-patch` after each commit-per-fix; the next
-    /// `heal status --refresh` reconciles the entry against fresh
-    /// findings. Hidden from `--help` because no human ever runs this.
+    /// Record a finding as resolved by a commit — called by
+    /// `/heal-code-patch` after each fix commit. The next
+    /// `heal status --refresh` either retires the entry (genuinely
+    /// fixed) or moves it to `regressed.jsonl` (re-detected). Hidden
+    /// from `--help` because no human ever invokes this directly;
+    /// implemented as an append to `.heal/checks/fixed.jsonl`.
     #[command(hide = true)]
     MarkFixed {
         /// `Finding.id` from `heal status --json` output.
@@ -330,12 +332,14 @@ pub struct ChecksFilters {
 /// `HEAD~3`, or a partial / full SHA.
 #[derive(Debug, clap::Args)]
 pub struct DiffArgs {
-    /// Git revision to diff against. Defaults to `HEAD`. Resolves
-    /// against the local repo; the matching `CheckRecord` must already
-    /// exist in `.heal/checks/`.
-    #[arg(value_name = "GIT_REF")]
-    pub revspec: Option<String>,
-    /// Show the Improved / Unchanged buckets too.
+    /// Git revision to diff against. Resolves against the local repo;
+    /// the matching `CheckRecord` must already exist in `.heal/checks/`.
+    #[arg(value_name = "GIT_REF", default_value = "HEAD")]
+    pub revspec: String,
+    /// Show the Improved / Unchanged buckets in addition to Resolved /
+    /// Regressed / New. (Distinct from `heal status --all`, which
+    /// surfaces lower Severity tiers; this flag has no effect on
+    /// Severity filtering.)
     #[arg(long)]
     pub all: bool,
     /// Emit the diff as JSON on stdout. Stable contract for skills.
@@ -398,7 +402,7 @@ impl Cli {
             Command::Checks(args) => commands::logs::run_checks(&project, &args),
             Command::Status(args) => commands::status::run(&project, &args),
             Command::Diff(args) => {
-                commands::diff::run(&project, args.revspec.as_deref(), args.all, args.json)
+                commands::diff::run(&project, &args.revspec, args.all, args.json)
             }
             Command::MarkFixed {
                 finding_id,

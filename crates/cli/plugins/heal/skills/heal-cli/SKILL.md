@@ -174,7 +174,6 @@ so the next `heal status --refresh` either retires the entry
 
 ```jsonc
 {
-  "action": "marked",
   "finding_id": "ccn:src/a.rs:foo:abc",
   "commit_sha": "deadbeef…",
   "fixed_at": "2026-04-28T09:00:00Z",

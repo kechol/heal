@@ -28,14 +28,12 @@ pub fn run(project: &Path, finding_id: &str, commit_sha: &str, as_json: bool) ->
     if as_json {
         #[derive(Serialize)]
         struct MarkReport<'a> {
-            action: &'a str,
             finding_id: &'a str,
             commit_sha: &'a str,
             fixed_at: String,
             log: String,
         }
         super::emit_json(&MarkReport {
-            action: "marked",
             finding_id,
             commit_sha,
             fixed_at: entry.fixed_at.to_rfc3339(),

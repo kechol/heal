@@ -19,8 +19,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use crate::core::calibration::Calibration;
-use crate::core::check_cache::{config_hash_from_paths, iter_records, CheckRecord};
+use crate::core::check_cache::{iter_records, CheckRecord};
 use crate::core::config::load_from_project;
 use crate::core::finding::Finding;
 use crate::core::severity::Severity;
@@ -28,13 +27,8 @@ use crate::core::snapshot::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YEL
 use crate::core::HealPaths;
 use crate::observer::git;
 
-/// Default revspec when the user invokes `heal diff` with no positional
-/// argument. Mirrors `git diff` semantics: "current worktree vs HEAD."
-const DEFAULT_REVSPEC: &str = "HEAD";
-
-pub fn run(project: &Path, revspec: Option<&str>, show_all: bool, as_json: bool) -> Result<()> {
+pub fn run(project: &Path, revspec: &str, show_all: bool, as_json: bool) -> Result<()> {
     let paths = HealPaths::new(project);
-    let revspec = revspec.unwrap_or(DEFAULT_REVSPEC);
     let target_sha = git::resolve_ref(project, revspec).ok_or_else(|| {
         anyhow::anyhow!(
             "could not resolve git ref `{revspec}` in {} — is this a git repo?",
@@ -100,19 +94,8 @@ fn build_live_record(project: &Path, paths: &HealPaths) -> Result<CheckRecord> {
             paths.config().display(),
         )
     })?;
-    let calibration = Calibration::load(&paths.calibration())
-        .ok()
-        .map(|c| c.with_overrides(&cfg));
-    let head_sha = git::head_sha(project);
-    let worktree_clean = git::worktree_clean(project).unwrap_or(false);
-    let config_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
-    Ok(crate::commands::status::build_fresh_record(
-        project,
-        &cfg,
-        calibration.as_ref(),
-        head_sha,
-        worktree_clean,
-        config_hash,
+    Ok(crate::commands::status::build_live_record(
+        project, paths, &cfg,
     ))
 }
 
