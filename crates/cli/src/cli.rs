@@ -44,24 +44,24 @@ pub enum Command {
         #[command(subcommand)]
         event: HookEvent,
     },
-    /// Show metric summary and recent findings.
-    Status {
+    /// Per-metric summary plus the delta since the previous snapshot.
+    Metrics {
         #[arg(long)]
         json: bool,
         /// Restrict output to a single metric. Used by the
         /// `/heal-code-review` skill under `.claude/skills/` when
         /// narrowing focus.
         #[arg(long, value_enum)]
-        metric: Option<StatusMetric>,
+        metric: Option<MetricKind>,
     },
     /// Browse `.heal/logs/` event entries (commit/edit/stop hook
     /// records). Lightweight metadata; the metric series live in
-    /// `.heal/snapshots/` and surface via `heal status` or
+    /// `.heal/snapshots/` and surface via `heal metrics` or
     /// `heal snapshots`.
     Logs(LogFilters),
     /// Browse `.heal/snapshots/` event entries (`commit` carries the
     /// `MetricsSnapshot` payload; `calibrate` carries `CalibrationEvent`).
-    /// `heal status` is the synthesised view; `heal snapshots` walks the
+    /// `heal metrics` is the synthesised view; `heal snapshots` walks the
     /// raw timeline.
     Snapshots(LogFilters),
     /// Browse `.heal/checks/` records — newest-first list of every
@@ -120,7 +120,7 @@ pub enum Command {
     },
 }
 
-/// Metric filter for `heal status --metric`. clap renders these in
+/// Metric filter for `heal metrics --metric`. clap renders these in
 /// kebab-case for the CLI flag (e.g. `--metric change-coupling`), and
 /// [`Self::json_key`] returns the `snake_case` form that matches the
 /// JSON object key under which the same metric's data is keyed
@@ -129,7 +129,7 @@ pub enum Command {
 /// payload's `snake_case` keys, so a skill can do `payload[payload.metric]`
 /// without translation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub enum StatusMetric {
+pub enum MetricKind {
     Loc,
     Complexity,
     Churn,
@@ -139,7 +139,7 @@ pub enum StatusMetric {
     Lcom,
 }
 
-impl StatusMetric {
+impl MetricKind {
     /// JSON object key matching this metric's data section. Identical
     /// to the field names used in `MetricsConfig` and `SnapshotDelta`,
     /// so skills can index `payload[payload.metric]`.
@@ -157,9 +157,9 @@ impl StatusMetric {
     }
 }
 
-/// Filter for `heal check --metric`. Distinct from [`StatusMetric`]
+/// Filter for `heal check --metric`. Distinct from [`MetricKind`]
 /// because `complexity` here is an alias that selects both `ccn` and
-/// `cognitive` findings (TODO §「heal status の延長で metric 指定」).
+/// `cognitive` findings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum CheckMetric {
     Ccn,
@@ -410,7 +410,7 @@ impl Cli {
                 json,
             } => commands::init::run(&project, force, yes, no_skills, json),
             Command::Hook { event } => commands::hook::run(&project, event),
-            Command::Status { json, metric } => commands::status::run(&project, json, metric),
+            Command::Metrics { json, metric } => commands::metrics::run(&project, json, metric),
             Command::Logs(args) => commands::logs::run_logs(&project, &args),
             Command::Snapshots(args) => commands::logs::run_snapshots(&project, &args),
             Command::Checks(args) => commands::logs::run_checks(&project, &args),

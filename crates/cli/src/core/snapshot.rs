@@ -165,7 +165,7 @@ impl MetricsSnapshot {
     }
 
     /// Same as [`Self::latest_in`] over a pre-globbed segment list. Useful
-    /// when the caller (e.g. `heal status`) already paid for `segments()` and
+    /// when the caller (e.g. `heal metrics`) already paid for `segments()` and
     /// wants to avoid re-scanning the directory.
     pub fn latest_in_segments(segments: &[Segment]) -> Result<Option<(Event, Self)>> {
         for seg in segments.iter().rev() {
@@ -183,7 +183,7 @@ impl MetricsSnapshot {
                 // Skip records that fail to parse (legacy payloads, mid-write
                 // truncation after SIGINT, future schema variants). The
                 // module doc-contract is "skip silently" — propagating here
-                // would brick `heal status` after a single corrupt line.
+                // would brick `heal metrics` after a single corrupt line.
                 let Ok(event) = serde_json::from_str::<Event>(line) else {
                     continue;
                 };

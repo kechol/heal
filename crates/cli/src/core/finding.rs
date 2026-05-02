@@ -163,7 +163,7 @@ fn extract_leading_number(summary: &str, prefix: &str) -> Option<String> {
 /// expected to implement it.
 ///
 /// The method takes `&self` (not `self`) because callers usually keep
-/// the report around for `heal status` rendering after extracting
+/// the report around for `heal metrics` rendering after extracting
 /// findings.
 pub trait IntoFindings {
     #[allow(clippy::wrong_self_convention)]

@@ -1,6 +1,6 @@
 ---
 name: heal-cli
-description: Concise, complete reference for the `heal` CLI — every subcommand, flag, and JSON contract an AI coding agent needs to drive HEAL programmatically. Load this when you're about to shell out to `heal` and want the exact command shape, the JSON schema it returns, and the `.heal/` files it reads or writes. Trigger on "how do I run heal …?", "what does `heal status --json` return?", "is there a heal command for …?", "/heal-cli".
+description: Concise, complete reference for the `heal` CLI — every subcommand, flag, and JSON contract an AI coding agent needs to drive HEAL programmatically. Load this when you're about to shell out to `heal` and want the exact command shape, the JSON schema it returns, and the `.heal/` files it reads or writes. Trigger on "how do I run heal …?", "what does `heal metrics --json` return?", "is there a heal command for …?", "/heal-cli".
 ---
 
 # heal-cli
@@ -206,7 +206,7 @@ Browse `.heal/snapshots/` — typed metric series. `commit` events carry
 `MetricsSnapshot` payloads; `calibrate` events carry `CalibrationEvent`
 payloads. Same filter shape as `heal logs`.
 
-### `heal status [--metric <NAME>] [--json]`
+### `heal metrics [--metric <NAME>] [--json]`
 
 Synthesised view of the latest `MetricsSnapshot` plus deltas. With
 `--json`: stable shape mirroring `MetricsSnapshot`, optionally

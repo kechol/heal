@@ -14,10 +14,10 @@ use crate::observer::loc::LocReport;
 use anyhow::Result;
 use serde_json::json;
 
-use crate::cli::StatusMetric;
+use crate::cli::MetricKind;
 use crate::observers::{run_all, ObserverReports};
 
-pub fn run(project: &Path, json_output: bool, metric: Option<StatusMetric>) -> Result<()> {
+pub fn run(project: &Path, json_output: bool, metric: Option<MetricKind>) -> Result<()> {
     let paths = HealPaths::new(project);
     let cfg_exists = paths.config().exists();
     let snapshot_segments = EventLog::new(paths.snapshots_dir()).segments()?;
@@ -67,37 +67,37 @@ pub fn run(project: &Path, json_output: bool, metric: Option<StatusMetric>) -> R
     println!("  config:            {}", paths.config().display());
     println!("  snapshot segments: {segment_count}");
     println!("  snapshots:         {snapshot_count}");
-    if matches_metric(metric, StatusMetric::Loc) {
+    if matches_metric(metric, MetricKind::Loc) {
         print_loc_summary(&reports.loc, metrics.top_n_loc());
     }
-    if matches_metric(metric, StatusMetric::Complexity) {
+    if matches_metric(metric, MetricKind::Complexity) {
         print_complexity_summary(
             &reports.complexity_observer,
             &reports.complexity,
             metrics.top_n_complexity(),
         );
     }
-    if matches_metric(metric, StatusMetric::Churn) {
+    if matches_metric(metric, MetricKind::Churn) {
         if let Some(report) = reports.churn.as_ref() {
             print_churn_summary(report, metrics.top_n_churn());
         }
     }
-    if matches_metric(metric, StatusMetric::ChangeCoupling) {
+    if matches_metric(metric, MetricKind::ChangeCoupling) {
         if let Some(report) = reports.change_coupling.as_ref() {
             print_coupling_summary(report, metrics.top_n_change_coupling());
         }
     }
-    if matches_metric(metric, StatusMetric::Duplication) {
+    if matches_metric(metric, MetricKind::Duplication) {
         if let Some(report) = reports.duplication.as_ref() {
             print_duplication_summary(report, metrics.top_n_duplication());
         }
     }
-    if matches_metric(metric, StatusMetric::Hotspot) {
+    if matches_metric(metric, MetricKind::Hotspot) {
         if let Some(report) = reports.hotspot.as_ref() {
             print_hotspot_summary(report, metrics.top_n_hotspot());
         }
     }
-    if matches_metric(metric, StatusMetric::Lcom) {
+    if matches_metric(metric, MetricKind::Lcom) {
         if let Some(report) = reports.lcom.as_ref() {
             print_lcom_summary(report, metrics.top_n_lcom());
         }
@@ -110,7 +110,7 @@ pub fn run(project: &Path, json_output: bool, metric: Option<StatusMetric>) -> R
 
 /// `None` means "no filter, print everything"; otherwise print only when
 /// the section matches the requested metric.
-fn matches_metric(filter: Option<StatusMetric>, section: StatusMetric) -> bool {
+fn matches_metric(filter: Option<MetricKind>, section: MetricKind) -> bool {
     filter.is_none_or(|f| f == section)
 }
 
@@ -121,7 +121,7 @@ fn build_json(
     reports: Option<&ObserverReports>,
     metrics_cfg: Option<&MetricsConfig>,
     delta: Option<&SnapshotDelta>,
-    metric: Option<StatusMetric>,
+    metric: Option<MetricKind>,
 ) -> serde_json::Value {
     let mut payload = serde_json::Map::new();
     payload.insert("initialized".into(), json!(cfg_exists));
@@ -156,23 +156,23 @@ fn build_json(
 /// `top_n` so skills don't have to sort and slice the raw report.
 /// Returns `(n, worst_value)` so callers can emit `top_n` alongside.
 fn build_worst(
-    metric: StatusMetric,
+    metric: MetricKind,
     reports: &ObserverReports,
     cfg: &MetricsConfig,
 ) -> (usize, serde_json::Value) {
     match metric {
-        StatusMetric::Loc => {
+        MetricKind::Loc => {
             let n = cfg.top_n_loc();
             let langs: Vec<_> = reports.loc.languages.iter().take(n).collect();
             (n, json!({ "languages": langs }))
         }
-        StatusMetric::Complexity => {
+        MetricKind::Complexity => {
             let n = cfg.top_n_complexity();
             let ccn = reports.complexity.worst_n(n, ComplexityMetric::Ccn);
             let cog = reports.complexity.worst_n(n, ComplexityMetric::Cognitive);
             (n, json!({ "ccn": ccn, "cognitive": cog }))
         }
-        StatusMetric::Churn => {
+        MetricKind::Churn => {
             let n = cfg.top_n_churn();
             let files = reports
                 .churn
@@ -181,7 +181,7 @@ fn build_worst(
                 .unwrap_or_default();
             (n, json!({ "files": files }))
         }
-        StatusMetric::ChangeCoupling => {
+        MetricKind::ChangeCoupling => {
             let n = cfg.top_n_change_coupling();
             let pairs = reports
                 .change_coupling
@@ -195,7 +195,7 @@ fn build_worst(
                 .unwrap_or_default();
             (n, json!({ "pairs": pairs, "files": files }))
         }
-        StatusMetric::Duplication => {
+        MetricKind::Duplication => {
             let n = cfg.top_n_duplication();
             let blocks = reports
                 .duplication
@@ -204,7 +204,7 @@ fn build_worst(
                 .unwrap_or_default();
             (n, json!({ "blocks": blocks }))
         }
-        StatusMetric::Hotspot => {
+        MetricKind::Hotspot => {
             let n = cfg.top_n_hotspot();
             let entries = reports
                 .hotspot
@@ -213,7 +213,7 @@ fn build_worst(
                 .unwrap_or_default();
             (n, json!({ "entries": entries }))
         }
-        StatusMetric::Lcom => {
+        MetricKind::Lcom => {
             let n = cfg.top_n_lcom();
             let classes = reports
                 .lcom
@@ -228,10 +228,7 @@ fn build_worst(
 /// Filter the delta payload to only the requested metric so JSON
 /// consumers don't have to walk every field. `None` filter returns the
 /// full delta unchanged.
-fn filtered_delta(
-    delta: Option<&SnapshotDelta>,
-    metric: Option<StatusMetric>,
-) -> serde_json::Value {
+fn filtered_delta(delta: Option<&SnapshotDelta>, metric: Option<MetricKind>) -> serde_json::Value {
     let Some(d) = delta else {
         return serde_json::Value::Null;
     };
@@ -246,23 +243,23 @@ fn filtered_delta(
         out.insert("from_timestamp".into(), json!(t));
     }
     match m {
-        StatusMetric::Loc => {} // delta has no loc payload yet
-        StatusMetric::Complexity => {
+        MetricKind::Loc => {} // delta has no loc payload yet
+        MetricKind::Complexity => {
             out.insert("complexity".into(), json!(d.complexity));
         }
-        StatusMetric::Churn => {
+        MetricKind::Churn => {
             out.insert("churn".into(), json!(d.churn));
         }
-        StatusMetric::ChangeCoupling => {
+        MetricKind::ChangeCoupling => {
             out.insert("change_coupling".into(), json!(d.change_coupling));
         }
-        StatusMetric::Duplication => {
+        MetricKind::Duplication => {
             out.insert("duplication".into(), json!(d.duplication));
         }
-        StatusMetric::Hotspot => {
+        MetricKind::Hotspot => {
             out.insert("hotspot".into(), json!(d.hotspot));
         }
-        StatusMetric::Lcom => {
+        MetricKind::Lcom => {
             // SnapshotDelta doesn't carry an LCOM diff yet; emit Null
             // so consumers see the metric was filtered through.
             out.insert("lcom".into(), serde_json::Value::Null);
@@ -271,14 +268,14 @@ fn filtered_delta(
     serde_json::Value::Object(out)
 }
 
-fn print_delta_summary(prev: &Event, delta: &SnapshotDelta, metric: Option<StatusMetric>) {
+fn print_delta_summary(prev: &Event, delta: &SnapshotDelta, metric: Option<MetricKind>) {
     println!();
     let from_label = delta.from_sha.as_deref().map_or_else(
         || prev.timestamp.format("%Y-%m-%d").to_string(),
         |s| s.chars().take(8).collect::<String>(),
     );
     println!("  delta vs prior snapshot ({from_label}):");
-    if matches_metric(metric, StatusMetric::Complexity) {
+    if matches_metric(metric, MetricKind::Complexity) {
         if let Some(c) = delta.complexity.as_ref() {
             println!(
                 "    complexity:  max_ccn {:+}  max_cog {:+}  fns {:+}",
@@ -289,7 +286,7 @@ fn print_delta_summary(prev: &Event, delta: &SnapshotDelta, metric: Option<Statu
             }
         }
     }
-    if matches_metric(metric, StatusMetric::Churn) {
+    if matches_metric(metric, MetricKind::Churn) {
         if let Some(ch) = delta.churn.as_ref() {
             println!(
                 "    churn:       commits_in_window {:+}  top_changed={}",
@@ -297,7 +294,7 @@ fn print_delta_summary(prev: &Event, delta: &SnapshotDelta, metric: Option<Statu
             );
         }
     }
-    if matches_metric(metric, StatusMetric::Hotspot) {
+    if matches_metric(metric, MetricKind::Hotspot) {
         if let Some(h) = delta.hotspot.as_ref() {
             println!("    hotspot:     max_score {:+.1}", h.max_score);
             if !h.top_files_added.is_empty() {
@@ -308,7 +305,7 @@ fn print_delta_summary(prev: &Event, delta: &SnapshotDelta, metric: Option<Statu
             }
         }
     }
-    if matches_metric(metric, StatusMetric::Duplication) {
+    if matches_metric(metric, MetricKind::Duplication) {
         if let Some(d) = delta.duplication.as_ref() {
             println!(
                 "    duplication: blocks {:+}  tokens {:+}",
@@ -316,7 +313,7 @@ fn print_delta_summary(prev: &Event, delta: &SnapshotDelta, metric: Option<Statu
             );
         }
     }
-    if matches_metric(metric, StatusMetric::ChangeCoupling) {
+    if matches_metric(metric, MetricKind::ChangeCoupling) {
         if let Some(cc) = delta.change_coupling.as_ref() {
             println!(
                 "    coupling:    pairs {:+}  files {:+}",

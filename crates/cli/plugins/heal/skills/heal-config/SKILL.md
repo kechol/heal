@@ -11,7 +11,7 @@ percentile breaks match this codebase, **survey** so excludes / metric
 toggles match this codebase's shape, and **write** the config tuned to
 a strictness level the user chose.
 
-The skill is **language-agnostic** — it consults `heal status --json`
+The skill is **language-agnostic** — it consults `heal metrics --json`
 to see which observers fired and what the per-language LOC mix is, then
 shapes the config accordingly. It does not assume Rust / TS / Python.
 
@@ -52,7 +52,7 @@ Before changing anything:
    reason about whether a metric has signal at all
    (see `references/config.md` § "Calibration interplay").
 3. **Capture the survey.** Run
-   `heal status --json` and `heal check --refresh --json`. Both feed
+   `heal metrics --json` and `heal check --refresh --json`. Both feed
    the survey phase.
 4. **Worktree state noted.** A dirty worktree is fine for *reading*
    the codebase, but the calibration scan should reflect committed
@@ -88,7 +88,7 @@ Read these without editing:
    down is enough. You're looking for: build/dist/dependency trees,
    generated code (`*.pb.go`, `__pycache__`, `node_modules`), vendored
    dependencies, fixtures, snapshot directories.
-2. **`heal status --json`.** Look at:
+2. **`heal metrics --json`.** Look at:
    - `loc.languages` — primary language; long tail.
    - `severity_counts` — does the project have a complexity problem,
      a duplication problem, a coupling problem? The dominant axis

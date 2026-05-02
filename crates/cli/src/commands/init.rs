@@ -3,7 +3,7 @@
 //! Steps, in order:
 //!   1. Ensure `.heal/` layout exists.
 //!   2. Detect the primary language via `LocObserver` for the user-facing
-//!      summary (not persisted — `heal status` re-detects on every call).
+//!      summary (not persisted — `heal metrics` re-detects on every call).
 //!   3. Write a default `config.toml` (skipped when one already exists
 //!      unless `--force`).
 //!   4. Install a `post-commit` git hook that calls `heal hook commit`.
@@ -272,7 +272,7 @@ fn print_summary(
     println!();
     println!("Next steps:");
     println!("  heal check               # render the Severity-grouped TODO list");
-    println!("  heal status              # see metric trends");
+    println!("  heal metrics             # see metric trends");
     if matches!(
         skills_action,
         SkillsAction::Installed { .. } | SkillsAction::SkippedNoClaude

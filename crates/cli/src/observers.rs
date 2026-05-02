@@ -20,7 +20,7 @@ use crate::observer::hotspot::{compose as compose_hotspot, HotspotReport, Hotspo
 use crate::observer::lcom::{LcomObserver, LcomReport};
 use crate::observer::loc::{LocObserver, LocReport};
 
-use crate::cli::StatusMetric;
+use crate::cli::MetricKind;
 
 pub struct ObserverReports {
     pub loc: LocReport,
@@ -39,33 +39,30 @@ pub struct ObserverReports {
 /// churn and complexity still run for `Hotspot` because the composite
 /// is built on top of them. The skipped observers' fields fall back to
 /// `Default` (or `None` for the optional ones).
-pub(crate) fn run_all(project: &Path, cfg: &Config, only: Option<StatusMetric>) -> ObserverReports {
-    let want = |m: StatusMetric| match only {
+pub(crate) fn run_all(project: &Path, cfg: &Config, only: Option<MetricKind>) -> ObserverReports {
+    let want = |m: MetricKind| match only {
         None => true,
         Some(o) if o == m => true,
-        Some(StatusMetric::Hotspot)
-            if matches!(m, StatusMetric::Churn | StatusMetric::Complexity) =>
-        {
+        Some(MetricKind::Hotspot) if matches!(m, MetricKind::Churn | MetricKind::Complexity) => {
             true
         }
         _ => false,
     };
 
-    let loc = if want(StatusMetric::Loc) {
+    let loc = if want(MetricKind::Loc) {
         LocObserver::from_config(cfg).scan(project)
     } else {
         LocReport::default()
     };
     let complexity_observer = ComplexityObserver::from_config(cfg);
-    let complexity = if want(StatusMetric::Complexity) {
+    let complexity = if want(MetricKind::Complexity) {
         complexity_observer.scan(project)
     } else {
         ComplexityReport::default()
     };
-    let churn = (want(StatusMetric::Churn) && cfg.metrics.churn.enabled)
+    let churn = (want(MetricKind::Churn) && cfg.metrics.churn.enabled)
         .then(|| ChurnObserver::from_config(cfg).scan(project));
-    let change_coupling = (want(StatusMetric::ChangeCoupling)
-        && cfg.metrics.change_coupling.enabled)
+    let change_coupling = (want(MetricKind::ChangeCoupling) && cfg.metrics.change_coupling.enabled)
         .then(|| ChangeCouplingObserver::from_config(cfg).scan(project))
         .map(|mut report| {
             crate::observer::change_coupling::classify_and_filter(
@@ -74,10 +71,10 @@ pub(crate) fn run_all(project: &Path, cfg: &Config, only: Option<StatusMetric>) 
             );
             report
         });
-    let duplication = (want(StatusMetric::Duplication) && cfg.metrics.duplication.enabled)
+    let duplication = (want(MetricKind::Duplication) && cfg.metrics.duplication.enabled)
         .then(|| DuplicationObserver::from_config(cfg).scan(project));
     let hotspot = match (
-        want(StatusMetric::Hotspot) && cfg.metrics.hotspot.enabled,
+        want(MetricKind::Hotspot) && cfg.metrics.hotspot.enabled,
         churn.as_ref(),
     ) {
         (true, Some(ch)) => Some(compose_hotspot(
@@ -90,7 +87,7 @@ pub(crate) fn run_all(project: &Path, cfg: &Config, only: Option<StatusMetric>) 
         )),
         _ => None,
     };
-    let lcom = (want(StatusMetric::Lcom) && cfg.metrics.lcom.enabled)
+    let lcom = (want(MetricKind::Lcom) && cfg.metrics.lcom.enabled)
         .then(|| LcomObserver::from_config(cfg).scan(project));
     ObserverReports {
         loc,

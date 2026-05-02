@@ -19,7 +19,7 @@
 //! to stdout: that the snapshot was recorded, the current
 //! Critical/High count, and a `heal check` nudge when those counts
 //! aren't zero. Per-finding listings and the recalibration banner
-//! moved to `heal status` / `heal check` so the post-commit output
+//! moved to `heal metrics` / `heal check` so the post-commit output
 //! never exceeds two lines.
 
 use std::io::{IsTerminal, Read, Write};
@@ -75,7 +75,7 @@ fn run_log_only(paths: &HealPaths, event: HookEvent) -> Result<()> {
 
 fn run_commit(project: &Path, paths: &HealPaths, logs: &EventLog) -> Result<()> {
     // ConfigMissing is a v0.1 affordance — we still want a row in
-    // snapshots/ so `heal status` doesn't think nothing happened, but
+    // snapshots/ so `heal metrics` doesn't think nothing happened, but
     // there's nothing to scan or nudge about until `heal init` lands.
     let cfg = match load_from_project(project) {
         Ok(c) => c,

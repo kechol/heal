@@ -18,7 +18,7 @@ use crate::observer::lang::Language;
 #[must_use]
 pub(crate) fn walk_supported_files(root: &Path, excluded: &[String]) -> Vec<PathBuf> {
     WalkBuilder::new(root)
-        // Honor .gitignore even outside a git repo — running `heal status`
+        // Honor .gitignore even outside a git repo — running `heal metrics`
         // inside a non-git project (or a sub-tree) should still respect the
         // project's intent.
         .require_git(false)

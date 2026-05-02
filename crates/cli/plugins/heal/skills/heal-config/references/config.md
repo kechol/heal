@@ -74,7 +74,7 @@ Top-level metric controls and per-metric sections.
 
 | Key      | Type    | Default | Meaning                                                                                                                              |
 |----------|---------|---------|--------------------------------------------------------------------------------------------------------------------------------------|
-| `top_n`  | `usize` | `5`     | Default `worst_n` width for `heal status` rankings. Each metric below can override this with its own `top_n`; absent overrides fall back here. |
+| `top_n`  | `usize` | `5`     | Default `worst_n` width for `heal metrics` rankings. Each metric below can override this with its own `top_n`; absent overrides fall back here. |
 
 ### `[metrics.loc]` — Lines of Code
 
