@@ -151,7 +151,7 @@ pub(super) fn build_fresh_record(
     worktree_clean: bool,
     config_hash: String,
 ) -> CheckRecord {
-    let reports = run_all(project, cfg, None);
+    let reports = run_all(project, cfg, None, None);
     let owned;
     let cal_ref = if let Some(c) = calibration {
         c

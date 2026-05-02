@@ -27,7 +27,7 @@ use crate::core::config::load_from_project;
 use crate::core::eventlog::{Event, EventLog};
 use crate::core::snapshot::{MetricsSnapshot, SnapshotDelta};
 use crate::core::HealPaths;
-use crate::observers::run_all_scoped;
+use crate::observers::run_all;
 
 use section::{all_sections, SectionCtx};
 
@@ -55,9 +55,7 @@ pub fn run(
     } else {
         None
     };
-    let reports = cfg
-        .as_ref()
-        .map(|c| run_all_scoped(project, c, metric, workspace));
+    let reports = cfg.as_ref().map(|c| run_all(project, c, metric, workspace));
 
     let sections = all_sections();
 

@@ -18,8 +18,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::config::Config;
 
-use crate::observer::walk::{is_path_excluded, path_inside, since_cutoff};
-use crate::observer::{ObservationMeta, Observer};
+use crate::observer::walk::{is_path_excluded, path_under, resolve_workspace_target, since_cutoff};
+use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
+
+impl_workspace_builder!(ChurnObserver);
 
 /// Observer toggle + window inputs. Stateless; constructing one is cheap.
 #[derive(Debug, Clone, Default)]
@@ -46,12 +48,6 @@ impl ChurnObserver {
             since_days: cfg.git.since_days,
             workspace: None,
         }
-    }
-
-    #[must_use]
-    pub fn with_workspace(mut self, workspace: Option<PathBuf>) -> Self {
-        self.workspace = workspace;
-        self
     }
 
     /// Walk the repository at (or above) `root` and accumulate per-file
@@ -81,6 +77,10 @@ impl ChurnObserver {
 
         let mut per_file: BTreeMap<PathBuf, FileChurn> = BTreeMap::new();
         let mut commit_oids: HashSet<Oid> = HashSet::new();
+        // git2 yields paths relative to the repo root, so the workspace
+        // target is resolved as relative too — no per-call `root.join`
+        // inside the diff loop.
+        let workspace_target = resolve_workspace_target(root, self.workspace.as_deref(), false);
 
         for oid_res in revwalk {
             let Ok(oid) = oid_res else {
@@ -94,11 +94,11 @@ impl ChurnObserver {
                 // window we're done.
                 break;
             }
-            let contributed = self.absorb_commit(&repo, root, &commit, &mut per_file);
-            // Without a workspace filter, count every in-window commit
-            // (preserves pre-PR-M2 behaviour). With one, count only
-            // commits that touched ≥1 in-workspace file so the number
-            // reflects activity *in* this workspace.
+            let contributed =
+                self.absorb_commit(&repo, &commit, workspace_target.as_deref(), &mut per_file);
+            // Without a workspace filter, count every in-window commit;
+            // with one, count only commits that touched ≥1 in-workspace
+            // file so the number reflects activity *in* this workspace.
             if self.workspace.is_none() || contributed {
                 commit_oids.insert(oid);
             }
@@ -129,8 +129,8 @@ impl ChurnObserver {
     fn absorb_commit(
         &self,
         repo: &Repository,
-        root: &Path,
         commit: &git2::Commit<'_>,
+        workspace_target: Option<&Path>,
         per_file: &mut BTreeMap<PathBuf, FileChurn>,
     ) -> bool {
         let Ok(commit_tree) = commit.tree() else {
@@ -142,16 +142,18 @@ impl ChurnObserver {
             return false;
         };
 
-        let workspace = self.workspace.as_deref();
         let mut paths_in_commit: BTreeSet<PathBuf> = BTreeSet::new();
         for delta in diff.deltas() {
             let Some(path) = delta.new_file().path() else {
                 continue;
             };
-            if path.as_os_str().is_empty() || is_path_excluded(path, &self.excluded) {
+            if path.as_os_str().is_empty() {
                 continue;
             }
-            if !path_inside(path, root, workspace) {
+            if !path_under(path, workspace_target) {
+                continue;
+            }
+            if is_path_excluded(path, &self.excluded) {
                 continue;
             }
             paths_in_commit.insert(path.to_path_buf());

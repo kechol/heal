@@ -40,16 +40,12 @@ pub struct ObserverReports {
 /// churn and complexity still run for `Hotspot` because the composite
 /// is built on top of them. The skipped observers' fields fall back to
 /// `Default` (or `None` for the optional ones).
-pub(crate) fn run_all(project: &Path, cfg: &Config, only: Option<MetricKind>) -> ObserverReports {
-    run_all_scoped(project, cfg, only, None)
-}
-
-/// Variant of [`run_all`] that scopes every observer to a sub-path.
-/// `workspace = None` is identical to `run_all`. Used by
-/// `heal metrics --workspace <path>` so each observer's internal walk
-/// or git diff drops out-of-workspace files before producing totals,
-/// pair counts, and so on.
-pub(crate) fn run_all_scoped(
+///
+/// `workspace = Some(path)` (used by `heal metrics --workspace`)
+/// scopes every observer's internal walk or git diff to files under
+/// the sub-path, so totals, pair counts, and lift reflect only the
+/// chosen workspace's universe. Pass `None` for whole-repo behaviour.
+pub(crate) fn run_all(
     project: &Path,
     cfg: &Config,
     only: Option<MetricKind>,

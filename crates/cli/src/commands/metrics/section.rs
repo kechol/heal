@@ -5,15 +5,10 @@
 //! orchestrator in [`super::run`] iterates the registry and calls the
 //! trait methods — no metric-specific branching at the top level.
 //!
-//! The shape was driven by two needs that were awkward in the
-//! pre-refactor monolith:
-//!   1. Adding a per-metric concern (workspace scoping in PR-M2,
-//!      strictness recipes later) shouldn't require touching seven
-//!      `if matches_metric(…)` branches in `run()`.
-//!   2. A skill consuming `heal metrics --json` should see the same
-//!      JSON shape regardless of whether `--metric X` was passed; the
-//!      `MetricSection::raw_json` / `worst_json` split mirrors the
-//!      pre-refactor behaviour exactly.
+//! `raw_json` / `worst_json` are split because the JSON shape under
+//! `--metric X` substitutes a precomputed `worst` payload for the raw
+//! report so skills don't have to sort + slice client-side; both
+//! sections answer the same question at different verbosity levels.
 
 use std::io::{self, Write};
 

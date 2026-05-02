@@ -33,8 +33,10 @@ use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 use crate::observer::complexity::{parse, ParsedFile};
 use crate::observer::lang::Language;
 use crate::observer::walk::walk_supported_files_under;
-use crate::observer::{ObservationMeta, Observer};
+use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
+
+impl_workspace_builder!(DuplicationObserver);
 
 /// FNV-1a 64-bit prime — used both as the per-token identity hash multiplier
 /// and as the polynomial base for the Rabin-Karp window hash. Mixed via
@@ -64,12 +66,6 @@ impl DuplicationObserver {
             min_tokens: cfg.metrics.duplication.min_tokens,
             workspace: None,
         }
-    }
-
-    #[must_use]
-    pub fn with_workspace(mut self, workspace: Option<PathBuf>) -> Self {
-        self.workspace = workspace;
-        self
     }
 
     #[must_use]

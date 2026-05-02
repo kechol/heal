@@ -26,6 +26,11 @@ pub(crate) fn walk_supported_files_under(
     excluded: &[String],
     include_under: Option<&Path>,
 ) -> Vec<PathBuf> {
+    // Resolve the workspace target once (an absolute join with `root`)
+    // so the per-file check is a single `strip_prefix` instead of a
+    // repeated allocation. `WalkBuilder` yields absolute paths, so the
+    // target must be absolute too.
+    let target = resolve_workspace_target(root, include_under, /*paths_absolute=*/ true);
     WalkBuilder::new(root)
         // Honor .gitignore even outside a git repo — running `heal metrics`
         // inside a non-git project (or a sub-tree) should still respect the
@@ -37,10 +42,14 @@ pub(crate) fn walk_supported_files_under(
         .filter_map(|entry| {
             let path = entry.into_path();
             Language::from_path(&path)?;
-            if is_path_excluded(&path, excluded) {
+            // Workspace check first — it's a single strip_prefix on
+            // already-resolved targets, while is_path_excluded
+            // allocates a `to_string_lossy` then iterates patterns.
+            // Fast filter before slow filter.
+            if !path_under(&path, target.as_deref()) {
                 return None;
             }
-            if !path_inside(&path, root, include_under) {
+            if is_path_excluded(&path, excluded) {
                 return None;
             }
             Some(path)
@@ -48,35 +57,40 @@ pub(crate) fn walk_supported_files_under(
         .collect()
 }
 
-/// True when `path` lies inside `under` (segment-wise) or `under` is
-/// `None`. Handles both absolute paths (filesystem walks via
-/// `walk_supported_files_under`) and relative paths (`git2` diffs,
-/// which emit paths relative to the repo root). When `path` is
-/// relative, the comparison is against `under` directly; when
-/// absolute, `under` is joined onto `root` first.
+/// Pre-resolve `include_under` into an absolute (or relative, matching
+/// the caller's path kind) `PathBuf` so the per-file check
+/// [`path_under`] is just one `strip_prefix` per call. `paths_absolute`
+/// reflects what the caller will pass to `path_under`: walk-based
+/// observers yield absolute paths from `WalkBuilder`; git2 diff
+/// observers yield repo-root-relative paths.
 #[must_use]
-pub(crate) fn path_inside(path: &Path, root: &Path, under: Option<&Path>) -> bool {
-    let Some(under) = under else {
-        return true;
-    };
-    let target = if path.is_absolute() {
+pub(crate) fn resolve_workspace_target(
+    root: &Path,
+    include_under: Option<&Path>,
+    paths_absolute: bool,
+) -> Option<PathBuf> {
+    let under = include_under?;
+    if !paths_absolute {
+        // Caller supplies relative paths — comparing against an
+        // absolute `under` would never match.
         if under.is_absolute() {
-            under.to_path_buf()
-        } else {
-            root.join(under)
+            return None;
         }
+        return Some(under.to_path_buf());
+    }
+    if under.is_absolute() {
+        Some(under.to_path_buf())
     } else {
-        // Relative path — always compare against the relative form of
-        // `under`. An absolute `under` against a relative `path` cannot
-        // match, so bail.
-        if under.is_absolute() {
-            return false;
-        }
-        under.to_path_buf()
-    };
-    // strip_prefix is segment-wise: `pkg/web` matches `pkg/web/foo.ts`
-    // but not `pkg/webapp/foo.ts`.
-    path.strip_prefix(&target).is_ok()
+        Some(root.join(under))
+    }
+}
+
+/// True when `path` lies inside the resolved `target` (segment-wise
+/// via `Path::strip_prefix`) or `target` is `None`. Pass the result of
+/// [`resolve_workspace_target`] for `target`.
+#[must_use]
+pub(crate) fn path_under(path: &Path, target: Option<&Path>) -> bool {
+    target.is_none_or(|t| path.strip_prefix(t).is_ok())
 }
 
 /// Substring-match exclusion check shared by every observer that walks
@@ -108,38 +122,47 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn path_inside_returns_true_when_under_unset() {
-        let root = PathBuf::from("/proj");
-        assert!(path_inside(Path::new("/proj/anywhere"), &root, None));
+    fn path_under_returns_true_when_target_unset() {
+        assert!(path_under(Path::new("/proj/anywhere"), None));
     }
 
     #[test]
-    fn path_inside_segment_wise_match() {
+    fn path_under_segment_wise_match() {
         // `pkg/web` should NOT match `pkg/webapp/foo.ts` even though
         // the byte-prefix matches — strip_prefix is segment-wise.
-        let root = PathBuf::from("/proj");
-        let under = PathBuf::from("pkg/web");
-        assert!(path_inside(
-            Path::new("/proj/pkg/web/foo.ts"),
-            &root,
-            Some(&under),
-        ));
-        assert!(!path_inside(
+        let target = PathBuf::from("/proj/pkg/web");
+        assert!(path_under(Path::new("/proj/pkg/web/foo.ts"), Some(&target),));
+        assert!(!path_under(
             Path::new("/proj/pkg/webapp/foo.ts"),
-            &root,
-            Some(&under),
+            Some(&target),
         ));
     }
 
     #[test]
-    fn path_inside_handles_absolute_under() {
+    fn resolve_workspace_target_joins_relative_under_for_absolute_paths() {
+        let root = PathBuf::from("/proj");
+        let under = PathBuf::from("pkg/web");
+        let target =
+            resolve_workspace_target(&root, Some(&under), true).expect("relative resolves");
+        assert_eq!(target, PathBuf::from("/proj/pkg/web"));
+    }
+
+    #[test]
+    fn resolve_workspace_target_keeps_absolute_under_unchanged() {
         let root = PathBuf::from("/proj");
         let under = PathBuf::from("/other/loc");
-        assert!(path_inside(
-            Path::new("/other/loc/x.ts"),
-            &root,
-            Some(&under),
-        ));
-        assert!(!path_inside(Path::new("/proj/x.ts"), &root, Some(&under)));
+        let target =
+            resolve_workspace_target(&root, Some(&under), true).expect("absolute resolves");
+        assert_eq!(target, PathBuf::from("/other/loc"));
+    }
+
+    #[test]
+    fn resolve_workspace_target_for_relative_paths_drops_absolute_under() {
+        let root = PathBuf::from("/proj");
+        let under = PathBuf::from("/abs/elsewhere");
+        // Caller supplies relative paths — an absolute `under` cannot
+        // match anything, so resolution drops to None (the caller
+        // will then treat every check as "not in workspace").
+        assert!(resolve_workspace_target(&root, Some(&under), false).is_none());
     }
 }

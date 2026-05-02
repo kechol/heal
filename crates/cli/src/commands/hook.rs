@@ -98,7 +98,7 @@ fn run_commit(project: &Path, paths: &HealPaths, logs: &EventLog) -> Result<()> 
     // Run observers ONCE and classify ONCE — the snapshot writer's
     // severity tally and the nudge's per-finding render both consume
     // the same Vec.
-    let reports = run_all(project, &cfg, None);
+    let reports = run_all(project, &cfg, None, None);
     let (calibration, findings) = snapshot::classify_with_calibration(paths, &cfg, &reports);
     let snap = snapshot::pack_with_delta(project, paths, &cfg, &reports, &findings);
     EventLog::new(paths.snapshots_dir()).append(&Event::new(
@@ -294,7 +294,7 @@ mod tests {
         paths.ensure().unwrap();
         let cfg = crate::core::config::Config::default();
         cfg.save(&paths.config()).unwrap();
-        let reports = run_all(dir.path(), &cfg, None);
+        let reports = run_all(dir.path(), &cfg, None, None);
         let (calibration, findings) =
             crate::snapshot::classify_with_calibration(&paths, &cfg, &reports);
 
@@ -327,7 +327,7 @@ mod tests {
         let cfg = crate::core::config::Config::default();
         cfg.save(&paths.config()).unwrap();
         crate::commands::calibrate::run(dir.path(), false, false).unwrap();
-        let reports = run_all(dir.path(), &cfg, None);
+        let reports = run_all(dir.path(), &cfg, None, None);
         let (calibration, findings) =
             crate::snapshot::classify_with_calibration(&paths, &cfg, &reports);
 
@@ -363,7 +363,7 @@ mod tests {
         let cfg = crate::core::config::Config::default();
         cfg.save(&paths.config()).unwrap();
         crate::commands::calibrate::run(dir.path(), false, false).unwrap();
-        let reports = run_all(dir.path(), &cfg, None);
+        let reports = run_all(dir.path(), &cfg, None, None);
         let (calibration, findings) =
             crate::snapshot::classify_with_calibration(&paths, &cfg, &reports);
 

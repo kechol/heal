@@ -422,7 +422,7 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<Option<Severity
         Err(e) => return Err(e.into()),
     };
 
-    let reports = run_all(project, &cfg, None);
+    let reports = run_all(project, &cfg, None, None);
 
     // Save calibration before packing the snapshot so the freshly
     // saved file is what `classify_with_calibration` reads back.

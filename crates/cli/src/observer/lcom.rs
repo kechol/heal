@@ -49,8 +49,10 @@ use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 use crate::observer::complexity::{parse, ParsedFile};
 use crate::observer::lang::Language;
 use crate::observer::walk::walk_supported_files_under;
-use crate::observer::{ObservationMeta, Observer};
+use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
+
+impl_workspace_builder!(LcomObserver);
 
 #[derive(Debug, Clone, Default)]
 pub struct LcomObserver {
@@ -70,12 +72,6 @@ impl LcomObserver {
             min_cluster_count: cfg.metrics.lcom.min_cluster_count,
             workspace: None,
         }
-    }
-
-    #[must_use]
-    pub fn with_workspace(mut self, workspace: Option<PathBuf>) -> Self {
-        self.workspace = workspace;
-        self
     }
 
     #[must_use]

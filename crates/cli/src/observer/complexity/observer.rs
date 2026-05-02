@@ -14,8 +14,10 @@ use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 use crate::observer::complexity::{analyze, parse, FunctionMetric};
 use crate::observer::lang::Language;
 use crate::observer::walk::walk_supported_files_under;
-use crate::observer::{ObservationMeta, Observer};
+use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
+
+impl_workspace_builder!(ComplexityObserver);
 
 #[derive(Debug, Clone, Default)]
 pub struct ComplexityObserver {
@@ -42,14 +44,6 @@ impl ComplexityObserver {
             cognitive_enabled: cfg.metrics.cognitive.enabled,
             workspace: None,
         }
-    }
-
-    /// Restrict the scan to files under `workspace` (relative to `root`
-    /// in `scan`). `None` clears the filter — the default.
-    #[must_use]
-    pub fn with_workspace(mut self, workspace: Option<PathBuf>) -> Self {
-        self.workspace = workspace;
-        self
     }
 
     /// Walk `root`, parse every supported file, and return per-file metrics.

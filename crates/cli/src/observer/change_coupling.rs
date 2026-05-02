@@ -46,8 +46,10 @@ use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
 use crate::observer::walk::{is_path_excluded, since_cutoff};
-use crate::observer::{ObservationMeta, Observer};
+use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
+
+impl_workspace_builder!(ChangeCouplingObserver);
 
 /// Skip commits whose changed-file count exceeds this limit. The pair count
 /// grows O(N²) per commit so bulk merges (think 200-file lockfile bumps)
@@ -106,12 +108,6 @@ impl ChangeCouplingObserver {
     }
 
     #[must_use]
-    pub fn with_workspace(mut self, workspace: Option<PathBuf>) -> Self {
-        self.workspace = workspace;
-        self
-    }
-
-    #[must_use]
     pub fn scan(&self, root: &Path) -> ChangeCouplingReport {
         let mut report = ChangeCouplingReport {
             since_days: self.since_days,
@@ -135,6 +131,11 @@ impl ChangeCouplingObserver {
         let mut pair_counts: HashMap<(PathBuf, PathBuf), u32> = HashMap::new();
         let mut file_commits: HashMap<PathBuf, u32> = HashMap::new();
         let mut commits_considered: u32 = 0;
+        // git2 yields paths relative to the repo root, so the workspace
+        // target stays relative — no per-call `root.join` in the diff
+        // loop.
+        let workspace_target =
+            crate::observer::walk::resolve_workspace_target(root, self.workspace.as_deref(), false);
 
         for oid_res in revwalk {
             let Ok(oid) = oid_res else {
@@ -146,7 +147,13 @@ impl ChangeCouplingObserver {
             if commit.time().seconds() < cutoff_secs {
                 break;
             }
-            if self.absorb_commit(&repo, root, &commit, &mut pair_counts, &mut file_commits) {
+            if self.absorb_commit(
+                &repo,
+                &commit,
+                workspace_target.as_deref(),
+                &mut pair_counts,
+                &mut file_commits,
+            ) {
                 commits_considered = commits_considered.saturating_add(1);
             }
         }
@@ -180,8 +187,8 @@ impl ChangeCouplingObserver {
     fn absorb_commit(
         &self,
         repo: &Repository,
-        root: &Path,
         commit: &git2::Commit<'_>,
+        workspace_target: Option<&Path>,
         pair_counts: &mut HashMap<(PathBuf, PathBuf), u32>,
         file_commits: &mut HashMap<PathBuf, u32>,
     ) -> bool {
@@ -194,20 +201,22 @@ impl ChangeCouplingObserver {
             return false;
         };
 
-        let workspace = self.workspace.as_deref();
         let mut paths: BTreeSet<PathBuf> = BTreeSet::new();
         for delta in diff.deltas() {
             let Some(path) = delta.new_file().path() else {
                 continue;
             };
-            if path.as_os_str().is_empty() || is_path_excluded(path, &self.excluded) {
+            if path.as_os_str().is_empty() {
                 continue;
             }
-            // Workspace scoping: drop files outside the requested
-            // sub-path before pair counting, so cross-workspace pairs
-            // never enter `pair_counts` and `file_commits` reflect only
-            // the in-workspace activity.
-            if !crate::observer::walk::path_inside(path, root, workspace) {
+            // Workspace check first (single strip_prefix on already-
+            // resolved target); is_path_excluded allocates a
+            // to_string_lossy + iterates patterns, so it runs only on
+            // paths that survive workspace scoping.
+            if !crate::observer::walk::path_under(path, workspace_target) {
+                continue;
+            }
+            if is_path_excluded(path, &self.excluded) {
                 continue;
             }
             paths.insert(path.to_path_buf());

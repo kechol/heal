@@ -900,7 +900,9 @@ fn validate_workspaces(workspaces: &[WorkspaceOverlay]) -> std::result::Result<(
                     "[[project.workspaces]] declares `{a}` more than once"
                 ));
             }
-            if is_strict_prefix(a, b) || is_strict_prefix(b, a) {
+            let pa = Path::new(a);
+            let pb = Path::new(b);
+            if path_has_prefix(pb, pa, true) || path_has_prefix(pa, pb, true) {
                 return Err(format!(
                     "[[project.workspaces]] `{a}` and `{b}` nest; one workspace cannot live inside another"
                 ));
@@ -910,16 +912,18 @@ fn validate_workspaces(workspaces: &[WorkspaceOverlay]) -> std::result::Result<(
     Ok(())
 }
 
-/// True iff `a` is a strict path-prefix of `b` (segment-wise so
-/// `"pkg/web"` is **not** a prefix of `"pkg/webapp"`). Used by
-/// [`validate_workspaces`] to reject nested workspaces and by
-/// [`assign_workspace`] to find the deepest matching workspace.
-fn is_strict_prefix(a: &str, b: &str) -> bool {
-    if a.len() >= b.len() {
+/// True iff `prefix` is a path-prefix of `path` (segment-wise via
+/// `Path::strip_prefix`, so `pkg/web` does **not** match
+/// `pkg/webapp/foo.ts`). `strict = true` additionally rejects the
+/// equal case (`prefix == path`); used by [`validate_workspaces`] to
+/// detect nesting between two workspace declarations. `strict = false`
+/// allows equality so [`assign_workspace`] also matches a file path
+/// that *is* the workspace root.
+fn path_has_prefix(path: &Path, prefix: &Path, strict: bool) -> bool {
+    if path.strip_prefix(prefix).is_err() {
         return false;
     }
-    let after = &b[a.len()..];
-    b.starts_with(a) && after.starts_with('/')
+    !(strict && path == prefix)
 }
 
 /// Resolve a finding's file path to the workspace it belongs to (if
@@ -933,17 +937,12 @@ fn is_strict_prefix(a: &str, b: &str) -> bool {
 /// segment-wise so `pkg/web` does not match `pkg/webapp`.
 #[must_use]
 pub fn assign_workspace<'a>(file: &Path, workspaces: &'a [WorkspaceOverlay]) -> Option<&'a str> {
-    // Forward-slash on the comparison side so `WorkspaceOverlay.path`
-    // (always slash-separated, validated at load) matches against the
-    // file path without per-call normalization. `to_string_lossy()`
-    // returns a borrowed `Cow` on Unix where paths are valid UTF-8 —
-    // no allocation in the common case.
-    let path_str = file.to_string_lossy();
     let mut best: Option<&str> = None;
     for w in workspaces {
         let candidate = w.path.trim_end_matches('/');
-        let matches = *path_str == *candidate || is_strict_prefix(candidate, &path_str);
-        if matches && best.is_none_or(|b: &str| candidate.len() > b.len()) {
+        if path_has_prefix(file, Path::new(candidate), false)
+            && best.is_none_or(|b: &str| candidate.len() > b.len())
+        {
             best = Some(candidate);
         }
     }

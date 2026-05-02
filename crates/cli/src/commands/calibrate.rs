@@ -47,7 +47,7 @@ pub fn run(project: &Path, force: bool, as_json: bool) -> Result<()> {
         return Ok(());
     }
 
-    let reports = run_all(project, &cfg, None);
+    let reports = run_all(project, &cfg, None, None);
     let calibration = build_calibration(&reports, &cfg);
     calibration.save(&calibration_path)?;
 

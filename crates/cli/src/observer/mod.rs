@@ -30,3 +30,22 @@ pub trait Observer {
     fn meta(&self) -> ObservationMeta;
     fn observe(&self, project_root: &std::path::Path) -> anyhow::Result<Self::Output>;
 }
+
+/// Generates the `with_workspace(self, ws: Option<PathBuf>) -> Self`
+/// builder for an observer that carries a `workspace: Option<PathBuf>`
+/// field. Centralised so the five observers honoring `--workspace`
+/// (`ComplexityObserver`, `LcomObserver`, `DuplicationObserver`,
+/// `ChurnObserver`, `ChangeCouplingObserver`) don't carry five
+/// verbatim copies of the same setter.
+macro_rules! impl_workspace_builder {
+    ($t:ty) => {
+        impl $t {
+            #[must_use]
+            pub fn with_workspace(mut self, workspace: Option<std::path::PathBuf>) -> Self {
+                self.workspace = workspace;
+                self
+            }
+        }
+    };
+}
+pub(crate) use impl_workspace_builder;
