@@ -24,7 +24,7 @@ pub struct Config {
     pub policy: PolicyConfig,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectConfig {
     /// Natural language for AI-generated explanations (`heal status`
@@ -45,7 +45,7 @@ pub struct ProjectConfig {
 /// One entry under `[[project.workspaces]]`. The path is project-root
 /// relative ("packages/web", not "/abs/path/packages/web"); validation
 /// happens in [`Config::validate`].
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceOverlay {
     /// Path prefix relative to the project root, slash-separated.
@@ -66,6 +66,68 @@ pub struct WorkspaceOverlay {
     /// `[abc]`) and `#` comments work as in `.gitignore`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude_paths: Vec<String>,
+    /// Per-metric calibration-floor overrides scoped to this
+    /// workspace. Apply *after* the global `[metrics.<m>]` overrides,
+    /// so workspace settings win when both are present.
+    #[serde(default, skip_serializing_if = "WorkspaceMetricsOverlay::is_empty")]
+    pub metrics: WorkspaceMetricsOverlay,
+}
+
+impl Eq for WorkspaceOverlay {}
+
+/// Per-metric calibration-floor override bag for a single workspace.
+/// Mirrors only the floors (data-driven percentile breaks already vary
+/// per workspace via `Calibration::workspaces`); other knobs like
+/// `min_coupling` or `since_days` would require scan-time machinery
+/// and stay deferred.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceMetricsOverlay {
+    #[serde(default, skip_serializing_if = "WorkspaceMetricOverlay::is_empty")]
+    pub ccn: WorkspaceMetricOverlay,
+    #[serde(default, skip_serializing_if = "WorkspaceMetricOverlay::is_empty")]
+    pub cognitive: WorkspaceMetricOverlay,
+    #[serde(default, skip_serializing_if = "WorkspaceMetricOverlay::is_empty")]
+    pub duplication: WorkspaceMetricOverlay,
+    #[serde(default, skip_serializing_if = "WorkspaceMetricOverlay::is_empty")]
+    pub change_coupling: WorkspaceMetricOverlay,
+    #[serde(default, skip_serializing_if = "WorkspaceMetricOverlay::is_empty")]
+    pub lcom: WorkspaceMetricOverlay,
+}
+
+impl Eq for WorkspaceMetricsOverlay {}
+
+impl WorkspaceMetricsOverlay {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.ccn.is_empty()
+            && self.cognitive.is_empty()
+            && self.duplication.is_empty()
+            && self.change_coupling.is_empty()
+            && self.lcom.is_empty()
+    }
+}
+
+/// One per-metric override entry. `floor_critical` raises (or lowers)
+/// the absolute Critical threshold; `floor_ok` does the same for the
+/// graduation gate. Metrics that don't expose a `floor_ok` (e.g.
+/// `change_coupling`) silently ignore that field at apply time.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceMetricOverlay {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor_critical: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor_ok: Option<f64>,
+}
+
+impl Eq for WorkspaceMetricOverlay {}
+
+impl WorkspaceMetricOverlay {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.floor_critical.is_none() && self.floor_ok.is_none()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

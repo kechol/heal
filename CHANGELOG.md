@@ -50,6 +50,27 @@ out-of-workspace files; git-based observers (Churn / ChangeCoupling)
 recompute `commits_considered` against the in-workspace universe so
 lift / churn totals stay consistent.
 
+### Per-workspace calibration floor overrides
+
+`[[project.workspaces]] [project.workspaces.metrics.<metric>]
+floor_critical = N` / `floor_ok = N` overrides apply *after* the
+global `[metrics.<m>]` overrides for that workspace's calibration
+table. Useful when one workspace runs cleaner or legacier than the
+rest:
+
+```toml
+[[project.workspaces]]
+path = "pkg/legacy"
+
+[project.workspaces.metrics.ccn]
+floor_critical = 40
+floor_ok = 18
+```
+
+Supported metrics: `ccn`, `cognitive`, `duplication`,
+`change_coupling`, `lcom`. Scan-time tunables (`since_days`,
+`min_coupling`) remain global for now.
+
 ### Cross-workspace coupling Advisory bucket
 
 `change_coupling` pairs whose endpoints belong to *different*

@@ -179,9 +179,23 @@ Steps:
      comments. `exclude_paths = ["third_party/"]` under
      `path = "pkg/api"` excludes `pkg/api/**/third_party/` only; other
      workspaces are unaffected.
-   - **Metric overrides** like `[metrics.churn] since_days = 30` per
-     workspace are not yet plumbed (v0.4); for now, surface the gap as
-     a doc note and leave the global `since_days` value.
+   - **Calibration floor overrides**: per-metric `floor_critical` /
+     `floor_ok` per workspace. Use when one workspace runs cleaner or
+     legacier than the rest:
+     ```toml
+     [[project.workspaces]]
+     path = "pkg/legacy"
+
+     [project.workspaces.metrics.ccn]
+     floor_critical = 40   # gentler than the global 25
+     floor_ok = 18         # raise graduation gate too
+     ```
+     Applied *after* the global `[metrics.<m>]` floors, so workspace
+     values win when both are set. Supported metrics: `ccn`,
+     `cognitive`, `duplication`, `change_coupling`, `lcom`.
+   - **Scan-time tunables** like `[metrics.churn] since_days` are
+     *not* yet per-workspace; the global value applies to every
+     workspace.
 
 5. **Write the block.** Append `[[project.workspaces]]` entries to
    `.heal/config.toml` (preserve other user-set keys; merge, don't

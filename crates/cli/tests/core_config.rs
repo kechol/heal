@@ -506,6 +506,41 @@ fn workspaces_validate_allows_sibling_prefixes() {
 }
 
 #[test]
+fn workspace_metric_overrides_round_trip() {
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "packages/web"
+
+        [project.workspaces.metrics.ccn]
+        floor_critical = 40
+        floor_ok = 14
+
+        [project.workspaces.metrics.duplication]
+        floor_critical = 50
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    let ws = &parsed.project.workspaces[0];
+    assert_eq!(ws.metrics.ccn.floor_critical, Some(40.0));
+    assert_eq!(ws.metrics.ccn.floor_ok, Some(14.0));
+    assert_eq!(ws.metrics.duplication.floor_critical, Some(50.0));
+    // Untouched metrics stay at defaults.
+    assert!(ws.metrics.cognitive.is_empty());
+    assert!(ws.metrics.lcom.is_empty());
+}
+
+#[test]
+fn workspace_metric_overrides_reject_unknown_field() {
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "packages/web"
+
+        [project.workspaces.metrics.ccn]
+        bogus = 1
+    "#;
+    assert!(Config::from_toml_str(cfg).is_err());
+}
+
+#[test]
 fn workspace_exclude_paths_validate_accepts_empty_and_comment_lines() {
     // Gitignore lets empty lines and `#` comments pass through; both
     // are no-ops at match time but keep config blocks readable.

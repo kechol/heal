@@ -958,7 +958,9 @@ mod pair_class_tests {
     mod cross_workspace_lower {
         use super::*;
         use crate::core::calibration::Calibration;
-        use crate::core::config::{Config, CrossWorkspacePolicy, WorkspaceOverlay};
+        use crate::core::config::{
+            Config, CrossWorkspacePolicy, WorkspaceMetricsOverlay, WorkspaceOverlay,
+        };
         use crate::feature::{Feature, HotspotIndex};
         use crate::observers::ObserverReports;
 
@@ -972,6 +974,7 @@ mod pair_class_tests {
                     path: p.into(),
                     primary_language: None,
                     exclude_paths: Vec::new(),
+                    metrics: WorkspaceMetricsOverlay::default(),
                 })
                 .collect();
             c

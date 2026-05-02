@@ -415,13 +415,68 @@ impl Calibration {
     /// touching `.heal/calibration.toml` — that way re-calibrating from
     /// a new codebase distribution doesn't clobber the user's
     /// preference.
+    ///
+    /// Per-workspace `[project.workspaces.metrics.<name>]` overrides
+    /// apply *after* the global ones for the matching workspace's
+    /// `MetricCalibrations` table, so workspace-specific values win
+    /// when both are set. Other workspaces and the global cohort see
+    /// only the global overrides.
     #[must_use]
     pub fn with_overrides(mut self, config: &Config) -> Self {
         apply_metric_overrides(&mut self.calibration, config);
-        for table in self.workspaces.values_mut() {
+        for (ws_path, table) in &mut self.workspaces {
             apply_metric_overrides(table, config);
+            if let Some(overlay) = config
+                .project
+                .workspaces
+                .iter()
+                .find(|w| w.path.trim_end_matches('/') == ws_path.as_str())
+            {
+                apply_workspace_metric_overrides(table, &overlay.metrics);
+            }
         }
         self
+    }
+}
+
+/// Layer per-workspace `[project.workspaces.metrics.<m>] floor_*`
+/// overrides onto a single workspace's `MetricCalibrations`. Mirrors
+/// [`apply_metric_overrides`] but reads from `WorkspaceMetricsOverlay`
+/// instead of the global `[metrics.<m>]` config.
+fn apply_workspace_metric_overrides(
+    table: &mut MetricCalibrations,
+    overrides: &crate::core::config::WorkspaceMetricsOverlay,
+) {
+    if let Some(c) = table.ccn.as_mut() {
+        if let Some(f) = overrides.ccn.floor_critical {
+            c.floor_critical = Some(f);
+        }
+        if let Some(f) = overrides.ccn.floor_ok {
+            c.floor_ok = Some(f);
+        }
+    }
+    if let Some(c) = table.cognitive.as_mut() {
+        if let Some(f) = overrides.cognitive.floor_critical {
+            c.floor_critical = Some(f);
+        }
+        if let Some(f) = overrides.cognitive.floor_ok {
+            c.floor_ok = Some(f);
+        }
+    }
+    if let Some(c) = table.duplication.as_mut() {
+        if let Some(f) = overrides.duplication.floor_critical {
+            c.floor_critical = Some(f);
+        }
+    }
+    if let Some(c) = table.change_coupling.as_mut() {
+        if let Some(f) = overrides.change_coupling.floor_critical {
+            c.floor_critical = Some(f);
+        }
+    }
+    if let Some(c) = table.lcom.as_mut() {
+        if let Some(f) = overrides.lcom.floor_critical {
+            c.floor_critical = Some(f);
+        }
     }
 }
 
@@ -703,6 +758,74 @@ mod tests {
         let ccn = merged.calibration.ccn.unwrap();
         assert_eq!(ccn.floor_ok, Some(15.0));
         assert_eq!(ccn.floor_critical, Some(40.0));
+    }
+
+    #[test]
+    fn with_overrides_applies_workspace_metric_overlay() {
+        // Two workspaces, both calibrated; web overrides ccn.floor_critical
+        // to 40 while api inherits the global 25.
+        let mut workspaces = BTreeMap::new();
+        let make_table = || MetricCalibrations {
+            ccn: Some(MetricCalibration::from_distribution(
+                &[1.0, 2.0, 3.0, 4.0, 5.0],
+                MetricFloors {
+                    critical: Some(FLOOR_CCN),
+                    ok: Some(FLOOR_OK_CCN),
+                },
+            )),
+            ..MetricCalibrations::default()
+        };
+        workspaces.insert("packages/web".to_owned(), make_table());
+        workspaces.insert("packages/api".to_owned(), make_table());
+
+        let cal = Calibration {
+            meta: CalibrationMeta::default(),
+            calibration: make_table(),
+            workspaces,
+        };
+
+        // Global ccn.floor_critical = 25, web overrides to 40.
+        let cfg = Config::from_toml_str(
+            r#"
+            [metrics.ccn]
+            enabled = true
+            floor_critical = 25
+
+            [[project.workspaces]]
+            path = "packages/web"
+
+            [project.workspaces.metrics.ccn]
+            floor_critical = 40
+
+            [[project.workspaces]]
+            path = "packages/api"
+            "#,
+        )
+        .unwrap();
+
+        let merged = cal.with_overrides(&cfg);
+        // Global cohort + api inherit global override.
+        assert_eq!(
+            merged.calibration.ccn.as_ref().unwrap().floor_critical,
+            Some(25.0),
+        );
+        assert_eq!(
+            merged.workspaces["packages/api"]
+                .ccn
+                .as_ref()
+                .unwrap()
+                .floor_critical,
+            Some(25.0),
+        );
+        // Web wins with its workspace-specific override.
+        assert_eq!(
+            merged.workspaces["packages/web"]
+                .ccn
+                .as_ref()
+                .unwrap()
+                .floor_critical,
+            Some(40.0),
+        );
     }
 
     #[test]
