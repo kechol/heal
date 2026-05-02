@@ -115,6 +115,11 @@ impl Finding {
     /// Cross-workspace coupling — pair straddles two `[[project.workspaces]]`
     /// declarations. Routed to Advisory by default.
     pub const METRIC_CHANGE_COUPLING_CROSS_WORKSPACE: &str = "change_coupling.cross_workspace";
+    /// "Expected" coupling — `TestSrc` / `DocSrc` pairs (test ↔ source,
+    /// doc ↔ source) that are signal-aligned and shouldn't enter the
+    /// drain queue, but get surfaced in the Advisory tier under
+    /// `heal status --all` so users can see what was demoted.
+    pub const METRIC_CHANGE_COUPLING_EXPECTED: &str = "change_coupling.expected";
 
     /// Compact "metric=N" tag used by `heal status` rows and the
     /// post-commit nudge. The numeric tail is recovered from
@@ -133,6 +138,7 @@ impl Finding {
             Self::METRIC_CHANGE_COUPLING => "coupled".to_owned(),
             Self::METRIC_CHANGE_COUPLING_SYMMETRIC => "coupled (sym)".to_owned(),
             Self::METRIC_CHANGE_COUPLING_CROSS_WORKSPACE => "coupled (cross-ws)".to_owned(),
+            Self::METRIC_CHANGE_COUPLING_EXPECTED => "coupled (expected)".to_owned(),
             "hotspot" => "hotspot".to_owned(),
             "lcom" => extract_leading_number(&self.summary, "LCOM=")
                 .map_or_else(|| "LCOM".to_owned(), |v| format!("LCOM={v}")),

@@ -81,6 +81,15 @@ Supported metrics: `ccn`, `cognitive`, `duplication`,
 `change_coupling`, `lcom`. Scan-time tunables (`since_days`,
 `min_coupling`) remain global for now.
 
+### Expected coupling Advisory bucket
+
+`change_coupling` pairs classified as `TestSrc` (test ↔ source) or
+`DocSrc` (doc ↔ source) used to be silently dropped from the drain
+queue. They now emit `change_coupling.expected` Findings at
+`Severity::Medium` so users can see what was demoted under
+`heal status --all` (Advisory tier). The pairs still don't enter
+the drain queue — Medium routes to Advisory by default.
+
 ### Cross-workspace coupling Advisory bucket
 
 `change_coupling` pairs whose endpoints belong to *different*

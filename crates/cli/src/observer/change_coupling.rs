@@ -381,8 +381,10 @@ impl IntoFindings for ChangeCouplingReport {
     ///
     /// Emits one Finding per pair regardless of class so the zip in
     /// `ChangeCouplingFeature::lower` stays index-aligned. The lower
-    /// pass drops `TestSrc` / `DocSrc` Findings so they never reach
-    /// the drain queue.
+    /// pass retags `TestSrc` / `DocSrc` Findings as
+    /// `change_coupling.expected` at `Severity::Medium` so they land
+    /// in Advisory (visible only under `heal status --all`) instead
+    /// of the drain queue.
     fn into_findings(&self) -> Vec<Finding> {
         self.pairs
             .iter()
@@ -751,10 +753,22 @@ impl Feature for ChangeCouplingFeature {
         let cross_policy = cfg.metrics.change_coupling.cross_workspace;
         let mut out = Vec::with_capacity(cc.pairs.len());
         for (pair, mut finding) in cc.pairs.iter().zip(cc.into_findings()) {
-            // TestSrc / DocSrc pairs stay in the report (v0.4 drift
-            // detection consumes them) but don't enter the drain queue —
-            // co-changing tests/docs is the expected hygiene, not a defect.
+            // TestSrc / DocSrc pairs are "expected" coupling
+            // (co-changing tests/docs is hygiene, not a defect). We
+            // retag them as `change_coupling.expected` and force
+            // Severity::Medium so they land in the Advisory tier — the
+            // user can see what was demoted under `heal status --all`
+            // without the pair ever entering the drain queue. The
+            // pre-classify `into_findings` already produced the
+            // canonical id; re-derive it under the new metric tag.
             if matches!(pair.class, Some(PairClass::TestSrc | PairClass::DocSrc)) {
+                finding.metric = Finding::METRIC_CHANGE_COUPLING_EXPECTED.into();
+                finding.id = Finding::make_id(
+                    &finding.metric,
+                    &finding.location,
+                    &format!("count:{}", pair.count),
+                );
+                out.push(decorate(finding, Severity::Medium, hotspot));
                 continue;
             }
             // A pair is cross-workspace iff both files resolve to a
@@ -991,6 +1005,30 @@ mod pair_class_tests {
                 hotspot: None,
                 lcom: None,
             }
+        }
+
+        #[test]
+        fn demoted_pair_class_is_emitted_as_expected_advisory() {
+            // TestSrc / DocSrc pairs used to be dropped from `lower()`.
+            // They now emit `change_coupling.expected` at
+            // Severity::Medium so users see what was demoted under
+            // `heal status --all`. Construct a pair manually with a
+            // forced TestSrc class (classify_and_filter is language-
+            // dependent and over-tested elsewhere).
+            let mut p = pair("src/foo.rs", "src/foo.test.rs", 5);
+            p.class = Some(PairClass::TestSrc);
+            let r = reports_with(vec![p]);
+            let c = cfg(Vec::new(), CrossWorkspacePolicy::Surface);
+            let f = ChangeCouplingFeature.lower(
+                &r,
+                &c,
+                &Calibration::default(),
+                &HotspotIndex::default(),
+            );
+            assert_eq!(f.len(), 1);
+            assert_eq!(f[0].metric, Finding::METRIC_CHANGE_COUPLING_EXPECTED);
+            assert_eq!(f[0].severity, Severity::Medium);
+            assert!(f[0].id.starts_with("change_coupling.expected:"));
         }
 
         #[test]
