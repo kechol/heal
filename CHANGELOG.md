@@ -19,7 +19,7 @@ that relied on bare keyword substring behaviour need a small edit:
 | `target/` | `target/` (unchanged) | Directory pattern works the same |
 | `vendor` | `vendor/` *or* `vendor/**` | Bare keyword used to match `weird-vendor-stuff/`; gitignore matches a file/dir literally named `vendor` only |
 | `pkg/web/vendor/` | `pkg/web/vendor/` (unchanged) | Anchored directory pattern works the same |
-| `.test.ts` | `**/*.test.ts` | Substring matched any path containing `.test.ts`; gitignore needs the explicit glob |
+| `.test.ts` | `*.test.ts` (suffix) *or* `**/.test.ts` (exact basename) | Substring matched any path containing the literal `.test.ts` *anywhere* — usually the user's intent is "files whose name ends in `.test.ts`", so `*.test.ts` is the typical replacement; gitignore basename-globs are unanchored by default so no leading `**/` is needed |
 
 `heal status --refresh` after the upgrade reports the new
 `severity_counts`; if a previously-excluded subtree starts surfacing

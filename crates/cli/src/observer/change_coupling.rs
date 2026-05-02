@@ -149,7 +149,7 @@ impl ChangeCouplingObserver {
             if commit.time().seconds() < cutoff_secs {
                 break;
             }
-            if self.absorb_commit(
+            if Self::absorb_commit(
                 &repo,
                 &commit,
                 workspace_target.as_deref(),
@@ -187,9 +187,7 @@ impl ChangeCouplingObserver {
     /// Also bumps every surviving file's individual commit counter
     /// (`file_commits`) so the post-pass can distinguish symmetric pairs
     /// from one-way ones.
-    #[allow(clippy::unused_self)] // method form keeps the call site `self.absorb_commit(...)` readable.
     fn absorb_commit(
-        &self,
         repo: &Repository,
         commit: &git2::Commit<'_>,
         workspace_target: Option<&Path>,

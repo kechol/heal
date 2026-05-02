@@ -96,7 +96,7 @@ impl ChurnObserver {
                 // window we're done.
                 break;
             }
-            let contributed = self.absorb_commit(
+            let contributed = Self::absorb_commit(
                 &repo,
                 &commit,
                 workspace_target.as_deref(),
@@ -133,9 +133,7 @@ impl ChurnObserver {
     /// list and optional workspace) and contributed to `per_file`.
     /// Callers use the bool to decide whether the commit should count
     /// toward `totals.commits` under workspace scoping.
-    #[allow(clippy::unused_self)] // method form keeps the call site `self.absorb_commit(...)` readable.
     fn absorb_commit(
-        &self,
         repo: &Repository,
         commit: &git2::Commit<'_>,
         workspace_target: Option<&Path>,

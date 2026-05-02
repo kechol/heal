@@ -84,10 +84,20 @@ impl LocObserver {
     pub fn scan(&self, root: &Path) -> LocReport {
         let mut languages = Languages::new();
         let paths = [root];
-        // Pass an empty exclude list to tokei — its `&[&str]` substring
-        // semantics don't match HEAL's gitignore DSL. Filter the
-        // per-file `reports` ourselves below and re-aggregate.
-        languages.get_statistics(&paths, &[], &TokeiConfig::default());
+        // Hand tokei the subset of exclude lines that are safe under
+        // its substring semantics (plain directory names like
+        // `target/` or `vendor/`) so it skips them at walk time —
+        // otherwise tokei would read+lex thousands of vendored files
+        // we'd discard post-walk. Glob / negated / anchored patterns
+        // can't be expressed as substrings; the `ExcludeMatcher`
+        // catches those after the walk completes.
+        let tokei_substrings: Vec<&str> = self
+            .excluded
+            .iter()
+            .filter(|line| is_tokei_substring_safe(line))
+            .map(String::as_str)
+            .collect();
+        languages.get_statistics(&paths, &tokei_substrings, &TokeiConfig::default());
         let matcher = crate::observer::walk::ExcludeMatcher::compile(root, &self.excluded)
             .expect("exclude patterns validated at config load");
 
@@ -159,6 +169,23 @@ fn is_literate_name(name: &str) -> bool {
     LanguageType::from_name(name).is_some_and(LanguageType::is_literate)
 }
 
+/// True iff `line` is a `.gitignore` line whose match set is
+/// equivalent to a substring search — i.e. tokei's `&[&str]` exclude
+/// can apply it correctly. Plain directory names like `target/` or
+/// nested paths like `crates/cli/vendor/` qualify; anything with glob
+/// metacharacters, leading `/` (anchor), `!` (negation), or `#`
+/// (comment) doesn't, and is left to the post-walk `ExcludeMatcher`.
+fn is_tokei_substring_safe(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('!') {
+        return false;
+    }
+    if trimmed.starts_with('/') {
+        return false;
+    }
+    !trimmed.chars().any(|c| matches!(c, '*' | '?' | '['))
+}
+
 impl Observer for LocObserver {
     type Output = LocReport;
 
@@ -171,5 +198,39 @@ impl Observer for LocObserver {
 
     fn observe(&self, project_root: &Path) -> anyhow::Result<Self::Output> {
         Ok(self.scan(project_root))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_tokei_substring_safe;
+
+    #[test]
+    fn substring_safe_accepts_plain_directory_patterns() {
+        // Plain directory names — tokei's substring exclude can handle
+        // these directly, restoring the pre-PR-G fast-path.
+        assert!(is_tokei_substring_safe("target/"));
+        assert!(is_tokei_substring_safe("vendor/"));
+        assert!(is_tokei_substring_safe("crates/cli/vendor/"));
+        assert!(is_tokei_substring_safe("foo")); // bare name still substring-equivalent
+    }
+
+    #[test]
+    fn substring_safe_rejects_glob_metacharacters() {
+        // Anything tokei would mis-handle as a literal substring stays
+        // out of the pre-filter (the post-walk ExcludeMatcher catches it).
+        assert!(!is_tokei_substring_safe("*.log"));
+        assert!(!is_tokei_substring_safe("**/generated/**"));
+        assert!(!is_tokei_substring_safe("file?.tmp"));
+        assert!(!is_tokei_substring_safe("[abc]"));
+    }
+
+    #[test]
+    fn substring_safe_rejects_anchor_negation_comment() {
+        assert!(!is_tokei_substring_safe("/build")); // anchored
+        assert!(!is_tokei_substring_safe("!keep.log")); // negation
+        assert!(!is_tokei_substring_safe("# comment line")); // comment
+        assert!(!is_tokei_substring_safe("")); // empty
+        assert!(!is_tokei_substring_safe("   ")); // whitespace-only
     }
 }
