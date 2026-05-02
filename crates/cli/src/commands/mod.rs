@@ -1,5 +1,6 @@
 pub mod calibrate;
 pub mod compact;
+pub mod diff;
 pub mod fix;
 pub mod hook;
 pub mod init;

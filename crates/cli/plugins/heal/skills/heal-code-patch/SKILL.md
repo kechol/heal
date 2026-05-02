@@ -303,7 +303,7 @@ record them anywhere persistent.
 
 - One finding = one commit. Don't squash multiple findings into a
   single commit even when they share a file — the audit trail matters
-  for `heal fix diff`.
+  for `heal diff`.
 - **Never push.** The skill commits locally; the user runs
   `git push` / `gh pr create` themselves.
 - **Never amend.** A new commit per finding is the contract — amending

@@ -16,6 +16,17 @@ pub fn head_sha(root: &Path) -> Option<String> {
     Some(oid.to_string())
 }
 
+/// Resolve a user-supplied git revision (`HEAD`, `main`, `v0.2.1`,
+/// `HEAD~3`, or a partial / full SHA) to a full 40-char object id.
+/// Returns `None` when `root` isn't a git repo or `revspec` doesn't
+/// resolve. Wraps `git rev-parse <revspec>` semantics via `git2`.
+#[must_use]
+pub fn resolve_ref(root: &Path, revspec: &str) -> Option<String> {
+    let repo = Repository::discover(root).ok()?;
+    let object = repo.revparse_single(revspec).ok()?;
+    Some(object.id().to_string())
+}
+
 /// True iff the working tree has no uncommitted changes (no untracked,
 /// modified, staged, or conflicted entries). `None` when `root` isn't a
 /// git repo — callers (`heal status` cache layer) treat that as "can't

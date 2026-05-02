@@ -135,17 +135,40 @@ best-effort. JSON shape:
 Render one historical `CheckRecord`. `--json` is the stable contract;
 the human view is unstable.
 
-### `heal fix diff [FROM] [TO] [--all] [--json]`
+### `heal diff [<git-ref>] [--all] [--json]`
 
-Compare two `CheckRecord`s and bucket findings into Resolved /
-Regressed / Improved / New / Unchanged. Argument shape mirrors
-`git diff`:
+Diff the current findings against a cached `CheckRecord` whose
+`head_sha` matches the resolved git ref. Default ref is `HEAD`:
+"how does my live worktree compare to the last commit?"
 
-- no args → latest cache vs **live** scan (not persisted).
-- `<FROM>` → that record vs live.
-- `<FROM> <TO>` → two cached records.
+`<git-ref>` accepts anything `git rev-parse` understands —
+`HEAD`, `main`, `v0.2.1`, `HEAD~3`, or a (partial / full) SHA.
+The ref's `CheckRecord` must already be cached in `.heal/checks/`;
+if not, the command errors with a hint to commit + run
+`heal status` (or check the ref out and run `heal status --refresh`).
+The right-hand side is always a fresh in-memory scan of the
+current worktree (never persisted).
 
-Pass `--all` to also surface Improved + Unchanged.
+Buckets: Resolved / Regressed / Improved / New / Unchanged, plus a
+progress percentage. Pass `--all` to also surface Improved +
+Unchanged. JSON shape:
+
+```jsonc
+{
+  "from_ref": "HEAD",
+  "from_sha": "deadbeef…",
+  "from_started_at": "2026-04-28T09:00:00Z",
+  "to_started_at":   "2026-04-28T09:05:00Z",
+  "to_head_sha": "deadbeef…",
+  "resolved":     [{ "finding_id": "ccn:…", "metric": "ccn", "file": "src/a.ts",
+                     "from_severity": "high", "to_severity": null, "hotspot": false }],
+  "regressed":    [],
+  "improved":     [],
+  "new_findings": [],
+  "unchanged":    [],
+  "progress_pct": 0.25
+}
+```
 
 ### `heal fix mark --finding-id <ID> --commit-sha <SHA> [--json]`
 

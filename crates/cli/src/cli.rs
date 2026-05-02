@@ -65,8 +65,9 @@ pub enum Command {
     /// raw timeline.
     Snapshots(LogFilters),
     /// Browse `.heal/checks/` records — newest-first list of every
-    /// `CheckRecord` ever written. Diff and detail-render live under
-    /// `heal fix`.
+    /// `CheckRecord` ever written. The current findings live under
+    /// `heal status`; the diff against a git ref lives under
+    /// `heal diff`.
     Checks(ChecksFilters),
     /// Render the cached `CheckRecord` from `.heal/checks/latest.json`
     /// — Critical / High view by default. Runs a fresh scan only when
@@ -74,10 +75,14 @@ pub enum Command {
     /// overwrite the cache. The single source of truth that
     /// `/heal-code-patch` (Claude side) and `heal fix *` consume.
     Status(StatusArgs),
+    /// Diff the current findings against a cached `CheckRecord` whose
+    /// `head_sha` matches the resolved git ref (default: `HEAD`).
+    /// Outputs Resolved / Regressed / Improved / New / Unchanged
+    /// buckets — like `git diff`, but for the TODO list.
+    Diff(DiffArgs),
     /// Update the fix-tracking state attached to `.heal/checks/`:
-    /// `show` renders one historical `CheckRecord`, `diff` buckets
-    /// findings across two, `mark` records a finding as resolved by
-    /// a commit (used by `/heal-code-patch`).
+    /// `show` renders one historical `CheckRecord`, `mark` records
+    /// a finding as resolved by a commit (used by `/heal-code-patch`).
     Fix {
         #[command(subcommand)]
         action: FixAction,
@@ -315,41 +320,17 @@ pub struct ChecksFilters {
 pub enum FixAction {
     /// Render one `CheckRecord` by its ULID. **Unstable**: the human
     /// view may change. For a stable contract use `--json` (same shape
-    /// as `heal check --json`).
+    /// as `heal status --json`).
     Show {
         check_id: String,
         #[arg(long)]
         json: bool,
     },
-    /// Compare two `CheckRecord`s — Resolved / Regressed / Improved /
-    /// New / Unchanged buckets, plus a progress percentage. Mirrors
-    /// `git diff`'s argument shape:
-    ///   * `heal fix diff`             — latest cache vs a live scan
-    ///     (no record written) so a half-finished session can verify
-    ///     progress before committing.
-    ///   * `heal fix diff <FROM>`      — `FROM` cache record vs a live scan.
-    ///   * `heal fix diff <FROM> <TO>` — two specific cached records.
-    Diff {
-        /// Older `check_id` for the diff. Defaults to the most-recent
-        /// cached record (so a single-arg invocation means "FROM vs
-        /// live", and zero-arg means "latest cache vs live").
-        #[arg(value_name = "FROM")]
-        from: Option<String>,
-        /// Newer `check_id`. When omitted, the right-hand side is a
-        /// fresh in-memory scan of the working tree (never persisted).
-        #[arg(value_name = "TO")]
-        to: Option<String>,
-        /// Show the Improved / Unchanged buckets too.
-        #[arg(long)]
-        all: bool,
-        #[arg(long)]
-        json: bool,
-    },
     /// Append a `FixedFinding` to `.heal/checks/fixed.jsonl`. Called by
     /// `/heal-code-patch` (or any skill that commits a fix) so the next
-    /// `heal check --refresh` can warn if the same finding re-appears.
+    /// `heal status --refresh` can warn if the same finding re-appears.
     Mark {
-        /// `Finding.id` from `heal check --json` output.
+        /// `Finding.id` from `heal status --json` output.
         #[arg(long, value_name = "ID")]
         finding_id: String,
         /// SHA of the commit that resolved the finding.
@@ -359,6 +340,24 @@ pub enum FixAction {
         #[arg(long)]
         json: bool,
     },
+}
+
+/// Args for `heal diff`. The positional `revspec` accepts anything
+/// `git rev-parse` understands — `HEAD` (default), `main`, `v0.2.1`,
+/// `HEAD~3`, or a partial / full SHA.
+#[derive(Debug, clap::Args)]
+pub struct DiffArgs {
+    /// Git revision to diff against. Defaults to `HEAD`. Resolves
+    /// against the local repo; the matching `CheckRecord` must already
+    /// exist in `.heal/checks/`.
+    #[arg(value_name = "GIT_REF")]
+    pub revspec: Option<String>,
+    /// Show the Improved / Unchanged buckets too.
+    #[arg(long)]
+    pub all: bool,
+    /// Emit the diff as JSON on stdout. Stable contract for skills.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Clone, Copy, Subcommand)]
@@ -415,6 +414,9 @@ impl Cli {
             Command::Snapshots(args) => commands::logs::run_snapshots(&project, &args),
             Command::Checks(args) => commands::logs::run_checks(&project, &args),
             Command::Status(args) => commands::status::run(&project, &args),
+            Command::Diff(args) => {
+                commands::diff::run(&project, args.revspec.as_deref(), args.all, args.json)
+            }
             Command::Fix { action } => commands::fix::run(&project, action),
             Command::Skills { action } => commands::skills::run(&project, action),
             Command::Calibrate { force, json } => commands::calibrate::run(&project, force, json),
