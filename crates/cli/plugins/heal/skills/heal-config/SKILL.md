@@ -45,7 +45,8 @@ config, not explaining one.
 Before changing anything:
 
 1. **Project initialised.** Run `heal init --no-skills --json` if
-   `.heal/` doesn't exist yet. Capture the resulting paths.
+   `.heal/` doesn't exist yet. Capture the resulting paths *and* the
+   `monorepo_signals` field — it tells Phase 2.5 whether to run.
 2. **Calibration fresh.** Run
    `heal calibrate --force --json` so the percentile breaks reflect
    the *current* codebase. The skill needs the up-to-date breaks to
@@ -118,6 +119,76 @@ Build a short list of:
   prefer leaving enabled unless the calibration showed `NaN`s.
 - **Tune candidates.** Metrics where the default `min_*` thresholds
   are too loose / too tight given the survey.
+
+### Phase 2.5 — Workspaces (monorepos only)
+
+Run only when `heal init --json` reported `monorepo_signals` (or when
+the user explicitly mentioned a monorepo / package layout). Skip
+silently for solo packages — declaring workspaces on a flat repo just
+adds noise.
+
+The goal: turn the detected manifest entries into a concrete
+`[[project.workspaces]]` block. Each workspace gets its own
+calibration cohort, so percentile breaks for `pkg/web` no longer get
+dragged around by `pkg/api`'s outliers.
+
+Steps:
+
+1. **Enumerate workspace directories.** Read whichever manifest the
+   detector flagged:
+   - `package.json` → the `workspaces` array (or `workspaces.packages`).
+     Glob `pkg/*` patterns to actual existing directories.
+   - `pnpm-workspace.yaml` → the `packages:` list (yaml — read as
+     text, parse the `- 'pattern'` lines).
+   - `Cargo.toml` → `[workspace] members`. Globs work the same way
+     as npm.
+   - `go.work` → the `use (...)` block, one path per line.
+   Drop entries whose directories don't exist on disk (manifests can
+   list aspirational paths). Keep the result deterministic — sort
+   alphabetic.
+
+2. **Confirm with the user.** One `AskUserQuestion`:
+
+   ```
+   Question: "Declare these workspaces in heal config? Per-workspace
+              calibration scopes percentile breaks per package."
+   Options:
+     - "Declare all": write every detected directory.
+     - "Pick subset": ask which ones to keep (skip top-level scripts/,
+       tools/ if they're included in a glob).
+     - "Skip": leave `[[project.workspaces]]` empty and continue with
+       repo-wide calibration.
+   ```
+
+   Don't auto-declare without confirmation — the cohort split changes
+   every existing finding's severity (calibration shifts under the
+   user). Make the consequence visible.
+
+3. **Pick `primary_language` per workspace.** Run
+   `heal metrics --json --workspace <path>` per declared workspace
+   and read the LOC primary. If it differs from the repo-wide primary,
+   set `primary_language` on the workspace overlay so the change-
+   coupling pair-class noise filter (TypeScript-specific lockfiles vs
+   Rust-specific ones) matches reality.
+
+4. **Tune per-workspace recipes** (skip when no override is needed):
+   - **`exclude_paths`**: a vendored subtree inside one workspace
+     (e.g. `pkg/api/third_party/`) excludes only there, not repo-wide.
+   - **Metric overrides** like `[metrics.churn] since_days = 30` per
+     workspace are not yet plumbed (v0.4); for now, surface the gap as
+     a doc note and leave the global `since_days` value.
+
+5. **Write the block.** Append `[[project.workspaces]]` entries to
+   `.heal/config.toml` (preserve other user-set keys; merge, don't
+   replace). Validate by re-running `heal status --refresh --json`
+   and confirming `workspaces[]` in the result reflects the new shape.
+
+Cross-workspace coupling lands in its own Advisory bucket (metric
+`change_coupling.cross_workspace`) and never enters the drain queue
+without an explicit
+`[policy.drain.metrics."change_coupling.cross_workspace"]` override.
+Mention this once in the post-write summary so the user understands
+what to watch.
 
 ### Phase 3 — Choose strictness
 

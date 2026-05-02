@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 use crate::claude_settings;
 use crate::core::config::Config;
 use crate::core::eventlog::{Event, EventLog};
+use crate::core::monorepo::{self, MonorepoSignal};
 use crate::core::snapshot::SeverityCounts;
 use crate::core::HealPaths;
 use crate::observer::git;
@@ -126,6 +127,14 @@ pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool, as_json: boo
     let skills_dest = skills_dest(project);
     let skills_action =
         handle_skills_install(project, &paths, &skills_dest, force, yes, no_skills)?;
+    // Surface monorepo manifests only when no `[[project.workspaces]]`
+    // block exists yet; once the user declares them, the hint becomes
+    // noise. Empty list = solo package or already-declared workspaces.
+    let monorepo_signals = if workspaces_already_declared(&paths) {
+        Vec::new()
+    } else {
+        monorepo::detect(project)
+    };
 
     if as_json {
         super::emit_json(&InitReport::new(
@@ -138,6 +147,7 @@ pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool, as_json: boo
             &skills_dest,
             &skills_action,
             severity_counts.as_ref(),
+            &monorepo_signals,
         ));
         return Ok(());
     }
@@ -151,8 +161,17 @@ pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool, as_json: boo
         &skills_dest,
         &skills_action,
         severity_counts.as_ref(),
+        &monorepo_signals,
     );
     Ok(())
+}
+
+/// True iff the freshly-loaded config has at least one
+/// `[[project.workspaces]]` entry. We re-load (rather than reuse the
+/// scan-time cfg) so the answer reflects the file on disk, not whatever
+/// in-memory state the scan happened to use.
+fn workspaces_already_declared(paths: &HealPaths) -> bool {
+    Config::load(&paths.config()).is_ok_and(|c| !c.project.workspaces.is_empty())
 }
 
 /// Stable JSON contract for `heal init --json`. Mirrors the lines the
@@ -169,6 +188,13 @@ struct InitReport<'a> {
     post_commit_hook: PathAction<'a, HookAction>,
     skills: SkillsReport<'a>,
     severity_counts: Option<&'a SeverityCounts>,
+    /// Manifests detected in the project root that suggest a monorepo
+    /// layout the user may want to declare via `[[project.workspaces]]`.
+    /// Empty when no signals fire OR when workspaces are already
+    /// declared — the `heal-config` skill keys off this to decide
+    /// whether to run its workspace-declaration phase.
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    monorepo_signals: &'a [MonorepoSignal],
 }
 
 /// Common shape for "we did something to a file" — used twice in
@@ -202,6 +228,7 @@ impl<'a> InitReport<'a> {
         skills_dest: &Path,
         skills_action: &'a SkillsAction,
         severity_counts: Option<&'a SeverityCounts>,
+        monorepo_signals: &'a [MonorepoSignal],
     ) -> Self {
         Self {
             project: project.display().to_string(),
@@ -222,6 +249,7 @@ impl<'a> InitReport<'a> {
                 action: skills_action,
             },
             severity_counts,
+            monorepo_signals,
         }
     }
 }
@@ -236,6 +264,7 @@ fn print_summary(
     skills_dest: &Path,
     skills_action: &SkillsAction,
     severity_counts: Option<&SeverityCounts>,
+    monorepo_signals: &[MonorepoSignal],
 ) {
     println!("HEAL initialized at {}", paths.root().display());
     println!(
@@ -267,6 +296,18 @@ fn print_summary(
         if counts.critical > 0 {
             println!("  → goal: bring [critical] to 0 (try `heal status --severity critical`)");
         }
+    }
+
+    if !monorepo_signals.is_empty() {
+        println!();
+        println!("Monorepo detected:");
+        for s in monorepo_signals {
+            println!("  - {} ({})", s.manifest, s.kind);
+        }
+        println!(
+            "  → declare workspaces in `[[project.workspaces]]` so calibration\n    \
+             scopes per package — run `claude /heal-config` to set this up.",
+        );
     }
 
     println!();
