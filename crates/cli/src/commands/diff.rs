@@ -1,30 +1,47 @@
 //! `heal diff [<git-ref>]` — bucket-style diff between the current
-//! findings and the cached `CheckRecord` (`.heal/checks/latest.json`).
+//! findings and the findings recomputed at an arbitrary git ref.
 //! Default ref: `HEAD` ("how does my live worktree compare to the last
 //! commit?").
 //!
-//! The cache holds only the most-recent record; `latest.json` is the
-//! single source of historical state. When the requested ref's sha
-//! doesn't match `latest.json.head_sha`, the command errors with a
-//! hint. Phase D adds a `git worktree`-based mode for arbitrary refs.
+//! Two paths:
+//!
+//! 1. **Cache hit.** `latest.json.head_sha` matches the resolved ref
+//!    → read the cached `CheckRecord` directly. Fast.
+//! 2. **Worktree fallback.** `git worktree add --detach <tempdir> <sha>`
+//!    materialises the source at the ref, runs the observer pipeline
+//!    against it (using the *current* `config.toml`/`calibration.toml`
+//!    so the comparison is apples-to-apples), and removes the worktree
+//!    on the way out. Gated by `[diff].max_loc_threshold` (default
+//!    `200_000` LOC) — over the threshold the command exits with code 2
+//!    and points at the manual two-branch flow instead of running an
+//!    expensive scan.
 //!
 //! Output buckets — Resolved / Regressed / Improved / New / Unchanged —
 //! plus a progress percentage. JSON shape is stable for skills and CI.
 
 use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
+use tempfile::TempDir;
 
-use crate::core::check_cache::{read_latest, CheckRecord};
-use crate::core::config::load_from_project;
+use crate::core::calibration::Calibration;
+use crate::core::check_cache::{config_hash_from_paths, read_latest, CheckRecord};
+use crate::core::config::{load_from_project, Config};
 use crate::core::finding::Finding;
 use crate::core::severity::Severity;
 use crate::core::term::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW};
 use crate::core::HealPaths;
 use crate::observer::git;
+use crate::observer::loc::LocObserver;
+
+/// Exit status when `[diff].max_loc_threshold` is exceeded. Wraps the
+/// human-readable guidance in a `process::exit` so scripts can branch on
+/// the code without parsing stderr.
+pub const DIFF_LOC_THRESHOLD_EXIT_CODE: i32 = 2;
 
 pub fn run(
     project: &Path,
@@ -34,23 +51,21 @@ pub fn run(
     as_json: bool,
 ) -> Result<()> {
     let paths = HealPaths::new(project);
+    let cfg = load_from_project(project).with_context(|| {
+        format!(
+            "loading {} (run `heal init` first?)",
+            paths.config().display(),
+        )
+    })?;
     let target_sha = git::resolve_ref(project, revspec).ok_or_else(|| {
-        anyhow::anyhow!(
+        anyhow!(
             "could not resolve git ref `{revspec}` in {} — is this a git repo?",
             project.display(),
         )
     })?;
 
-    let from_record = read_latest_for_sha(&paths, &target_sha)?.ok_or_else(|| {
-        anyhow::anyhow!(
-            "no cached `heal status` record matches {revspec} (sha {short}). \
-             `heal diff` reads `.heal/checks/latest.json`, which only carries \
-             the most recent run; check out {revspec} and run `heal status --refresh` \
-             first.",
-            short = &target_sha[..target_sha.len().min(8)],
-        )
-    })?;
-    let to_record = build_live_record(project, &paths)?;
+    let from_record = load_or_recompute_from(project, &paths, &cfg, revspec, &target_sha)?;
+    let to_record = crate::commands::status::build_live_record(project, &paths, &cfg);
 
     let diff = compute_diff(&from_record, &to_record, workspace);
     if as_json {
@@ -82,24 +97,122 @@ pub fn run(
     Ok(())
 }
 
-/// Read `.heal/checks/latest.json` and return it iff its `head_sha`
-/// matches the target. The cache holds exactly one record, so this is
-/// just a sha equality check on the latest mirror.
-fn read_latest_for_sha(paths: &HealPaths, target_sha: &str) -> Result<Option<CheckRecord>> {
-    let latest = read_latest(&paths.checks_latest())?;
-    Ok(latest.filter(|r| r.head_sha.as_deref() == Some(target_sha)))
+/// Build the "from" `CheckRecord`. Prefers the cached `latest.json` when
+/// its `head_sha` matches the target; otherwise materialises the source
+/// at `<sha>` in a tempdir-backed `git worktree` and runs the observer
+/// pipeline against it (after the LOC threshold check).
+fn load_or_recompute_from(
+    project: &Path,
+    paths: &HealPaths,
+    cfg: &Config,
+    revspec: &str,
+    target_sha: &str,
+) -> Result<CheckRecord> {
+    if let Some(record) =
+        read_latest(&paths.checks_latest())?.filter(|r| r.head_sha.as_deref() == Some(target_sha))
+    {
+        return Ok(record);
+    }
+    enforce_loc_threshold(project, cfg, revspec);
+    recompute_at_ref(project, paths, cfg, target_sha)
 }
 
-fn build_live_record(project: &Path, paths: &HealPaths) -> Result<CheckRecord> {
-    let cfg = load_from_project(project).with_context(|| {
-        format!(
-            "loading {} (run `heal init` first?)",
-            paths.config().display(),
-        )
-    })?;
-    Ok(crate::commands::status::build_live_record(
-        project, paths, &cfg,
+/// Run a fast LOC count on the *current* worktree as a proxy for the
+/// expected scan cost at `<sha>` (repos rarely change LOC by orders of
+/// magnitude between commits). Returns when under the threshold or
+/// exits the process with [`DIFF_LOC_THRESHOLD_EXIT_CODE`] otherwise.
+fn enforce_loc_threshold(project: &Path, cfg: &Config, revspec: &str) {
+    let report = LocObserver::from_config(cfg).scan(project);
+    let total_loc = report.totals.code;
+    let threshold = cfg.diff.max_loc_threshold;
+    if u64::try_from(total_loc).unwrap_or(u64::MAX) <= threshold {
+        return;
+    }
+    eprintln!("heal diff: project LOC {total_loc} exceeds [diff].max_loc_threshold ({threshold}).");
+    eprintln!("Run two scans by hand instead:");
+    eprintln!("  git worktree add --detach <tmp> {revspec}");
+    eprintln!("  (cd <tmp> && heal status --refresh --json) > from.json");
+    eprintln!("  heal status --refresh --json                > to.json");
+    eprintln!("  # diff the two JSON payloads with your tool of choice");
+    eprintln!("  git worktree remove <tmp>");
+    eprintln!("Or raise the threshold in `.heal/config.toml` under `[diff]`.");
+    std::process::exit(DIFF_LOC_THRESHOLD_EXIT_CODE);
+}
+
+/// Materialise `<sha>` in a fresh `git worktree`, run the observer
+/// pipeline against it, and tear the worktree down. Uses the host
+/// project's `.heal/calibration.toml` and `.heal/config.toml` so the
+/// "from" record is comparable apples-to-apples with the live "to"
+/// record under current rules.
+fn recompute_at_ref(
+    project: &Path,
+    paths: &HealPaths,
+    cfg: &Config,
+    target_sha: &str,
+) -> Result<CheckRecord> {
+    let tmp = TempDir::new().context("creating tempdir for `git worktree add`")?;
+    let workdir = tmp.path().join("heal-diff");
+    let _guard = WorktreeGuard::add(project, &workdir, target_sha)?;
+
+    let calibration = Calibration::load(&paths.calibration())
+        .ok()
+        .map(|c| c.with_overrides(cfg));
+    let config_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
+    Ok(crate::commands::status::build_fresh_record(
+        &workdir,
+        cfg,
+        calibration.as_ref(),
+        Some(target_sha.to_owned()),
+        // A fresh `git worktree add --detach` is clean by construction.
+        true,
+        config_hash,
     ))
+}
+
+/// RAII handle for a transient `git worktree`. `add` runs
+/// `git worktree add --detach <path> <sha>` against the host project;
+/// `Drop` runs `git worktree remove --force <path>` so a panic or `?`
+/// short-circuit doesn't leave `.git/worktrees/` polluted.
+struct WorktreeGuard {
+    project: PathBuf,
+    workdir: PathBuf,
+}
+
+impl WorktreeGuard {
+    fn add(project: &Path, workdir: &Path, target_sha: &str) -> Result<Self> {
+        if let Some(parent) = workdir.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(project)
+            .args(["worktree", "add", "--detach", "--force"])
+            .arg(workdir)
+            .arg(target_sha)
+            .status()
+            .context("invoking `git worktree add`")?;
+        if !status.success() {
+            return Err(anyhow!(
+                "`git worktree add` failed for {} at {target_sha}",
+                workdir.display(),
+            ));
+        }
+        Ok(Self {
+            project: project.to_path_buf(),
+            workdir: workdir.to_path_buf(),
+        })
+    }
+}
+
+impl Drop for WorktreeGuard {
+    fn drop(&mut self) {
+        let _ = Command::new("git")
+            .arg("-C")
+            .arg(&self.project)
+            .args(["worktree", "remove", "--force"])
+            .arg(&self.workdir)
+            .status();
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -432,5 +545,35 @@ mod tests {
         );
         assert!((diff.progress_pct - 0.0).abs() < 1e-9);
         assert_eq!(diff.new_findings.len(), 1);
+    }
+
+    #[test]
+    fn recompute_at_ref_materialises_worktree_and_runs_observers() {
+        use crate::core::config::Config;
+        use crate::test_support::{commit, init_repo};
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit(
+            dir.path(),
+            "lib.rs",
+            "fn ok() {}\n",
+            "tester@example.com",
+            "init",
+        );
+        let head_sha = git::head_sha(dir.path()).expect("head sha after first commit");
+        let paths = HealPaths::new(dir.path());
+        paths.ensure().unwrap();
+        Config::default().save(&paths.config()).unwrap();
+
+        let cfg = load_from_project(dir.path()).unwrap();
+        let record = recompute_at_ref(dir.path(), &paths, &cfg, &head_sha).unwrap();
+        assert_eq!(record.head_sha.as_deref(), Some(head_sha.as_str()));
+        // Sanity: the worktree was torn down and didn't leak.
+        let leftover = std::fs::read_dir(dir.path().join(".git/worktrees"))
+            .ok()
+            .map_or(0, std::iter::Iterator::count);
+        assert_eq!(leftover, 0, "git worktree must be cleaned up after diff");
     }
 }

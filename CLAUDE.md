@@ -125,6 +125,24 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
   way to suppress this — the warning is the whole point of tracking
   fixes separately.
 
+### `heal diff` worktree mode
+- `heal diff <git-ref>` first tries the cache (`latest.json` whose
+  `head_sha` matches the resolved ref). On a miss it materialises the
+  source at the ref via `git worktree add --detach <tempdir> <sha>`,
+  runs the observer pipeline against the worktree using the *current*
+  `config.toml`/`calibration.toml`, and tears the worktree down via a
+  `Drop` guard so a `?` short-circuit can't leak `.git/worktrees/`.
+  The "from" record's findings reflect today's rules applied to the
+  historical source — not the historical findings the user might have
+  seen at the time. That's deliberate (apples-to-apples).
+- The worktree path is gated by `[diff].max_loc_threshold` (default
+  `200_000` LOC, override in `config.toml`). Over the limit, `heal
+  diff` exits with code `2` and prints the manual two-branch recipe.
+  The LOC count uses `LocObserver::scan` on the *current* worktree as
+  a proxy — repos rarely shift LOC by orders of magnitude between
+  commits, so this is good enough as a cost gate without paying for a
+  second scan.
+
 ### Hashing
 - Persistent hashes (duplication's per-token identity, the plugin
   fingerprint manifest) use a hand-rolled FNV-1a 64-bit so output is

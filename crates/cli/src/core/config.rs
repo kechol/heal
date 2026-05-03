@@ -22,6 +22,40 @@ pub struct Config {
     pub metrics: MetricsConfig,
     #[serde(default)]
     pub policy: PolicyConfig,
+    #[serde(default)]
+    pub diff: DiffConfig,
+}
+
+/// `heal diff` settings. Defaults are tuned to feel safe on small to
+/// mid-size repos; very large monorepos should override
+/// `max_loc_threshold` (or run `heal status` against two branches and
+/// diff the JSON manually instead).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DiffConfig {
+    /// LOC ceiling for the worktree-based mode of `heal diff`. When the
+    /// current repo's LOC count exceeds this, the command exits with
+    /// code 2 and points at the manual two-branch flow. The cost the
+    /// gate is protecting against: `git worktree add` + a full observer
+    /// scan against an arbitrary git ref, which scales with LOC.
+    #[serde(default = "DiffConfig::default_max_loc_threshold")]
+    pub max_loc_threshold: u64,
+}
+
+impl DiffConfig {
+    pub(crate) const DEFAULT_MAX_LOC_THRESHOLD: u64 = 200_000;
+
+    fn default_max_loc_threshold() -> u64 {
+        Self::DEFAULT_MAX_LOC_THRESHOLD
+    }
+}
+
+impl Default for DiffConfig {
+    fn default() -> Self {
+        Self {
+            max_loc_threshold: Self::DEFAULT_MAX_LOC_THRESHOLD,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
