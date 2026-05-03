@@ -11,9 +11,8 @@
 //!   - Segments older than `delete_after` (365d default) are removed
 //!     entirely. Beyond a year there is no realistic reader for the
 //!     event log: snapshots are reconstructed from `git log`,
-//!     calibration uses the last 90 days, and `heal logs` /
-//!     `heal snapshots` / `heal checks` are operator views of recent
-//!     activity.
+//!     calibration uses the last 90 days, and `heal snapshots` /
+//!     `heal checks` are operator views of recent activity.
 //!
 //! Both passes are idempotent — re-running on a state that's already
 //! compacted is a no-op.
@@ -113,7 +112,6 @@ pub fn compact_all(
 ) -> Result<Vec<(&'static str, CompactionStats)>> {
     [
         ("snapshots", paths.snapshots_dir()),
-        ("logs", paths.logs_dir()),
         ("checks", paths.checks_dir()),
     ]
     .into_iter()

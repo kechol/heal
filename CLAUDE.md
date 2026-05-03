@@ -87,8 +87,8 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
   pattern (`*Config` struct + `Default` + `Toggle` + register on
   `MetricsConfig`).
 
-### Event log (`.heal/snapshots/YYYY-MM.jsonl` and `.heal/logs/YYYY-MM.jsonl`)
-- Both directories use the same generic `heal_core::eventlog::EventLog`
+### Event log (`.heal/snapshots/YYYY-MM.jsonl`)
+- The `snapshots/` directory uses the generic `heal_core::eventlog::EventLog`
   store: append-only, month-rotated, reads transparent across `.gz`.
 - `core::compaction::compact` gzips segments in place at 90 days
   (`YYYY-MM.jsonl` → `YYYY-MM.jsonl.gz`) and deletes them at 365 days.
@@ -103,11 +103,10 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
   `snapshot::MetricsSnapshot::latest_in(&log)`. Records that fail to
   decode (legacy payloads, mid-write truncation) are skipped silently —
   do not change `latest_in_segments` to propagate parse errors.
-- **`logs/`** holds raw hook events (`commit` / `edit` / `stop`). The
-  `commit` entry carries lightweight `CommitInfo` metadata only (sha,
-  parent, author email, message summary,
-  files_changed/insertions/deletions); the heavy metric payload stays
-  in `snapshots/`. `heal logs` reads these.
+- The `commit` hook no longer writes a sibling raw-event log under
+  `.heal/logs/`. `heal hook edit` / `heal hook stop` are kept as
+  no-op CLI variants for back-compat with stale `settings.json`
+  registrations; Phase E retires the registration so they stop firing.
 - `EventLog::iter_segments(segments)` exists so callers that already
   paid for `segments()` (e.g. `heal metrics`) don't re-glob the
   directory. Use it.

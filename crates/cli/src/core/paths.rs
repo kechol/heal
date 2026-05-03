@@ -41,16 +41,11 @@ impl HealPaths {
         self.root.join("snapshots")
     }
 
-    #[must_use]
-    pub fn logs_dir(&self) -> PathBuf {
-        self.root.join("logs")
-    }
-
     /// Append-only result cache: `<root>/checks/YYYY-MM.jsonl` plus
     /// auxiliary files (`latest.json`, `fixed.jsonl`, `regressed.jsonl`).
     /// Skill workflows read this; `heal status` writes it. Kept under
     /// `.heal/` (not `.cache/`) so it ships with the project alongside
-    /// snapshots/logs.
+    /// snapshots.
     #[must_use]
     pub fn checks_dir(&self) -> PathBuf {
         self.root.join("checks")
@@ -88,24 +83,11 @@ impl HealPaths {
         self.root.join("skills-install.json")
     }
 
-    #[must_use]
-    pub fn docs_dir(&self) -> PathBuf {
-        self.root.join("docs")
-    }
-
-    #[must_use]
-    pub fn reports_dir(&self) -> PathBuf {
-        self.root.join("reports")
-    }
-
     /// Create every standard subdirectory. Idempotent.
     pub fn ensure(&self) -> std::io::Result<()> {
         for dir in [
             self.root.as_path(),
             &self.snapshots_dir(),
-            &self.logs_dir(),
-            &self.docs_dir(),
-            &self.reports_dir(),
             &self.checks_dir(),
         ] {
             std::fs::create_dir_all(dir)?;

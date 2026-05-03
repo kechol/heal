@@ -1,12 +1,11 @@
-//! `heal logs` / `heal snapshots` / `heal checks` — three sibling
-//! browsers over the append-only stores under `.heal/`.
+//! `heal snapshots` / `heal checks` — sibling browsers over the
+//! append-only stores under `.heal/`.
 //!
-//! - `heal logs`      → `.heal/logs/` (commit / edit / stop hook events)
 //! - `heal snapshots` → `.heal/snapshots/` (commit `MetricsSnapshot` +
 //!   `calibrate` events)
 //! - `heal checks`    → `.heal/checks/` (`CheckRecord` log)
 //!
-//! The first two share an `EventLog`-shaped reader and the same
+//! `heal snapshots` uses an `EventLog`-shaped reader and the
 //! `--since` / `--filter` / `--limit` / `--json` filter set; `heal
 //! checks` uses `CheckRecord` reads via [`iter_records`] and omits
 //! `--filter` (no event-name dimension to match).
@@ -22,10 +21,6 @@ use crate::cli::{ChecksFilters, LogFilters};
 use crate::core::check_cache::{iter_records, CheckRecord, CheckRecordSummary};
 use crate::core::eventlog::{Event, EventLog};
 use crate::core::HealPaths;
-
-pub fn run_logs(project: &Path, args: &LogFilters) -> Result<()> {
-    run_eventlog(HealPaths::new(project).logs_dir(), args)
-}
 
 pub fn run_snapshots(project: &Path, args: &LogFilters) -> Result<()> {
     run_eventlog(HealPaths::new(project).snapshots_dir(), args)
@@ -163,8 +158,8 @@ mod tests {
         }
     }
 
-    fn write_events(paths: &HealPaths) {
-        let log = EventLog::new(paths.logs_dir());
+    fn write_snapshot_events(paths: &HealPaths) {
+        let log = EventLog::new(paths.snapshots_dir());
         log.append(&Event {
             timestamp: Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap(),
             event: "commit".into(),
@@ -173,20 +168,14 @@ mod tests {
         .unwrap();
         log.append(&Event {
             timestamp: Utc.with_ymd_and_hms(2026, 4, 2, 0, 0, 0).unwrap(),
-            event: "edit".into(),
-            data: json!({"file": "main.rs"}),
-        })
-        .unwrap();
-        log.append(&Event {
-            timestamp: Utc.with_ymd_and_hms(2026, 4, 3, 0, 0, 0).unwrap(),
-            event: "stop".into(),
-            data: json!(null),
+            event: "calibrate".into(),
+            data: json!({"reason": "manual"}),
         })
         .unwrap();
     }
 
-    fn collect(paths: &HealPaths, filter: Option<&str>) -> Vec<Event> {
-        let log = EventLog::new(paths.logs_dir());
+    fn collect_snapshots(paths: &HealPaths, filter: Option<&str>) -> Vec<Event> {
+        let log = EventLog::new(paths.snapshots_dir());
         log.try_iter()
             .unwrap()
             .map(|r| r.unwrap())
@@ -195,13 +184,13 @@ mod tests {
     }
 
     #[test]
-    fn smoke_run_succeeds_on_populated_logs() {
+    fn smoke_run_succeeds_on_populated_snapshots() {
         let dir = TempDir::new().unwrap();
         let paths = HealPaths::new(dir.path());
         paths.ensure().unwrap();
-        write_events(&paths);
-        run_logs(dir.path(), &args(None, None, None)).unwrap();
-        assert_eq!(collect(&paths, None).len(), 3);
+        write_snapshot_events(&paths);
+        run_snapshots(dir.path(), &args(None, None, None)).unwrap();
+        assert_eq!(collect_snapshots(&paths, None).len(), 2);
     }
 
     #[test]
@@ -209,10 +198,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let paths = HealPaths::new(dir.path());
         paths.ensure().unwrap();
-        write_events(&paths);
-        let edits = collect(&paths, Some("edit"));
-        assert_eq!(edits.len(), 1);
-        assert_eq!(edits[0].event, "edit");
+        write_snapshot_events(&paths);
+        let calibrations = collect_snapshots(&paths, Some("calibrate"));
+        assert_eq!(calibrations.len(), 1);
+        assert_eq!(calibrations[0].event, "calibrate");
     }
 
     #[test]
@@ -220,16 +209,16 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let paths = HealPaths::new(dir.path());
         paths.ensure().unwrap();
-        write_events(&paths);
-        run_logs(dir.path(), &args(None, Some("2026-04-02T12:00:00Z"), None)).unwrap();
+        write_snapshot_events(&paths);
+        run_snapshots(dir.path(), &args(None, Some("2026-04-02T12:00:00Z"), None)).unwrap();
     }
 
     #[test]
-    fn run_returns_ok_when_logs_dir_missing() {
+    fn run_returns_ok_when_snapshots_dir_missing() {
         let dir = TempDir::new().unwrap();
         let mut a = args(None, None, None);
         a.json = false;
-        run_logs(dir.path(), &a).unwrap();
+        run_snapshots(dir.path(), &a).unwrap();
     }
 
     #[test]

@@ -1,18 +1,12 @@
 //! `heal hook <commit|edit|stop>` — single entrypoint invoked by git
-//! hooks and Claude Code's `settings.json` hook commands. Each event
-//! has a different write target:
+//! hooks and Claude Code's `settings.json` hook commands.
 //!
-//! | event  | snapshots/ | logs/ | observer scan | stdin payload |
-//! | ------ | :--------: | :---: | :-----------: | :-----------: |
-//! | commit |     ✓      |   ✓   |       ✓       |       —       |
-//! | edit   |     —      |   ✓   |       —       |       ✓       |
-//! | stop   |     —      |   ✓   |       —       |       ✓       |
-//!
-//! `commit` is the only event that runs observers (heavy work) — `edit`
-//! and `stop` stay below ~1ms so Claude Code's loop isn't slowed down.
-//! `commit` also writes a lightweight metadata record to `logs/` so the
-//! event timeline (`heal logs`) is the single source of truth for "what
-//! happened when", while `snapshots/` retains the typed metric series.
+//! - `commit` runs observers, writes a `MetricsSnapshot` row to
+//!   `.heal/snapshots/`, and emits a one-line nudge.
+//! - `edit` / `stop` are no-ops kept for backward-compatibility with
+//!   any `settings.json` left over from earlier installs. They return
+//!   immediately — Phase E will retire the hook registration so they
+//!   stop firing entirely.
 //!
 //! ## Post-commit nudge
 //!
@@ -23,7 +17,7 @@
 //! moved to `heal metrics` / `heal status` so the post-commit output
 //! never exceeds two lines.
 
-use std::io::{IsTerminal, Read, Write};
+use std::io::{IsTerminal, Write};
 use std::path::Path;
 
 use crate::core::calibration::Calibration;
@@ -50,31 +44,14 @@ pub fn run(project: &Path, event: HookEvent) -> Result<()> {
     if !paths.root().exists() {
         return Ok(());
     }
-    // Edit / Stop fire on every Claude turn. Bury any internal failure
-    // so the hook never blocks the agent loop — log-write errors,
-    // unparseable stdin, etc. are not worth propagating. `Commit` keeps
-    // the original error path: it's invoked from a git hook (`heal hook
-    // commit`) where surfacing failure during local debugging matters.
     match event {
-        HookEvent::Commit => run_commit(project, &paths, &EventLog::new(paths.logs_dir()))?,
-        HookEvent::Edit | HookEvent::Stop => {
-            // Stop intentionally does NOT emit a nudge: `MetricsSnapshot`
-            // only updates on commit, so any turn-level Stop nudge would
-            // either repeat itself or stay silent.
-            let _ = run_log_only(&paths, event);
-        }
+        HookEvent::Commit => run_commit(project, &paths)?,
+        HookEvent::Edit | HookEvent::Stop => {}
     }
     Ok(())
 }
 
-fn run_log_only(paths: &HealPaths, event: HookEvent) -> Result<()> {
-    let logs = EventLog::new(paths.logs_dir());
-    let payload = capture_stdin()?;
-    logs.append(&Event::new(event.as_str(), payload))?;
-    Ok(())
-}
-
-fn run_commit(project: &Path, paths: &HealPaths, logs: &EventLog) -> Result<()> {
+fn run_commit(project: &Path, paths: &HealPaths) -> Result<()> {
     // ConfigMissing is a v0.1 affordance — we still want a row in
     // snapshots/ so `heal metrics` doesn't think nothing happened, but
     // there's nothing to scan or nudge about until `heal init` lands.
@@ -85,10 +62,6 @@ fn run_commit(project: &Path, paths: &HealPaths, logs: &EventLog) -> Result<()> 
                 HookEvent::Commit.as_str(),
                 serde_json::to_value(MetricsSnapshot::default())
                     .expect("MetricsSnapshot serialization is infallible"),
-            ))?;
-            logs.append(&Event::new(
-                HookEvent::Commit.as_str(),
-                commit_log_payload(project),
             ))?;
             return Ok(());
         }
@@ -104,10 +77,6 @@ fn run_commit(project: &Path, paths: &HealPaths, logs: &EventLog) -> Result<()> 
     EventLog::new(paths.snapshots_dir()).append(&Event::new(
         HookEvent::Commit.as_str(),
         serde_json::to_value(&snap).expect("MetricsSnapshot serialization is infallible"),
-    ))?;
-    logs.append(&Event::new(
-        HookEvent::Commit.as_str(),
-        commit_log_payload(project),
     ))?;
     crate::core::compaction::compact_all(
         paths,
@@ -172,52 +141,14 @@ fn write_nudge(
     Ok(())
 }
 
-/// Lightweight snapshot of the just-recorded commit (sha, parent, author,
-/// subject, file/line change counts). Pure metadata — the heavy metric
-/// payload lives in `snapshots/`. A failed lookup is logged to stderr but
-/// returns `Value::Null` so the post-commit hook never aborts the commit.
-fn commit_log_payload(project: &Path) -> serde_json::Value {
-    let Some(info) = crate::observer::git::head_commit_info(project) else {
-        eprintln!("heal: commit metadata unavailable (HEAD missing or not a git repo)");
-        return serde_json::Value::Null;
-    };
-    serde_json::to_value(&info).expect("CommitInfo serialization is infallible")
-}
-
-fn capture_stdin() -> Result<serde_json::Value> {
-    // Claude Code's hooks deliver event metadata via stdin (JSON). Skip
-    // the read on a tty so manual invocations don't block on user input.
-    let stdin = std::io::stdin();
-    if stdin.is_terminal() {
-        return Ok(serde_json::Value::Null);
-    }
-    let mut buf = String::new();
-    stdin.lock().read_to_string(&mut buf)?;
-    if buf.trim().is_empty() {
-        return Ok(serde_json::Value::Null);
-    }
-    Ok(match serde_json::from_str(&buf) {
-        Ok(v) => v,
-        Err(_) => serde_json::Value::String(buf),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support::{commit, init_repo};
     use tempfile::TempDir;
 
-    fn read_log_events(paths: &HealPaths) -> Vec<Event> {
-        EventLog::new(paths.logs_dir())
-            .try_iter()
-            .unwrap()
-            .map(|r| r.unwrap())
-            .collect()
-    }
-
     #[test]
-    fn commit_writes_to_both_snapshots_and_logs() {
+    fn commit_writes_a_snapshot_row() {
         let dir = TempDir::new().unwrap();
         init_repo(dir.path());
         commit(
@@ -242,43 +173,26 @@ mod tests {
             .collect();
         assert_eq!(snap_events.len(), 1);
         assert_eq!(snap_events[0].event, HookEvent::Commit.as_str());
-
-        let log_events = read_log_events(&paths);
-        assert_eq!(log_events.len(), 1);
-        assert_eq!(log_events[0].event, HookEvent::Commit.as_str());
-        let info: crate::observer::git::CommitInfo =
-            serde_json::from_value(log_events[0].data.clone()).unwrap();
-        assert_eq!(info.author_email.as_deref(), Some("alice@example.com"));
-        assert_eq!(info.message_summary, "feat: add ok");
-        assert_eq!(info.files_changed, 1);
-        assert!(info.insertions >= 1);
     }
 
     #[test]
-    fn edit_only_writes_to_logs() {
+    fn edit_is_noop() {
         let dir = TempDir::new().unwrap();
         let paths = HealPaths::new(dir.path());
         paths.ensure().unwrap();
         run(dir.path(), HookEvent::Edit).unwrap();
-
         let snap_files: usize = std::fs::read_dir(paths.snapshots_dir()).unwrap().count();
         assert_eq!(snap_files, 0);
-
-        let log_events = read_log_events(&paths);
-        assert_eq!(log_events.len(), 1);
-        assert_eq!(log_events[0].event, HookEvent::Edit.as_str());
-        assert!(log_events[0].data.is_null());
     }
 
     #[test]
-    fn stop_only_writes_to_logs() {
+    fn stop_is_noop() {
         let dir = TempDir::new().unwrap();
         let paths = HealPaths::new(dir.path());
         paths.ensure().unwrap();
         run(dir.path(), HookEvent::Stop).unwrap();
-        let log_events = read_log_events(&paths);
-        assert_eq!(log_events.len(), 1);
-        assert_eq!(log_events[0].event, HookEvent::Stop.as_str());
+        let snap_files: usize = std::fs::read_dir(paths.snapshots_dir()).unwrap().count();
+        assert_eq!(snap_files, 0);
     }
 
     /// `write_nudge` must stay silent on a fresh project with no

@@ -64,11 +64,6 @@ pub enum Command {
         #[arg(long, value_name = "PATH")]
         workspace: Option<std::path::PathBuf>,
     },
-    /// Browse `.heal/logs/` event entries (commit/edit/stop hook
-    /// records). Lightweight metadata; the metric series live in
-    /// `.heal/snapshots/` and surface via `heal metrics` or
-    /// `heal snapshots`.
-    Logs(LogFilters),
     /// Browse `.heal/snapshots/` event entries (`commit` carries the
     /// `MetricsSnapshot` payload; `calibrate` carries `CalibrationEvent`).
     /// `heal metrics` is the synthesised view; `heal snapshots` walks the
@@ -304,11 +299,10 @@ pub struct StatusArgs {
     pub top: Option<usize>,
 }
 
-/// Shared filters for the `heal logs` / `heal snapshots` browsers.
-/// Both back onto `.heal/<dir>/*.jsonl(.gz)` event logs, so the same
-/// filter shape applies. `heal checks` takes a near-identical shape
-/// without the `--filter` flag (`CheckRecord`s carry no event-name
-/// dimension) — see [`ChecksFilters`].
+/// Shared filters for the `heal snapshots` browser. Backs onto
+/// `.heal/snapshots/*.jsonl(.gz)` event logs. `heal checks` takes a
+/// near-identical shape without the `--filter` flag (`CheckRecord`s
+/// carry no event-name dimension) — see [`ChecksFilters`].
 #[derive(Debug, clap::Args)]
 pub struct LogFilters {
     /// Drop entries older than this RFC 3339 timestamp.
@@ -421,7 +415,6 @@ impl Cli {
                 metric,
                 workspace,
             } => commands::metrics::run(&project, json, metric, workspace.as_deref()),
-            Command::Logs(args) => commands::logs::run_logs(&project, &args),
             Command::Snapshots(args) => commands::logs::run_snapshots(&project, &args),
             Command::Checks(args) => commands::logs::run_checks(&project, &args),
             Command::Status(args) => commands::status::run(&project, &args),

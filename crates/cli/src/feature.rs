@@ -36,8 +36,8 @@ pub struct FeatureMeta {
 pub enum FeatureKind {
     /// Reads project source / git history; this is the v0.2 default.
     Observer,
-    /// Reads `.heal/docs/` artifacts and source mtimes. Reserved for
-    /// v0.3.
+    /// Reads docs artifacts and source mtimes. Reserved for v0.3 — the
+    /// storage and ingest path are TBD.
     DocsScanner,
     /// Reads lcov coverage files and emits Findings for low-coverage
     /// code. Reserved for v0.3.

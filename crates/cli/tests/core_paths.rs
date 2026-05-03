@@ -6,7 +6,7 @@ fn ensure_creates_all_subdirs() {
     let paths = HealPaths::new(dir.path());
     paths.ensure().unwrap();
 
-    for sub in ["snapshots", "logs", "docs", "reports"] {
+    for sub in ["snapshots", "checks"] {
         assert!(paths.root().join(sub).is_dir(), "missing {sub}");
     }
 }
