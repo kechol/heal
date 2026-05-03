@@ -60,7 +60,6 @@ serde_json = { workspace = true }
 toml = { workspace = true }
 chrono = { workspace = true }
 include_dir = { workspace = true }
-flate2 = { workspace = true }
 tokei = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-typescript = { workspace = true, optional = true }

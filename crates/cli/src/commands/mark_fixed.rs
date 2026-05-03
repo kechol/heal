@@ -1,5 +1,5 @@
-//! `heal mark-fixed --finding-id ... --commit-sha ...` — append a
-//! `FixedFinding` to `.heal/checks/fixed.jsonl`.
+//! `heal mark-fixed --finding-id ... --commit-sha ...` — record (or
+//! refresh) a `FixedFinding` entry in `.heal/checks/fixed.json`.
 //!
 //! Agent-facing surface. The `/heal-code-patch` skill calls this after
 //! committing a fix so the next `heal status --refresh` either retires
@@ -13,7 +13,7 @@ use anyhow::Result;
 use chrono::Utc;
 use serde::Serialize;
 
-use crate::core::check_cache::{append_fixed, FixedFinding};
+use crate::core::check_cache::{upsert_fixed, FixedFinding};
 use crate::core::HealPaths;
 
 pub fn run(project: &Path, finding_id: &str, commit_sha: &str, as_json: bool) -> Result<()> {
@@ -23,27 +23,27 @@ pub fn run(project: &Path, finding_id: &str, commit_sha: &str, as_json: bool) ->
         commit_sha: commit_sha.to_owned(),
         fixed_at: Utc::now(),
     };
-    let log_path = paths.checks_fixed_log();
-    append_fixed(&log_path, &entry)?;
+    let path = paths.checks_fixed();
+    upsert_fixed(&path, entry.clone())?;
     if as_json {
         #[derive(Serialize)]
         struct MarkReport<'a> {
             finding_id: &'a str,
             commit_sha: &'a str,
             fixed_at: String,
-            log: String,
+            path: String,
         }
         super::emit_json(&MarkReport {
             finding_id,
             commit_sha,
             fixed_at: entry.fixed_at.to_rfc3339(),
-            log: log_path.display().to_string(),
+            path: path.display().to_string(),
         });
         return Ok(());
     }
     println!(
-        "marked {finding_id} as fixed by {commit_sha} (logged to {})",
-        log_path.display(),
+        "marked {finding_id} as fixed by {commit_sha} (recorded in {})",
+        path.display(),
     );
     Ok(())
 }
@@ -55,7 +55,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn appends_entry_with_supplied_metadata() {
+    fn upserts_entries_keyed_by_finding_id() {
         let tmp = TempDir::new().unwrap();
         let paths = HealPaths::new(tmp.path());
         paths.ensure().unwrap();
@@ -63,11 +63,22 @@ mod tests {
         run(tmp.path(), "ccn:src/a.rs:foo:abc", "deadbeef", false).unwrap();
         run(tmp.path(), "ccn:src/b.rs:bar:def", "cafebabe", false).unwrap();
 
-        let entries = read_fixed(&paths.checks_fixed_log()).unwrap();
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].finding_id, "ccn:src/a.rs:foo:abc");
-        assert_eq!(entries[0].commit_sha, "deadbeef");
-        assert_eq!(entries[1].finding_id, "ccn:src/b.rs:bar:def");
-        assert_eq!(entries[1].commit_sha, "cafebabe");
+        let map = read_fixed(&paths.checks_fixed()).unwrap();
+        assert_eq!(map.len(), 2);
+        assert_eq!(map["ccn:src/a.rs:foo:abc"].commit_sha, "deadbeef");
+        assert_eq!(map["ccn:src/b.rs:bar:def"].commit_sha, "cafebabe");
+    }
+
+    #[test]
+    fn refreshes_existing_entry_for_same_finding_id() {
+        let tmp = TempDir::new().unwrap();
+        let paths = HealPaths::new(tmp.path());
+        paths.ensure().unwrap();
+
+        run(tmp.path(), "ccn:src/a.rs:foo:abc", "old", false).unwrap();
+        run(tmp.path(), "ccn:src/a.rs:foo:abc", "new", false).unwrap();
+        let map = read_fixed(&paths.checks_fixed()).unwrap();
+        assert_eq!(map.len(), 1);
+        assert_eq!(map["ccn:src/a.rs:foo:abc"].commit_sha, "new");
     }
 }

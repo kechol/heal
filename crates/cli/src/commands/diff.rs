@@ -1,13 +1,12 @@
 //! `heal diff [<git-ref>]` — bucket-style diff between the current
-//! findings and a cached `CheckRecord` whose `head_sha` matches the
-//! resolved git ref. Default ref: `HEAD` ("how does my live worktree
-//! compare to the last commit?").
+//! findings and the cached `CheckRecord` (`.heal/checks/latest.json`).
+//! Default ref: `HEAD` ("how does my live worktree compare to the last
+//! commit?").
 //!
-//! The cache is the only source of historical state. If no `CheckRecord`
-//! has been written for the ref's commit (e.g. you haven't run
-//! `heal status` since checking out an older branch), the command
-//! errors with a hint instead of silently checking out the ref to
-//! re-scan.
+//! The cache holds only the most-recent record; `latest.json` is the
+//! single source of historical state. When the requested ref's sha
+//! doesn't match `latest.json.head_sha`, the command errors with a
+//! hint. Phase D adds a `git worktree`-based mode for arbitrary refs.
 //!
 //! Output buckets — Resolved / Regressed / Improved / New / Unchanged —
 //! plus a progress percentage. JSON shape is stable for skills and CI.
@@ -19,7 +18,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use crate::core::check_cache::{iter_records, CheckRecord};
+use crate::core::check_cache::{read_latest, CheckRecord};
 use crate::core::config::load_from_project;
 use crate::core::finding::Finding;
 use crate::core::severity::Severity;
@@ -42,11 +41,12 @@ pub fn run(
         )
     })?;
 
-    let from_record = find_cached_record(&paths, &target_sha)?.ok_or_else(|| {
+    let from_record = read_latest_for_sha(&paths, &target_sha)?.ok_or_else(|| {
         anyhow::anyhow!(
-            "no cached `heal status` record for {revspec} (sha {short}). \
-             Either commit the work and run `heal status` so a record \
-             exists, or check out {revspec} and run `heal status --refresh` first.",
+            "no cached `heal status` record matches {revspec} (sha {short}). \
+             `heal diff` reads `.heal/checks/latest.json`, which only carries \
+             the most recent run; check out {revspec} and run `heal status --refresh` \
+             first.",
             short = &target_sha[..target_sha.len().min(8)],
         )
     })?;
@@ -82,17 +82,12 @@ pub fn run(
     Ok(())
 }
 
-/// Walk `.heal/checks/` newest-first and return the first record whose
-/// `head_sha` matches the target. Returns `None` when no match exists.
-fn find_cached_record(paths: &HealPaths, target_sha: &str) -> Result<Option<CheckRecord>> {
-    let records = iter_records(&paths.checks_dir())?;
-    Ok(records.into_iter().find_map(|(_, record)| {
-        if record.head_sha.as_deref() == Some(target_sha) {
-            Some(record)
-        } else {
-            None
-        }
-    }))
+/// Read `.heal/checks/latest.json` and return it iff its `head_sha`
+/// matches the target. The cache holds exactly one record, so this is
+/// just a sha equality check on the latest mirror.
+fn read_latest_for_sha(paths: &HealPaths, target_sha: &str) -> Result<Option<CheckRecord>> {
+    let latest = read_latest(&paths.checks_latest())?;
+    Ok(latest.filter(|r| r.head_sha.as_deref() == Some(target_sha)))
 }
 
 fn build_live_record(project: &Path, paths: &HealPaths) -> Result<CheckRecord> {

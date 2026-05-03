@@ -58,12 +58,6 @@ fn run_commit(project: &Path, paths: &HealPaths) -> Result<()> {
 
     let reports = run_all(project, &cfg, None, None);
     let (calibration, findings) = classify_with_calibration(paths, &cfg, &reports);
-    crate::core::compaction::compact_all(
-        paths,
-        &crate::core::compaction::CompactionPolicy::default(),
-        chrono::Utc::now(),
-    )
-    .ok();
     // Best-effort nudge — don't fail the hook on rendering issues.
     write_nudge(calibration.as_ref(), &findings, &mut std::io::stdout()).ok();
     Ok(())

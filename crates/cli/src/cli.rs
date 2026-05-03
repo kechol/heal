@@ -64,11 +64,6 @@ pub enum Command {
         #[arg(long, value_name = "PATH")]
         workspace: Option<std::path::PathBuf>,
     },
-    /// Browse `.heal/checks/` records — newest-first list of every
-    /// `CheckRecord` ever written. The current findings live under
-    /// `heal status`; the diff against a git ref lives under
-    /// `heal diff`.
-    Checks(ChecksFilters),
     /// Render the cached `CheckRecord` from `.heal/checks/latest.json`
     /// — Critical / High view by default. Runs a fresh scan only when
     /// the cache is missing; pass `--refresh` to force a rescan and
@@ -85,7 +80,7 @@ pub enum Command {
     /// `heal status --refresh` either retires the entry (genuinely
     /// fixed) or moves it to `regressed.jsonl` (re-detected). Hidden
     /// from `--help` because no human ever invokes this directly;
-    /// implemented as an append to `.heal/checks/fixed.jsonl`.
+    /// implemented as an upsert into `.heal/checks/fixed.json`.
     #[command(hide = true)]
     MarkFixed {
         /// `Finding.id` from `heal status --json` output.
@@ -106,31 +101,17 @@ pub enum Command {
     /// Calibrate codebase-relative Severity thresholds. Default
     /// behaviour:
     ///   * `calibration.toml` missing → run a fresh scan and write it.
-    ///   * `calibration.toml` present → evaluate auto-detect drift
-    ///     triggers (no write) and surface `--force` as the way to
-    ///     refresh.
+    ///   * `calibration.toml` present → print the freshness summary and
+    ///     surface `--force` as the way to refresh. The `heal-config`
+    ///     skill is responsible for deciding when to suggest a
+    ///     recalibration; HEAL itself never auto-fires.
     Calibrate {
         /// Force a fresh scan and overwrite `.heal/calibration.toml`
         /// even when one already exists.
         #[arg(long)]
         force: bool,
-        /// Emit a JSON summary (calibration thresholds when `--force`,
-        /// recalibration-check verdict otherwise) instead of the
-        /// human-readable text. Stable contract for the `heal-config`
-        /// skill and CI scripts.
-        #[arg(long)]
-        json: bool,
-    },
-    /// Compact `.heal/{snapshots,logs,checks}/` segments. Files older
-    /// than 90 days are gzipped in place; files older than 365 days
-    /// are deleted. Idempotent — also called automatically from
-    /// `heal hook commit`, so manual runs are mostly for diagnostics.
-    Compact {
-        /// Print one line per touched file instead of just the summary.
-        #[arg(long)]
-        verbose: bool,
-        /// Emit a JSON summary of gzipped / deleted segments instead
-        /// of the human-readable text.
+        /// Emit a JSON summary instead of the human-readable text.
+        /// Stable contract for the `heal-config` skill and CI scripts.
         #[arg(long)]
         json: bool,
     },
@@ -294,22 +275,6 @@ pub struct StatusArgs {
     pub top: Option<usize>,
 }
 
-/// Filters for `heal checks` — same shape as [`LogFilters`] minus the
-/// `--filter` flag, since [`CheckRecord`](crate::core::check_cache::CheckRecord)
-/// has no event-name dimension to match against.
-#[derive(Debug, clap::Args)]
-pub struct ChecksFilters {
-    /// Drop entries with `started_at` older than this RFC 3339 timestamp.
-    #[arg(long)]
-    pub since: Option<String>,
-    /// Keep only the N most recent records (after filtering).
-    #[arg(long)]
-    pub limit: Option<usize>,
-    /// Emit raw JSON list instead of the one-line-per-record summary.
-    #[arg(long)]
-    pub json: bool,
-}
-
 /// Args for `heal diff`. The positional `revspec` accepts anything
 /// `git rev-parse` understands — `HEAD` (default), `main`, `v0.2.1`,
 /// `HEAD~3`, or a partial / full SHA.
@@ -389,7 +354,6 @@ impl Cli {
                 metric,
                 workspace,
             } => commands::metrics::run(&project, json, metric, workspace.as_deref()),
-            Command::Checks(args) => commands::logs::run_checks(&project, &args),
             Command::Status(args) => commands::status::run(&project, &args),
             Command::Diff(args) => commands::diff::run(
                 &project,
@@ -405,7 +369,6 @@ impl Cli {
             } => commands::mark_fixed::run(&project, &finding_id, &commit_sha, json),
             Command::Skills { action } => commands::skills::run(&project, action),
             Command::Calibrate { force, json } => commands::calibrate::run(&project, force, json),
-            Command::Compact { verbose, json } => commands::compact::run(&project, verbose, json),
         }
     }
 }

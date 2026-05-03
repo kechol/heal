@@ -83,9 +83,9 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     let (record, regressed) = if must_scan {
         let cfg = cfg.as_ref().expect("cfg loaded above when must_scan");
         let record = build_live_record(project, &paths, cfg);
-        write_record(&paths.checks_dir(), &paths.checks_latest(), &record)?;
+        write_record(&paths.checks_latest(), &record)?;
         let regs = reconcile_fixed(
-            &paths.checks_fixed_log(),
+            &paths.checks_fixed(),
             &paths.checks_regressed_log(),
             &record,
         )?;

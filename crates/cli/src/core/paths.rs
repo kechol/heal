@@ -54,12 +54,14 @@ impl HealPaths {
         self.checks_dir().join("latest.json")
     }
 
-    /// "These findings have been fixed by a commit" log. Append-only.
-    /// Reconciled on every `heal status` run — entries that re-detect
-    /// are removed and surfaced in `regressed.jsonl`.
+    /// "These findings have been fixed by a commit" map, keyed by
+    /// `Finding.id`. Bounded by the number of currently-tracked fixes
+    /// (no append-only growth). Reconciled on every `heal status` run —
+    /// entries whose finding re-detects are removed from the map and
+    /// surfaced in `regressed.jsonl`.
     #[must_use]
-    pub fn checks_fixed_log(&self) -> PathBuf {
-        self.checks_dir().join("fixed.jsonl")
+    pub fn checks_fixed(&self) -> PathBuf {
+        self.checks_dir().join("fixed.json")
     }
 
     /// Regression audit trail. Append-only. Each entry ties a fixed

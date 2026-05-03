@@ -1,21 +1,23 @@
 //! `.heal/checks/` — the result cache for `heal status`.
 //!
-//! `heal status` is the **single writer** of `<root>/.heal/checks/YYYY-MM.jsonl`
-//! and `latest.json`: every run produces a [`CheckRecord`] which is
-//! appended to the segment and mirrored atomically into `latest.json`.
-//! `heal checks` and `heal diff` are pure readers. The only other
-//! writer is `heal mark-fixed`, which appends to `fixed.jsonl`.
+//! `heal status` is the **single writer** of `latest.json`: every run
+//! produces a [`CheckRecord`] which atomically replaces the file. There
+//! is no historical record stream — the cache is bounded by the size of
+//! the current findings list. `heal diff` reads `latest.json`; the only
+//! other writer is `heal mark-fixed`, which mutates the bounded
+//! `fixed.json` map.
 //!
 //! The cache models a TODO list: each `Finding.id` is decision-stable
 //! (see `crate::core::finding`), so the *same* unfixed problem keeps the
-//! same id across consecutive `heal status` runs. Skills can diff two
-//! records to see what's been resolved, what's new, and what's
-//! regressed.
+//! same id across consecutive `heal status` runs. Skills can compare
+//! `latest.json` and `fixed.json` to see what's outstanding vs. claimed
+//! resolved.
 //!
-//! Three side files live next to the JSONL stream:
-//!   - `latest.json`     — full mirror of the most recent record
-//!   - `fixed.jsonl`     — append-only "skill committed a fix" markers
+//! Three files live under `.heal/checks/`:
+//!   - `latest.json`     — atomic mirror of the most recent record
+//!   - `fixed.json`      — bounded `BTreeMap<finding_id, FixedFinding>`
 //!   - `regressed.jsonl` — append-only "fix re-detected" markers
+//!     (audit trail; persists across runs as the regression history)
 //!
 //! ## Idempotency contract
 //!
@@ -25,25 +27,24 @@
 //! worktrees never count as fresh (any untracked file invalidates the
 //! cache; we cannot trust the on-disk numbers).
 //!
-//! ## fixed.jsonl reconciliation
+//! ## fixed.json reconciliation
 //!
-//! When a skill commits a fix, it appends a [`FixedFinding`] to
-//! `fixed.jsonl`. On the next `heal status`, [`reconcile_fixed`] walks
-//! the new findings:
+//! When a skill commits a fix, it inserts a [`FixedFinding`] into
+//! `fixed.json` keyed by `finding_id`. On the next `heal status`,
+//! [`reconcile_fixed`] walks the new findings:
 //!   - if a fixed `finding_id` is **not** present in the new record →
-//!     the entry remains marked fixed.
+//!     the entry remains in the map.
 //!   - if a fixed `finding_id` **is** present → the entry is removed
-//!     from `fixed.jsonl` and a [`RegressedEntry`] is appended to
+//!     from the map and a [`RegressedEntry`] is appended to
 //!     `regressed.jsonl` so the renderer can warn the user.
 
-use std::collections::HashSet;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::core::error::{Error, Result};
-use crate::core::eventlog::{Event, EventLog};
 use crate::core::finding::Finding;
 use crate::core::hash::{fnv1a_64_chunked, fnv1a_hex};
 use crate::core::severity::SeverityCounts;
@@ -54,8 +55,8 @@ use crate::core::severity::SeverityCounts;
 pub const CHECK_RECORD_VERSION: u32 = 1;
 
 /// One execution of `heal status`. The unit of read in the cache:
-/// `heal checks` enumerates records and `heal diff <git-ref>` looks
-/// one up by `head_sha` to bucket-diff against the live worktree.
+/// `latest.json` holds the single most-recent record. `heal diff` reads
+/// it to bucket-diff against the live worktree.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CheckRecord {
     pub version: u32,
@@ -234,16 +235,16 @@ pub fn config_hash_from_paths(config: &Path, calibration: &Path) -> String {
     config_hash(&cfg, &cal)
 }
 
-/// Append `record` to `<dir>/YYYY-MM.jsonl` and atomically refresh
-/// `<dir>/latest.json`. Both writes share the same JSON shape, so a
-/// reader that lost the JSONL stream can still reconstruct from
-/// `latest.json` (or vice versa for the most recent record).
-pub fn write_record(checks_dir: &Path, latest_path: &Path, record: &CheckRecord) -> Result<()> {
-    EventLog::new(checks_dir).append(&Event {
-        timestamp: record.started_at,
-        event: "check".to_owned(),
-        data: serde_json::to_value(record).expect("CheckRecord serialization is infallible"),
-    })?;
+/// Atomically write `record` to `latest_path` (i.e.
+/// `.heal/checks/latest.json`). The cache is single-record by design;
+/// previous runs are overwritten in place.
+pub fn write_record(latest_path: &Path, record: &CheckRecord) -> Result<()> {
+    if let Some(parent) = latest_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| Error::Io {
+            path: parent.to_path_buf(),
+            source: e,
+        })?;
+    }
     let body = serde_json::to_vec_pretty(record).expect("CheckRecord serialization is infallible");
     crate::core::fs::atomic_write(latest_path, &body)
 }
@@ -274,79 +275,46 @@ pub fn read_latest(latest_path: &Path) -> Result<Option<CheckRecord>> {
     Ok(Some(record))
 }
 
-/// Walk `checks/YYYY-MM.jsonl` segments newest-first, decoding events
-/// whose `event` is `"check"`. Records that fail to decode (legacy /
-/// truncated) are skipped silently — same contract as
-/// `MetricsSnapshot::latest_in_segments`.
-pub fn iter_records(checks_dir: &Path) -> Result<Vec<(DateTime<Utc>, CheckRecord)>> {
-    let segments = EventLog::new(checks_dir).segments()?;
-    let mut out: Vec<(DateTime<Utc>, CheckRecord)> = Vec::new();
-    for ev in EventLog::iter_segments(segments).flatten() {
-        if ev.event != "check" {
-            continue;
+/// Bounded map of "skill committed a fix" markers, keyed by
+/// `Finding.id`. Atomically rewritten on every mutation — the file is
+/// short (one entry per outstanding fix claim) so the cost is
+/// negligible.
+pub type FixedMap = BTreeMap<String, FixedFinding>;
+
+/// Read `fixed.json`. Returns an empty map when the file doesn't exist
+/// (fresh project) or fails to decode (forward-compat: a future schema
+/// shouldn't brick `heal status`).
+pub fn read_fixed(fixed_path: &Path) -> Result<FixedMap> {
+    let bytes = match std::fs::read(fixed_path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(FixedMap::new()),
+        Err(e) => {
+            return Err(Error::Io {
+                path: fixed_path.to_path_buf(),
+                source: e,
+            })
         }
-        if let Ok(rec) = serde_json::from_value::<CheckRecord>(ev.data.clone()) {
-            if rec.version <= CHECK_RECORD_VERSION {
-                out.push((ev.timestamp, rec));
-            }
-        }
+    };
+    Ok(serde_json::from_slice::<FixedMap>(&bytes).unwrap_or_default())
+}
+
+/// Atomically rewrite `fixed.json`.
+fn write_fixed(fixed_path: &Path, map: &FixedMap) -> Result<()> {
+    if let Some(parent) = fixed_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| Error::Io {
+            path: parent.to_path_buf(),
+            source: e,
+        })?;
     }
-    out.sort_by_key(|(ts, _)| *ts);
-    out.reverse();
-    Ok(out)
+    let body = serde_json::to_vec_pretty(map).expect("FixedMap serialization is infallible");
+    crate::core::fs::atomic_write(fixed_path, &body)
 }
 
-/// Locate a record in a previously-loaded list by `check_id`. Pure
-/// linear search — the cache is small enough (one record per `heal
-/// check --refresh`) that an index isn't worth the bookkeeping.
-#[must_use]
-pub fn find_by_id<'a>(
-    records: &'a [(DateTime<Utc>, CheckRecord)],
-    check_id: &str,
-) -> Option<&'a CheckRecord> {
-    records
-        .iter()
-        .find(|(_, r)| r.check_id == check_id)
-        .map(|(_, r)| r)
-}
-
-/// Lightweight projection of [`CheckRecord`] used by `heal checks`
-/// (top-level browser) and any caller that wants the index fields
-/// without the embedded `findings` vector. Construct via `From<&CheckRecord>`.
-#[derive(Debug, Clone, Serialize)]
-pub struct CheckRecordSummary {
-    pub check_id: String,
-    pub started_at: DateTime<Utc>,
-    pub head_sha: Option<String>,
-    pub findings_count: usize,
-    pub severity_counts: SeverityCounts,
-    pub worktree_clean: bool,
-}
-
-impl From<&CheckRecord> for CheckRecordSummary {
-    fn from(r: &CheckRecord) -> Self {
-        Self {
-            check_id: r.check_id.clone(),
-            started_at: r.started_at,
-            head_sha: r.head_sha.clone(),
-            findings_count: r.findings.len(),
-            severity_counts: r.severity_counts,
-            worktree_clean: r.worktree_clean,
-        }
-    }
-}
-
-/// Append one entry to `fixed.jsonl`. Each line is one JSON-encoded
-/// [`FixedFinding`].
-pub fn append_fixed(fixed_log: &Path, entry: &FixedFinding) -> Result<()> {
-    append_jsonl(fixed_log, entry)
-}
-
-/// Read the full `fixed.jsonl` history. Lines that fail to decode are
-/// skipped silently to keep the cache forward-compatible across schema
-/// additions.
-pub fn read_fixed(fixed_log: &Path) -> Result<Vec<FixedFinding>> {
-    read_jsonl(fixed_log)
+/// Insert (or update) a fix entry by `finding_id`.
+pub fn upsert_fixed(fixed_path: &Path, entry: FixedFinding) -> Result<()> {
+    let mut map = read_fixed(fixed_path)?;
+    map.insert(entry.finding_id.clone(), entry);
+    write_fixed(fixed_path, &map)
 }
 
 /// Read the full `regressed.jsonl` history.
@@ -354,49 +322,40 @@ pub fn read_regressed(regressed_log: &Path) -> Result<Vec<RegressedEntry>> {
     read_jsonl(regressed_log)
 }
 
-/// Reconcile `fixed.jsonl` against the findings in `record`:
+/// Reconcile `fixed.json` against the findings in `record`:
 ///   - any fixed `finding_id` re-detected in `record` is **removed**
-///     from fixed.jsonl
+///     from `fixed.json`
 ///   - and appended to `regressed.jsonl` as a [`RegressedEntry`]
 ///
 /// Returns the regressed entries so the caller (the renderer) can warn
 /// the user. Fixed entries that are *not* re-detected stay in
-/// `fixed.jsonl` untouched.
-///
-/// Both writes use temp-file + rename so a SIGINT mid-reconcile can't
-/// leave a half-rewritten `fixed.jsonl`.
+/// `fixed.json` untouched.
 pub fn reconcile_fixed(
-    fixed_log: &Path,
+    fixed_path: &Path,
     regressed_log: &Path,
     record: &CheckRecord,
 ) -> Result<Vec<RegressedEntry>> {
-    let fixed = read_fixed(fixed_log)?;
-    if fixed.is_empty() {
+    let mut map = read_fixed(fixed_path)?;
+    if map.is_empty() {
         return Ok(Vec::new());
     }
-    let active_ids: HashSet<&str> = record.findings.iter().map(|f| f.id.as_str()).collect();
-
-    let mut surviving: Vec<FixedFinding> = Vec::with_capacity(fixed.len());
     let mut regressed: Vec<RegressedEntry> = Vec::new();
-    for entry in fixed {
-        if active_ids.contains(entry.finding_id.as_str()) {
-            regressed.push(RegressedEntry {
-                finding_id: entry.finding_id.clone(),
-                previous_commit_sha: entry.commit_sha.clone(),
-                previous_fixed_at: entry.fixed_at,
-                regressed_check_id: record.check_id.clone(),
-                regressed_at: record.started_at,
-            });
-        } else {
-            surviving.push(entry);
-        }
+    for finding in &record.findings {
+        let Some(entry) = map.remove(&finding.id) else {
+            continue;
+        };
+        regressed.push(RegressedEntry {
+            finding_id: entry.finding_id,
+            previous_commit_sha: entry.commit_sha,
+            previous_fixed_at: entry.fixed_at,
+            regressed_check_id: record.check_id.clone(),
+            regressed_at: record.started_at,
+        });
     }
-
     if regressed.is_empty() {
         return Ok(Vec::new());
     }
-
-    rewrite_jsonl(fixed_log, &surviving)?;
+    write_fixed(fixed_path, &map)?;
     for entry in &regressed {
         append_jsonl(regressed_log, entry)?;
     }
@@ -450,16 +409,6 @@ fn read_jsonl<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Vec<T>> {
         }
     }
     Ok(out)
-}
-
-fn rewrite_jsonl<T: Serialize>(path: &Path, values: &[T]) -> Result<()> {
-    let mut body: Vec<u8> = Vec::new();
-    for v in values {
-        let line = serde_json::to_string(v).expect("entry serialization is infallible");
-        body.extend_from_slice(line.as_bytes());
-        body.push(b'\n');
-    }
-    crate::core::fs::atomic_write(path, &body)
 }
 
 #[cfg(test)]
@@ -537,15 +486,14 @@ mod tests {
     #[test]
     fn write_then_read_round_trips() {
         let tmp = TempDir::new().unwrap();
-        let dir = tmp.path().join("checks");
-        let latest = dir.join("latest.json");
+        let latest = tmp.path().join("checks/latest.json");
         let rec = CheckRecord::new(
             Some("abc".into()),
             true,
             "deadbeef".into(),
             vec![finding("foo", Severity::Critical)],
         );
-        write_record(&dir, &latest, &rec).unwrap();
+        write_record(&latest, &rec).unwrap();
         let back = read_latest(&latest).unwrap().expect("record present");
         assert_eq!(back.check_id, rec.check_id);
         assert_eq!(back.findings.len(), 1);
@@ -553,24 +501,16 @@ mod tests {
     }
 
     #[test]
-    fn iter_records_returns_newest_first() {
+    fn write_record_overwrites_in_place() {
         let tmp = TempDir::new().unwrap();
-        let dir = tmp.path().join("checks");
-        let latest = dir.join("latest.json");
-
-        // Write two records back-to-back; ULIDs encode time so check_id
-        // ordering is monotonic.
+        let latest = tmp.path().join("checks/latest.json");
         let r1 = CheckRecord::new(Some("a".into()), true, "h".into(), Vec::new());
-        write_record(&dir, &latest, &r1).unwrap();
-        // Sleep a millisecond so the second record's started_at is strictly later.
-        std::thread::sleep(std::time::Duration::from_millis(2));
+        write_record(&latest, &r1).unwrap();
         let r2 = CheckRecord::new(Some("b".into()), true, "h".into(), Vec::new());
-        write_record(&dir, &latest, &r2).unwrap();
-
-        let records = iter_records(&dir).unwrap();
-        assert_eq!(records.len(), 2);
-        assert_eq!(records[0].1.check_id, r2.check_id);
-        assert_eq!(records[1].1.check_id, r1.check_id);
+        write_record(&latest, &r2).unwrap();
+        // Only the second record survives — there is no historical stream.
+        let back = read_latest(&latest).unwrap().unwrap();
+        assert_eq!(back.check_id, r2.check_id);
     }
 
     #[test]
@@ -593,24 +533,24 @@ mod tests {
     #[test]
     fn reconcile_fixed_drops_redetected_and_records_regression() {
         let tmp = TempDir::new().unwrap();
-        let fixed_log = tmp.path().join("fixed.jsonl");
+        let fixed_path = tmp.path().join("fixed.json");
         let regressed_log = tmp.path().join("regressed.jsonl");
 
         // Two prior fixes; one re-detected, one stays clean.
         let still_fixed = finding("clean", Severity::Critical);
         let regressed = finding("regressed", Severity::High);
-        append_fixed(
-            &fixed_log,
-            &FixedFinding {
+        upsert_fixed(
+            &fixed_path,
+            FixedFinding {
                 finding_id: still_fixed.id.clone(),
                 commit_sha: "sha-clean".into(),
                 fixed_at: Utc::now(),
             },
         )
         .unwrap();
-        append_fixed(
-            &fixed_log,
-            &FixedFinding {
+        upsert_fixed(
+            &fixed_path,
+            FixedFinding {
                 finding_id: regressed.id.clone(),
                 commit_sha: "sha-regressed".into(),
                 fixed_at: Utc::now(),
@@ -620,14 +560,14 @@ mod tests {
 
         // New CheckRecord re-detects only the regressed finding.
         let rec = CheckRecord::new(None, true, "h".into(), vec![regressed.clone()]);
-        let surfaced = reconcile_fixed(&fixed_log, &regressed_log, &rec).unwrap();
+        let surfaced = reconcile_fixed(&fixed_path, &regressed_log, &rec).unwrap();
         assert_eq!(surfaced.len(), 1);
         assert_eq!(surfaced[0].finding_id, regressed.id);
 
-        // fixed.jsonl now contains only the still-fixed entry.
-        let surviving = read_fixed(&fixed_log).unwrap();
+        // fixed.json now contains only the still-fixed entry.
+        let surviving = read_fixed(&fixed_path).unwrap();
         assert_eq!(surviving.len(), 1);
-        assert_eq!(surviving[0].finding_id, still_fixed.id);
+        assert!(surviving.contains_key(&still_fixed.id));
 
         // regressed.jsonl gained one entry.
         let regs = read_regressed(&regressed_log).unwrap();
@@ -639,13 +579,13 @@ mod tests {
     #[test]
     fn reconcile_fixed_is_noop_when_nothing_regresses() {
         let tmp = TempDir::new().unwrap();
-        let fixed_log = tmp.path().join("fixed.jsonl");
+        let fixed_path = tmp.path().join("fixed.json");
         let regressed_log = tmp.path().join("regressed.jsonl");
 
         let f = finding("only", Severity::Critical);
-        append_fixed(
-            &fixed_log,
-            &FixedFinding {
+        upsert_fixed(
+            &fixed_path,
+            FixedFinding {
                 finding_id: f.id.clone(),
                 commit_sha: "sha".into(),
                 fixed_at: Utc::now(),
@@ -655,9 +595,38 @@ mod tests {
 
         // New record has no findings — nothing regressed.
         let rec = CheckRecord::new(None, true, "h".into(), Vec::new());
-        let surfaced = reconcile_fixed(&fixed_log, &regressed_log, &rec).unwrap();
+        let surfaced = reconcile_fixed(&fixed_path, &regressed_log, &rec).unwrap();
         assert!(surfaced.is_empty());
-        assert_eq!(read_fixed(&fixed_log).unwrap().len(), 1);
+        assert_eq!(read_fixed(&fixed_path).unwrap().len(), 1);
         assert!(!regressed_log.exists());
+    }
+
+    #[test]
+    fn upsert_fixed_overwrites_existing_entry_for_same_finding() {
+        let tmp = TempDir::new().unwrap();
+        let fixed_path = tmp.path().join("fixed.json");
+        let f = finding("only", Severity::Critical);
+        let original_at = Utc::now() - chrono::Duration::days(1);
+        upsert_fixed(
+            &fixed_path,
+            FixedFinding {
+                finding_id: f.id.clone(),
+                commit_sha: "old".into(),
+                fixed_at: original_at,
+            },
+        )
+        .unwrap();
+        upsert_fixed(
+            &fixed_path,
+            FixedFinding {
+                finding_id: f.id.clone(),
+                commit_sha: "new".into(),
+                fixed_at: Utc::now(),
+            },
+        )
+        .unwrap();
+        let map = read_fixed(&fixed_path).unwrap();
+        assert_eq!(map.len(), 1);
+        assert_eq!(map[&f.id].commit_sha, "new");
     }
 }

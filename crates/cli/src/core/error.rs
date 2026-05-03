@@ -15,13 +15,6 @@ pub enum Error {
     #[error("invalid config at {path}: {message}")]
     ConfigInvalid { path: PathBuf, message: String },
 
-    #[error("invalid event-log record at {path}: {source}")]
-    EventLogParse {
-        path: PathBuf,
-        #[source]
-        source: serde_json::Error,
-    },
-
     #[error("invalid cache record at {path}: {source}")]
     CacheParse {
         path: PathBuf,

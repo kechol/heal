@@ -101,27 +101,29 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
   retires the registration so they stop firing.
 
 ### Result cache (`.heal/checks/`)
-- `heal status` is the **only writer** of `.heal/checks/<segment>.jsonl`
-  and `latest.json`. `heal checks` and `heal diff` are pure readers.
-  `heal mark-fixed` is a second writer scoped to `fixed.jsonl`.
-  The cache models a TODO list — every Finding has a deterministic id
-  (`<metric>:<file>:<symbol>:<fnv1a>`) so an unfixed problem reappears
-  under the same id on the next run.
-- `checks/YYYY-MM.jsonl` (append-only) plus three side files:
-  `latest.json` (atomic mirror of the most recent record),
-  `fixed.jsonl` (skill committed a fix), `regressed.jsonl` (a fix
-  was re-detected). `core::check_cache` owns the schema.
+- `heal status` is the **only writer** of `latest.json`. `heal diff`
+  is a pure reader. `heal mark-fixed` is a second writer scoped to
+  `fixed.json`. The cache models a TODO list — every Finding has a
+  deterministic id (`<metric>:<file>:<symbol>:<fnv1a>`) so an unfixed
+  problem reappears under the same id on the next run.
+- The cache is **single-record by design**. Three files live under
+  `.heal/checks/`: `latest.json` (the current `CheckRecord`),
+  `fixed.json` (`BTreeMap<finding_id, FixedFinding>` — bounded by
+  outstanding fix claims, never appended), and `regressed.jsonl` (the
+  one append-only audit trail of "a previously-fixed finding was
+  re-detected"). No YYYY-MM.jsonl history is written.
 - Idempotency: `heal status` short-circuits when
-  `(head_sha, config_hash, worktree_clean=true)` matches the latest
-  cached record — re-running on the same commit is free. Dirty
-  worktrees never count as fresh.
+  `(head_sha, config_hash, worktree_clean=true)` matches the cached
+  record — re-running on the same commit is free. Dirty worktrees
+  never count as fresh.
 - `config_hash` covers `config.toml + calibration.toml`. A
-  `heal calibrate` invalidates every cache row, which is correct: the
-  Severity ladder shifted under us.
-- `reconcile_fixed` walks `fixed.jsonl` against new findings on every
-  fresh run. Re-detected entries move to `regressed.jsonl` and the
-  renderer surfaces them. Don't add a way to suppress this — the
-  warning is the whole point of tracking fixes separately.
+  `heal calibrate` shifts the hash, so the next `heal status` rebuilds
+  rather than reading a stale cache.
+- `reconcile_fixed` walks `fixed.json` against new findings on every
+  fresh run. Re-detected entries are removed from the map and recorded
+  in `regressed.jsonl` so the renderer can warn the user. Don't add a
+  way to suppress this — the warning is the whole point of tracking
+  fixes separately.
 
 ### Hashing
 - Persistent hashes (duplication's per-token identity, the plugin
