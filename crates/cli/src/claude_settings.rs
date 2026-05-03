@@ -4,9 +4,8 @@
 //! [`crate::skill_assets`]); Claude Code discovers them natively without
 //! a marketplace. This module owns the *other* half of the wiring.
 //!
-//! As of v0.3 HEAL no longer registers any Claude Code hooks — every
-//! event-log dependent feature has been retired. `wire`/`register`
-//! remain so `heal init` / `heal skills install` can:
+//! HEAL does not register any Claude Code hooks. `wire` / `register`
+//! exist so `heal init` / `heal skills install` can:
 //!
 //!   - sweep legacy `heal hook edit` / `heal hook stop` entries left
 //!     over from earlier installs, and
@@ -35,10 +34,9 @@ const LEGACY_PLUGIN_DEST_REL: &str = ".claude/plugins/heal";
 const LEGACY_MARKETPLACE_NAME: &str = "heal-local";
 const LEGACY_ENABLED_PLUGIN_KEY: &str = "heal@heal-local";
 
-/// Hook commands HEAL once registered with Claude Code. Modern installs
-/// no longer add these (the underlying event log is gone), but the
-/// strings live on so `register` / `unregister` can sweep them out of
-/// stale `settings.json` files left behind by earlier versions.
+/// Legacy hook commands swept out of `settings.json` by `register` /
+/// `unregister`. HEAL doesn't add these anymore — the strings live on
+/// so upgrades from versions that did install them stay clean.
 const LEGACY_HEAL_COMMANDS: &[&str] = &["heal hook edit", "heal hook stop"];
 
 /// Outcome reported by [`register`]. Drives the CLI status line and
@@ -123,7 +121,7 @@ pub fn unregister(project: &Path) -> Result<UnregisterReport> {
         serde_json::to_string_pretty(&value).expect("settings serialization is infallible")
     );
     if cleaned != prior {
-        std::fs::write(&settings_path, &cleaned)
+        crate::core::fs::atomic_write(&settings_path, cleaned.as_bytes())
             .with_context(|| format!("writing {}", settings_path.display()))?;
     }
     Ok(UnregisterReport { legacy_swept })
@@ -194,17 +192,16 @@ fn remove_legacy_settings_keys(value: &mut Value) -> bool {
     found
 }
 
-/// Idempotent file write: skip when on-disk bytes already match `body`,
-/// otherwise create the parent directory and write.
+/// Idempotent atomic write: skip when on-disk bytes already match
+/// `body`, otherwise route through `core::fs::atomic_write` so a SIGINT
+/// mid-write can't leave `settings.json` half-written.
 fn write_if_changed(path: &Path, body: &str) -> Result<WriteAction> {
     let prior = std::fs::read_to_string(path).ok();
     if prior.as_deref() == Some(body) {
         return Ok(WriteAction::Unchanged);
     }
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
-    }
-    std::fs::write(path, body).with_context(|| format!("writing {}", path.display()))?;
+    crate::core::fs::atomic_write(path, body.as_bytes())
+        .with_context(|| format!("writing {}", path.display()))?;
     Ok(if prior.is_some() {
         WriteAction::Updated
     } else {

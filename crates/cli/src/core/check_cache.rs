@@ -239,12 +239,6 @@ pub fn config_hash_from_paths(config: &Path, calibration: &Path) -> String {
 /// `.heal/findings/latest.json`). The cache is single-record by design;
 /// previous runs are overwritten in place.
 pub fn write_record(latest_path: &Path, record: &CheckRecord) -> Result<()> {
-    if let Some(parent) = latest_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| Error::Io {
-            path: parent.to_path_buf(),
-            source: e,
-        })?;
-    }
     let body = serde_json::to_vec_pretty(record).expect("CheckRecord serialization is infallible");
     crate::core::fs::atomic_write(latest_path, &body)
 }
@@ -282,8 +276,9 @@ pub fn read_latest(latest_path: &Path) -> Result<Option<CheckRecord>> {
 pub type FixedMap = BTreeMap<String, FixedFinding>;
 
 /// Read `fixed.json`. Returns an empty map when the file doesn't exist
-/// (fresh project) or fails to decode (forward-compat: a future schema
-/// shouldn't brick `heal status`).
+/// (fresh project). A corrupt payload logs a warning and degrades to
+/// an empty map so `heal status` keeps working — the next mutation
+/// will rewrite the file from a clean baseline.
 pub fn read_fixed(fixed_path: &Path) -> Result<FixedMap> {
     let bytes = match std::fs::read(fixed_path) {
         Ok(b) => b,
@@ -295,17 +290,20 @@ pub fn read_fixed(fixed_path: &Path) -> Result<FixedMap> {
             })
         }
     };
-    Ok(serde_json::from_slice::<FixedMap>(&bytes).unwrap_or_default())
+    match serde_json::from_slice::<FixedMap>(&bytes) {
+        Ok(map) => Ok(map),
+        Err(err) => {
+            eprintln!(
+                "heal: ignoring unreadable {} ({err}); the next mark-fixed will rewrite it",
+                fixed_path.display(),
+            );
+            Ok(FixedMap::new())
+        }
+    }
 }
 
 /// Atomically rewrite `fixed.json`.
 fn write_fixed(fixed_path: &Path, map: &FixedMap) -> Result<()> {
-    if let Some(parent) = fixed_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| Error::Io {
-            path: parent.to_path_buf(),
-            source: e,
-        })?;
-    }
     let body = serde_json::to_vec_pretty(map).expect("FixedMap serialization is infallible");
     crate::core::fs::atomic_write(fixed_path, &body)
 }

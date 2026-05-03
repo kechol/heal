@@ -5,10 +5,9 @@
 //!   project's calibration, and emits a one-line nudge. No event-log
 //!   write — `latest.json` (refreshed on every `heal status`) is the
 //!   live state of record.
-//! - `edit` / `stop` are no-ops kept for backward-compatibility with
-//!   any `settings.json` left over from earlier installs. They return
-//!   immediately — Phase E retires the hook registration so they stop
-//!   firing entirely.
+//! - `edit` / `stop` are no-ops kept for back-compat with any
+//!   `settings.json` registrations that survived an upgrade.
+//!   `heal skills install` actively sweeps such entries.
 //!
 //! ## Post-commit nudge
 //!

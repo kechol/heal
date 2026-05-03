@@ -28,11 +28,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::cli::{FindingMetric, SeverityFilter, StatusArgs};
-use crate::core::calibration::{
-    Calibration, FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_OK_CCN, FLOOR_OK_COGNITIVE,
-};
+use crate::core::calibration::{FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_OK_CCN, FLOOR_OK_COGNITIVE};
 use crate::core::check_cache::{
-    config_hash_from_paths, read_latest, reconcile_fixed, write_record, CheckRecord, RegressedEntry,
+    read_latest, reconcile_fixed, write_record, CheckRecord, RegressedEntry,
 };
 use crate::core::config::{load_from_project, Config, DrainTier};
 use crate::core::finding::Finding;
@@ -40,7 +38,7 @@ use crate::core::severity::Severity;
 use crate::core::term::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW};
 use crate::core::HealPaths;
 use crate::observer::git;
-use crate::observers::{classify, run_all};
+use crate::observers::build_record;
 
 pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     let paths = HealPaths::new(project);
@@ -65,9 +63,9 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     let must_scan = cached.is_none();
 
     // Load config only when it's actually needed: a fresh scan needs
-    // it for build_fresh_record + with_overrides, and the textual
-    // renderer needs it for `policy.drain` + override notes. The JSON
-    // path with a cache hit pays neither cost.
+    // it for `build_record`, and the textual renderer needs it for
+    // `policy.drain` + override notes. The JSON path with a cache hit
+    // pays neither cost.
     let need_cfg = must_scan || !args.json;
     let cfg = if need_cfg {
         Some(load_from_project(project).with_context(|| {
@@ -82,7 +80,9 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
 
     let (record, regressed) = if must_scan {
         let cfg = cfg.as_ref().expect("cfg loaded above when must_scan");
-        let record = build_live_record(project, &paths, cfg);
+        let head_sha = git::head_sha(project);
+        let worktree_clean = git::worktree_clean(project).unwrap_or(false);
+        let record = build_record(project, &paths, cfg, head_sha, worktree_clean);
         write_record(&paths.findings_latest(), &record)?;
         let regs = reconcile_fixed(
             &paths.findings_fixed(),
@@ -111,56 +111,6 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     let colorize = stdout.is_terminal();
     render(&record, &regressed, &filters, &cfg, colorize, &mut stdout)?;
     Ok(())
-}
-
-/// Resolve calibration + git state + config hash, then build a fresh
-/// `CheckRecord`. The shared "live scan" preamble: both `heal status`
-/// (when the cache misses) and `heal diff` (the right-hand side is
-/// always live) call this. Does **not** write anything to disk —
-/// callers decide whether to persist the result.
-pub(super) fn build_live_record(
-    project: &Path,
-    paths: &HealPaths,
-    cfg: &crate::core::config::Config,
-) -> CheckRecord {
-    let calibration = Calibration::load(&paths.calibration())
-        .ok()
-        .map(|c| c.with_overrides(cfg));
-    let head_sha = git::head_sha(project);
-    let worktree_clean = git::worktree_clean(project).unwrap_or(false);
-    let config_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
-    build_fresh_record(
-        project,
-        cfg,
-        calibration.as_ref(),
-        head_sha,
-        worktree_clean,
-        config_hash,
-    )
-}
-
-/// Run every observer + classify, returning a fresh `CheckRecord`
-/// without writing it. The lower-level primitive that
-/// [`build_live_record`] wraps with the calibration / git / config
-/// preamble.
-pub(super) fn build_fresh_record(
-    project: &Path,
-    cfg: &crate::core::config::Config,
-    calibration: Option<&Calibration>,
-    head_sha: Option<String>,
-    worktree_clean: bool,
-    config_hash: String,
-) -> CheckRecord {
-    let reports = run_all(project, cfg, None, None);
-    let owned;
-    let cal_ref = if let Some(c) = calibration {
-        c
-    } else {
-        owned = Calibration::default();
-        &owned
-    };
-    let findings = classify(&reports, cal_ref, cfg);
-    CheckRecord::new(head_sha, worktree_clean, config_hash, findings)
 }
 
 /// Resolved filters for the renderer.

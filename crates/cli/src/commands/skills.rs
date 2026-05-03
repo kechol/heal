@@ -3,9 +3,11 @@
 //!
 //! Each top-level directory under the embedded tree (`heal-cli`,
 //! `heal-config`, `heal-code-review`, `heal-code-patch`) is extracted
-//! to a sibling under `.claude/skills/`. The install also merges
-//! HEAL's hook commands into `.claude/settings.json` so the post-tool-use
-//! and Stop events feed the HEAL event log.
+//! to a sibling under `.claude/skills/`. The install pass also reaches
+//! into `.claude/settings.json` to sweep legacy `heal hook edit` /
+//! `heal hook stop` registrations left over from earlier versions.
+//! No new hooks are registered — heal no longer wires anything into
+//! Claude Code's settings.
 //!
 //! `install` is the safe default (skips existing files), `update` is
 //! drift-aware (overwrites unchanged-since-install assets, leaves user
@@ -500,8 +502,6 @@ mod tests {
         paths.ensure().unwrap();
         let dest = skills_dest(project);
         install(project, &paths, &dest, false, false).unwrap();
-        // Modern install adds nothing to settings.json: with the event
-        // log gone the Claude Code hooks have no payload to write.
         assert!(!project.join(".claude/settings.json").exists());
     }
 

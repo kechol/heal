@@ -344,8 +344,8 @@ reading. The reading leads with intent; numbers support it.
 
 - `severity_counts` empty + `worktree_clean: true` → either freshly
   initialised or genuinely in good shape. Say so plainly. If
-  snapshots are missing, suggest making one commit so the
-  post-commit hook records the first `MetricsSnapshot`.
+  `.heal/findings/latest.json` is missing, suggest running
+  `heal status --refresh` to materialise it.
 - Every finding `severity: "ok"` → not calibrated. Stop and tell
   the user to run `heal init` or `heal calibrate --force`.
 

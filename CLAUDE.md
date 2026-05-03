@@ -29,7 +29,8 @@ crates/
       lib.rs                 # internal pub modules — exposed only so tests/ can reach them
       cli.rs                 # clap definitions
       commands/              # one file per subcommand
-      core/                  # config, eventlog, snapshot, state, paths, error types
+      core/                  # config, calibration, check_cache, finding,
+                             # severity, term, paths, fs, hash, monorepo, error
       observer/              # LOC, complexity (CCN/Cognitive), churn, coupling,
                              # duplication, hotspot composition
     plugins/heal/skills/     # Claude Code skills tree, embedded via include_dir!

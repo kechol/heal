@@ -138,8 +138,8 @@ pub enum MetricKind {
 
 impl MetricKind {
     /// JSON object key matching this metric's data section. Identical
-    /// to the field names used in `MetricsConfig` and `SnapshotDelta`,
-    /// so skills can index `payload[payload.metric]`.
+    /// to the field names used in `MetricsConfig` so skills can index
+    /// `payload[payload.metric]`.
     #[must_use]
     pub fn json_key(self) -> &'static str {
         match self {
@@ -216,23 +216,12 @@ impl SeverityFilter {
 pub enum HookEvent {
     /// Post-commit hook (git).
     Commit,
-    /// Claude Code PostToolUse(Edit|Write|MultiEdit) hook.
+    /// Claude Code PostToolUse(Edit|Write|MultiEdit) hook. No-op kept
+    /// for back-compat with stale `settings.json` registrations.
     Edit,
-    /// Claude Code Stop hook — log only, no nudge.
+    /// Claude Code Stop hook. No-op kept for back-compat with stale
+    /// `settings.json` registrations.
     Stop,
-}
-
-impl HookEvent {
-    /// Canonical event name embedded in `Event::event`. Co-located with the
-    /// enum so adding a variant forces every dispatch site to update.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Commit => "commit",
-            Self::Edit => "edit",
-            Self::Stop => "stop",
-        }
-    }
 }
 
 #[derive(Debug, clap::Args)]

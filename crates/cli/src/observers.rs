@@ -1,6 +1,7 @@
-//! Single source of truth for "run every enabled observer". Both `heal
-//! status` and the post-commit snapshot writer call this so a new
-//! observer or enable-flag only needs editing in one place.
+//! Single source of truth for "run every enabled observer". `heal
+//! status`, `heal diff`, and the post-commit nudge all funnel through
+//! [`run_all`] / [`build_record`] so a new observer or enable-flag
+//! only needs editing in one place.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -12,7 +13,6 @@ use crate::core::calibration::{
 };
 use crate::core::config::Config;
 use crate::core::finding::Finding;
-use crate::core::severity::SeverityCounts;
 use crate::observer::change_coupling::{ChangeCouplingObserver, ChangeCouplingReport};
 use crate::observer::churn::{ChurnObserver, ChurnReport};
 use crate::observer::complexity::{ComplexityObserver, ComplexityReport};
@@ -35,8 +35,9 @@ pub struct ObserverReports {
 }
 
 /// Run the observers needed for the requested metric. `only = None`
-/// means "run everything" (snapshot capture for the commit hook). When
-/// `only` is set, observers irrelevant to that metric are skipped —
+/// means "run everything" (the default, used by `heal status` and
+/// the post-commit nudge). When `only` is set, observers irrelevant
+/// to that metric are skipped —
 /// churn and complexity still run for `Hotspot` because the composite
 /// is built on top of them. The skipped observers' fields fall back to
 /// `Default` (or `None` for the optional ones).
@@ -334,12 +335,36 @@ pub(crate) fn classify(reports: &ObserverReports, cal: &Calibration, cfg: &Confi
     findings
 }
 
-/// Tally Findings by Severity. Pass the same `Vec<Finding>` you used
-/// for rendering / cache writing — running `classify` twice on a
-/// single command (once for the snapshot, once for the post-commit
-/// nudge) was the v0.2.0 cost; this slice form is the deliberate fix.
-pub fn tally_severity(findings: &[Finding]) -> SeverityCounts {
-    SeverityCounts::from_findings(findings)
+/// Run every observer over `scan_root`, classify against the
+/// calibration on disk at `paths`, and pack the result into a fresh
+/// `CheckRecord`. Does not write anything — callers decide whether to
+/// persist the result via `check_cache::write_record`.
+///
+/// Used by both `heal status` (`scan_root` = project, sha/clean from
+/// git) and `heal diff` (`scan_root` = transient `git worktree`, sha
+/// = the requested ref, clean = true by construction).
+pub(crate) fn build_record(
+    scan_root: &Path,
+    paths: &crate::core::HealPaths,
+    cfg: &Config,
+    head_sha: Option<String>,
+    worktree_clean: bool,
+) -> crate::core::check_cache::CheckRecord {
+    let calibration = Calibration::load(&paths.calibration())
+        .ok()
+        .map(|c| c.with_overrides(cfg));
+    let owned;
+    let cal_ref = if let Some(c) = calibration.as_ref() {
+        c
+    } else {
+        owned = Calibration::default();
+        &owned
+    };
+    let reports = run_all(scan_root, cfg, None, None);
+    let findings = classify(&reports, cal_ref, cfg);
+    let config_hash =
+        crate::core::check_cache::config_hash_from_paths(&paths.config(), &paths.calibration());
+    crate::core::check_cache::CheckRecord::new(head_sha, worktree_clean, config_hash, findings)
 }
 
 fn non_empty(values: &[f64]) -> bool {
@@ -352,6 +377,7 @@ mod tests {
     use crate::core::calibration::{CalibrationMeta, MetricCalibrations, STRATEGY_PERCENTILE};
     use crate::core::finding::IntoFindings;
     use crate::core::severity::Severity;
+    use crate::core::severity::SeverityCounts;
     use crate::observer::change_coupling::{ChangeCouplingReport, CouplingTotals, FilePair};
     use crate::observer::complexity::{
         ComplexityObserver, ComplexityReport, ComplexityTotals, FileComplexity, FunctionMetric,
@@ -665,10 +691,10 @@ mod tests {
     }
 
     #[test]
-    fn tally_severity_matches_classify_count() {
+    fn severity_counts_from_findings_matches_classify_count() {
         let (reports, cal) = fixture();
         let findings = classify(&reports, &cal, &Config::default());
-        let counts = tally_severity(&findings);
+        let counts = SeverityCounts::from_findings(&findings);
 
         let total_classified = counts.critical + counts.high + counts.medium + counts.ok;
         assert_eq!(

@@ -27,7 +27,6 @@ use crate::core::monorepo::{self, MonorepoSignal};
 use crate::core::severity::SeverityCounts;
 use crate::core::HealPaths;
 use crate::observer::git;
-use crate::observer::loc::LocObserver;
 use crate::skill_assets::{self, skills_dest, ExtractMode, ExtractStats};
 use anyhow::{Context, Result};
 use serde::Serialize;
@@ -119,10 +118,12 @@ pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool, as_json: boo
         .with_context(|| format!("creating {}", paths.root().display()))?;
     write_gitignore(&paths)?;
 
-    let primary_language = LocObserver::default().scan(project).primary;
     let config_action = write_config(&paths, force)?;
     let (hook_action, hook_path) = install_post_commit_hook(project, force)?;
-    let severity_counts = run_initial_scan(project, &paths)?;
+    let InitialScan {
+        primary_language,
+        severity_counts,
+    } = run_initial_scan(project, &paths)?;
     let skills_dest = skills_dest(project);
     let skills_action =
         handle_skills_install(project, &paths, &skills_dest, force, yes, no_skills)?;
@@ -355,10 +356,15 @@ skills-install.json
 ";
 
 /// Write `.heal/.gitignore` so volatile state stays out of the
-/// project's git history. Idempotent: the file is rewritten on every
-/// `heal init` so a `heal-cli` upgrade can refresh the list.
+/// project's git history. Idempotent: skips the write when the on-disk
+/// body already matches, so re-running `heal init` doesn't churn
+/// mtimes.
 fn write_gitignore(paths: &HealPaths) -> Result<()> {
-    crate::core::fs::atomic_write(&paths.gitignore(), GITIGNORE_BODY.as_bytes())?;
+    let path = paths.gitignore();
+    if std::fs::read(&path).is_ok_and(|prior| prior == GITIGNORE_BODY.as_bytes()) {
+        return Ok(());
+    }
+    crate::core::fs::atomic_write(&path, GITIGNORE_BODY.as_bytes())?;
     Ok(())
 }
 
@@ -402,8 +408,12 @@ fn install_post_commit_hook(project: &Path, force: bool) -> Result<(HookAction, 
 }
 
 fn write_hook(hook_path: &Path) -> Result<()> {
-    std::fs::write(hook_path, POST_COMMIT_SCRIPT)
-        .with_context(|| format!("writing {}", hook_path.display()))?;
+    let already_current =
+        std::fs::read_to_string(hook_path).is_ok_and(|prior| prior == POST_COMMIT_SCRIPT);
+    if !already_current {
+        std::fs::write(hook_path, POST_COMMIT_SCRIPT)
+            .with_context(|| format!("writing {}", hook_path.display()))?;
+    }
     set_executable(hook_path)?;
     Ok(())
 }
@@ -424,7 +434,12 @@ fn set_executable(_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<Option<SeverityCounts>> {
+struct InitialScan {
+    primary_language: Option<String>,
+    severity_counts: Option<SeverityCounts>,
+}
+
+fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<InitialScan> {
     // Load the just-written (or pre-existing) config so observers honor
     // the project's enable flags. A config-missing error here would
     // indicate a write_config bug — propagate it rather than silently
@@ -436,12 +451,16 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<Option<Severity
     };
 
     let reports = run_all(project, &cfg, None, None);
+    let primary_language = reports.loc.primary.clone();
     let calibration = build_calibration(project, &reports, &cfg);
     calibration.save(&paths.calibration())?;
 
     let cal_with_overrides = calibration.with_overrides(&cfg);
     let findings = classify(&reports, &cal_with_overrides, &cfg);
-    Ok(Some(SeverityCounts::from_findings(&findings)))
+    Ok(InitialScan {
+        primary_language,
+        severity_counts: Some(SeverityCounts::from_findings(&findings)),
+    })
 }
 
 /// Decide whether to install the bundled skills and do it. Returns the
@@ -753,9 +772,6 @@ mod tests {
         assert!(matches!(action, SkillsAction::Installed { .. }));
         assert!(dest.exists(), "yes path must extract the skill set");
         assert!(dest.join("heal-cli/SKILL.md").exists());
-        // Modern install adds nothing to settings.json (HEAL no longer
-        // registers Claude Code hooks). The file may or may not exist
-        // depending on whether the user had pre-existing settings.
     }
 
     #[test]

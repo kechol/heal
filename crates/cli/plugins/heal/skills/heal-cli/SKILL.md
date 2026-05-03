@@ -34,10 +34,11 @@ heal calibrate --force          # re-baseline thresholds when codebase shifted
 
 Behind the scenes:
 
-- A post-commit git hook records a `MetricsSnapshot` to
-  `.heal/snapshots/YYYY-MM.jsonl` and a lightweight `commit` event to
-  `.heal/logs/YYYY-MM.jsonl`. Failures are swallowed so HEAL never blocks
-  a commit.
+- A post-commit git hook re-runs every observer, classifies the result
+  against `.heal/calibration.toml`, and prints a one-line nudge.
+  Failures are swallowed so HEAL never blocks a commit. No event log
+  is written — `latest.json` (refreshed on `heal status --refresh`) is
+  the live state.
 - `heal status` writes its result to `.heal/checks/latest.json` plus an
   append-only `.heal/checks/YYYY-MM.jsonl` segment. Re-running on the
   same `(head_sha, config_hash, worktree_clean=true)` is a free cache
@@ -214,23 +215,13 @@ hook, initial scan + calibration, optional Claude-skills install.
 `post_commit_hook.action` ∈ `installed | overwrote | refreshed | skipped_no_repo | skipped_user_hook`.
 `skills.action` ∈ `installed | declined | suppressed_by_flag | skipped_no_claude | skipped_non_interactive`.
 
-### `heal logs [filters] [--json]`
-
-Browse `.heal/logs/` — raw hook event timeline (`commit`, `edit`,
-`stop`). Filters: `--since`, `--filter <event-name>`, `--limit`.
-
-### `heal snapshots [filters] [--json]`
-
-Browse `.heal/snapshots/` — typed metric series. `commit` events carry
-`MetricsSnapshot` payloads; `calibrate` events carry `CalibrationEvent`
-payloads. Same filter shape as `heal logs`.
-
 ### `heal metrics [--metric <NAME>] [--json]`
 
-Synthesised view of the latest `MetricsSnapshot` plus deltas. With
-`--json`: stable shape mirroring `MetricsSnapshot`, optionally
-restricted to one metric (`loc`, `complexity`, `churn`,
-`change-coupling`, `duplication`, `hotspot`, `lcom`).
+Re-runs every observer and renders the result. With `--json`: stable
+shape with one entry per metric, optionally restricted via
+`--metric` (`loc`, `complexity`, `churn`, `change-coupling`,
+`duplication`, `hotspot`, `lcom`). No historical delta — there is no
+event log to compare against.
 
 ### `heal skills install [--force] [--json]` / `update [--force] [--json]` / `status [--json]` / `uninstall [--json]`
 

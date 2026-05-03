@@ -28,8 +28,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 use tempfile::TempDir;
 
-use crate::core::calibration::Calibration;
-use crate::core::check_cache::{config_hash_from_paths, read_latest, CheckRecord};
+use crate::core::check_cache::{read_latest, CheckRecord};
 use crate::core::config::{load_from_project, Config};
 use crate::core::finding::Finding;
 use crate::core::severity::Severity;
@@ -37,6 +36,7 @@ use crate::core::term::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW}
 use crate::core::HealPaths;
 use crate::observer::git;
 use crate::observer::loc::LocObserver;
+use crate::observers::build_record;
 
 /// Exit status when `[diff].max_loc_threshold` is exceeded. Wraps the
 /// human-readable guidance in a `process::exit` so scripts can branch on
@@ -65,7 +65,9 @@ pub fn run(
     })?;
 
     let from_record = load_or_recompute_from(project, &paths, &cfg, revspec, &target_sha)?;
-    let to_record = crate::commands::status::build_live_record(project, &paths, &cfg);
+    let to_head_sha = git::head_sha(project);
+    let to_clean = git::worktree_clean(project).unwrap_or(false);
+    let to_record = build_record(project, &paths, &cfg, to_head_sha, to_clean);
 
     let diff = compute_diff(&from_record, &to_record, workspace);
     if as_json {
@@ -153,19 +155,13 @@ fn recompute_at_ref(
     let tmp = TempDir::new().context("creating tempdir for `git worktree add`")?;
     let workdir = tmp.path().join("heal-diff");
     let _guard = WorktreeGuard::add(project, &workdir, target_sha)?;
-
-    let calibration = Calibration::load(&paths.calibration())
-        .ok()
-        .map(|c| c.with_overrides(cfg));
-    let config_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
-    Ok(crate::commands::status::build_fresh_record(
+    // A fresh `git worktree add --detach` is clean by construction.
+    Ok(build_record(
         &workdir,
+        paths,
         cfg,
-        calibration.as_ref(),
         Some(target_sha.to_owned()),
-        // A fresh `git worktree add --detach` is clean by construction.
         true,
-        config_hash,
     ))
 }
 

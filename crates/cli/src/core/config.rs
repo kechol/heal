@@ -365,8 +365,7 @@ pub struct HotspotConfig {
     pub weight_churn: f64,
     #[serde(default = "default_weight")]
     pub weight_complexity: f64,
-    /// Per-metric override for `metrics.top_n` — top hotspot files. Also
-    /// drives the new-in-top-N membership diff in `SnapshotDelta`.
+    /// Per-metric override for `metrics.top_n` — top hotspot files.
     #[serde(default)]
     pub top_n: Option<usize>,
     /// Absolute graduation floor on the composite `commits × ccn_sum`
