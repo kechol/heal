@@ -49,7 +49,7 @@ export default defineConfig({
             },
             {
               label: 'Concept',
-              translations: { ja: '設計思想' },
+              translations: { ja: 'コンセプト' },
               slug: 'concept',
             },
             {

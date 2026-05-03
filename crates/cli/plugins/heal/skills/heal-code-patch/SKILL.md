@@ -100,9 +100,6 @@ Within T0, iterate in `Severity 🔥` order: `Critical 🔥` first, then
 any other entries the user's `must` policy admits. Skip findings
 already present in `.heal/findings/fixed.json` (match by `finding_id`).
 
-If the user invoked `/heal-code-patch --metric <name>`, restrict the
-selection to that metric. Default = no filter.
-
 When T0 is empty, end the session — do **not** silently extend into T1
 or Advisory. Surface the remaining tiers in the summary, recommend the
 user run `/heal-code-review` if they want to act on the architectural

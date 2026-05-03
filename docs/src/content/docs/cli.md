@@ -120,8 +120,15 @@ heal status --severity critical          # only Critical (and above with --all)
 heal status --feature src/payments       # restrict to one path prefix
 heal status --all                        # show Medium / Ok plus the low-Severity hotspot section
 heal status --top 5                      # cap each Severity bucket at 5 rows
+heal status --no-pager                   # write straight to stdout (skip the pager)
 heal status --json                       # machine-readable shape on stdout
 ```
+
+When stdout is a terminal, `heal status` pipes through `$PAGER` (or
+`less`) — the same convention as `git diff` / `git log`. Pass
+`--no-pager` to write straight to stdout, or pipe the output anywhere
+(redirect, `| cat`, CI logs) and the pager is skipped automatically.
+`--json` always writes raw to stdout.
 
 By default `heal status` is a read-only render of the cached TODO:
 runs are free once the cache is warm. Pass `--refresh` to invalidate

@@ -263,6 +263,12 @@ pub struct StatusArgs {
     /// Cap each Severity bucket at the N worst findings.
     #[arg(long, value_name = "N")]
     pub top: Option<usize>,
+    /// Skip the pager and write directly to stdout. By default
+    /// `heal status` pipes through `$PAGER` (or `less`) when stdout
+    /// is a terminal — same convention as `git diff` / `git log`.
+    /// Has no effect with `--json` or when stdout is not a terminal.
+    #[arg(long)]
+    pub no_pager: bool,
 }
 
 /// Args for `heal diff`. The positional `revspec` accepts anything
