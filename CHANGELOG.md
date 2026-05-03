@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### `heal mark` group: generalises `mark-fixed`, adds `mark accept`
+
+`heal mark-fixed` is replaced by `heal mark fix` (and the new sibling
+`heal mark accept`). The legacy `heal mark-fixed` invocation still
+works — it prints a one-line stderr deprecation warning and delegates
+to `heal mark fix` so older `/heal-code-patch` skill bundles keep
+running. Refresh the bundle with `heal skills update` to switch to
+the new form.
+
+`heal mark accept --finding-id <ID> [--reason <TEXT>]` is the
+write-side of the new "won't fix / acknowledged intrinsic" lane —
+called by `/heal-code-review` once it concludes a finding is
+intrinsic complexity. Records the team's decision into
+`.heal/findings/accepted.json` (tracked, mirrors `fixed.json` in
+shape). Both subcommands stay hidden from `--help`; humans drive
+them via the skills.
+
+The renderer / drain-queue integration (filtering accepted findings
+out of `Population:` and the T0 / T1 tiers) lands in the next
+release entry below.
+
 ### ⚠ BREAKING: `.heal/findings/` is now git-tracked
 
 `fixed.json`, `regressed.jsonl`, and `latest.json` are tracked

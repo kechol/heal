@@ -24,12 +24,13 @@ These run on your behalf — from the git post-commit hook, from a
 bundled Claude skill, or only when your codebase has shifted enough
 to warrant attention. Hidden from `--help`.
 
-| Command           | Driven by                | Purpose                                                                                  |
-| ----------------- | ------------------------ | ---------------------------------------------------------------------------------------- |
-| `heal hook`       | git post-commit          | Run observers and emit the Severity nudge after each commit.                             |
-| `heal mark-fixed` | `/heal-code-patch` skill | Record that a commit fixed a finding so the next `heal status` reconciles it.            |
-| `heal metrics`    | `/heal-code-review` skill | Per-metric summary recomputed on every invocation.                                      |
-| `heal calibrate`  | `/heal-config` skill     | Reset Severity thresholds to today's codebase distribution.                              |
+| Command            | Driven by                 | Purpose                                                                                  |
+| ------------------ | ------------------------- | ---------------------------------------------------------------------------------------- |
+| `heal hook`        | git post-commit           | Run observers and emit the Severity nudge after each commit.                             |
+| `heal mark fix`    | `/heal-code-patch` skill  | Record that a commit fixed a finding so the next `heal status` reconciles it.            |
+| `heal mark accept` | `/heal-code-review` skill | Record an intrinsic finding the team has decided not to refactor.                        |
+| `heal metrics`     | `/heal-code-review` skill | Per-metric summary recomputed on every invocation.                                       |
+| `heal calibrate`   | `/heal-config` skill      | Reset Severity thresholds to today's codebase distribution.                              |
 
 `heal metrics` and `heal calibrate` are listed here because the
 bundled skills decide *when* to run them — `/heal-code-review` reads

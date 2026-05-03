@@ -84,21 +84,29 @@ pub enum Command {
     /// Improved / New / Unchanged buckets — like `git diff`, but for
     /// the TODO list.
     Diff(DiffArgs),
-    /// Record a finding as resolved by a commit — called by
-    /// `/heal-code-patch` after each fix commit. The next
-    /// `heal status --refresh` either retires the entry (genuinely
-    /// fixed) or moves it to `regressed.jsonl` (re-detected). Hidden
-    /// from `--help` because no human ever invokes this directly;
-    /// implemented as an upsert into `.heal/findings/fixed.json`.
+    /// Skill-driven per-finding state recorder. `mark fix` is called
+    /// by `/heal-code-patch` after each fix commit; `mark accept` is
+    /// called by `/heal-code-review` to record an intrinsic finding
+    /// the team has decided not to refactor. Hidden from `--help`
+    /// because no human invokes these directly — surfacing them
+    /// invites running them outside the surrounding workflow that
+    /// gives the entry meaning (a commit for `fix`, a documented
+    /// `reason` for `accept`).
     #[command(hide = true)]
+    Mark {
+        #[command(subcommand)]
+        action: MarkAction,
+    },
+    /// Deprecated alias for `heal mark fix`. Kept hidden so
+    /// `/heal-code-patch` skill bundles from earlier HEAL versions
+    /// keep working; emits a one-line stderr deprecation warning
+    /// pointing users to `heal skills update`.
+    #[command(hide = true, name = "mark-fixed")]
     MarkFixed {
-        /// `Finding.id` from `heal status --json` output.
         #[arg(long, value_name = "ID")]
         finding_id: String,
-        /// SHA of the commit that resolved the finding.
         #[arg(long, value_name = "SHA")]
         commit_sha: String,
-        /// Emit a JSON summary of the recorded fix entry.
         #[arg(long)]
         json: bool,
     },
@@ -314,6 +322,43 @@ pub struct DiffArgs {
     pub no_pager: bool,
 }
 
+#[derive(Debug, Clone, Subcommand)]
+pub enum MarkAction {
+    /// Record a finding as resolved by a commit — used by
+    /// `/heal-code-patch` after each fix commit so the next
+    /// `heal status --refresh` either retires the entry (genuinely
+    /// fixed) or moves it to `regressed.jsonl` (re-detected).
+    Fix {
+        /// `Finding.id` from `heal status --json` output.
+        #[arg(long, value_name = "ID")]
+        finding_id: String,
+        /// SHA of the commit that resolved the finding.
+        #[arg(long, value_name = "SHA")]
+        commit_sha: String,
+        /// Emit a JSON summary of the recorded fix entry.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Record a finding as accepted (won't fix / acknowledged
+    /// intrinsic) — used by `/heal-code-review` once the triage
+    /// concludes the finding is intrinsic complexity / a cohesive
+    /// procedural block / a load-bearing boundary. Snapshots the
+    /// finding's severity, hotspot, `metric_value`, and summary at
+    /// accept time so later auditors can revisit the decision.
+    Accept {
+        /// `Finding.id` from `heal status --json` output.
+        #[arg(long, value_name = "ID")]
+        finding_id: String,
+        /// Free-form rationale. Empty string is allowed (the AI
+        /// agent driving this command is expected to fill it).
+        #[arg(long, value_name = "TEXT", default_value = "")]
+        reason: String,
+        /// Emit a JSON summary of the recorded accept entry.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 #[derive(Debug, Clone, Copy, Subcommand)]
 pub enum SkillsAction {
     /// Extract the bundled skills into `<project>/.claude/skills/` and
@@ -378,11 +423,23 @@ impl Cli {
                 args.json,
                 args.no_pager,
             ),
+            Command::Mark { action } => match action {
+                MarkAction::Fix {
+                    finding_id,
+                    commit_sha,
+                    json,
+                } => commands::mark::run_fix(&project, &finding_id, &commit_sha, json),
+                MarkAction::Accept {
+                    finding_id,
+                    reason,
+                    json,
+                } => commands::mark::run_accept(&project, &finding_id, &reason, json),
+            },
             Command::MarkFixed {
                 finding_id,
                 commit_sha,
                 json,
-            } => commands::mark_fixed::run(&project, &finding_id, &commit_sha, json),
+            } => commands::mark::run_fix_legacy(&project, &finding_id, &commit_sha, json),
             Command::Skills { action } => commands::skills::run(&project, action),
             Command::Calibrate { force, json } => commands::calibrate::run(&project, force, json),
         }

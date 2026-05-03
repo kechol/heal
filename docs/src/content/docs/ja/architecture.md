@@ -68,7 +68,8 @@ heal status  ──►  calibration.toml で Finding を分類
 | `.heal/config.toml`              | `heal init`                                         | セットアップ時に一度。自由に編集可。              |
 | `.heal/calibration.toml`         | `heal init` / `heal calibrate`                      | セットアップ時、その後は明示的な再 calibrate 時。 |
 | `.heal/findings/latest.json`     | `heal status`                                       | 新規 `heal status`（キャッシュミス経路）ごと。    |
-| `.heal/findings/fixed.json`      | `heal mark-fixed`（`/heal-code-patch` から呼出）    | `/heal-code-patch` のコミット着地ごと。           |
+| `.heal/findings/fixed.json`      | `heal mark fix`（`/heal-code-patch` から呼出）      | `/heal-code-patch` のコミット着地ごと。           |
+| `.heal/findings/accepted.json`   | `heal mark accept`（`/heal-code-review` から呼出）  | チームが intrinsic と判断した finding を記録時。  |
 | `.heal/findings/regressed.jsonl` | `heal status`（整合パス）                            | 修正済み Finding が再検出されたとき。            |
 | `.claude/skills/heal-*/`         | `heal skills install`                               | 一度だけ。`heal skills update` で更新。           |
 
@@ -76,7 +77,7 @@ heal status  ──►  calibration.toml で Finding を分類
 
 ## findings キャッシュ
 
-`.heal/findings/` には 3 つの成果物が並びます。`latest.json` の writer は `heal status` だけ、`fixed.json` / `regressed.jsonl` の writer は `heal mark-fixed` だけです。
+`.heal/findings/` には 4 つの成果物が並びます。`latest.json` と `regressed.jsonl` の writer は `heal status` だけ、`fixed.json` の writer は `heal mark fix` だけ、`accepted.json` の writer は `heal mark accept` だけです。
 
 ### `latest.json` — 現在の TODO
 

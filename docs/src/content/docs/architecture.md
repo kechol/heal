@@ -76,7 +76,8 @@ team shares the same Severity ladder. `findings/` is excluded by
 | `.heal/config.toml`              | `heal init`                                      | Once at setup; you can edit it freely.       |
 | `.heal/calibration.toml`         | `heal init` / `heal calibrate`                   | At setup, then on explicit recalibration.    |
 | `.heal/findings/latest.json`     | `heal status`                                    | Each fresh `heal status` (cache-miss path).  |
-| `.heal/findings/fixed.json`      | `heal mark-fixed` (called by `/heal-code-patch`) | Each commit `/heal-code-patch` lands.        |
+| `.heal/findings/fixed.json`      | `heal mark fix` (called by `/heal-code-patch`)   | Each commit `/heal-code-patch` lands.        |
+| `.heal/findings/accepted.json`   | `heal mark accept` (called by `/heal-code-review`) | When the team accepts an intrinsic finding. |
 | `.heal/findings/regressed.jsonl` | `heal status` (reconcile pass)                   | When a fixed finding is re-detected.         |
 | `.claude/skills/heal-*/`         | `heal skills install`                            | Once; updated with `heal skills update`.     |
 
@@ -87,9 +88,10 @@ keeps only the current state plus the small audit trail in
 
 ## The findings cache
 
-`.heal/findings/` holds three artefacts; `heal status` is the only
-writer of `latest.json`, and `heal mark-fixed` is the only writer of
-`fixed.json` / `regressed.jsonl`.
+`.heal/findings/` holds four artefacts; `heal status` is the only
+writer of `latest.json` and `regressed.jsonl`, `heal mark fix` is
+the only writer of `fixed.json`, and `heal mark accept` is the only
+writer of `accepted.json`.
 
 ### `latest.json` — the current TODO
 

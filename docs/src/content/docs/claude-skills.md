@@ -112,7 +112,7 @@ while there are findings in T0 of the cache:
     apply the change
     run tests / type-check / linter (best effort)
     git add ...; git commit -m "<conventional message + Refs: F#<id>>"
-    heal mark-fixed --finding-id <id> --commit-sha <sha>
+    heal mark fix --finding-id <id> --commit-sha <sha>
     heal status --refresh --json   # re-scan; reconcile fixed.json ↔ regressed.jsonl
     if the finding regressed: leave it for now, continue with the next
     else: continue

@@ -325,7 +325,7 @@ pub fn read_fixed(fixed_path: &Path) -> Result<FixedMap> {
         Ok(map) => Ok(map),
         Err(err) => {
             eprintln!(
-                "heal: ignoring unreadable {} ({err}); the next mark-fixed will rewrite it",
+                "heal: ignoring unreadable {} ({err}); the next `heal mark fix` will rewrite it",
                 fixed_path.display(),
             );
             Ok(FixedMap::new())

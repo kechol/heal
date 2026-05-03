@@ -7,7 +7,7 @@ Layered view of `heal-cli` (the only published crate; binary `heal`).
 │ entrypoint  src/main.rs → src/cli.rs (clap derive) → commands/*      │
 ├──────────────────────────────────────────────────────────────────────┤
 │ commands/                                                            │
-│   init      hook      status      diff      mark_fixed               │
+│   init      hook      status      diff      mark                     │
 │   metrics/  calibrate skills                                         │
 ├──────────────────────────────────────────────────────────────────────┤
 │ orchestrator           src/observers.rs                              │

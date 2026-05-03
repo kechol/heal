@@ -71,7 +71,7 @@ heal skills install
     変更を適用
     テスト / 型検査 / linter を可能な範囲で実行
     git add ...; git commit -m "<conventional message + Refs: F#<id>>"
-    heal mark-fixed --finding-id <id> --commit-sha <sha>
+    heal mark fix --finding-id <id> --commit-sha <sha>
     heal status --refresh --json   # 再スキャン; fixed.json ↔ regressed.jsonl を整合
     Finding が regress していたら今回はそのまま、次へ
     そうでなければ続行

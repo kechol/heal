@@ -1,5 +1,5 @@
 ---
-description: Constraints on the Claude Code integration layer — bundled skills, settings.json sweep, post-commit git hook, hidden mark-fixed.
+description: Constraints on the Claude Code integration layer — bundled skills, settings.json sweep, post-commit git hook, hidden mark group.
 paths:
   - "crates/cli/skills/**"
   - "crates/cli/src/skill_assets.rs"
@@ -7,7 +7,7 @@ paths:
   - "crates/cli/src/commands/init.rs"
   - "crates/cli/src/commands/skills.rs"
   - "crates/cli/src/commands/hook.rs"
-  - "crates/cli/src/commands/mark_fixed.rs"
+  - "crates/cli/src/commands/mark.rs"
 ---
 
 # Skills and hooks rules
@@ -88,16 +88,24 @@ Don't merge them. (See `scope.md` R8 for the role boundary.)
 
 - One finding per commit, in Severity order.
 - Refuses dirty worktree.
-- Calls `heal mark-fixed` after each commit.
+- Calls `heal mark fix` after each commit.
 - Does not push, does not open a PR.
 - No `--metric` filter (the point is to drain the cache).
 
-## R8. `heal mark-fixed` is hidden from `--help`
+## R8. The `heal mark` group is hidden from `--help`
 
-`#[command(hide = true)]`. Called only by `/heal-code-patch`. Don't
-expose — the safe-fix flow is the skill, which calls `mark-fixed`
-correctly. Surfacing it as a top-level command invites users to run
-it without committing the fix, breaking the audit trail.
+`#[command(hide = true)]` on the group. Both `mark fix` (called by
+`/heal-code-patch`) and `mark accept` (called by
+`/heal-code-review`) are agent-facing — surfacing them as
+top-level commands invites running them without the surrounding
+workflow that gives the entry meaning (a commit for `fix`, a
+documented `reason` for `accept`).
+
+`heal mark-fixed` is the deprecated v0.2 alias: same hidden flag,
+delegates to `heal mark fix` after a one-line stderr deprecation
+warning. Kept so older `/heal-code-patch` skill bundles keep
+working until the user runs `heal skills update`. Don't remove it
+without a major-version bump.
 
 ## R9. Skill source location
 

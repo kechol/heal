@@ -36,7 +36,9 @@ reappear in code or text.
 | `heal status` | live (renders findings) | Was named `heal check` until v0.2 rename. **Do not** call any new feature `check`. |
 | `heal metrics` | live (one-shot recompute, no cache) | Was `heal status`. The role flipped in the rename. |
 | `heal diff <ref>` | live | — |
-| `heal mark-fixed --finding-id … --commit-sha …` | live, **hidden** | Called by `/heal-code-patch`. Do not expose in `--help`. |
+| `heal mark fix --finding-id … --commit-sha …` | live, **hidden** | Called by `/heal-code-patch`. Do not expose in `--help`. |
+| `heal mark accept --finding-id … [--reason …]` | live, **hidden** | Called by `/heal-code-review`. Do not expose in `--help`. |
+| `heal mark-fixed --finding-id … --commit-sha …` | **deprecated alias** for `heal mark fix` | Hidden. Prints a stderr deprecation warning and delegates. Kept so v0.2 skill bundles keep working until `heal skills update`. |
 | `heal skills install\|update\|status\|uninstall` | live | — |
 | `heal calibrate` | live | `--reason`, `--check` were removed; do not add back. |
 | ~~`heal checks`~~ | **removed** | Old persistent-snapshots view. |
@@ -114,7 +116,7 @@ below). Constants live in `core::calibration` (`FLOOR_CCN`,
 | `.heal/calibration.toml` | `heal calibrate` writes; user can hand-edit floors | **yes** | Per-team determinism — teammates see identical findings on same commit. |
 | `.heal/.gitignore` | `heal init` writes | **yes** | Empty (comment only). Reserved for future per-machine carve-outs. |
 | `.heal/findings/latest.json` | `heal status` writes; `heal diff` reads | **yes** | Single record. `FindingsRecord` (schema-versioned). `id` is deterministic so byte-stable across teammates. |
-| `.heal/findings/fixed.json` | `heal mark-fixed` writes; `heal status` reconciles | **yes** | `BTreeMap<finding_id, FixedFinding>`. Bounded by outstanding claims. |
+| `.heal/findings/fixed.json` | `heal mark fix` writes; `heal status` reconciles | **yes** | `BTreeMap<finding_id, FixedFinding>`. Bounded by outstanding claims. |
 | `.heal/findings/regressed.jsonl` | `heal status` appends | **yes** | Append-only audit trail of re-detected fixes. |
 | `.heal/findings/accepted.json` | `heal mark accept` writes; renderers read | **yes** | `BTreeMap<finding_id, AcceptedFinding>`. Team contract for "won't fix / intrinsic" findings. Decorates `Finding.accepted: bool` at render time. |
 

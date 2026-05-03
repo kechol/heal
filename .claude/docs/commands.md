@@ -121,7 +121,7 @@ swallowed → exit 0.
      file counts are unique-`location.file` sets per tier.
    - `Population: [critical] N [high] N [medium] N [ok] N` — the raw
      severity distribution, demoted to context.
-2. Regressed section (re-detected after `mark-fixed`).
+2. Regressed section (re-detected after `mark fix`).
 3. Drain tier sections (T0 Must 🎯, T1 Should 🟡, Advisory ℹ️).
 4. Ok section (only with `--all`).
 5. Footer with `/heal-code-patch` nudge.
@@ -231,14 +231,18 @@ back-compat with existing skill consumers.
 
 ---
 
-## `heal mark-fixed`
+## `heal mark <action>`
 
 ```
-heal mark-fixed --finding-id <ID> --commit-sha <SHA> [--json]
+heal mark fix    --finding-id <ID> --commit-sha <SHA>  [--json]
+heal mark accept --finding-id <ID> [--reason <TEXT>]   [--json]
 ```
 
-**Hidden** in `--help` (`#[command(hide = true)]`). Called by
-`/heal-code-patch` skill.
+**Hidden** in `--help` (`#[command(hide = true)]` on the group).
+Both subcommands are skill-driven: `mark fix` is called by
+`/heal-code-patch`, `mark accept` is called by `/heal-code-review`.
+
+### `mark fix`
 
 Constructs `FixedFinding { finding_id, commit_sha, fixed_at: Utc::now()
 }` → `upsert_fixed` → atomic rewrite of `.heal/findings/fixed.json`
@@ -251,6 +255,35 @@ the surrounding finding population.
 
 **Output (text):** `marked <id> as fixed by <sha> (recorded in <path>)`.
 **Output (JSON):** `{ finding_id, commit_sha, fixed_at, path }`.
+
+### `mark accept`
+
+Reads `latest.json`, looks up the finding by id, snapshots its
+`severity`, `hotspot`, `metric_value`, `summary` into an
+`AcceptedFinding`, captures `accepted_by` from `git config
+user.{name,email}` (best-effort; `None` when missing), and upserts
+into `.heal/findings/accepted.json`. Errors when the cache is
+missing or the id isn't found — usually a stale id; user should
+run `heal status --refresh` first.
+
+`--reason` is optional and defaults to the empty string. The CLI
+does not enforce non-empty reasons; the AI agent driving
+`/heal-code-review` is expected to fill it.
+
+**Output (text):** `marked <id> as accepted (<metric>) (recorded in <path>)`.
+**Output (JSON):** `AcceptedFinding` fields flattened next to
+`finding_id` and `path`.
+
+### `heal mark-fixed` (deprecated alias)
+
+```
+heal mark-fixed --finding-id <ID> --commit-sha <SHA> [--json]
+```
+
+Kept hidden so v0.2 skill bundles keep working. Prints a one-line
+stderr deprecation warning suggesting `heal mark fix` and
+`heal skills update`, then delegates to `mark fix`. Same exit code
+and output shape.
 
 ---
 
@@ -369,7 +402,8 @@ Stable JSON shapes (skills depend on these):
 - `heal diff --json` → `DiffReport`.
 - `heal metrics --json` → `{ initialized, ... }` map.
 - `heal skills <action> --json` → action-specific structured summary.
-- `heal mark-fixed --json` → `{ finding_id, commit_sha, fixed_at, path }`.
+- `heal mark fix --json` → `{ finding_id, commit_sha, fixed_at, path }`.
+- `heal mark accept --json` → `AcceptedFinding` fields + `finding_id`, `path`.
 
 Bumping a JSON field name is a **breaking change**. Update consuming
 skills in the same PR.
@@ -386,7 +420,8 @@ match self.command {
     Metrics { json, metric, workspace }  => commands::metrics::run(...),
     Status(args)                         => commands::status::run(...),
     Diff(args)                           => commands::diff::run(...),
-    MarkFixed { ... }                    => commands::mark_fixed::run(...),
+    Mark { action }                      => commands::mark::run_{fix,accept}(...),
+    MarkFixed { ... }                    => commands::mark::run_fix_legacy(...),  // deprecated alias
     Skills { action }                    => commands::skills::run(...),
     Calibrate { force, json }            => commands::calibrate::run(...),
 }

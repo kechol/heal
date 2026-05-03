@@ -44,6 +44,20 @@ pub fn worktree_clean(root: &Path) -> Option<bool> {
     Some(statuses.is_empty())
 }
 
+/// `Name <email>` from `git config user.{name,email}` (merged repo +
+/// global view), best-effort. Returns `None` when either component is
+/// missing or `root` isn't inside a git repo. Used by `heal mark
+/// accept` for the `accepted_by` audit-trail snapshot — falling back
+/// to `None` keeps the command working in CI / detached configs.
+#[must_use]
+pub fn user_signature(root: &Path) -> Option<String> {
+    let repo = Repository::discover(root).ok()?;
+    let cfg = repo.config().ok()?;
+    let name = cfg.get_string("user.name").ok()?;
+    let email = cfg.get_string("user.email").ok()?;
+    Some(format!("{name} <{email}>"))
+}
+
 /// Locate the `hooks/` directory of the git repository containing `root`.
 /// Returns `None` when `root` isn't inside a git repo. Uses the common
 /// gitdir so worktrees install hooks alongside the main repo's hooks.

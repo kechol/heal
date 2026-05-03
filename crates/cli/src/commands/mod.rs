@@ -3,7 +3,7 @@ pub mod diff;
 pub mod hook;
 pub mod hook_install;
 pub mod init;
-pub mod mark_fixed;
+pub mod mark;
 pub mod metrics;
 pub mod skills;
 pub mod status;
