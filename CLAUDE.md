@@ -27,7 +27,7 @@ issue comment, and CHANGELOG line is public** the moment it lands on
 - **No "leaked context" via comments.** Comments and commit messages
   must not reveal what someone said in a private conversation, what
   is on the user's screen, or anything sourced from
-  `KNOWLEDGE.md` / `TODO.md` / `.prompt` (all gitignored, local-only).
+  `TODO.md` / `.prompt` (gitignored, local-only).
 - **External-friendly tone.** PR titles, commit subjects, issue
   comments, error messages, and user-facing strings should read well
   to a stranger who lands here from a Google search. Avoid in-jokes,
@@ -45,15 +45,17 @@ issue comment, and CHANGELOG line is public** the moment it lands on
 
 ## Where to find things
 
-| You need… | Read… |
-|---|---|
-| Layered architecture, end-to-end command flows | [.claude/docs/architecture.md](./.claude/docs/architecture.md) |
-| `Finding`, `FindingsRecord`, `Severity`, `Config`, `Calibration` schemas | [.claude/docs/data-model.md](./.claude/docs/data-model.md) |
-| Per-observer specs (algorithm, calibration, knobs) | [.claude/docs/observers.md](./.claude/docs/observers.md) |
-| Per-subcommand internal contract, exit codes, JSON shapes | [.claude/docs/commands.md](./.claude/docs/commands.md) |
-| Skill embedding, settings.json sweep, post-commit hook | [.claude/docs/skills-and-hooks.md](./.claude/docs/skills-and-hooks.md) |
-| Workspace-wide conventions (lints, tests, docs co-update) | [.claude/docs/conventions.md](./.claude/docs/conventions.md) |
-| **Canonical names** (the term contract) | [.claude/docs/glossary.md](./.claude/docs/glossary.md) |
+| You need…                                                                | Read…                                                                  |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| Layered architecture, end-to-end command flows                           | [.claude/docs/architecture.md](./.claude/docs/architecture.md)         |
+| `Finding`, `FindingsRecord`, `Severity`, `Config`, `Calibration` schemas | [.claude/docs/data-model.md](./.claude/docs/data-model.md)             |
+| Per-observer specs (algorithm, calibration, knobs)                       | [.claude/docs/observers.md](./.claude/docs/observers.md)               |
+| Per-subcommand internal contract, exit codes, JSON shapes                | [.claude/docs/commands.md](./.claude/docs/commands.md)                 |
+| Skill embedding, settings.json sweep, post-commit hook                   | [.claude/docs/skills-and-hooks.md](./.claude/docs/skills-and-hooks.md) |
+| Workspace-wide conventions (lints, tests, docs co-update)                | [.claude/docs/conventions.md](./.claude/docs/conventions.md)           |
+| **Canonical names** (the term contract)                                  | [.claude/docs/glossary.md](./.claude/docs/glossary.md)                 |
+| Prior art — tools, papers, books, and what was rejected and why          | [.claude/docs/prior-art.md](./.claude/docs/prior-art.md)               |
+| Design philosophy — *why* HEAL is shaped this way; what's ruled out      | [.claude/docs/design-philosophy.md](./.claude/docs/design-philosophy.md) |
 
 Prescriptive rules are auto-loaded from `.claude/rules/` per the
 [Claude memory docs](https://code.claude.com/docs/en/memory#organize-rules-with-claude%2Frules%2F).
@@ -89,7 +91,4 @@ This repo is HEAL's own test corpus.
 ## When in doubt
 
 1. Read the relevant `.claude/docs/` page.
-2. Check the matching test file (`crates/cli/tests/observer_*.rs`,
-   `core_*.rs`).
-3. Open an issue before introducing a new dependency, a schema
-   change to `.heal/`, or a new persistent file.
+2. Check the matching test file (`crates/cli/tests/observer_*.rs`, `core_*.rs`).

@@ -75,9 +75,9 @@ written in English. The repo is OSS — comments are read by anyone
 who clones; mixing languages is friction nobody asked for.
 
 **Don't cite chapter titles from local-only design docs.**
-`TODO.md`, `KNOWLEDGE.md`, `.prompt` are gitignored
-(see `terminology.md` R3 / `scope.md` etc.); their chapter titles
-are Japanese **and** they drift on every refactor. References like
+`TODO.md` and `.prompt` are gitignored (see `terminology.md` R3 /
+`scope.md` etc.); their chapter titles are Japanese **and** they
+drift on every refactor. References like
 `(TODO §「Severity と Hotspot は直交した属性」)` end up as stale
 broken links in Japanese inside the published source. Inline the
 *reasoning* instead — one sentence in English explaining the
