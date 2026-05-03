@@ -83,19 +83,22 @@ pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool, as_json: boo
     let config_action = write_config(&paths, force)?;
     let (hook_action, hook_path) = hook_install::install(project, force)?;
     let InitialScan {
+        cfg,
         primary_language,
         severity_counts,
     } = run_initial_scan(project, &paths)?;
     let skills_dest = skills_dest(project);
     let skills_action =
         handle_skills_install(project, &paths, &skills_dest, force, yes, no_skills)?;
-    // Surface monorepo manifests only when no `[[project.workspaces]]`
+    // Surface workspace manifests only when no `[[project.workspaces]]`
     // block exists yet; once the user declares them, the hint becomes
     // noise. Empty list = solo package or already-declared workspaces.
-    let monorepo_signals = if workspaces_already_declared(&paths) {
-        Vec::new()
+    let monorepo_signals = if cfg.project.workspaces.is_empty() {
+        let mut sigs = monorepo::detect(project);
+        monorepo::enrich_with_languages(project, &cfg, &mut sigs);
+        sigs
     } else {
-        monorepo::detect(project)
+        Vec::new()
     };
 
     if as_json {
@@ -126,14 +129,6 @@ pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool, as_json: boo
         &monorepo_signals,
     );
     Ok(())
-}
-
-/// True iff the freshly-loaded config has at least one
-/// `[[project.workspaces]]` entry. We re-load (rather than reuse the
-/// scan-time cfg) so the answer reflects the file on disk, not whatever
-/// in-memory state the scan happened to use.
-fn workspaces_already_declared(paths: &HealPaths) -> bool {
-    Config::load(&paths.config()).is_ok_and(|c| !c.project.workspaces.is_empty())
 }
 
 /// Stable JSON contract for `heal init --json`. Mirrors the lines the
@@ -252,16 +247,20 @@ fn print_summary(
         let colorize = std::io::stdout().is_terminal();
         println!();
         println!("Findings: {}", counts.render_inline(colorize));
-        if counts.critical > 0 {
-            println!("  → goal: bring [critical] to 0 (try `heal status --severity critical`)");
-        }
     }
 
     if !monorepo_signals.is_empty() {
         println!();
-        println!("Monorepo detected:");
+        println!("Workspace detected:");
         for s in monorepo_signals {
-            println!("  - {} ({})", s.manifest, s.kind);
+            println!("  - via {} ({})", s.manifest, s.kind);
+            for m in &s.members {
+                let lang = m
+                    .primary_language
+                    .as_deref()
+                    .unwrap_or("primary language not detected");
+                println!("      {} ({lang})", m.path);
+            }
         }
         println!(
             "  → declare workspaces in `[[project.workspaces]]` so calibration\n    \
@@ -272,15 +271,22 @@ fn print_summary(
     println!();
     println!("Next steps:");
     println!("  heal status               # render the Severity-grouped TODO list");
-    println!("  heal metrics             # see metric trends");
-    if matches!(
-        skills_action,
-        SkillsAction::Installed { .. } | SkillsAction::SkippedNoClaude
-    ) {
-        // No further skills hint for "Installed" (already done) or
-        // "SkippedNoClaude" (Claude isn't there to use them anyway).
-    } else {
-        println!("  heal skills install      # extract the Claude skills when ready");
+    println!("  heal metrics              # see metric trends");
+    println!("  heal diff                 # progress vs. the calibration baseline");
+    match skills_action {
+        SkillsAction::Installed { .. } => {
+            println!();
+            println!("Claude skills (from this project):");
+            println!("  claude /heal-config       # tune thresholds / declare workspaces");
+            println!("  claude /heal-code-review  # architectural reading + refactor TODO");
+            println!("  claude /heal-code-patch   # drain the cache, one fix per commit");
+        }
+        SkillsAction::SkippedNoClaude => {
+            // Claude isn't there to use them anyway — no skill hint.
+        }
+        _ => {
+            println!("  heal skills install       # extract the Claude skills when ready");
+        }
     }
 }
 
@@ -344,6 +350,7 @@ fn write_config(paths: &HealPaths, force: bool) -> Result<ConfigAction> {
 }
 
 struct InitialScan {
+    cfg: Config,
     primary_language: Option<String>,
     severity_counts: Option<SeverityCounts>,
 }
@@ -367,6 +374,7 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<InitialScan> {
     let cal_with_overrides = calibration.with_overrides(&cfg);
     let findings = classify(&reports, &cal_with_overrides, &cfg);
     Ok(InitialScan {
+        cfg,
         primary_language,
         severity_counts: Some(SeverityCounts::from_findings(&findings)),
     })

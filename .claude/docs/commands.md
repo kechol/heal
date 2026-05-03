@@ -142,7 +142,7 @@ swallowed → exit 0.
 ## `heal metrics`
 
 ```
-heal metrics [--metric <MetricKind>] [--workspace <PATH>] [--json]
+heal metrics [--metric <MetricKind>] [--workspace <PATH>] [--json] [--no-pager]
 ```
 
 `commands/metrics/mod.rs`. Fresh recompute, **no cache reuse**. Designed
@@ -172,8 +172,13 @@ initialized") and exits 0. Doesn't error.
 ## `heal diff [<revspec>]`
 
 ```
-heal diff [<revspec>=HEAD] [--workspace <PATH>] [--all] [--json]
+heal diff [<revspec>] [--workspace <PATH>] [--all] [--json] [--no-pager]
 ```
+
+When `<revspec>` is omitted, the default is the calibration baseline
+(`meta.calibrated_at_sha`), falling back to `HEAD` when no baseline SHA
+is recorded — so "Progress: N% complete" reads naturally as "drained
+since calibration".
 
 Two paths (`commands/diff.rs`):
 
@@ -317,8 +322,8 @@ this table and `docs/cli.md`.
 
 ## Paging contract
 
-Pager only used by `heal status` (the long, read-mostly output). Other
-commands write to stdout directly.
+Used by `heal status`, `heal diff`, and `heal metrics` — the read-mostly
+text outputs. Other commands write to stdout directly.
 
 Conditions for paging:
 
@@ -326,8 +331,9 @@ Conditions for paging:
 stdout is TTY  &&  !--json  &&  !--no-pager
 ```
 
-`spawn_pager()` sets `LESS=FRX`. ANSI is preserved through the pager.
-SIGPIPE on user quit returns 0.
+Implemented in `core::term::write_through_pager`: spawns `$PAGER`
+(default `less`) with `LESS=FRX` (auto-exit short, ANSI pass-through,
+no alt-screen). Broken pipe on user quit returns 0.
 
 ---
 

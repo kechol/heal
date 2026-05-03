@@ -1,7 +1,9 @@
 //! `heal diff [<git-ref>]` — bucket-style diff between the current
 //! findings and the findings recomputed at an arbitrary git ref.
-//! Default ref: `HEAD` ("how does my live worktree compare to the last
-//! commit?").
+//! Default ref: the calibration baseline (`meta.calibrated_at_sha`,
+//! recorded by `heal init` / `heal calibrate --force`), falling back to
+//! `HEAD` when no baseline SHA is recorded — so "Progress: N% complete"
+//! reads naturally as "drained since calibration".
 //!
 //! Two paths:
 //!
@@ -20,7 +22,7 @@
 //! plus a progress percentage. JSON shape is stable for skills and CI.
 
 use std::collections::HashMap;
-use std::io::{IsTerminal, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -28,11 +30,14 @@ use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 use tempfile::TempDir;
 
+use crate::core::calibration::Calibration;
 use crate::core::config::{load_from_project, Config};
 use crate::core::finding::Finding;
 use crate::core::findings_cache::{read_latest, FindingsRecord};
 use crate::core::severity::Severity;
-use crate::core::term::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW};
+use crate::core::term::{
+    ansi_wrap, write_through_pager, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW,
+};
 use crate::core::HealPaths;
 use crate::observer::git;
 use crate::observer::loc::LocObserver;
@@ -45,10 +50,11 @@ pub const DIFF_LOC_THRESHOLD_EXIT_CODE: i32 = 2;
 
 pub fn run(
     project: &Path,
-    revspec: &str,
+    revspec: Option<&str>,
     workspace: Option<&str>,
     show_all: bool,
     as_json: bool,
+    no_pager: bool,
 ) -> Result<()> {
     let paths = HealPaths::new(project);
     let cfg = load_from_project(project).with_context(|| {
@@ -57,14 +63,26 @@ pub fn run(
             paths.config().display(),
         )
     })?;
-    let target_sha = git::resolve_ref(project, revspec).ok_or_else(|| {
+    // No positional ref → diff against the calibration baseline so the
+    // progress percentage reads as "drained since `heal init` /
+    // `heal calibrate --force`". Falls back to `HEAD` if no baseline
+    // SHA was recorded (e.g. calibration produced outside a git
+    // worktree).
+    let resolved_ref = match revspec {
+        Some(r) => r.to_owned(),
+        None => Calibration::load(&paths.calibration())
+            .ok()
+            .and_then(|c| c.meta.calibrated_at_sha)
+            .unwrap_or_else(|| "HEAD".to_owned()),
+    };
+    let target_sha = git::resolve_ref(project, &resolved_ref).ok_or_else(|| {
         anyhow!(
-            "could not resolve git ref `{revspec}` in {} — is this a git repo?",
+            "could not resolve git ref `{resolved_ref}` in {} — is this a git repo?",
             project.display(),
         )
     })?;
 
-    let from_record = load_or_recompute_from(project, &paths, &cfg, revspec, &target_sha)?;
+    let from_record = load_or_recompute_from(project, &paths, &cfg, &resolved_ref, &target_sha)?;
     let to_head_sha = git::head_sha(project);
     let to_clean = git::worktree_clean(project).unwrap_or(false);
     let to_record = build_record(project, &paths, &cfg, to_head_sha, to_clean);
@@ -72,7 +90,7 @@ pub fn run(
     let diff = compute_diff(&from_record, &to_record, workspace);
     if as_json {
         super::emit_json(&DiffReport {
-            from_ref: revspec,
+            from_ref: &resolved_ref,
             from_sha: &target_sha,
             from_started_at: from_record.started_at.to_rfc3339(),
             to_started_at: to_record.started_at.to_rfc3339(),
@@ -83,20 +101,19 @@ pub fn run(
         return Ok(());
     }
 
-    let mut stdout = std::io::stdout();
-    let colorize = stdout.is_terminal();
-    render_diff(
-        revspec,
-        &target_sha,
-        workspace,
-        &from_record,
-        &to_record,
-        &diff,
-        show_all,
-        colorize,
-        &mut stdout,
-    )?;
-    Ok(())
+    write_through_pager(no_pager, |out, colorize| {
+        render_diff(
+            &resolved_ref,
+            &target_sha,
+            workspace,
+            &from_record,
+            &to_record,
+            &diff,
+            show_all,
+            colorize,
+            out,
+        )
+    })
 }
 
 /// Build the "from" `FindingsRecord`. Prefers the cached `latest.json` when
@@ -339,12 +356,9 @@ fn render_diff(
     diff: &Diff,
     show_all: bool,
     colorize: bool,
-    out: &mut impl Write,
+    out: &mut (impl Write + ?Sized),
 ) -> Result<()> {
-    let title = ansi_wrap(ANSI_CYAN, "── HEAL diff", colorize);
-    let bar: String = "─".repeat(48);
     let short = &from_sha[..from_sha.len().min(8)];
-    writeln!(out, "{title} {bar}")?;
     if let Some(ws) = workspace {
         writeln!(out, "  workspace: {ws}")?;
     }
@@ -391,8 +405,6 @@ fn render_diff(
             diff.progress_pct * 100.0,
         )?;
     }
-    let close: String = "─".repeat(60);
-    writeln!(out, "{close}")?;
     Ok(())
 }
 
@@ -411,7 +423,7 @@ fn render_bucket(
     color: &str,
     items: &[DiffEntry],
     colorize: bool,
-    out: &mut impl Write,
+    out: &mut (impl Write + ?Sized),
 ) -> std::io::Result<()> {
     if items.is_empty() {
         return Ok(());

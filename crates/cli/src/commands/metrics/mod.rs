@@ -17,7 +17,7 @@ mod lcom;
 mod loc;
 mod section;
 
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, Write};
 use std::path::Path;
 
 use anyhow::Result;
@@ -25,6 +25,7 @@ use serde_json::json;
 
 use crate::cli::MetricKind;
 use crate::core::config::load_from_project;
+use crate::core::term::write_through_pager;
 use crate::core::HealPaths;
 use crate::observers::run_all;
 
@@ -35,6 +36,7 @@ pub fn run(
     json_output: bool,
     metric: Option<MetricKind>,
     workspace: Option<&Path>,
+    no_pager: bool,
 ) -> Result<()> {
     let paths = HealPaths::new(project);
     let cfg_exists = paths.config().exists();
@@ -69,22 +71,21 @@ pub fn run(
     }
     let cfg = cfg.expect("cfg_exists branch implies cfg loaded");
     let reports = reports.expect("cfg present implies reports built");
-    let stdout = std::io::stdout();
-    let colorize = stdout.is_terminal();
-    let ctx = SectionCtx {
-        cfg: &cfg,
-        reports: &reports,
-        colorize,
-    };
-    let mut w = stdout.lock();
-    write_header(&mut w, project, &paths, workspace)?;
-    for s in &sections {
-        if !matches_metric(metric, s.metric()) {
-            continue;
+    write_through_pager(no_pager, |w, colorize| {
+        let ctx = SectionCtx {
+            cfg: &cfg,
+            reports: &reports,
+            colorize,
+        };
+        write_header(w, project, &paths, workspace)?;
+        for s in &sections {
+            if !matches_metric(metric, s.metric()) {
+                continue;
+            }
+            s.render_text(&ctx, w)?;
         }
-        s.render_text(&ctx, &mut w)?;
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 fn write_header(

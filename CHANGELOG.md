@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+### `heal diff` defaults to the calibration baseline
+
+Bare `heal diff` (no positional ref) now resolves to the SHA recorded
+in `calibration.toml` as `meta.calibrated_at_sha` — the commit at
+which `heal init` (or the most recent `heal calibrate --force`)
+captured the project's percentile breaks. Falls back to `HEAD` when
+no baseline SHA is recorded (e.g. a calibration produced outside a
+git worktree). Pass `heal diff HEAD` for the previous behaviour.
+
+The motivation is read-naturalness: "Progress: N% complete" should
+mean "drained since calibration", not "since the last commit".
+
+### `heal diff` and `heal metrics` honour `$PAGER`
+
+Both commands now pipe through `$PAGER` (default `less`) when stdout
+is a terminal — same convention as `heal status`. Both gain a
+`--no-pager` flag to opt out; `--json` always writes raw to stdout
+regardless. The pager helper now lives in `core::term` and is shared
+across the three commands.
+
+The leading and trailing `── HEAL diff ────` divider lines are gone
+— a pager already delimits the screen, and the title was redundant.
+
+### `heal init` workspace summary
+
+Renamed the post-init manifest hint from `Monorepo detected:` to
+`Workspace detected:` and enriched it: for Cargo `[workspace]
+members` and npm `workspaces` arrays, init now enumerates each
+declared member directory and labels it with its auto-detected
+primary language. Manifests we can't parse without extra dependencies
+(pnpm yaml, go.work, Nx / Turbo) still show the presence-only line.
+
+The `init --json` payload's `monorepo_signals[]` entries gain an
+optional `members: [{ path, primary_language? }, ...]` array (omitted
+when empty, so existing skill consumers see no change).
+
+The `→ goal: bring [critical] to 0` nudge is gone — per scope.md R1,
+metrics are proxies, not targets, and the line conflicted with that
+framing. The "Next steps" block now also shows `heal diff` and, when
+skills were just installed, the example slash commands
+(`claude /heal-config`, `/heal-code-review`, `/heal-code-patch`).
+
 ### ⚠ BREAKING — `exclude_paths` is now `.gitignore` syntax
 
 `git.exclude_paths`, `metrics.loc.exclude_paths`, and

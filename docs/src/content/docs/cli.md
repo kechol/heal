@@ -16,7 +16,7 @@ The day-to-day surface — these are the four you'll actually type.
 | `heal init`   | Set up `.heal/`, calibrate, and install the post-commit hook in the current repository.                |
 | `heal skills` | Install / update / inspect / remove the bundled Claude skill set.                                      |
 | `heal status` | Render the current TODO list (or refresh it). Reads `.heal/findings/`.                                 |
-| `heal diff`   | Compare the live worktree against an earlier commit (default ref: `HEAD`). Like `git diff` for findings. |
+| `heal diff`   | Compare the live worktree against an earlier commit (default: the calibration baseline). Like `git diff` for findings. |
 
 ## Automation commands
 
@@ -148,15 +148,19 @@ get touched often enough to be worth a look.
 ## `heal diff`
 
 Compare the live worktree against the findings at an earlier commit.
-Default ref: `HEAD` ("how does my live worktree compare to the last
-commit?"):
+Default ref: the calibration baseline SHA (recorded by `heal init` /
+`heal calibrate --force`), falling back to `HEAD` when no baseline is
+recorded — so "Progress: N% complete" reads naturally as "drained
+since calibration":
 
 ```sh
-heal diff                              # live vs HEAD
+heal diff                              # live vs the calibration baseline
+heal diff HEAD                         # live vs the last commit
 heal diff main                         # live vs main
 heal diff v0.2.1                       # live vs the v0.2.1 tag
 heal diff HEAD~5                       # live vs 5 commits back
 heal diff --all                        # also surface Improved + Unchanged
+heal diff --no-pager                   # write straight to stdout (skip the pager)
 heal diff --json                       # machine-readable shape
 ```
 
@@ -165,6 +169,10 @@ re-evaluates the requested ref under the *current* `config.toml` and
 `calibration.toml` so the comparison is apples-to-apples — you're
 seeing how today's rules judge then-and-now, not the historical
 ratings.
+
+When stdout is a terminal, `heal diff` pipes through `$PAGER` (or
+`less`) — same convention as `heal status`. Pass `--no-pager` to write
+straight to stdout; `--json` always writes raw to stdout.
 
 Output buckets: Resolved / Regressed / Improved / New / Unchanged,
 plus a progress percentage. The right-hand side is always a fresh
@@ -182,6 +190,7 @@ heal metrics
 heal metrics --json
 heal metrics --metric complexity
 heal metrics --metric lcom
+heal metrics --no-pager
 ```
 
 Prints a summary of every enabled metric — primary language, worst-N
@@ -190,6 +199,10 @@ complex functions, top hotspots, most-split classes. `--metric
 `complexity`, `churn`, `change-coupling`, `duplication`, `hotspot`,
 `lcom`. `--json` produces the same data as machine-readable JSON,
 suitable for piping into `jq`.
+
+When stdout is a terminal, `heal metrics` pipes through `$PAGER` (or
+`less`) — same convention as `heal status` / `heal diff`. Pass
+`--no-pager` to write straight to stdout.
 
 Recomputed from scratch on every invocation — there is no historical
 record to delta against.
@@ -256,8 +269,10 @@ heal hook commit
 - **`heal status` is the canonical workflow.** After a meaningful
   commit, run it to refresh the cache and see what's still on the
   TODO list.
-- **`heal diff`** (no args) shows progress mid-session by comparing
-  the live worktree against HEAD — useful before committing a fix.
+- **`heal diff`** (no args) shows progress against the calibration
+  baseline — the "% complete" number reads as "drained since
+  calibration". Pass `HEAD` for "since the last commit", or any other
+  `git rev-parse`-compatible ref.
 - **Preserve the post-commit hook.** Removing it stops the Severity
   nudge from running after each commit, but `heal status` still
   works on demand.

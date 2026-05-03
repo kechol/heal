@@ -23,9 +23,8 @@
 //! so skills and CI scripts have one stable contract.
 
 use std::collections::BTreeMap;
-use std::io::{IsTerminal, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
 
@@ -37,7 +36,9 @@ use crate::core::findings_cache::{
     read_latest, reconcile_fixed, write_record, FindingsRecord, RegressedEntry,
 };
 use crate::core::severity::Severity;
-use crate::core::term::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW};
+use crate::core::term::{
+    ansi_wrap, write_through_pager, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW,
+};
 use crate::core::HealPaths;
 use crate::observer::git;
 use crate::observers::build_record;
@@ -109,81 +110,9 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
         return Ok(());
     }
     let cfg = cfg.expect("cfg loaded above when not args.json");
-    write_through_pager(&record, &regressed, &filters, &cfg, args.no_pager)
-}
-
-/// Render to a pager when stdout is a terminal (mirrors `git diff` /
-/// `git log` UX); fall back to plain stdout when piped, when `--json`
-/// already returned, when `--no-pager` is set, or when no pager binary
-/// is available. Broken pipes (user quit `less` mid-output) are
-/// swallowed so the process still exits 0.
-fn write_through_pager(
-    record: &FindingsRecord,
-    regressed: &[RegressedEntry],
-    filters: &Filters,
-    cfg: &Config,
-    no_pager: bool,
-) -> Result<()> {
-    let stdout_is_tty = std::io::stdout().is_terminal();
-    if !no_pager && stdout_is_tty {
-        if let Some(mut child) = spawn_pager() {
-            // Pager renders ANSI colors via `LESS=R`, so always colorize.
-            let stdin = child.stdin.take().expect("stdin was piped");
-            let mut buf = std::io::BufWriter::new(stdin);
-            let render_result = render(record, regressed, filters, cfg, true, &mut buf);
-            // Drop buf to close the pipe so `less` can finish; then wait.
-            drop(buf);
-            child.wait().ok();
-            return swallow_broken_pipe(render_result);
-        }
-        // Pager spawn failed (e.g. `less` not installed) — fall through.
-    }
-    let mut stdout = std::io::stdout();
-    let colorize = stdout_is_tty;
-    swallow_broken_pipe(render(
-        record,
-        regressed,
-        filters,
-        cfg,
-        colorize,
-        &mut stdout,
-    ))
-}
-
-/// Spawn `$PAGER` (or `less`) with a TTY-friendly default `LESS` env so
-/// short output exits without taking over the screen and ANSI colors
-/// pass through. Returns `None` when no pager binary is available.
-fn spawn_pager() -> Option<std::process::Child> {
-    let pager = std::env::var_os("PAGER").unwrap_or_else(|| "less".into());
-    let mut cmd = Command::new(&pager);
-    cmd.stdin(Stdio::piped());
-    if std::env::var_os("LESS").is_none() {
-        // F: quit if the output fits on one screen.
-        // R: pass ANSI control chars through unchanged.
-        // X: don't send the alt-screen init/deinit, so output stays
-        //    visible after the pager exits.
-        cmd.env("LESS", "FRX");
-    }
-    cmd.spawn().ok()
-}
-
-/// Treat a `BrokenPipe` (the user quit `less` before all output was
-/// written) as a normal exit — every other I/O error still propagates.
-fn swallow_broken_pipe(result: Result<()>) -> Result<()> {
-    match result {
-        Ok(()) => Ok(()),
-        Err(err) => {
-            let is_broken_pipe = err
-                .chain()
-                .filter_map(|cause| cause.downcast_ref::<std::io::Error>())
-                .any(|io| io.kind() == std::io::ErrorKind::BrokenPipe);
-            if is_broken_pipe {
-                Ok(())
-            } else {
-                Err(err)
-            }
-        }
-    }
+    write_through_pager(args.no_pager, |out, colorize| {
+        render(&record, &regressed, &filters, &cfg, colorize, out)
+    })
 }
 
 /// Resolved filters for the renderer.
@@ -244,7 +173,7 @@ pub(super) fn render(
     filters: &Filters,
     cfg: &Config,
     colorize: bool,
-    out: &mut impl Write,
+    out: &mut (impl Write + ?Sized),
 ) -> Result<()> {
     let drain = &cfg.policy.drain;
     writeln!(
@@ -367,7 +296,7 @@ fn render_tier_section(
     items: &[&Finding],
     top: Option<usize>,
     colorize: bool,
-    out: &mut impl Write,
+    out: &mut (impl Write + ?Sized),
 ) -> std::io::Result<()> {
     if items.is_empty() {
         return Ok(());

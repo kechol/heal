@@ -64,6 +64,12 @@ pub enum Command {
         /// universe so lift / churn totals stay consistent.
         #[arg(long, value_name = "PATH")]
         workspace: Option<std::path::PathBuf>,
+        /// Skip the pager and write directly to stdout. By default
+        /// `heal metrics` pipes through `$PAGER` (or `less`) when
+        /// stdout is a terminal. Has no effect with `--json` or when
+        /// stdout is not a terminal.
+        #[arg(long)]
+        no_pager: bool,
     },
     /// Render the cached `FindingsRecord` from `.heal/findings/latest.json`
     /// — Critical / High view by default. Runs a fresh scan only when
@@ -72,9 +78,11 @@ pub enum Command {
     /// `/heal-code-patch` (Claude side) and `heal diff` consume.
     Status(StatusArgs),
     /// Diff the current findings against a cached `FindingsRecord` whose
-    /// `head_sha` matches the resolved git ref (default: `HEAD`).
-    /// Outputs Resolved / Regressed / Improved / New / Unchanged
-    /// buckets — like `git diff`, but for the TODO list.
+    /// `head_sha` matches the resolved git ref. Default ref is the
+    /// calibration baseline (`meta.calibrated_at_sha`), falling back to
+    /// `HEAD` when none is recorded. Outputs Resolved / Regressed /
+    /// Improved / New / Unchanged buckets — like `git diff`, but for
+    /// the TODO list.
     Diff(DiffArgs),
     /// Record a finding as resolved by a commit — called by
     /// `/heal-code-patch` after each fix commit. The next
@@ -272,14 +280,18 @@ pub struct StatusArgs {
 }
 
 /// Args for `heal diff`. The positional `revspec` accepts anything
-/// `git rev-parse` understands — `HEAD` (default), `main`, `v0.2.1`,
-/// `HEAD~3`, or a partial / full SHA.
+/// `git rev-parse` understands — `main`, `v0.2.1`, `HEAD~3`, or a
+/// partial / full SHA. When omitted, defaults to the calibration
+/// baseline SHA (recorded by `heal init` / `heal calibrate --force`),
+/// falling back to `HEAD` when no baseline is recorded.
 #[derive(Debug, clap::Args)]
 pub struct DiffArgs {
     /// Git revision to diff against. Resolves against the local repo;
-    /// the matching `FindingsRecord` must already exist in `.heal/findings/`.
-    #[arg(value_name = "GIT_REF", default_value = "HEAD")]
-    pub revspec: String,
+    /// the matching `FindingsRecord` must already exist in
+    /// `.heal/findings/`. Omit to diff against the calibration
+    /// baseline.
+    #[arg(value_name = "GIT_REF")]
+    pub revspec: Option<String>,
     /// Restrict to findings inside one declared
     /// `[[project.workspaces]]` entry. The value is the workspace's
     /// `path` (the same string `Finding.workspace` carries).
@@ -294,6 +306,12 @@ pub struct DiffArgs {
     /// Emit the diff as JSON on stdout. Stable contract for skills.
     #[arg(long)]
     pub json: bool,
+    /// Skip the pager and write directly to stdout. By default
+    /// `heal diff` pipes through `$PAGER` (or `less`) when stdout is
+    /// a terminal. Has no effect with `--json` or when stdout is not
+    /// a terminal.
+    #[arg(long)]
+    pub no_pager: bool,
 }
 
 #[derive(Debug, Clone, Copy, Subcommand)]
@@ -349,14 +367,16 @@ impl Cli {
                 json,
                 metric,
                 workspace,
-            } => commands::metrics::run(&project, json, metric, workspace.as_deref()),
+                no_pager,
+            } => commands::metrics::run(&project, json, metric, workspace.as_deref(), no_pager),
             Command::Status(args) => commands::status::run(&project, &args),
             Command::Diff(args) => commands::diff::run(
                 &project,
-                &args.revspec,
+                args.revspec.as_deref(),
                 args.workspace.as_deref(),
                 args.all,
                 args.json,
+                args.no_pager,
             ),
             Command::MarkFixed {
                 finding_id,
