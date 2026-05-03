@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+### Two-tier drain summary in `heal status` and `heal diff`
+
+`heal status` and `heal diff` now foreground the drain queue ahead of
+the raw severity distribution, so the user sees "what to fix" before
+"how big is the population".
+
+`heal status` header changes from a single line to two:
+
+```
+  Drain queue: T0 6 findings (4 files)  ·  T1 27 findings (15 files)
+  Population:  [critical] 25   [high] 27   [medium] 421   [ok] 1577
+```
+
+The T0 / T1 sizes are computed from the active `[policy.drain]`; raw
+severity counts move to a "Population:" line that frames them as
+distribution context, not a goal.
+
+`heal diff` similarly splits its progress block:
+
+```
+  Progress (T0 drain):  3 / 6 resolved → 50% complete
+  Population:           112 / 2050 resolved (6%)
+```
+
+The "Progress" number is now scoped to the must-drain tier, so it
+reads like real progress against the actionable queue. The wider
+population ratio (still computed for back-compat) becomes
+secondary — much of it is Advisory churn (`change_coupling.expected`
+on docs cross-mentions, etc.) and was never a target.
+
+`DiffReport` JSON gains three additive fields — `t0_resolved`,
+`t0_total`, `t0_progress_pct` — and `DiffEntry` gains `from_hotspot`
+so consumers can compute baseline-side T0 counts precisely (the
+existing `hotspot` field is curr-side biased and stays for
+back-compat). `progress_pct` keeps its previous meaning (resolved /
+baseline-total over the full population). New fields are
+`#[serde(default)]` so older payloads parse cleanly.
+
+`PolicyDrainConfig` exposes a `tier_for_attrs(metric, severity,
+hotspot)` helper for callers that don't have a full `Finding` (used
+by `heal diff` to classify `DiffEntry`s).
+
 ### `heal diff` defaults to the calibration baseline
 
 Bare `heal diff` (no positional ref) now resolves to the SHA recorded

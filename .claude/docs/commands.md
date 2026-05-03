@@ -113,14 +113,18 @@ Pipeline (`commands/status.rs:44-112`):
 short, ANSI pass-through, no alt-screen). Broken pipe on user quit is
 swallowed → exit 0.
 
-**Render layout** (top-to-bottom, post-commit `9efded8`):
+**Render layout** (top-to-bottom):
 
-1. Title + header (calibrated time, finding count, severity inline
-   counts at top).
+1. Header — calibrated time, finding count, then a two-line summary:
+   - `Drain queue: T0 N findings (M files)  ·  T1 N findings (M files)` —
+     T0 / T1 are derived from `cfg.policy.drain.tier_for(finding)`,
+     file counts are unique-`location.file` sets per tier.
+   - `Population: [critical] N [high] N [medium] N [ok] N` — the raw
+     severity distribution, demoted to context.
 2. Regressed section (re-detected after `mark-fixed`).
 3. Drain tier sections (T0 Must 🎯, T1 Should 🟡, Advisory ℹ️).
 4. Ok section (only with `--all`).
-5. Footer with goal + `/heal-code-patch` nudge.
+5. Footer with `/heal-code-patch` nudge.
 
 **Filters:**
 
@@ -201,12 +205,27 @@ Two paths (`commands/diff.rs`):
 - `improved` — severity decreased.
 - `new_findings` — in `to`, absent in `from`.
 - `unchanged` — same severity.
-- `progress_pct = resolved / from.len()`.
+- `progress_pct = resolved.len() / from.len()` — population-wide
+  ratio. Kept as the back-compat JSON field; new consumers should
+  prefer `t0_progress_pct`.
+- `t0_total` — count of baseline findings in the must-drain tier
+  (Critical AND hotspot under `[policy.drain]`); driven by
+  `tier_for_attrs(metric, from_severity, from_hotspot)`.
+- `t0_resolved` — subset of `t0_total` that no longer appears in `to`.
+- `t0_progress_pct = t0_resolved / t0_total` — actionable progress.
+
+`DiffEntry.from_hotspot` mirrors the baseline-side hotspot flag so
+the T0 calc is precise. The legacy `hotspot` field remains and is
+curr-biased (curr.hotspot when present, else prev.hotspot) for
+back-compat with existing skill consumers.
 
 **Output:**
 
-- Text: bucket sections, progress %.
-- JSON: `DiffReport { from_ref, from_sha, buckets, workspace? }`.
+- Text: bucket sections, then a two-line progress block —
+  `Progress (T0 drain): X / Y resolved → Z% complete` foregrounded,
+  `Population: X / Y resolved (Z%)` underneath.
+- JSON: `DiffReport { from_ref, from_sha, buckets..., progress_pct,
+  t0_total, t0_resolved, t0_progress_pct, workspace? }`.
 
 **Exit:** 0 success; **2** on LOC threshold; otherwise error.
 

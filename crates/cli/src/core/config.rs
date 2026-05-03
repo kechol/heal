@@ -758,12 +758,20 @@ impl DrainSpec {
     /// hotspot constraints both satisfied).
     #[must_use]
     pub fn matches(&self, finding: &crate::core::finding::Finding) -> bool {
-        if finding.severity != self.severity {
+        self.matches_attrs(finding.severity, finding.hotspot)
+    }
+
+    /// Attribute-only variant for callers that don't have a full
+    /// `Finding` in hand (e.g. `DiffEntry`, where only the
+    /// `(severity, hotspot)` pair survives the diff projection).
+    #[must_use]
+    pub fn matches_attrs(&self, severity: crate::core::severity::Severity, hotspot: bool) -> bool {
+        if severity != self.severity {
             return false;
         }
         match self.hotspot {
             HotspotMatch::Any => true,
-            HotspotMatch::Required => finding.hotspot,
+            HotspotMatch::Required => hotspot,
         }
     }
 }
@@ -789,7 +797,21 @@ impl PolicyDrainConfig {
     /// overrides inherit the global value.
     #[must_use]
     pub fn tier_for(&self, finding: &crate::core::finding::Finding) -> Option<DrainTier> {
-        if finding.severity == crate::core::severity::Severity::Ok {
+        self.tier_for_attrs(&finding.metric, finding.severity, finding.hotspot)
+    }
+
+    /// Attribute-only variant: same classification as `tier_for` but
+    /// driven by the `(metric, severity, hotspot)` triple. Used by the
+    /// diff command, where `DiffEntry` carries the same triple but
+    /// not a full `Finding`.
+    #[must_use]
+    pub fn tier_for_attrs(
+        &self,
+        metric: &str,
+        severity: crate::core::severity::Severity,
+        hotspot: bool,
+    ) -> Option<DrainTier> {
+        if severity == crate::core::severity::Severity::Ok {
             return None;
         }
         // Cross-workspace coupling is parked in Advisory by default
@@ -797,16 +819,16 @@ impl PolicyDrainConfig {
         // architectural conversation, not a single-commit drain. Users
         // can opt back in with an explicit
         // `[policy.drain.metrics."change_coupling.cross_workspace"]`.
-        if finding.metric == crate::core::finding::Finding::METRIC_CHANGE_COUPLING_CROSS_WORKSPACE
-            && !self.metrics.contains_key(&finding.metric)
+        if metric == crate::core::finding::Finding::METRIC_CHANGE_COUPLING_CROSS_WORKSPACE
+            && !self.metrics.contains_key(metric)
         {
             return Some(DrainTier::Advisory);
         }
-        let (must, should) = self.specs_for(&finding.metric);
-        if must.iter().any(|s| s.matches(finding)) {
+        let (must, should) = self.specs_for(metric);
+        if must.iter().any(|s| s.matches_attrs(severity, hotspot)) {
             return Some(DrainTier::Must);
         }
-        if should.iter().any(|s| s.matches(finding)) {
+        if should.iter().any(|s| s.matches_attrs(severity, hotspot)) {
             return Some(DrainTier::Should);
         }
         Some(DrainTier::Advisory)

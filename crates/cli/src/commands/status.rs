@@ -22,7 +22,7 @@
 //! `--json` emits the `FindingsRecord` in the exact shape of `latest.json`
 //! so skills and CI scripts have one stable contract.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -30,7 +30,7 @@ use anyhow::{Context, Result};
 
 use crate::cli::{FindingMetric, SeverityFilter, StatusArgs};
 use crate::core::calibration::{FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_OK_CCN, FLOOR_OK_COGNITIVE};
-use crate::core::config::{load_from_project, Config, DrainTier};
+use crate::core::config::{load_from_project, Config, DrainTier, PolicyDrainConfig};
 use crate::core::finding::Finding;
 use crate::core::findings_cache::{
     read_latest, reconcile_fixed, write_record, FindingsRecord, RegressedEntry,
@@ -183,7 +183,32 @@ pub(super) fn render(
         record.findings.len(),
         record.head_sha.as_deref().unwrap_or("∅"),
     )?;
-    writeln!(out, "  {}", record.severity_counts.render_inline(colorize))?;
+    let summary = drain_summary(&record.findings, drain);
+    writeln!(
+        out,
+        "  Drain queue: {}  ·  {}",
+        ansi_wrap(
+            ANSI_RED,
+            &format!(
+                "T0 {} findings ({} files)",
+                summary.t0_count, summary.t0_files
+            ),
+            colorize,
+        ),
+        ansi_wrap(
+            ANSI_YELLOW,
+            &format!(
+                "T1 {} findings ({} files)",
+                summary.t1_count, summary.t1_files
+            ),
+            colorize,
+        ),
+    )?;
+    writeln!(
+        out,
+        "  Population:  {}",
+        record.severity_counts.render_inline(colorize),
+    )?;
     if !record.worktree_clean {
         writeln!(
             out,
@@ -329,6 +354,43 @@ fn render_tier_section(
         writeln!(out, "  {}  {summary}", file.display())?;
     }
     Ok(())
+}
+
+/// Drain-queue counts surfaced in the header. Foregrounds the
+/// actionable T0 / T1 sizes so the user sees "5 things to fix" before
+/// the wider Severity distribution. File counts let a user judge
+/// whether the queue concentrates in one hotspot or spreads thin.
+struct DrainSummary {
+    t0_count: usize,
+    t0_files: usize,
+    t1_count: usize,
+    t1_files: usize,
+}
+
+fn drain_summary(findings: &[Finding], drain: &PolicyDrainConfig) -> DrainSummary {
+    let mut t0_count = 0;
+    let mut t1_count = 0;
+    let mut t0_files: HashSet<&PathBuf> = HashSet::new();
+    let mut t1_files: HashSet<&PathBuf> = HashSet::new();
+    for f in findings {
+        match drain.tier_for(f) {
+            Some(DrainTier::Must) => {
+                t0_count += 1;
+                t0_files.insert(&f.location.file);
+            }
+            Some(DrainTier::Should) => {
+                t1_count += 1;
+                t1_files.insert(&f.location.file);
+            }
+            _ => {}
+        }
+    }
+    DrainSummary {
+        t0_count,
+        t0_files: t0_files.len(),
+        t1_count,
+        t1_files: t1_files.len(),
+    }
 }
 
 /// One-line notes for any per-metric `floor_ok` / `floor_critical`
@@ -622,6 +684,46 @@ mod tests {
         assert!(
             !out.contains("Goal:"),
             "trailing Goal line should be removed:\n{out}",
+        );
+    }
+
+    #[test]
+    fn header_shows_drain_queue_and_population() {
+        // Two T0 (Critical+hotspot, both in same file), one T1
+        // (plain Critical), one Medium and one Ok in the noise floor.
+        let rec = record(vec![
+            finding("ccn", "src/hot.ts", Severity::Critical, true),
+            finding("cognitive", "src/hot.ts", Severity::Critical, true),
+            finding("ccn", "src/cool.ts", Severity::Critical, false),
+            finding("ccn", "src/lukewarm.ts", Severity::Medium, false),
+            finding("ccn", "src/cold.ts", Severity::Ok, false),
+        ]);
+        let out = render_to_string(&rec, &default_filters());
+        assert!(
+            out.contains("Drain queue: T0 2 findings (1 files)  ·  T1 1 findings (1 files)"),
+            "header must surface T0 / T1 sizes with file counts:\n{out}",
+        );
+        // Population still shows the raw severity distribution.
+        assert!(
+            out.contains("Population:  [critical] 3"),
+            "raw severity counts move to a 'Population:' line:\n{out}",
+        );
+    }
+
+    #[test]
+    fn header_drain_queue_zero_when_codebase_clean() {
+        // No Critical / High findings → both T0 and T1 are zero, but
+        // the header still renders both labels so the user sees
+        // "drain queue: empty".
+        let rec = record(vec![finding("ccn", "src/calm.ts", Severity::Medium, false)]);
+        let out = render_to_string(&rec, &default_filters());
+        assert!(
+            out.contains("T0 0 findings (0 files)"),
+            "empty T0 must still render explicitly:\n{out}",
+        );
+        assert!(
+            out.contains("T1 0 findings (0 files)"),
+            "empty T1 must still render explicitly:\n{out}",
         );
     }
 }

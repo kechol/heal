@@ -19,7 +19,12 @@
 //!    expensive scan.
 //!
 //! Output buckets — Resolved / Regressed / Improved / New / Unchanged —
-//! plus a progress percentage. JSON shape is stable for skills and CI.
+//! plus a two-tier progress block: `Progress (T0 drain)` foregrounded
+//! against the must-drain queue (Critical AND hotspot under the active
+//! `[policy.drain]`), and a secondary `Population` line over the whole
+//! baseline that includes Advisory churn. JSON shape is stable for
+//! skills and CI; new fields (`t0_resolved`, `t0_total`,
+//! `t0_progress_pct`, `DiffEntry.from_hotspot`) are additive.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -31,7 +36,7 @@ use serde::Serialize;
 use tempfile::TempDir;
 
 use crate::core::calibration::Calibration;
-use crate::core::config::{load_from_project, Config};
+use crate::core::config::{load_from_project, Config, DrainTier, PolicyDrainConfig};
 use crate::core::finding::Finding;
 use crate::core::findings_cache::{read_latest, FindingsRecord};
 use crate::core::severity::Severity;
@@ -87,7 +92,7 @@ pub fn run(
     let to_clean = git::worktree_clean(project).unwrap_or(false);
     let to_record = build_record(project, &paths, &cfg, to_head_sha, to_clean);
 
-    let diff = compute_diff(&from_record, &to_record, workspace);
+    let diff = compute_diff(&from_record, &to_record, workspace, &cfg.policy.drain);
     if as_json {
         super::emit_json(&DiffReport {
             from_ref: &resolved_ref,
@@ -253,9 +258,24 @@ pub(crate) struct Diff {
     pub improved: Vec<DiffEntry>,
     pub new_findings: Vec<DiffEntry>,
     pub unchanged: Vec<DiffEntry>,
-    /// `resolved.len() / from.findings.len()` as a `[0.0, 1.0]` ratio.
-    /// `total` is the prior-run finding count.
+    /// Population-side ratio: `resolved.len() / from.findings.len()`
+    /// over the *whole* baseline, including Advisory churn. Kept as the
+    /// stable JSON contract; new consumers should prefer
+    /// `t0_progress_pct` for the actionable signal.
     pub progress_pct: f64,
+    /// T0-baseline drain count (Critical AND hotspot, per the active
+    /// `[policy.drain]`). Zero when the baseline had nothing in the
+    /// must-drain tier.
+    #[serde(default)]
+    pub t0_total: usize,
+    /// T0-baseline entries that no longer appear in `to`.
+    #[serde(default)]
+    pub t0_resolved: usize,
+    /// `t0_resolved / t0_total` as a `[0.0, 1.0]` ratio. Zero when
+    /// `t0_total` is zero — read alongside `t0_total` to disambiguate
+    /// "no progress" from "no drain queue".
+    #[serde(default)]
+    pub t0_progress_pct: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -265,6 +285,16 @@ pub(crate) struct DiffEntry {
     pub file: String,
     pub from_severity: Option<Severity>,
     pub to_severity: Option<Severity>,
+    /// Baseline-side hotspot flag. `false` for `new_findings` entries
+    /// that have no `from`. Distinct from the curr-biased `hotspot`
+    /// field below — needed so consumers can compute T0 / T1 counts of
+    /// the *baseline* snapshot accurately.
+    #[serde(default)]
+    pub from_hotspot: bool,
+    /// Curr-side hotspot when the finding still exists in `to`,
+    /// otherwise the baseline-side hotspot. Kept for back-compat with
+    /// existing skill consumers that read this single field; new
+    /// callers should prefer `from_hotspot` for baseline classification.
     pub hotspot: bool,
 }
 
@@ -276,6 +306,7 @@ impl DiffEntry {
             file: prev.location.file.display().to_string(),
             from_severity: Some(prev.severity),
             to_severity: curr.map(|c| c.severity),
+            from_hotspot: prev.hotspot,
             hotspot: curr.map_or(prev.hotspot, |c| c.hotspot),
         }
     }
@@ -286,6 +317,7 @@ impl DiffEntry {
             file: curr.location.file.display().to_string(),
             from_severity: None,
             to_severity: Some(curr.severity),
+            from_hotspot: false,
             hotspot: curr.hotspot,
         }
     }
@@ -295,6 +327,7 @@ pub(crate) fn compute_diff(
     from: &FindingsRecord,
     to: &FindingsRecord,
     workspace: Option<&str>,
+    drain: &PolicyDrainConfig,
 ) -> Diff {
     let in_scope = |f: &Finding| -> bool {
         match workspace {
@@ -341,6 +374,29 @@ pub(crate) fn compute_diff(
     } else {
         #[allow(clippy::cast_precision_loss)]
         let pct = diff.resolved.len() as f64 / total as f64;
+        pct
+    };
+
+    let baseline_is_t0 = |e: &DiffEntry| {
+        e.from_severity
+            .and_then(|sev| drain.tier_for_attrs(&e.metric, sev, e.from_hotspot))
+            == Some(DrainTier::Must)
+    };
+    let t0_resolved = diff.resolved.iter().filter(|e| baseline_is_t0(e)).count();
+    let t0_still_present = diff
+        .regressed
+        .iter()
+        .chain(diff.improved.iter())
+        .chain(diff.unchanged.iter())
+        .filter(|e| baseline_is_t0(e))
+        .count();
+    diff.t0_resolved = t0_resolved;
+    diff.t0_total = t0_resolved + t0_still_present;
+    diff.t0_progress_pct = if diff.t0_total == 0 {
+        0.0
+    } else {
+        #[allow(clippy::cast_precision_loss)]
+        let pct = diff.t0_resolved as f64 / diff.t0_total as f64;
         pct
     };
     diff
@@ -394,12 +450,26 @@ fn render_diff(
     writeln!(out)?;
     let resolved = diff.resolved.len();
     let total = scoped_count(&from.findings, workspace);
-    if total == 0 {
-        writeln!(out, "  Progress: n/a (prior run had no findings)")?;
+    if diff.t0_total == 0 {
+        writeln!(out, "  Progress (T0 drain):  no T0 findings in baseline")?;
     } else {
         writeln!(
             out,
-            "  Progress: {} resolved / {} total → {:.0}% complete",
+            "  Progress (T0 drain):  {} / {} resolved → {:.0}% complete",
+            diff.t0_resolved,
+            diff.t0_total,
+            diff.t0_progress_pct * 100.0,
+        )?;
+    }
+    if total == 0 {
+        writeln!(
+            out,
+            "  Population:           n/a (prior run had no findings)"
+        )?;
+    } else {
+        writeln!(
+            out,
+            "  Population:           {} / {} resolved ({:.0}%)",
             resolved,
             total,
             diff.progress_pct * 100.0,
@@ -491,7 +561,7 @@ mod tests {
         let from = record(vec![dropped.clone(), regressed_a.clone(), stay.clone()]);
         let to = record(vec![regressed_b.clone(), stay.clone(), new_one.clone()]);
 
-        let diff = compute_diff(&from, &to, None);
+        let diff = compute_diff(&from, &to, None, &PolicyDrainConfig::default());
 
         assert_eq!(diff.resolved.len(), 1);
         assert_eq!(diff.resolved[0].file, "src/dropped.ts");
@@ -516,7 +586,12 @@ mod tests {
         let mut curr = finding("calm", Severity::Medium);
         curr.severity = Severity::Medium;
         assert_eq!(prev.id, curr.id);
-        let diff = compute_diff(&record(vec![prev]), &record(vec![curr]), None);
+        let diff = compute_diff(
+            &record(vec![prev]),
+            &record(vec![curr]),
+            None,
+            &PolicyDrainConfig::default(),
+        );
         assert_eq!(diff.improved.len(), 1);
         assert!(diff.regressed.is_empty());
         assert!((diff.progress_pct - 0.0).abs() < 1e-9);
@@ -535,17 +610,94 @@ mod tests {
         let from = record(vec![a_prev, b_prev]);
         let to = record(vec![a_curr]);
 
-        let web = compute_diff(&from, &to, Some("packages/web"));
+        let web = compute_diff(
+            &from,
+            &to,
+            Some("packages/web"),
+            &PolicyDrainConfig::default(),
+        );
         assert!(web.resolved.is_empty());
         assert_eq!(web.unchanged.len(), 1);
         // total = 1 (web only); 0 resolved → 0%.
         assert!((web.progress_pct - 0.0).abs() < 1e-9);
 
-        let api = compute_diff(&from, &to, Some("packages/api"));
+        let api = compute_diff(
+            &from,
+            &to,
+            Some("packages/api"),
+            &PolicyDrainConfig::default(),
+        );
         assert_eq!(api.resolved.len(), 1);
         assert!(api.unchanged.is_empty());
         // total = 1 (api only); 1 resolved → 100%.
         assert!((api.progress_pct - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn t0_progress_counts_only_critical_hotspot_baseline() {
+        // Two T0 in baseline (Critical AND hotspot); one resolved, one
+        // still present. T1 entries (plain Critical, no hotspot) and
+        // High+hotspot don't count toward t0_total.
+        let drained = {
+            let mut f = finding("t0_drained", Severity::Critical);
+            f.hotspot = true;
+            f
+        };
+        let stuck = {
+            let mut f = finding("t0_stuck", Severity::Critical);
+            f.hotspot = true;
+            f
+        };
+        let plain_crit = finding("plain_crit", Severity::Critical);
+        let high_hot = {
+            let mut f = finding("high_hot", Severity::High);
+            f.hotspot = true;
+            f
+        };
+
+        let from = record(vec![
+            drained.clone(),
+            stuck.clone(),
+            plain_crit.clone(),
+            high_hot.clone(),
+        ]);
+        // `to` keeps `stuck` and `plain_crit`; `drained` and
+        // `high_hot` resolved.
+        let to = record(vec![stuck.clone(), plain_crit.clone()]);
+
+        let diff = compute_diff(&from, &to, None, &PolicyDrainConfig::default());
+
+        assert_eq!(diff.t0_total, 2, "two Critical+hotspot in baseline");
+        assert_eq!(diff.t0_resolved, 1, "one of the two T0 resolved");
+        assert!((diff.t0_progress_pct - 0.5).abs() < 1e-9);
+        // Population: 4 baseline, 2 resolved (drained + high_hot).
+        assert!((diff.progress_pct - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn diff_entry_from_hotspot_reflects_baseline_side() {
+        // Improved: was Critical+hotspot in baseline, now Medium and
+        // no longer hot. `from_hotspot` must reflect baseline state.
+        let mut prev = finding("cool_off", Severity::Critical);
+        prev.hotspot = true;
+        let mut curr = finding("cool_off", Severity::Medium);
+        curr.hotspot = false;
+        assert_eq!(prev.id, curr.id);
+        let diff = compute_diff(
+            &record(vec![prev]),
+            &record(vec![curr]),
+            None,
+            &PolicyDrainConfig::default(),
+        );
+        assert_eq!(diff.improved.len(), 1);
+        assert!(
+            diff.improved[0].from_hotspot,
+            "baseline-side hotspot must persist"
+        );
+        assert!(
+            !diff.improved[0].hotspot,
+            "curr-side hotspot reflects to-side"
+        );
     }
 
     #[test]
@@ -554,6 +706,7 @@ mod tests {
             &record(Vec::new()),
             &record(vec![finding("only", Severity::High)]),
             None,
+            &PolicyDrainConfig::default(),
         );
         assert!((diff.progress_pct - 0.0).abs() < 1e-9);
         assert_eq!(diff.new_findings.len(), 1);
