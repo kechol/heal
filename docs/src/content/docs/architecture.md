@@ -88,7 +88,7 @@ keeps only the current state plus the small audit trail in
 
 ## The findings cache
 
-`.heal/findings/` holds four artefacts; `heal status` is the only
+`.heal/findings/` holds four artifacts; `heal status` is the only
 writer of `latest.json` and `regressed.jsonl`, `heal mark fix` is
 the only writer of `fixed.json`, and `heal mark accept` is the only
 writer of `accepted.json`.
@@ -116,7 +116,7 @@ same commit is free.
 
 ### `fixed.json` — bounded fix record
 
-A `BTreeMap<finding_id, FixedFinding>` serialised as a single JSON
+A `BTreeMap<finding_id, FixedFinding>` serialized as a single JSON
 object. Each entry is keyed by the deterministic `finding_id`:
 
 ```json
@@ -183,7 +183,7 @@ for their bandwidth.
 `heal status` partitions every non-Ok finding into one of three
 buckets driven by `[policy.drain]`:
 
-| Tier                  | Default specs                           | Renderer behaviour                     | Skill behaviour                                   |
+| Tier                  | Default specs                           | Renderer behavior                     | Skill behavior                                   |
 | --------------------- | --------------------------------------- | -------------------------------------- | ------------------------------------------------- |
 | **T0 / Drain queue**  | `must = ["critical:hotspot"]`           | Always shown, sorted Severity 🔥 desc. | `/heal-code-patch` drains one finding per commit. |
 | **T1 / Should drain** | `should = ["critical", "high:hotspot"]` | Shown by default, separate section.    | Surfaced for review; not auto-drained.            |

@@ -195,7 +195,7 @@ pub struct AcceptedFinding {
 pub type AcceptedMap = BTreeMap<String, AcceptedFinding>;
 ```
 
-`AcceptedMap` is keyed by `Finding.id` and serialised as
+`AcceptedMap` is keyed by `Finding.id` and serialized as
 `.heal/findings/accepted.json` (tracked, atomic-write). Schema is
 `#[serde(deny_unknown_fields)]` — a schema rename requires a docs
 sweep here, in `glossary.md`, and in `CHANGELOG.md`.
@@ -268,7 +268,7 @@ Config { project, git, metrics, policy, diff }
   `feat!(config)!: exclude_paths is now .gitignore syntax` change).
   Validated at load time; bad lines fail with `ConfigInvalid`.
 
-### Per-metric config (defaults summarised)
+### Per-metric config (defaults summarized)
 
 | Section | Knob | Default | Notes |
 |---|---|---|---|

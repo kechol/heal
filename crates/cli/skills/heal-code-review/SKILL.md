@@ -1,6 +1,6 @@
 ---
 name: heal-code-review
-description: Read every finding produced by `heal status --all --json`, deeply investigate the user's codebase, and return one architectural reading plus a prioritised refactor TODO list — grounded in the metric literature and module-depth / layering / DDD vocabulary. Works on any language and shape of project; respects the codebase's existing design. Read-only — proposes only. The write counterpart is `/heal-code-patch`. Trigger on "what does heal say?", "review the codebase health", "where should we refactor?", "/heal-code-review".
+description: Read every finding produced by `heal status --all --json`, deeply investigate the user's codebase, and return one architectural reading plus a prioritized refactor TODO list — grounded in the metric literature and module-depth / layering / DDD vocabulary. Works on any language and shape of project; respects the codebase's existing design. Read-only — proposes only. The write counterpart is `/heal-code-patch`. Trigger on "what does heal say?", "review the codebase health", "where should we refactor?", "/heal-code-review".
 ---
 
 # heal-code-review
@@ -10,11 +10,11 @@ Runs across every metric in a single pass and returns one ranked
 TODO list with architecture-level reasoning, instead of fragmenting
 the same data into per-metric views.
 
-The output is two artefacts:
+The output is two artifacts:
 
 1. An **architectural reading** of the codebase — what the findings
    tell you, taken as a system rather than a list.
-2. A **prioritised TODO list** — concrete refactors keyed to specific
+2. A **prioritized TODO list** — concrete refactors keyed to specific
    files / functions, each tagged with the established refactor
    pattern and its expected metric movement.
 
@@ -44,12 +44,12 @@ main prompt so it stays terse.
 - `references/architecture.md` — the vocabulary used for refactor
   proposals: module depth (Ousterhout), layered / hexagonal
   architecture (Cockburn, Evans), DDD (Evans, Vernon), the leverage
-  hierarchy of refactor patterns, the trap catalogue, plus the
+  hierarchy of refactor patterns, the trap catalog, plus the
   rules for *respecting the codebase* the proposals must pass.
 - `references/readability.md` — the *positive* criterion for
   proposals: the goal hierarchy (readability → maintainability →
   metric), readability principles (Boswell, Ousterhout, Beck,
-  Knuth), and the 5-question judgement test for whether a refactor
+  Knuth), and the 5-question judgment test for whether a refactor
   proposal is worth making.
 
 ## Mental model
@@ -98,7 +98,7 @@ Metrics are proxies. Priority order for any proposal:
 When the metric and (1)/(2) disagree (the *intrinsic* and *cohesive
 procedural* cases in the triage taxonomy below), trust readability and
 maintainability. See `references/readability.md` §1 for the full
-hierarchy and §3 for the 5-question judgement test that every Phase 2
+hierarchy and §3 for the 5-question judgment test that every Phase 2
 proposal must pass.
 
 ## Pre-flight
@@ -134,7 +134,7 @@ the design tree with the user.
      the same Severity with the flag should usually outrank without.
 3. **Read the top files.** For every file with `≥ 2` non-Ok
    findings, *or* a Critical finding, *or* `hotspot=true`: open
-   the file. Summarise what it does in one sentence. Don't trust
+   the file. Summarize what it does in one sentence. Don't trust
    the metric summary alone — the score might be measuring
    something intentional (parser tables, exhaustive enums,
    generated code, fixture data).
@@ -186,7 +186,7 @@ The reading **must** name the dominant axis. If you can't, say so —
 theme" is a valid output, and tells the user to attack the
 highest-Severity items individually.
 
-#### Prioritised TODO list
+#### Prioritized TODO list
 
 `heal status` groups findings into three drain tiers driven by
 `[policy.drain]`:
@@ -333,7 +333,7 @@ the categorical skips that fall under *Intrinsic* or *Cohesive*:
 - **Test ↔ implementation coupling pairs.** Expected and healthy.
 - **Pre-release churn.** A file at the top of `churn` because a
   feature is shipping next week is *not* a chaos signal. Defer.
-- **Release-train artefacts.** Version bumps, manifest edits,
+- **Release-train artifacts.** Version bumps, manifest edits,
   format sweeps drive coupling and churn that aren't structural.
   Suggest excluding the path; don't refactor.
 
@@ -375,7 +375,7 @@ reading. The reading leads with intent; numbers support it.
 ## When the project is brand-new
 
 - `severity_counts` empty + `worktree_clean: true` → either freshly
-  initialised or genuinely in good shape. Say so plainly. If
+  initialized or genuinely in good shape. Say so plainly. If
   `.heal/findings/latest.json` is missing, suggest running
   `heal status --refresh` to materialise it.
 - Every finding `severity: "ok"` → not calibrated. Stop and tell

@@ -97,7 +97,7 @@ The bundled set ships four skills:
 
 - `/heal-code-review` (read-only) ingests `heal status --all --json`,
   deep-reads the flagged code, and produces an architectural reading
-  plus a prioritised refactor TODO list.
+  plus a prioritized refactor TODO list.
 - `/heal-code-patch` (write) drains the TODO list one finding per
   commit (Severity order; `Critical 🔥` first).
 - `/heal-cli` is a concise reference for the `heal` CLI surface.

@@ -31,7 +31,7 @@ cure. Sweep targets are listed in `terminology.md` R2.
 ## R3. Don't commit unless the user asks
 
 Auto-mode does not change this. The default is: make changes, stop,
-summarise. The user reviews diffs and runs `/commit` when ready. Do
+summarize. The user reviews diffs and runs `/commit` when ready. Do
 not chain `commit` onto a task automatically.
 
 ## R4. Don't bypass hooks (`--no-verify` etc.)

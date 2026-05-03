@@ -9,7 +9,7 @@ once per repository with `heal skills install`. From that point on:
 
 - A read-only skill `/heal-code-review` audits
   `.heal/findings/latest.json` and produces an architectural reading
-  plus a prioritised refactor TODO list.
+  plus a prioritized refactor TODO list.
 - A write skill `/heal-code-patch` drains the same cache one finding
   per commit, in Severity order, until the cache is empty or you
   stop the session.
@@ -50,12 +50,12 @@ the version installed always matches the binary. After upgrading
 ## The audit skill: `/heal-code-review`
 
 Read-only. Ingests `heal status --all --json`, deep-reads the flagged
-code, and returns two artefacts:
+code, and returns two artifacts:
 
 1. An **architectural reading** of the codebase — what the findings
    say _as a system_, not as a list (the dominant axis: complexity,
    duplication, coupling, or hub).
-2. A **prioritised TODO list** — drawn from **T0 (`must`) only** by
+2. A **prioritized TODO list** — drawn from **T0 (`must`) only** by
    default. T1 (`should`) findings get a separate "If bandwidth
    permits" section, and Advisory findings are surfaced as a count
    only. The TODO entries are concrete refactors keyed to specific
@@ -74,12 +74,12 @@ demand:
 - `references/architecture.md` — the vocabulary for refactor
   proposals: module depth (Ousterhout), layered / hexagonal
   architecture (Cockburn, Evans), DDD (Evans, Vernon), the leverage
-  hierarchy of refactor patterns, the trap catalogue, plus the
+  hierarchy of refactor patterns, the trap catalog, plus the
   rules for _respecting the codebase_ the proposals must pass.
 - `references/readability.md` — the _positive_ criterion for
   proposals: the goal hierarchy (readability → maintainability →
   metric), readability principles (Boswell, Ousterhout, Beck,
-  Knuth), and the 5-question judgement test.
+  Knuth), and the 5-question judgment test.
 
 `/heal-code-review` proposes only — it never edits source. The write
 counterpart is `/heal-code-patch`.
@@ -119,7 +119,7 @@ while there are findings in T0 of the cache:
 ```
 
 Stop conditions: T0 empty, user interrupts (Ctrl+C / Stop), or the
-skill hits a finding that needs human judgement (architectural
+skill hits a finding that needs human judgment (architectural
 decision, business rule). In the last case, it surfaces the
 trade-offs and asks before applying. When T0 is empty but T1 / Advisory
 findings remain, the skill ends with a summary and recommends running

@@ -50,7 +50,7 @@ crates/cli/skills/
 |---|---|---|
 | `heal-cli` | CLI contract reference; load before shelling out to `heal`. | — |
 | `heal-config` | One-shot: calibrate + write `.heal/config.toml` tuned to a strictness level (Strict / Default / Lenient) chosen via `AskUserQuestion`. Read-only on the codebase. | — |
-| `heal-code-review` | Read every `heal status --all --json` finding, deeply investigate, return one architectural reading + prioritised refactor TODO list. Read-only — proposes only. | write counterpart `heal-code-patch` |
+| `heal-code-review` | Read every `heal status --all --json` finding, deeply investigate, return one architectural reading + prioritized refactor TODO list. Read-only — proposes only. | write counterpart `heal-code-patch` |
 | `heal-code-patch` | Drain the cache fixing one finding per commit in Severity order. Refuses dirty worktree. Calls `heal mark-fixed` after each commit. **Does not push or open PRs.** | write counterpart of `heal-code-review` |
 
 The pair `heal-code-review` ↔ `heal-code-patch` is intentional: review

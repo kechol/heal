@@ -49,7 +49,7 @@ config, not explaining one.
 
 Before changing anything:
 
-1. **Project initialised.** Run `heal init --no-skills --json` if
+1. **Project initialized.** Run `heal init --no-skills --json` if
    `.heal/` doesn't exist yet. Capture the resulting paths *and* the
    `monorepo_signals` field — it tells Phase 2.5 whether to run.
 2. **Calibration fresh.** Run

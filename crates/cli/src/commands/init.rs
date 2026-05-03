@@ -35,7 +35,7 @@ use crate::observers::{build_calibration, classify, run_all};
 
 /// Outcome of writing the project's `config.toml`. The `tag = "action"`
 /// attribute makes this safe to `#[serde(flatten)]` next to a `path:`
-/// sibling — unit variants serialise as `{ "action": "wrote" }`.
+/// sibling — unit variants serialize as `{ "action": "wrote" }`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 enum ConfigAction {
@@ -396,7 +396,7 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<InitialScan> {
 /// `force` matches `heal init --force` semantics: when on, refresh the
 /// skills tree (overwriting drift / locally edited files) so a binary
 /// upgrade actually picks up the latest skill set. When off, leave
-/// existing files alone (initial-install behaviour).
+/// existing files alone (initial-install behavior).
 fn handle_skills_install(
     project: &Path,
     paths: &HealPaths,

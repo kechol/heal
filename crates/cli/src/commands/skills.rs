@@ -394,7 +394,7 @@ struct UninstallReport {
     dest: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     skills_removed: Vec<String>,
-    /// `true` when uninstall also swept artefacts from the pre-`feat(skills)!`
+    /// `true` when uninstall also swept artifacts from the pre-`feat(skills)!`
     /// install layout (plugin tree, marketplace.json, legacy settings keys).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     legacy_swept: bool,

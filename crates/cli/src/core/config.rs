@@ -71,7 +71,7 @@ pub struct ProjectConfig {
     /// path prefix and (optionally) overrides the auto-detected
     /// `primary_language` for that subtree. Empty (the v0.1+ default)
     /// means the whole repo is one cohort, exactly matching pre-monorepo
-    /// behaviour. See `[[project.workspaces]]` in `references/config.md`.
+    /// behavior. See `[[project.workspaces]]` in `references/config.md`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub workspaces: Vec<WorkspaceOverlay>,
 }
@@ -962,7 +962,7 @@ impl Config {
 
     /// Serialize back to TOML. The struct is owned so this is infallible
     /// for any value produced by `Default::default()` or `Config::load`.
-    #[must_use = "the serialised string is the only return value"]
+    #[must_use = "the serialized string is the only return value"]
     pub fn to_toml_string(&self) -> std::result::Result<String, toml::ser::Error> {
         toml::to_string_pretty(self)
     }

@@ -251,7 +251,7 @@ heal's design accepts this. `floor_ok` graduates clean codebases off
 the proxy metrics. Hotspot multiplies leverage on touched files. The
 drain-tier model keeps the TODO list focused on findings where the
 proxy and the underlying problem agree. See the `/heal-code-review`
-skill's `architecture.md` §6 for the full trap catalogue.
+skill's `architecture.md` §6 for the full trap catalog.
 
 ## How heal uses these
 

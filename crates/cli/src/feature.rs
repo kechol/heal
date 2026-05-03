@@ -92,7 +92,7 @@ impl HotspotIndex {
 }
 
 /// Apply Severity + hotspot decoration to a Finding in place. Used by
-/// every Feature's lowering path; centralised here so the rule "hotspot
+/// every Feature's lowering path; centralized here so the rule "hotspot
 /// looks at primary file + every secondary location" only lives once.
 /// `any_location_hot` short-circuits to `is_hot(primary)` when the
 /// `locations` slice is empty, so single-site Findings flow through

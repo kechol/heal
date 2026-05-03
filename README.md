@@ -15,7 +15,7 @@ Documentation: <https://kechol.github.io/heal/>
 
 | Metric                                          | Languages                                                  |
 | ----------------------------------------------- | ---------------------------------------------------------- |
-| LOC                                             | Every language [`tokei`](https://github.com/XAMPPRocky/tokei) recognises. |
+| LOC                                             | Every language [`tokei`](https://github.com/XAMPPRocky/tokei) recognizes. |
 | Churn / Change Coupling / Hotspot               | Language-agnostic — driven by `git log`, applies everywhere. |
 | Complexity (CCN + Cognitive) / Duplication       | TypeScript / JavaScript / Python / Go / Scala / Rust.      |
 | LCOM                                            | TypeScript / JavaScript / Python / Rust. (Go has no class scope; Scala awaits the LSP backend.) |

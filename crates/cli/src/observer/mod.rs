@@ -33,7 +33,7 @@ pub trait Observer {
 
 /// Generates the `with_workspace(self, ws: Option<PathBuf>) -> Self`
 /// builder for an observer that carries a `workspace: Option<PathBuf>`
-/// field. Centralised so the five observers honoring `--workspace`
+/// field. Centralized so the five observers honoring `--workspace`
 /// (`ComplexityObserver`, `LcomObserver`, `DuplicationObserver`,
 /// `ChurnObserver`, `ChangeCouplingObserver`) don't carry five
 /// verbatim copies of the same setter.

@@ -64,7 +64,7 @@ is calibrated from the *current* file distribution).
 `exclude_paths` is the canonical project-wide exclude set. Use this
 rather than per-metric `exclude_paths` whenever you can — it propagates
 via `metrics.loc.inherit_git_excludes = true` to every observer that
-honours LOC's exclude list. Per-metric `exclude_paths` exists for the
+honors LOC's exclude list. Per-metric `exclude_paths` exists for the
 narrow case where one observer should skip a path the others should
 still measure.
 
@@ -276,10 +276,10 @@ A few notes on the choices:
 - `change_coupling.min_lift` is the highest-leverage strict knob.
   Going from `2.0` → `1.5` roughly doubles the surfaced pair count,
   but most newcomers above the lift floor are Symmetric (real
-  coupling) rather than OneWay (release-train artefacts) — so the
+  coupling) rather than OneWay (release-train artifacts) — so the
   signal-to-noise is acceptable.
 - The drain promotion in Strict (`high:hotspot` joins `must`) is the
-  single biggest behavioural change — it forces `heal-code-patch` to
+  single biggest behavioral change — it forces `heal-code-patch` to
   drain hotspot-flagged High findings as if they were Critical.
 
 ### When Strict is the wrong choice
@@ -302,7 +302,7 @@ High zone before Critical fires.
 The `heal-config` skill checks for this fit before offering Strict
 and surfaces a warning in the strictness question — see SKILL.md
 Phase 2.7. The check is purely advisory; the user can still pick
-Strict if they want the "flag every function above CCN=8" behaviour
+Strict if they want the "flag every function above CCN=8" behavior
 (useful in cryptography / safety-critical domains where CCN=8 is
 genuinely the bar).
 

@@ -19,7 +19,7 @@ and publishing happen later — this skill stops at the PR.
    `release/vX.Y.Z` branch.
 2. Maintainer reviews + merges.
 3. Maintainer tags the merge commit: `git tag vX.Y.Z && git push
-   origin vX.Y.Z`. cargo-dist builds the artefacts and the
+   origin vX.Y.Z`. cargo-dist builds the artifacts and the
    crates.io publish step fires.
 
 Steps 2-3 stay manual. The skill never tags, never pushes to `main`,
@@ -107,13 +107,13 @@ Do NOT touch:
 GitHub Release page, and downstream consumers all read it. Bumping
 the version without updating the changelog is incomplete.
 
-The flow is **rename + categorise + reset**:
+The flow is **rename + categorize + reset**:
 
 1. Rename the existing `## Unreleased` heading to
    `## vX.Y.Z — YYYY-MM-DD` (today's date, UTC).
-2. Inside the renamed section, **categorise** the existing
+2. Inside the renamed section, **categorize** the existing
    `### ⚠ BREAKING`, `### Features`, `### Fixes`, `### Chore`
-   sub-sections. Most "Unreleased" content is already organised by
+   sub-sections. Most "Unreleased" content is already organized by
    theme — keep meaningful section headings, but ensure every entry
    has the right severity bucket. Reorder so the section order is:
 
@@ -178,7 +178,7 @@ git add Cargo.toml Cargo.lock CHANGELOG.md
 git commit -m "chore(release): bump to vX.Y.Z"
 ```
 
-Commit body: a categorised summary, ~6 lines per category, most
+Commit body: a categorized summary, ~6 lines per category, most
 relevant first. Format:
 
 ```
@@ -221,7 +221,7 @@ gh pr create \
 
 ## Release checklist (after merge)
 - [ ] Tag the merge commit: `git tag vX.Y.Z && git push origin vX.Y.Z`
-- [ ] Confirm `release.yml` ran (cargo-dist artefacts + crates.io publish)
+- [ ] Confirm `release.yml` ran (cargo-dist artifacts + crates.io publish)
 - [ ] Confirm GitHub Release page is populated
 EOF
 )"
@@ -260,4 +260,4 @@ the release PR.
 - Hotfix that needs to bypass `main` — out of scope; do manually.
 - CI on `main` is red — flag it (surface
   `gh run list --branch main --limit 1`) and ask before continuing.
-  Don't gate the release on CI, but make sure the user sees the colour.
+  Don't gate the release on CI, but make sure the user sees the color.

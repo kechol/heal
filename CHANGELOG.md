@@ -32,7 +32,7 @@
   `crates/cli/skills/` flatten, so the published tarball missed
   `skills/` and `include_dir!` panicked during the verify step
   (`error: proc macro panicked … "skills" is not a directory`).
-  v0.3.0's binary, GitHub Release, and Homebrew artefacts all
+  v0.3.0's binary, GitHub Release, and Homebrew artifacts all
   shipped fine; v0.3.1 is a crates.io-only re-publish with the
   include allow-list pointing at `skills/**/*`.
 
@@ -116,7 +116,7 @@ case-sensitive **substring** patterns. They now parse as
 negation (`!keep`), and `#` comments.
 
 **Migration:** most existing configs work unchanged. Patterns that
-relied on bare-keyword substring behaviour need a small edit:
+relied on bare-keyword substring behavior need a small edit:
 
 | Old (substring)   | New (gitignore)                                  | Why                                                                                                                                                                  |
 | ----------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

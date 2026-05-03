@@ -45,7 +45,7 @@ pub struct ObserverReports {
 /// `workspace = Some(path)` (used by `heal metrics --workspace`)
 /// scopes every observer's internal walk or git diff to files under
 /// the sub-path, so totals, pair counts, and lift reflect only the
-/// chosen workspace's universe. Pass `None` for whole-repo behaviour.
+/// chosen workspace's universe. Pass `None` for whole-repo behavior.
 pub(crate) fn run_all(
     project: &Path,
     cfg: &Config,

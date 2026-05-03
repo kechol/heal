@@ -1,10 +1,10 @@
-# Readability principles for refactor judgement
+# Readability principles for refactor judgment
 
 Reference loaded by `heal-code-review` when evaluating whether a proposed
 refactor genuinely improves the code beyond moving heal's metric needles.
 
-`architecture.md` catalogues *what* refactor patterns exist and how they
-affect heal scores. This reference catalogues the *why* — the human-facing
+`architecture.md` catalogs *what* refactor patterns exist and how they
+affect heal scores. This reference catalogs the *why* — the human-facing
 goals refactoring serves. When a heal-driven proposal conflicts with these
 goals, the proposal is wrong even if the metric would improve.
 
@@ -81,7 +81,7 @@ heal's `duplication` drives at (3); `ccn` / `cognitive` at (2) and (4).
 
 ---
 
-## 3. Heuristics for judgement in heal-code-review
+## 3. Heuristics for judgment in heal-code-review
 
 Five questions to ask before proposing a refactor. If any answer is "no"
 or "unsure", hold the proposal as a deferred question rather than
@@ -133,11 +133,11 @@ but worth surfacing during exploration. heal-code-review should
 occasionally recommend a refactor with no finding to back it, when
 the reading suggests one is warranted.
 
-The fourth row is the case where the skill's defence kicks in: a
+The fourth row is the case where the skill's defense kicks in: a
 metric-driven fix would damage readability. The trap categories in
 `architecture.md` §6 cover the recurring cases (relocate, reflexive
 guard-clause, drain-to-zero, data-shaped CCN). New traps can be
-added there as they're recognised.
+added there as they're recognized.
 
 ---
 
@@ -146,7 +146,7 @@ added there as they're recognised.
 When proposing a refactor in Phase 2:
 
 1. After identifying a candidate via the metric and the triage
-   taxonomy, run the **5-question judgement test** in §3.
+   taxonomy, run the **5-question judgment test** in §3.
 2. If all five answers are clearly "yes", propose the refactor as a
    TODO entry.
 3. If any answer is "no" or "unsure", hold the proposal as a

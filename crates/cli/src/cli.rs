@@ -116,7 +116,7 @@ pub enum Command {
         action: SkillsAction,
     },
     /// Calibrate codebase-relative Severity thresholds. Default
-    /// behaviour:
+    /// behavior:
     ///   * `calibration.toml` missing → run a fresh scan and write it.
     ///   * `calibration.toml` present → print the freshness summary and
     ///     surface `--force` as the way to refresh. The `heal-config`
@@ -206,7 +206,7 @@ impl FindingMetric {
 }
 
 /// CLI-side mirror of [`crate::core::severity::Severity`] so clap's
-/// `value_enum` can render the four labels without leaking SGR colour
+/// `value_enum` can render the four labels without leaking SGR color
 /// codes into the help text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum SeverityFilter {

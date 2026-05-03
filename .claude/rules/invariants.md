@@ -78,7 +78,7 @@ For tuple-shaped inputs use `fnv1a_64_chunked` (separator `0xff`),
 not `fnv1a_64(&concat)` — concatenation is collision-prone.
 
 `FxHashMap` / `AHashMap` are fine for **in-memory** maps. Never for
-serialised output.
+serialized output.
 
 ## R6. Cache freshness is `(head_sha, config_hash, worktree_clean)`
 

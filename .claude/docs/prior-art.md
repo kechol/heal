@@ -190,7 +190,7 @@ framing is reflected verbatim in
 ## 4. Refactoring and architecture vocabulary (heal-code-review)
 
 `heal-code-review` proposes refactorings using a named vocabulary so
-findings translate into actions a developer recognises. The
+findings translate into actions a developer recognizes. The
 references live in
 `crates/cli/skills/heal-code-review/references/architecture.md`
 and `references/readability.md`. Sources:
@@ -209,7 +209,7 @@ third).
 Source of the **deep modules** framing in `readability.md` §2.2 and
 the Tier-2 ranking ("structural division produces deeper modules").
 Underpins the heuristic that interface width should stay small while
-implementation absorbs variant behaviour — the inverse of the
+implementation absorbs variant behavior — the inverse of the
 "Extract Function for its own sake" relocate-trap.
 
 ### _Domain-Driven Design_ (Evans, 2003) + _Implementing DDD_ (Vernon, 2013)

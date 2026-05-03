@@ -88,7 +88,7 @@ pub fn register(project: &Path) -> Result<WriteAction> {
 }
 
 /// Outcome of [`unregister`]. `legacy_swept` is true when at least one
-/// pre-skills artefact (plugin tree, marketplace.json, or settings-key)
+/// pre-skills artifact (plugin tree, marketplace.json, or settings-key)
 /// was actually removed during this call — distinct from "would be
 /// removed" so callers can surface honest UX text.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -127,7 +127,7 @@ pub fn unregister(project: &Path) -> Result<UnregisterReport> {
     Ok(UnregisterReport { legacy_swept })
 }
 
-/// Sweep on-disk artefacts left over from the old plugin/marketplace
+/// Sweep on-disk artifacts left over from the old plugin/marketplace
 /// install layout. Returns `true` when at least one path was removed.
 /// Idempotent: missing paths are silently treated as no-ops via
 /// `ErrorKind::NotFound` suppression rather than a pre-`exists()` check

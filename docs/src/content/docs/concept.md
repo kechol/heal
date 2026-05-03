@@ -75,7 +75,7 @@ through two bundled Claude skills with deliberately split roles:
   before changing anything.
 - **`/heal-code-patch`** is the _doing_ skill. Mechanical only — it
   drains the cache one finding per commit using established refactor
-  patterns whose application doesn't require domain judgement. Refuses
+  patterns whose application doesn't require domain judgment. Refuses
   to start on a dirty worktree, never pushes, never amends. When the
   next finding needs an architectural decision, it stops and hands
   back to `/heal-code-review`.

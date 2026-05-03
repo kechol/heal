@@ -213,7 +213,7 @@ relocates the complexity instead of removing it (the
 
 The cost is verbosity in skill output. The benefit is that the
 proposed change actually drains the queue instead of bouncing the
-finding to a neighbouring file.
+finding to a neighboring file.
 
 ### 5.3 Refuse on dirty worktree
 

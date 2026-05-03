@@ -33,10 +33,10 @@ is self-correcting: a botched fix surfaces on the next round.
 transformation rule is deterministic, locally-scoped, and does not
 require domain knowledge to apply correctly. It does **not** make
 architectural decisions, choose between names, or split modules along
-domain seams. The judgement layer lives in `/heal-code-review` and the
+domain seams. The judgment layer lives in `/heal-code-review` and the
 readability criteria in its `references/readability.md`.
 
-When the next finding requires architectural judgement (which name to
+When the next finding requires architectural judgment (which name to
 pick, which boundary to draw, whether to split a hub file, whether two
 contexts should merge), the loop:
 
@@ -84,7 +84,7 @@ while there are non-Ok findings in the cache:
 ```
 
 Stop conditions: cache empty, user interrupts (Ctrl+C / Stop), or you
-hit a finding that genuinely needs human judgement (architectural
+hit a finding that genuinely needs human judgment (architectural
 decision, business rule). In the last case, surface the trade-offs and
 ask before applying.
 
@@ -110,7 +110,7 @@ items, and stop.
 
 ## Per-metric fix patterns
 
-Catalogue of patterns relevant to each metric. **Not all are mechanical** —
+Catalog of patterns relevant to each metric. **Not all are mechanical** —
 the Allow-list / Escalate-list below decide what this loop applies vs
 surfaces. Always consult both before acting.
 
@@ -159,7 +159,7 @@ confirm the pattern fits:
 
 ### Escalate-list (stop and ask the user)
 
-These patterns require judgement that this skill should not make alone.
+These patterns require judgment that this skill should not make alone.
 When the next finding's best-fit pattern is here, stop the loop, surface
 the trade-off, and let the user (or `/heal-code-review`) decide:
 
@@ -169,7 +169,7 @@ the trade-off, and let the user (or `/heal-code-review`) decide:
   resulting names are domain-language calls.
 - **Move Function / Move Field.** Changes module boundaries; affects
   imports across the codebase.
-- **Substitute Algorithm.** Requires behavioural-equivalence
+- **Substitute Algorithm.** Requires behavioral-equivalence
   confirmation that this skill cannot make safely.
 - **Replace Nested Conditional with Guard Clauses.** Only safe when
   the original is genuinely deeply-nested (see "Anti-patterns to stop

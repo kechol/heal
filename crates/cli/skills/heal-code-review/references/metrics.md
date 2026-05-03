@@ -29,7 +29,7 @@ day-to-day verdict.
 - **Thresholds (HEAL defaults).** Files >300 LOC drift toward review;
   >800 LOC are almost always doing two jobs.
 - **Reads as.** A file that grew past its single responsibility, or a
-  generated artefact that should be excluded. Not actionable on its
+  generated artifact that should be excluded. Not actionable on its
   own — pair with CCN, churn, or coupling to know whether the size is
   *paid for* by the work it does.
 - **False positives.** Generated code (parsers, schema bindings),
@@ -100,7 +100,7 @@ day-to-day verdict.
   feature work. Pair with complexity (→ `hotspot`) before acting.
 - **False positives.** Mass-rename commits, dependency bumps, format
   sweeps. HEAL filters commits >50 files at observation time; if a
-  release-train artefact still pollutes results, exclude its path.
+  release-train artifact still pollutes results, exclude its path.
 
 ## `change_coupling` — Logical / Co-change Coupling
 
@@ -126,7 +126,7 @@ day-to-day verdict.
   | Many files ↔ one file | God-class / facade | Decompose the hub |
   | Files in different modules | Cross-cutting concern leak | Extract shared layer |
 - **False positives.** Test ↔ impl pairs, `mod.rs` ↔ submodule
-  files, release-train artefacts (version bumps, manifest edits).
+  files, release-train artifacts (version bumps, manifest edits).
 
 ## `duplication` — Type-1 Verbatim Duplication
 

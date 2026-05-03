@@ -14,7 +14,7 @@ tap = "kechol/homebrew-tap"
 # Cargo features the released binary is built with. Mirrors the
 # `default` set in `crates/cli/Cargo.toml` — kept explicit here so a
 # future Cargo.toml `default = []` change does not silently strip
-# language grammars from Homebrew / shell / cargo-dist artefacts.
+# language grammars from Homebrew / shell / cargo-dist artifacts.
 features = [
     "lang-typescript",
     "lang-javascript",

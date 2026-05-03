@@ -4,7 +4,7 @@
 //! distribution**, not absolute literature values, so a simple Python
 //! script and a 200kloc service trigger differently for the same raw
 //! CCN. Each metric carries its own quartile-style breaks (p75 / p90
-//! / p95) plus an absolute "no defence" floor (`floor_critical`) drawn
+//! / p95) plus an absolute "no defense" floor (`floor_critical`) drawn
 //! from `McCabe` / `SonarQube` so a uniformly-rotten codebase cannot
 //! quietly flatten the ladder.
 //!
@@ -241,7 +241,7 @@ impl MetricCalibration {
     ///    no signal (everyone clustered between the floors). Falls to
     ///    Ok. Threshold: `(floor_critical - floor_ok) / 2`. Both floors
     ///    must be present for the gate to fire — partial-floor
-    ///    metrics keep the existing percentile-only behaviour.
+    ///    metrics keep the existing percentile-only behavior.
     ///
     /// Then the percentile cascade: `value >= p95` → Critical, `p90` →
     /// High, `p75` → Medium, else Ok.
@@ -366,7 +366,7 @@ impl HotspotCalibration {
     }
 
     /// Variant that takes an explicit `floor_ok` so tests and callers
-    /// that want to opt out (legacy behaviour) can pass `None`. The
+    /// that want to opt out (legacy behavior) can pass `None`. The
     /// default constructor [`Self::from_distribution`] applies the
     /// literature-anchored [`FLOOR_OK_HOTSPOT`].
     #[must_use]
@@ -491,7 +491,7 @@ fn apply_workspace_metric_overrides(
 /// Layer config-side `floor_critical` / `floor_ok` overrides onto a
 /// `MetricCalibrations` table. Shared by [`Calibration::with_overrides`]
 /// across the global cohort and every per-workspace cohort so the
-/// behaviour stays uniform: `[metrics.<m>] floor_*` settings take
+/// behavior stays uniform: `[metrics.<m>] floor_*` settings take
 /// effect everywhere a calibration table exists.
 fn apply_metric_overrides(table: &mut MetricCalibrations, config: &Config) {
     if let Some(c) = table.ccn.as_mut() {
@@ -861,7 +861,7 @@ mod tests {
     #[test]
     fn hotspot_floor_ok_disabled_falls_back_to_percentile() {
         // Legacy snapshots before v0.3+ have floor_ok = None; the
-        // ancient percentile-only behaviour is preserved.
+        // ancient percentile-only behavior is preserved.
         let h = HotspotCalibration {
             p50: 3.0,
             p75: 8.0,
@@ -957,7 +957,7 @@ mod tests {
         // `heal init` on a tiny codebase produces NaN percentile breaks
         // (sample size below `MIN_SAMPLES_FOR_PERCENTILES`). TOML
         // supports `nan` natively, so save/load must preserve the
-        // degenerate-marker behaviour.
+        // degenerate-marker behavior.
         let cal = Calibration {
             meta: CalibrationMeta::default(),
             calibration: MetricCalibrations {

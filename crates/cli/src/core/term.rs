@@ -1,5 +1,5 @@
 //! Tiny terminal-rendering helpers shared by every CLI command that
-//! emits coloured output. Centralised so the four ANSI SGR constants
+//! emits colored output. Centralized so the four ANSI SGR constants
 //! and the `is_terminal()`-aware `ansi_wrap` only live in one place.
 
 use std::io::IsTerminal;
@@ -7,16 +7,16 @@ use std::process::{Command, Stdio};
 
 use anyhow::Result;
 
-/// ANSI SGR colour codes. `pub` so the small set of CLI commands
-/// that emit colour can share the constants instead of redefining them.
+/// ANSI SGR color codes. `pub` so the small set of CLI commands
+/// that emit color can share the constants instead of redefining them.
 pub const ANSI_RED: &str = "\x1b[31m";
 pub const ANSI_GREEN: &str = "\x1b[32m";
 pub const ANSI_YELLOW: &str = "\x1b[33m";
 pub const ANSI_CYAN: &str = "\x1b[36m";
 
 /// Wrap `text` in `color` (one of `ANSI_*`) followed by the SGR reset
-/// when `enabled`; otherwise return `text` unchanged. Centralises the
-/// `is_terminal()` gating that every colorising call site does.
+/// when `enabled`; otherwise return `text` unchanged. Centralizes the
+/// `is_terminal()` gating that every colorizing call site does.
 #[must_use]
 pub fn ansi_wrap(color: &str, text: &str, enabled: bool) -> String {
     if enabled {
@@ -39,7 +39,7 @@ where
     let stdout_is_tty = std::io::stdout().is_terminal();
     if !no_pager && stdout_is_tty {
         if let Some(mut child) = spawn_pager() {
-            // Pager renders ANSI colours via `LESS=R`, so always colorize.
+            // Pager renders ANSI colors via `LESS=R`, so always colorize.
             let stdin = child.stdin.take().expect("stdin was piped");
             let mut buf = std::io::BufWriter::new(stdin);
             let render_result = produce(&mut buf, true);
@@ -56,7 +56,7 @@ where
 }
 
 /// Spawn `$PAGER` (or `less`) with a TTY-friendly default `LESS` env so
-/// short output exits without taking over the screen and ANSI colours
+/// short output exits without taking over the screen and ANSI colors
 /// pass through. Returns `None` when no pager binary is available.
 fn spawn_pager() -> Option<std::process::Child> {
     let pager = std::env::var_os("PAGER").unwrap_or_else(|| "less".into());

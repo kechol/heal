@@ -44,7 +44,7 @@ pub struct DetectedWorkspace {
     pub path: String,
     /// Auto-detected primary language for this member directory.
     /// `None` when the directory contained no source tokei
-    /// recognises.
+    /// recognizes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primary_language: Option<String>,
 }

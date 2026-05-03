@@ -27,8 +27,8 @@ pub(super) struct SectionCtx<'a> {
 }
 
 /// Write the visual section divider every `MetricSection::render_text`
-/// uses as its first line. Centralised so the divider rule (a blank
-/// line followed by a cyan title bar) stays consistent and skips colour
+/// uses as its first line. Centralized so the divider rule (a blank
+/// line followed by a cyan title bar) stays consistent and skips color
 /// codes when stdout is not a TTY.
 pub(super) fn write_section_header(
     label: &str,
@@ -52,8 +52,8 @@ pub(super) trait MetricSection {
 
     /// Full report payload included in the unfiltered (`--json` without
     /// `--metric`) output. Returns `Value::Null` when the observer
-    /// produced nothing — preserves the pre-refactor behaviour where
-    /// `r.churn.as_ref()` serialised to `null`.
+    /// produced nothing — preserves the pre-refactor behavior where
+    /// `r.churn.as_ref()` serialized to `null`.
     fn raw_json(&self, ctx: &SectionCtx<'_>) -> serde_json::Value;
 
     /// `(top_n, worst_payload)` for the `--json --metric <kind>` path.

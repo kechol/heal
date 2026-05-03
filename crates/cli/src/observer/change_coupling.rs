@@ -4,7 +4,7 @@
 //! the set of paths it touches (first-parent diff to avoid merge-driven
 //! double-counting) and increment a counter for every unordered pair in
 //! that set. The pair counters become the "coupling" signal — files that
-//! consistently change together expose hidden behavioural coupling that
+//! consistently change together expose hidden behavioral coupling that
 //! static analysis (imports, type dependencies) can't see, because the
 //! coupling lives in the team's editing habits, not the code graph.
 //!
@@ -659,7 +659,7 @@ fn is_generated(path_str: &str, basename: &str, primary_lang: Option<&str>) -> b
     if dir_marker_matches(path_str, COMMON_DIRS) {
         return true;
     }
-    // Generated artefacts that ship next to source instead of in dist/.
+    // Generated artifacts that ship next to source instead of in dist/.
     if basename.ends_with(".min.js")
         || basename.ends_with(".min.css")
         || basename.contains(".bundle.")
@@ -710,7 +710,7 @@ fn is_doc(path_str: &str, basename: &str) -> bool {
 }
 
 /// True iff the pair is a module manifest paired with a sibling — the
-/// vertical "re-export" coupling that's a structural artefact, not a
+/// vertical "re-export" coupling that's a structural artifact, not a
 /// design problem. Both files must share the same parent directory.
 fn is_manifest_pair(a: &Path, b: &Path) -> bool {
     let (Some(a_parent), Some(b_parent)) = (a.parent(), b.parent()) else {

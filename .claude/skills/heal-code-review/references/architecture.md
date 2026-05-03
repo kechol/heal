@@ -5,7 +5,7 @@ skill reaches for **established** vocabulary so suggestions land in
 concepts the user can verify against the literature, not phrases
 invented in the moment.
 
-The reference is organised in increasing scope. Pick the smallest
+The reference is organized in increasing scope. Pick the smallest
 layer that fits the finding — a single high-CCN function rarely
 needs DDD vocabulary; a multi-file coupling cluster sometimes does.
 
@@ -36,7 +36,7 @@ The signature is part of the interface; so are documented
 preconditions and the panics it can raise.
 
 **Depth** — leverage at the interface. A *deep* module hides a lot
-of behaviour behind a small interface; a *shallow* module's
+of behavior behind a small interface; a *shallow* module's
 interface is nearly as wide as its implementation. Deep modules are
 the goal.
 
@@ -113,7 +113,7 @@ terminology.
 - Coupling between `domain/` and `infrastructure/` → dependency-
   rule violation. Introduce a port in the domain layer and have
   the adapter implement it.
-- A god-file at the centre of many couplings → almost always a
+- A god-file at the center of many couplings → almost always a
   facade that has accreted both application and infrastructure
   concerns. Split along the layer boundary.
 
@@ -153,7 +153,7 @@ change). A value object is defined by its attributes
 (`Money(100, USD)` equals any other `Money(100, USD)`); replacing
 it is conceptually free.
 
-**Domain service.** Behaviour that does not naturally belong to
+**Domain service.** Behavior that does not naturally belong to
 any single entity or value object. *Stateless*. If you find
 yourself making it stateful, it probably belongs on an aggregate.
 
@@ -241,7 +241,7 @@ them.
 finding between `foo.rs` and `tests/foo.rs` is the metric working
 as designed; do not "fix" it.
 
-**Surface, don't decide.** When the right answer is a judgement
+**Surface, don't decide.** When the right answer is a judgment
 call (a coupling that could go either way; a renaming that the
 team needs to align on; a context split that depends on roadmap),
 present the trade-off and let the user decide. Do not auto-recommend.
@@ -289,15 +289,15 @@ genuinely shrinks; new findings rarely appear in the helpers.
 ### Tier 2 — Structural division (moderate metric movement, large qualitative win)
 
 These produce *deeper* modules (Ousterhout §1) — interface stays small while
-implementation absorbs the variant behaviour. Metric improvement is moderate
+implementation absorbs the variant behavior. Metric improvement is moderate
 but maintainability improvement is large.
 
 - **Replace Conditional with Polymorphism.** A function branches on a type
-  tag and each branch has meaningfully different behaviour. Split per type
+  tag and each branch has meaningfully different behavior. Split per type
   into separate components / classes / strategies. Each variant becomes a
   deep module hidden behind a thin dispatcher.
 - **Replace Type Code with Subclasses / Strategy / State.** A class
-  switches behaviour on a `kind: string` field. Extract one class per
+  switches behavior on a `kind: string` field. Extract one class per
   kind, polymorphic over the operation. Often reveals which fields belong
   with which kind (LCOM clusters become visible).
 - **Extract Class.** A class has two cohesion clusters (`lcom >= 2`).
@@ -357,7 +357,7 @@ Use sparingly. Often relocates rather than reduces — see §6.
 ### Tier 5 — Architectural / strategic (cross-module; not single-symbol)
 
 When findings span layers, contexts, or a hub file, per-symbol patterns
-don't fit. These operate at a coarser scope and require human judgement;
+don't fit. These operate at a coarser scope and require human judgment;
 heal-code-review should *propose* them as questions, not auto-apply.
 
 - **Strangler Fig** (Fowler / Newman). Replace a legacy subsystem
@@ -365,7 +365,7 @@ heal-code-review should *propose* them as questions, not auto-apply.
   implementation while old continues to serve existing flows. Used
   when in-place rewriting is too risky.
 - **Branch by Abstraction** (Hammant). Introduce an interface,
-  implement the new behaviour in parallel, switch call sites
+  implement the new behavior in parallel, switch call sites
   one-by-one, then remove the old implementation. Useful when changes
   span many files and continuous deployment is a constraint.
 - **Parallel Change / Expand-Contract.** Add the new shape, migrate
@@ -412,9 +412,9 @@ asks.
 
 ---
 
-## 6. Refactor traps to recognise
+## 6. Refactor traps to recognize
 
-Three common failure modes when fixing findings mechanically. Recognise them
+Three common failure modes when fixing findings mechanically. Recognize them
 before they consume effort.
 
 **The relocate trap.** Extract Function on a procedurally cohesive function
