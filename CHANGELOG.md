@@ -97,3 +97,140 @@ declared workspaces are retagged
 `change_coupling.cross_workspace` and parked in the Advisory tier by
 default. Configurable via
 `[metrics.change_coupling] cross_workspace = "surface" | "hide"`.
+
+## v0.2.1 — 2026-05-01
+
+### Fixes
+- **Skills wire into Claude Code automatically.** `heal init` and
+  `heal skills install` now register the bundled plugin via a
+  local marketplace entry in `.claude/settings.json`, so the
+  `/heal-code-check` / `/heal-code-fix` skills are discoverable
+  without a manual install step (`bba9acf`).
+- **Post-commit nudge fits on one line.** The Severity summary now
+  prints as a single colored row (`a46cfd7`) — the multi-line v0.2.0
+  format was awkward in busy commit terminals.
+
+### Chore
+- Bump `toml` 0.8.23 → 1.1.2+spec-1.1.0 (`b2e3bfe`).
+
+## v0.2.0 — 2026-05-01
+
+The Severity-aware release. v0.1.0 produced metric numbers; v0.2.0
+turns them into Findings classified against per-codebase
+percentile breaks, with a fix-drain skill and a post-commit nudge.
+
+### Features
+
+**Severity + calibration**
+- `heal calibrate` derives per-metric percentile breaks (p50/p75/p90/
+  p95) from the current codebase, plus literature-anchored absolute
+  floors (`FLOOR_CCN = 25`, `FLOOR_COGNITIVE = 50`,
+  `FLOOR_DUPLICATION_PCT = 30`). Output written to
+  `.heal/calibration.toml` (`a43fdef`, `f636d2a`).
+- Findings carry a four-step `Severity` ladder (`Ok`, `Medium`,
+  `High`, `Critical`) plus a `hotspot` decoration for files in the
+  top 10% by Hotspot score (`7db0570`).
+- `heal check` (Severity TUI) plus `heal cache` (mark / browse the
+  fix queue) ship as the user-facing surface (`cb46519`).
+- `Severity` counts surface on every commit via the post-commit
+  nudge (`e45d327`) — replaces the v0.1 SessionStart approach.
+
+**Drain skill**
+- `/heal-fix` Claude skill drains the findings cache one fix per
+  commit in Severity order, refusing dirty worktrees (`60125d5`).
+- `/heal-fix` consolidated with the per-metric `check-*` skills into
+  the `/heal-code-check` + `/heal-code-fix` pair, with a
+  language-aware drain flow (`bace1ca`).
+
+**New languages**
+- JavaScript (`.js` / `.jsx`) (`ed88f93`).
+- Python (`.py` / `.pyi`) (`ed15dfd`).
+- Go (`.go`) — LCOM deferred to v0.3+ (`f1adbfd`).
+- Scala (`.scala` / `.sc`) — LCOM deferred to v0.3+ (`21267be`).
+
+**LCOM and coupling**
+- LCOM approximation (per-class cohesion clusters via union-find) with
+  configurable `min_cluster_count` (`64a848c`, `fe2ef30`, `a6f88bb`).
+- Change Coupling pairs split into `Symmetric` (both directions
+  strong) vs `OneWay { from, to }` based on conditional probability
+  asymmetry (`8afba7a`).
+
+**Architecture**
+- `Feature` trait + `FeatureRegistry` migrate the per-metric
+  classify/decorate pipeline to a pluggable form (`532d305`,
+  `aff78af`).
+- Result cache shape: `.heal/checks/` (typed records, fix-state
+  reconciliation) (`85637ea`).
+- Event-log compaction: gzip at 90 days, delete at 365 days
+  (`1b5665b`, `bf79c0b`).
+
+**CLI ergonomics**
+- `heal logs` / `heal snapshots` / `heal checks` split into
+  browse-only commands; `heal fix` retained for fix-state mutation
+  (`7144a7e`).
+- `heal fix diff` reframed in git-style positional form (no
+  `--worktree`) (`a7b848a`).
+- `heal init` offers inline Claude skill install with a structured
+  install summary (`3234275`); `--force` propagates to the
+  bundled-skill refresh path (`33731b1`).
+- Pre-commit `rustfmt` hook added under `.githooks/` (`f1d8fe8`).
+
+### Chore
+- `thiserror` 1.0 → 2.0 (`c2a069a`).
+- Tree-sitter grammar bumps (Go, JavaScript, Python, Scala).
+- Astro 5 → 6 + Starlight breaking changes for `docs/`
+  (`cb476d9`, `caa89db`, `b5ebf11`).
+- TypeScript 5 → 6.0.3 in `docs/`, then pinned 5.9.3 for
+  Pages action compat (`31cbe09`, `21d7f0a`).
+- Slim logo + favicon (`5bf4c57`).
+- CI: docs build only on push to `main`, drop pull_request trigger
+  (`3c37303`).
+
+## v0.1.0 — 2026-04-29
+
+Initial public release. The observe half of the loop: read code
+health out of any project, write structured snapshots and
+recommendations, surface them through CLI + Claude Code skills.
+
+### Features
+
+**Observer pipeline**
+- `tokei` integration for LOC and language inventory (`4ce0c3c`).
+- Tree-sitter parsing foundation with CCN and Cognitive Complexity
+  per function (`3139b00`).
+- Rust language support, wired into `ComplexityObserver`
+  (`9d3b0dd`).
+- Churn, Change Coupling, Duplication, Hotspot composition observers
+  (`0528d89`).
+- `MetricsSnapshot` writer with worst-N rendering and per-language
+  feature gates (`97b7093`).
+
+**Configuration**
+- Per-metric `top_n` overrides with a global fallback (`621b7c4`).
+
+**CLI**
+- `heal init` — language detection, config write, post-commit hook
+  install, initial scan (`3cb23b0`).
+- `heal hook commit | edit | stop` — Claude Code hook entry points
+  routed through a generic `hook` command (`2150298`).
+- `heal status` — render the latest `MetricsSnapshot`.
+- `heal check` — streaming progress, plain-text and JSON output
+  (`76dcf0d`).
+- `heal logs` — browse the structured event log.
+
+**Claude Code integration**
+- SessionStart nudge with severity-aware messaging.
+- Drift-aware skills install / update (`fb33201`).
+- Per-metric `check-*` skills + `heal status --metric` filter
+  (`2fb2f9d`).
+
+### Packaging
+- Workspace collapsed into a single `heal-cli` crate so
+  `cargo install heal-cli` is the supported install path
+  (`8559a6d`).
+- `cargo-dist` scaffolding for binary releases (`cebaa2e`).
+- LICENSE (MIT), README, CLAUDE.md added ahead of OSS publication
+  (`2555e70`).
+
+### Pre-release polish
+- Bug fixes, dead-config sweep, dual-license metadata (`2ae4eb2`).
