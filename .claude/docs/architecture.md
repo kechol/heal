@@ -70,8 +70,8 @@ observers::build_calibration(reports, config)
 feature::FeatureRegistry::builtin().lower_all(reports, cfg, cal)
   → Vec<Finding> with severity + hotspot flag
   ↓
-FindingsRecord { id (ULID), head_sha, config_hash, worktree_clean,
-                 severity_counts, workspaces, findings }
+FindingsRecord { id (FNV-1a of head+config+clean), head_sha, config_hash,
+                 worktree_clean, severity_counts, workspaces, findings }
   ↓
 fs::atomic_write → .heal/findings/latest.json
   ↓

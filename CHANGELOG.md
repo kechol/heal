@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### ⚠ BREAKING: `.heal/findings/` is now git-tracked
+
+`fixed.json`, `regressed.jsonl`, and `latest.json` are tracked
+alongside `config.toml` and `calibration.toml` so teammates on the
+same commit see identical drain queues without re-scanning. The
+`.heal/.gitignore` template no longer excludes `findings/` — re-run
+`heal init --force` to refresh it, then commit the resulting
+findings cache.
+
+To make the tracked file byte-stable, `FindingsRecord` no longer
+stores wall-clock metadata:
+
+- `id` is now a deterministic 16-hex FNV-1a digest of `(head_sha,
+  config_hash, worktree_clean)` (was: ULID).
+- `started_at` is removed (was: `Utc::now()` at scan time).
+- `RegressedEntry.regressed_at` now records when the regression
+  was *detected* (was: when the record was assembled — same wall
+  clock, same value).
+
+`heal status` and `heal diff` JSON output drops `started_at` /
+`from_started_at` / `to_started_at` accordingly. Skills that surfaced
+those fields should switch to `head_sha` for "what state is this".
+
+`heal status` cache reuse now goes through `is_fresh_against`
+(`(head_sha, config_hash, worktree_clean)`); a `latest.json` from a
+different commit, different config, or a dirty scan auto-refreshes
+without `--refresh`. Previously a stale `latest.json` would persist
+until the user passed `--refresh` explicitly.
+
 ### `heal-config` Strict-fit check
 
 The skill now compares the codebase's calibration against the Strict

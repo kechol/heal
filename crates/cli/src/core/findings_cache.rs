@@ -61,10 +61,12 @@ pub const FINDINGS_RECORD_VERSION: u32 = 2;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FindingsRecord {
     pub version: u32,
-    /// Crockford-base32 ULID. The leading 48 bits are the millisecond
-    /// timestamp, so lexicographic order = chronological order.
+    /// 16-hex FNV-1a digest of `(head_sha, config_hash, worktree_clean)`.
+    /// Deterministic on stable inputs so `latest.json` is byte-identical
+    /// across teammates on the same commit + config + clean worktree —
+    /// the file is git-tracked, and ULID-style wall-clock ids would
+    /// dirty it on every refresh.
     pub id: String,
-    pub started_at: DateTime<Utc>,
     /// `None` when `heal status` ran outside a git repo or HEAD is
     /// unborn. The cache still records the run; the freshness check
     /// just won't match any future invocation.
@@ -97,8 +99,9 @@ pub struct WorkspaceSummary {
 
 impl FindingsRecord {
     /// Build a record from the freshly classified findings. The id is
-    /// generated from the current wall clock; if you need a
-    /// deterministic id (tests), assign `id` after construction.
+    /// derived deterministically from `(head_sha, config_hash,
+    /// worktree_clean)` — same triple → same id, so `latest.json`
+    /// stays byte-stable across teammates scanning the same commit.
     #[must_use]
     pub fn new(
         head_sha: Option<String>,
@@ -106,13 +109,12 @@ impl FindingsRecord {
         config_hash: String,
         findings: Vec<Finding>,
     ) -> Self {
-        let started_at = Utc::now();
         let severity_counts = SeverityCounts::from_findings(&findings);
         let workspaces = workspace_summaries(&findings);
+        let id = record_id(head_sha.as_deref(), &config_hash, worktree_clean);
         Self {
             version: FINDINGS_RECORD_VERSION,
-            id: ulid::Ulid::new().to_string(),
-            started_at,
+            id,
             head_sha,
             worktree_clean,
             config_hash,
@@ -145,7 +147,6 @@ impl FindingsRecord {
         Self {
             version: self.version,
             id: self.id.clone(),
-            started_at: self.started_at,
             head_sha: self.head_sha.clone(),
             worktree_clean: self.worktree_clean,
             config_hash: self.config_hash.clone(),
@@ -224,6 +225,23 @@ pub struct RegressedEntry {
 #[must_use]
 pub fn config_hash(config_toml: &[u8], calibration_toml: &[u8]) -> String {
     fnv1a_hex(fnv1a_64_chunked(&[config_toml, calibration_toml]))
+}
+
+/// Deterministic 16-hex FNV-1a digest of `(head_sha, config_hash,
+/// worktree_clean)`. Used as `FindingsRecord.id` so `latest.json`
+/// is byte-stable for any team-mate scanning the same commit with the
+/// same config + clean worktree. The clean flag is folded in so a
+/// dirty scan doesn't collide with the next clean scan at the same
+/// HEAD.
+#[must_use]
+pub fn record_id(head_sha: Option<&str>, config_hash: &str, worktree_clean: bool) -> String {
+    let head = head_sha.unwrap_or("");
+    let clean = if worktree_clean { b"clean" } else { b"dirty" };
+    fnv1a_hex(fnv1a_64_chunked(&[
+        head.as_bytes(),
+        config_hash.as_bytes(),
+        clean,
+    ]))
 }
 
 /// Read `config.toml` and `calibration.toml` (best-effort) and hash the
@@ -360,7 +378,7 @@ pub fn reconcile_fixed(
             previous_commit_sha: entry.commit_sha,
             previous_fixed_at: entry.fixed_at,
             regressed_in_record_id: record.id.clone(),
-            regressed_at: record.started_at,
+            regressed_at: Utc::now(),
         });
     }
     if regressed.is_empty() {
@@ -446,13 +464,6 @@ mod tests {
     }
 
     #[test]
-    fn id_is_unique_across_calls() {
-        let r1 = FindingsRecord::new(None, false, "h".into(), Vec::new());
-        let r2 = FindingsRecord::new(None, false, "h".into(), Vec::new());
-        assert_ne!(r1.id, r2.id);
-    }
-
-    #[test]
     fn project_to_workspace_narrows_findings_summary_and_workspaces() {
         let mut a = finding("alpha", Severity::High);
         a.workspace = Some("packages/web".into());
@@ -492,6 +503,42 @@ mod tests {
         let a = config_hash(b"foo", b"bar");
         let b = config_hash(b"foo", b"bar");
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn record_id_is_deterministic_across_calls() {
+        // Same (head, config, clean) → same id, irrespective of when
+        // the record was assembled. This is the property that lets
+        // `latest.json` be tracked without dirtying on every refresh.
+        let r1 = FindingsRecord::new(
+            Some("abc".into()),
+            true,
+            "deadbeef".into(),
+            vec![finding("foo", Severity::Critical)],
+        );
+        let r2 = FindingsRecord::new(
+            Some("abc".into()),
+            true,
+            "deadbeef".into(),
+            vec![finding("foo", Severity::Critical)],
+        );
+        assert_eq!(r1.id, r2.id);
+    }
+
+    #[test]
+    fn record_id_distinguishes_dirty_from_clean() {
+        let clean = FindingsRecord::new(Some("abc".into()), true, "h".into(), Vec::new());
+        let dirty = FindingsRecord::new(Some("abc".into()), false, "h".into(), Vec::new());
+        assert_ne!(clean.id, dirty.id);
+    }
+
+    #[test]
+    fn record_id_changes_with_head_or_config() {
+        let base = FindingsRecord::new(Some("a".into()), true, "h".into(), Vec::new());
+        let other_head = FindingsRecord::new(Some("b".into()), true, "h".into(), Vec::new());
+        let other_cfg = FindingsRecord::new(Some("a".into()), true, "h2".into(), Vec::new());
+        assert_ne!(base.id, other_head.id);
+        assert_ne!(base.id, other_cfg.id);
     }
 
     #[test]

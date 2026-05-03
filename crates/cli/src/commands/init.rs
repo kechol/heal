@@ -314,12 +314,13 @@ fn render_skills_line(dest: &Path, action: &SkillsAction) -> String {
     }
 }
 
-/// Volatile `.heal/` state that should never be tracked. The list is
-/// intentionally short — `config.toml` and `calibration.toml` stay
-/// versioned so teammates share the same Severity ladder.
+/// Local-only paths under `.heal/`. The findings cache itself
+/// (`fixed.json`, `regressed.jsonl`, `latest.json`) is **tracked**
+/// alongside `config.toml` and `calibration.toml` so teammates on the
+/// same commit see identical drain queues without re-scanning. Add
+/// per-machine carve-outs here if a future feature introduces them.
 const GITIGNORE_BODY: &str = "\
 # Managed by `heal init` — re-run to refresh.
-findings/
 ";
 
 /// Write `.heal/.gitignore` so volatile state stays out of the

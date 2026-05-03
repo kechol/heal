@@ -68,15 +68,16 @@ for separate rendering paths (e.g. `heal metrics`).
 ## `FindingsRecord` (`core::findings_cache`)
 
 The full result of one `heal status` run. Written to
-`.heal/findings/latest.json`. Schema-versioned.
+`.heal/findings/latest.json`. Schema-versioned. **Tracked** alongside
+`config.toml` and `calibration.toml` so teammates on the same commit
+see identical drain queues without re-scanning.
 
 ```rust
 pub const FINDINGS_RECORD_VERSION: u32 = 2;
 
 pub struct FindingsRecord {
     pub version: u32,                // currently 2
-    pub id: String,                  // ULID (Crockford-base32, ms-prefix)
-    pub started_at: DateTime<Utc>,
+    pub id: String,                  // FNV-1a hex of (head_sha, config_hash, worktree_clean)
     pub head_sha: Option<String>,    // None outside git or HEAD unborn
     pub worktree_clean: bool,
     pub config_hash: String,         // FNV-1a hex of config + calibration
@@ -90,6 +91,12 @@ pub struct WorkspaceSummary {
     pub severity_counts: SeverityCounts,
 }
 ```
+
+`id` is a **deterministic** 16-hex digest, not a ULID. The same
+`(head_sha, config_hash, worktree_clean)` always produces the same
+id. This is what lets `latest.json` be tracked: re-running
+`heal status --refresh` on a clean repo at the same commit rewrites
+byte-identical content, keeping `git status` clean.
 
 ### Schema versioning
 
@@ -147,8 +154,8 @@ pub struct RegressedEntry {
     pub finding_id: String,
     pub previous_commit_sha: String,
     pub previous_fixed_at: DateTime<Utc>,
-    pub regressed_in_record_id: String,  // FindingsRecord.id (ULID)
-    pub regressed_at: DateTime<Utc>,
+    pub regressed_in_record_id: String,  // FindingsRecord.id (deterministic FNV-1a hex)
+    pub regressed_at: DateTime<Utc>,     // Utc::now() at regression-detection time
 }
 ```
 

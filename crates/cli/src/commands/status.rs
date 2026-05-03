@@ -33,7 +33,8 @@ use crate::core::calibration::{FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_OK_CCN, FLOOR_O
 use crate::core::config::{load_from_project, Config, DrainTier, PolicyDrainConfig};
 use crate::core::finding::Finding;
 use crate::core::findings_cache::{
-    read_latest, reconcile_fixed, write_record, FindingsRecord, RegressedEntry,
+    config_hash_from_paths, read_latest, reconcile_fixed, write_record, FindingsRecord,
+    RegressedEntry,
 };
 use crate::core::severity::Severity;
 use crate::core::term::{
@@ -54,14 +55,23 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
 
     let filters = Filters::from_args(args);
 
-    // Default: reuse the cache if present. `--refresh` forces a fresh
-    // scan and overwrite, so skip the cache read entirely in that
-    // mode. A missing cache also triggers a scan so the first
-    // invocation in a freshly-initialised project still works.
+    // Cache reuse hinges on `(head_sha, config_hash, worktree_clean)` —
+    // the same triple that drives `FindingsRecord.id` — so a stale
+    // `latest.json` from a different commit, a different config, or a
+    // dirty scan is auto-rescanned even without `--refresh`. The
+    // freshness gate also matters because `latest.json` is git-tracked:
+    // a teammate fetching the file at a different HEAD would otherwise
+    // see the previous owner's state until they remembered to refresh.
+    let head_sha = git::head_sha(project);
+    let worktree_clean = git::worktree_clean(project).unwrap_or(false);
+    let cfg_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
     let cached = if args.refresh {
         None
     } else {
-        read_latest(&paths.findings_latest()).ok().flatten()
+        read_latest(&paths.findings_latest())
+            .ok()
+            .flatten()
+            .filter(|r| r.is_fresh_against(head_sha.as_deref(), &cfg_hash, worktree_clean))
     };
     let must_scan = cached.is_none();
 
@@ -83,8 +93,6 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
 
     let (record, regressed) = if must_scan {
         let cfg = cfg.as_ref().expect("cfg loaded above when must_scan");
-        let head_sha = git::head_sha(project);
-        let worktree_clean = git::worktree_clean(project).unwrap_or(false);
         let record = build_record(project, &paths, cfg, head_sha, worktree_clean);
         write_record(&paths.findings_latest(), &record)?;
         let regs = reconcile_fixed(
@@ -178,10 +186,9 @@ pub(super) fn render(
     let drain = &cfg.policy.drain;
     writeln!(
         out,
-        "  Calibrated: {}  ({} findings, head {})",
-        record.started_at.format("%Y-%m-%d %H:%M"),
-        record.findings.len(),
+        "  HEAD {}  ({} findings)",
         record.head_sha.as_deref().unwrap_or("∅"),
+        record.findings.len(),
     )?;
     let summary = drain_summary(&record.findings, drain);
     writeln!(

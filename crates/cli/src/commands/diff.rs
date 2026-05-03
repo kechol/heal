@@ -97,8 +97,6 @@ pub fn run(
         super::emit_json(&DiffReport {
             from_ref: &resolved_ref,
             from_sha: &target_sha,
-            from_started_at: from_record.started_at.to_rfc3339(),
-            to_started_at: to_record.started_at.to_rfc3339(),
             to_head_sha: to_record.head_sha.as_deref(),
             workspace,
             buckets: &diff,
@@ -239,8 +237,6 @@ struct DiffReport<'a> {
     from_ref: &'a str,
     /// Full 40-char SHA the revspec resolved to.
     from_sha: &'a str,
-    from_started_at: String,
-    to_started_at: String,
     to_head_sha: Option<&'a str>,
     /// Echo of the user-supplied `--workspace <path>` filter, when any.
     /// Skipped from JSON when omitted so the unfiltered shape stays
@@ -420,8 +416,7 @@ fn render_diff(
     }
     writeln!(
         out,
-        "  from: {revspec} ({short})  recorded {}  ({} findings)",
-        from.started_at.format("%Y-%m-%d %H:%M"),
+        "  from: {revspec} ({short})  ({} findings)",
         scoped_count(&from.findings, workspace),
     )?;
     writeln!(

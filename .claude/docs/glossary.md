@@ -112,10 +112,10 @@ below). Constants live in `core::calibration` (`FLOOR_CCN`,
 |---|---|---|---|
 | `.heal/config.toml` | user-edited (`heal init` writes default) | **yes** | `Config` schema; `deny_unknown_fields`. |
 | `.heal/calibration.toml` | `heal calibrate` writes; user can hand-edit floors | **yes** | Per-team determinism — teammates see identical findings on same commit. |
-| `.heal/.gitignore` | `heal init` writes | **yes** | Body: `findings/`. Keeps volatile state out. |
-| `.heal/findings/latest.json` | `heal status` writes; `heal diff` reads | **no** | Single record. `FindingsRecord` (schema-versioned). |
-| `.heal/findings/fixed.json` | `heal mark-fixed` writes; `heal status` reconciles | **no** | `BTreeMap<finding_id, FixedFinding>`. Bounded by outstanding claims. |
-| `.heal/findings/regressed.jsonl` | `heal status` appends | **no** | Append-only audit trail of re-detected fixes. |
+| `.heal/.gitignore` | `heal init` writes | **yes** | Empty (comment only). Reserved for future per-machine carve-outs. |
+| `.heal/findings/latest.json` | `heal status` writes; `heal diff` reads | **yes** | Single record. `FindingsRecord` (schema-versioned). `id` is deterministic so byte-stable across teammates. |
+| `.heal/findings/fixed.json` | `heal mark-fixed` writes; `heal status` reconciles | **yes** | `BTreeMap<finding_id, FixedFinding>`. Bounded by outstanding claims. |
+| `.heal/findings/regressed.jsonl` | `heal status` appends | **yes** | Append-only audit trail of re-detected fixes. |
 
 | Term | Canonical | Wrong / drift |
 |---|---|---|

@@ -31,7 +31,7 @@ never triggers it. `heal status` never triggers it. If your change
 wants newer percentiles, prompt the user to run
 `heal calibrate --force` — don't run it for them.
 
-## R4. The findings cache is single-record
+## R4. The findings cache is single-record and tracked
 
 Files under `.heal/findings/`:
 
@@ -41,6 +41,20 @@ Files under `.heal/findings/`:
 
 That's the full layout. No history rotation, no `YYYY-MM.jsonl`,
 no archive directory.
+
+All three are **git-tracked** (the `.heal/.gitignore` template is
+empty by design). Two consequences agents must keep load-bearing:
+
+- `FindingsRecord.id` is a **deterministic** FNV-1a digest of
+  `(head_sha, config_hash, worktree_clean)` — never a ULID or a
+  wall-clock value. Same triple → byte-identical `latest.json`,
+  which is what keeps `git status` clean across teammates on the
+  same commit.
+- `heal status` cache reuse goes through `is_fresh_against`. A
+  `latest.json` from a different commit, different config, or a
+  dirty scan is auto-rescanned even without `--refresh`. Don't
+  short-circuit this gate — the user fetching a teammate's
+  `latest.json` at a different HEAD relies on it.
 
 ## R5. v0.x out-of-scope features
 
