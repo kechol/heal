@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## v0.3.1 — 2026-05-03
+
+### Fixes
+
+- **`cargo publish` ships the bundled skill set again.** The
+  `crates/cli/Cargo.toml` `include = [...]` allow-list still
+  referenced the retired `plugins/**/*` path after v0.3.0's
+  `crates/cli/skills/` flatten, so the published tarball missed
+  `skills/` and `include_dir!` panicked during the verify step
+  (`error: proc macro panicked … "skills" is not a directory`).
+  v0.3.0's binary, GitHub Release, and Homebrew artefacts all
+  shipped fine; v0.3.1 is a crates.io-only re-publish with the
+  include allow-list pointing at `skills/**/*`.
+
 ## v0.3.0 — 2026-05-03
 
 The CLI-shape and monorepo-aware release. The user-facing surface
