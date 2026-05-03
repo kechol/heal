@@ -208,7 +208,7 @@ change-coupling neighbourhood, the test-coverage shape. A finding
 that says only "CCN = 23" gets refactored into something that
 relocates the complexity instead of removing it (the
 "relocate-trap" — see
-`crates/cli/plugins/heal/skills/heal-code-review/references/architecture.md`
+`crates/cli/skills/heal-code-review/references/architecture.md`
 §6).
 
 The cost is verbosity in skill output. The benefit is that the

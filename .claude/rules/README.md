@@ -11,7 +11,7 @@ Prescriptive rules that Claude Code auto-loads each session
 | [scope.md](./scope.md) | every session | global |
 | [workflow.md](./workflow.md) | every session | global |
 | [invariants.md](./invariants.md) | when Rust source is opened | `crates/cli/{src,tests}/**/*.rs` |
-| [skills-and-hooks.md](./skills-and-hooks.md) | when skill / hook code is opened | `crates/cli/plugins/heal/skills/**`, `claude_settings.rs`, `skill_assets.rs`, hook / skill / mark-fixed command modules |
+| [skills-and-hooks.md](./skills-and-hooks.md) | when skill / hook code is opened | `crates/cli/skills/**`, `claude_settings.rs`, `skill_assets.rs`, hook / skill / mark-fixed command modules |
 
 ## Split with `.claude/docs/`
 

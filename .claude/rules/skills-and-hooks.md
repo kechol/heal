@@ -1,7 +1,7 @@
 ---
 description: Constraints on the Claude Code integration layer — bundled skills, settings.json sweep, post-commit git hook, hidden mark-fixed.
 paths:
-  - "crates/cli/plugins/heal/skills/**"
+  - "crates/cli/skills/**"
   - "crates/cli/src/skill_assets.rs"
   - "crates/cli/src/claude_settings.rs"
   - "crates/cli/src/commands/init.rs"
@@ -101,9 +101,9 @@ it without committing the fix, breaking the audit trail.
 
 ## R9. Skill source location
 
-Source: `crates/cli/plugins/heal/skills/<skill>/`. The path is **inside
-the crate dir** so `cargo publish` includes it. Don't move it
-out — `include_dir!` is a compile-time read of files under
+Source: `crates/cli/skills/<skill>/`. The path is **inside the crate
+dir** so `cargo publish` includes it. Don't move it out —
+`include_dir!` is a compile-time read of files under
 `$CARGO_MANIFEST_DIR`.
 
 ## R10. Trigger-rich descriptions

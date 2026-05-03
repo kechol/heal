@@ -30,7 +30,7 @@ Common bites:
 A rename is one PR (`refactor!(...)`). The sweep covers:
 
 - Source under `crates/cli/src/` and `crates/cli/tests/`.
-- Skill bodies under `crates/cli/plugins/heal/skills/`.
+- Skill bodies under `crates/cli/skills/`.
 - Starlight docs (en `docs/src/content/docs/`, ja
   `docs/src/content/docs/ja/`).
 - `README.md`, `CLAUDE.md`, `CHANGELOG.md`.

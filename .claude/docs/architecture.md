@@ -29,7 +29,7 @@ Layered view of `heal-cli` (the only published crate; binary `heal`).
 ├──────────────────────────────────────────────────────────────────────┤
 │ harness integration    src/claude_settings.rs  src/skill_assets.rs   │
 │   reads/writes .claude/settings.json (sweep-only, no new hooks)      │
-│   embeds plugins/heal/skills/ via include_dir!                       │
+│   embeds skills/ via include_dir!                                    │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -238,4 +238,4 @@ When you change one of these, propagate to its named friends:
 | `cli::MetricKind` | `cli::FindingMetric` (CLI filter), `MetricsConfig` field names (must match JSON keys), glossary metric table |
 | any observer | `feature.rs` Feature impl, `commands/metrics/<m>.rs` section, `tests/observer_<m>.rs` |
 | `claude_settings::LEGACY_HEAL_COMMANDS` | think hard — this is the back-compat sweep list, not "things to delete". Add only when actually removing a hook entry shape. |
-| `plugins/heal/skills/<skill>/SKILL.md` | the `metadata:` block is **rewritten on extract** by `skill_assets`; do not hand-author it in source. Edit body, version is auto-injected. |
+| `skills/<skill>/SKILL.md` | the `metadata:` block is **rewritten on extract** by `skill_assets`; do not hand-author it in source. Edit body, version is auto-injected. |

@@ -1,5 +1,5 @@
 //! Build-time embedding of the bundled skill set
-//! (`crates/cli/plugins/heal/skills/`) and the install/update bookkeeping
+//! (`crates/cli/skills/`) and the install/update bookkeeping
 //! that surrounds it.
 //!
 //! The embedded tree's children are individual skill directories
@@ -36,7 +36,7 @@ use serde::Serialize;
 
 /// Embedded bundle. Each top-level child is a skill directory whose
 /// contents land 1:1 under `<project>/.claude/skills/<skill-name>/`.
-pub static SKILLS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/plugins/heal/skills");
+pub static SKILLS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/skills");
 
 /// Project-relative location of the extracted skills tree. Single source
 /// of truth for the install destination.

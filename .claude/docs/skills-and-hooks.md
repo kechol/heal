@@ -23,11 +23,11 @@ sweeping legacy entries that older HEAL versions wrote.
 
 ## Bundled skill tree
 
-Source: `crates/cli/plugins/heal/skills/`. The path is **inside the
-crate dir** so `cargo publish` includes the tree in the tarball.
+Source: `crates/cli/skills/`. The path is **inside the crate dir** so
+`cargo publish` includes the tree in the tarball.
 
 ```
-crates/cli/plugins/heal/skills/
+crates/cli/skills/
 ├── heal-cli/                    # CLI reference (read-only)
 │   └── SKILL.md
 ├── heal-config/                 # one-shot calibrate + write config
@@ -43,8 +43,6 @@ crates/cli/plugins/heal/skills/
 └── heal-code-patch/             # mechanical drain, one finding/commit
     └── SKILL.md
 ```
-
-Top-level convenience symlink: `plugins/ → crates/cli/plugins/`.
 
 ### Per-skill role
 
@@ -65,7 +63,7 @@ patch is mechanical refactor only.
 
 ```rust
 pub static SKILLS_DIR: Dir<'_> =
-    include_dir!("$CARGO_MANIFEST_DIR/plugins/heal/skills");
+    include_dir!("$CARGO_MANIFEST_DIR/skills");
 
 pub const SKILLS_DEST_REL: &str = ".claude/skills";
 ```
@@ -267,7 +265,7 @@ new skill, follow this pattern.
   hooks-free now.
 - Don't hand-author `metadata:` blocks in source SKILL.md files.
 - Don't add a SessionStart, Stop, PostToolUse, or Edit hook.
-- Don't move skill source out of `crates/cli/plugins/` — `cargo
-  publish` only packages files inside the crate dir.
+- Don't move skill source out of `crates/cli/` — `cargo publish`
+  only packages files inside the crate dir.
 - Don't merge `heal-code-review` and `heal-code-patch`. The split is
   intentional (review = read, patch = write).

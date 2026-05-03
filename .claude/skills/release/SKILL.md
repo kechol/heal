@@ -94,7 +94,7 @@ override is strictly greater than the current.
 Do NOT touch:
 
 - `crates/cli/Cargo.toml` — inherits via `version.workspace = true`.
-- `crates/cli/plugins/heal/skills/*/SKILL.md` — the `metadata:` block
+- `crates/cli/skills/*/SKILL.md` — the `metadata:` block
   is auto-injected by `skill_assets::extract` on build using
   `env!("CARGO_PKG_VERSION")`. Bumping `Cargo.toml` is enough.
 - `docs/package.json` — independent versioning for the docs site.

@@ -183,7 +183,7 @@ smell. Drives the `Symmetric` vs. `OneWay` direction split in
 the **internal companion** to change coupling — coupling reveals
 inter-file split candidates, LCOM reveals intra-file ones. That
 framing is reflected verbatim in
-`crates/cli/plugins/heal/skills/heal-code-review/references/metrics.md`.
+`crates/cli/skills/heal-code-review/references/metrics.md`.
 
 ---
 
@@ -192,7 +192,7 @@ framing is reflected verbatim in
 `heal-code-review` proposes refactorings using a named vocabulary so
 findings translate into actions a developer recognises. The
 references live in
-`crates/cli/plugins/heal/skills/heal-code-review/references/architecture.md`
+`crates/cli/skills/heal-code-review/references/architecture.md`
 and `references/readability.md`. Sources:
 
 ### _Refactoring_ (2nd ed., 2018) — Martin Fowler

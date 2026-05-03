@@ -12,7 +12,7 @@ or `README.md`.
 | [data-model.md](./data-model.md) | You touch `.heal/findings/`, `Config`, `Calibration`, `Finding`, schema versions. |
 | [observers.md](./observers.md) | You add or modify a metric observer, or change classification. |
 | [commands.md](./commands.md) | You add or modify a CLI subcommand, output shape, or exit code. |
-| [skills-and-hooks.md](./skills-and-hooks.md) | You touch `crates/cli/plugins/heal/skills/`, `claude_settings.rs`, `skill_assets.rs`, or the post-commit hook. |
+| [skills-and-hooks.md](./skills-and-hooks.md) | You touch `crates/cli/skills/`, `claude_settings.rs`, `skill_assets.rs`, or the post-commit hook. |
 | [conventions.md](./conventions.md) | Error handling, atomic writes, FNV-1a, `deny_unknown_fields`, tests, lints. |
 | [prior-art.md](./prior-art.md) | You are about to add an observer or refactoring pattern. Lineage, what was rejected, what is out-of-scope. |
 

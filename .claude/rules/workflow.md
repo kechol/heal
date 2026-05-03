@@ -49,7 +49,7 @@ includes:
 - Starlight English docs (`docs/src/content/docs/`).
 - Starlight Japanese mirror (`docs/src/content/docs/ja/`).
 - Affected skill body and references
-  (`crates/cli/plugins/heal/skills/<skill>/`).
+  (`crates/cli/skills/<skill>/`).
 - `CHANGELOG.md` "Unreleased" entry (`⚠ BREAKING` if applicable).
 - `.claude/docs/` and / or `.claude/rules/` if invariants changed.
 
