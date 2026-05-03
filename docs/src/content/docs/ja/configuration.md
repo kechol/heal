@@ -155,7 +155,6 @@ enabled = true
 ```toml
 [metrics.ccn]
 enabled        = true
-warn_delta_pct = 30
 floor_critical = 25     # McCabe "untestable in practice"
 floor_ok       = 11     # McCabe "simple, low risk" — 卒業ゲート
 
@@ -165,8 +164,6 @@ floor_critical = 50     # SonarQube Critical のベースライン
 floor_ok       = 8      # Sonar "review" 閾値の半分
 ```
 
-- `ccn.warn_delta_pct`（デフォルト `30`） — `heal status` の差分ブ
-  ロックで表示される `max_ccn` の変化率（パーセント）。
 - `floor_critical` — Severity の絶対フロア。`≥ floor` のものはパー
   センタイル位置に関係なく Critical に分類されるため、コードベース
   全体が悪い場合でもワーストケースを表面化できます。
@@ -240,18 +237,34 @@ min_cluster_count = 2
   未満のクラスは Severity 分類の前にドロップされます。`2` が自然な
   ベースラインです（クラスが機械的に分割可能）。
 
+## `[diff]`
+
+`heal diff` の worktree モード（要求された git ref が
+`latest.json` と一致しない場合のフォールバック）を調整します。
+
+```toml
+[diff]
+max_loc_threshold = 200_000
+```
+
+- `max_loc_threshold`（デフォルト `200_000`） — 別の ref をスキャ
+  ンするために `git worktree` を一時展開する LOC 上限。閾値を超え
+  ると `heal diff <git-ref>` は終了コード 2 で終了し、worktree を
+  作る代わりに 2 ブランチを並べて確認する手順を表示します。
+
 ## `.heal/calibration.toml`
 
-`heal init` が生成し、`heal calibrate` で更新します。手編集は推奨
-されません — `floor_critical` / `floor_ok` の上書きは `config.toml`
-に置いてください（再 calibrate でユーザーの好みが上書きされないよ
-うに）。
+`heal init` が生成し、`heal calibrate --force` で更新します。手編
+集は推奨されません — `floor_critical` / `floor_ok` の上書きは
+`config.toml` に置いてください（再 calibrate でユーザーの好みが上
+書きされないように）。
 
 ```toml
 [meta]
-created_at      = "2026-04-30T09:00:00Z"
-codebase_files  = 142
-strategy        = "percentile"
+created_at         = "2026-04-30T09:00:00Z"
+codebase_files     = 142
+calibrated_at_sha  = "a0a6d1a7f3…"   # calibration 時点の HEAD sha（フル）
+strategy           = "percentile"
 
 [calibration.ccn]
 p50 = 4.2
@@ -268,11 +281,15 @@ p90 = 67.0          # Hotspot 🔥 フラグ境界（上位 10%、固定）
 p95 = 145.0
 ```
 
-`calibration.toml` がある状態でフラグ無しの `heal calibrate` を実
-行すると、自動検知トリガー（90 日経過、ファイル数 ±20%、30 日連
-続で Critical が 0）を評価し、書き込み無しで推奨だけを表示しま
-す。post-commit ナッジは同じヒントをインラインで表示します。実
-際に再スキャン・上書きするには `--force` を付けます。
+`calibrated_at_sha` は任意項目で、`heal calibrate --force` が記録
+します。`/heal-config` スキルはこれと `codebase_files`、現在の
+`.heal/findings/latest.json` および `.heal/findings/fixed.json` を
+合わせて calibration ドリフトを検知し、`heal calibrate --force`
+を提案するかを判定します。
+
+`calibration.toml` が既にある状態でフラグ無しの `heal calibrate`
+を実行しても、ファイルがあることを報告するだけで書き換えは行いま
+せん。実際に再スキャン・上書きするには `--force` を付けます。
 
 ## `[policy.drain]`
 

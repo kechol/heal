@@ -264,16 +264,14 @@ named-export グループ）は先送りです。
 コミットごとに、heal は次を行います。
 
 1. 全オブザーバーを実行（`run_all` 1 回パス）。
-2. `MetricsSnapshot`（`severity_counts` 含む）を
-   `.heal/snapshots/` に書き出す。
-3. すべての Critical / High Finding を post-commit ナッジで stdout
+2. すべての Critical / High Finding を post-commit ナッジで stdout
    に出す。
 
-`heal check` はオンデマンドで分析を再実行し、Finding を Severity で
-分類して `CheckRecord` を `.heal/checks/latest.json` に書き出しま
+`heal status` はオンデマンドで分析を再実行し、Finding を Severity で
+分類して `CheckRecord` を `.heal/findings/latest.json` に書き出しま
 す。このキャッシュを `/heal-code-patch` スキルが 1 コミット 1 Finding ずつ
 消化していきます。
 
 スクリプティング向けに、JSON の正確な形と保存方法は
-[アーキテクチャ › スナップショット](/heal/ja/architecture/#snapshots--メトリクスペイロード)
+[アーキテクチャ › findings キャッシュ](/heal/ja/architecture/#findings-キャッシュ)
 にまとめています。

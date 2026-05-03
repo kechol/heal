@@ -17,36 +17,28 @@ git commit
 .git/hooks/post-commit  ──►  heal hook commit
                                   │
                                   ├──►  observers (LOC, complexity, churn, …, lcom)
-                                  │       (one run_all pass; reports reused below)
-                                  │
-                                  ├──►  .heal/snapshots/YYYY-MM.jsonl
-                                  │       (MetricsSnapshot incl. severity_counts)
-                                  │
-                                  ├──►  .heal/logs/YYYY-MM.jsonl
-                                  │       (lightweight CommitInfo)
+                                  │       (one run_all pass; report consumed below)
                                   │
                                   └──►  stdout: Severity nudge
-                                         (Critical / High findings only;
-                                          recalibrate hint when a trigger fires)
+                                         (Critical / High findings only)
 
 user: heal status (or `claude /heal-code-patch`)
     │
     ▼
 heal status  ──►  classify Findings via calibration.toml
                        │
-                       ├──►  .heal/checks/YYYY-MM.jsonl + latest.json
+                       ├──►  .heal/findings/latest.json
                        │       (CheckRecord — the TODO list)
                        │
-                       ├──►  reconcile fixed.jsonl ↔ regressed.jsonl
+                       ├──►  reconcile fixed.json ↔ regressed.jsonl
                        │
                        └──►  render Severity-grouped view to stdout
 ```
 
 `heal` is a single binary; both paths go through it. There is no
-daemon, no scheduler, no background process. The post-commit hook
-runs every observer **once** and threads the result to both the
-snapshot writer and the nudge — observers are not run twice per
-commit.
+daemon, no scheduler, no background process, and no historical
+record stream. The post-commit hook runs every observer **once**,
+prints the nudge, and exits — nothing is persisted.
 
 ## On-disk layout
 
@@ -55,135 +47,52 @@ After `heal init`:
 ```
 <your-repo>/
 ├── .heal/
-│   ├── config.toml                # you edit this
-│   ├── calibration.toml           # auto — heal init / heal calibrate
-│   ├── snapshots/
-│   │   └── 2026-04.jsonl          # MetricsSnapshot + CalibrationEvent stream
-│   ├── logs/
-│   │   └── 2026-04.jsonl          # lightweight commit / edit / stop events
-│   └── checks/
-│       ├── 2026-04.jsonl          # append-only CheckRecord stream
-│       ├── latest.json            # atomic mirror of the most recent record
-│       ├── fixed.jsonl            # `/heal-code-patch` claimed a commit fixes a finding
-│       └── regressed.jsonl        # a fix re-detected — surfaced as a warning
+│   ├── .gitignore                 # auto — excludes findings/ and skills-install.json
+│   ├── config.toml                # you edit this (tracked in git)
+│   ├── calibration.toml           # auto — heal init / heal calibrate (tracked in git)
+│   └── findings/
+│       ├── latest.json            # current CheckRecord (TODO list)
+│       ├── fixed.json             # BTreeMap<finding_id, FixedFinding> — bounded
+│       └── regressed.jsonl        # append-only audit trail of re-detected fixes
 │
 ├── .git/hooks/post-commit         # one-line shim: calls `heal hook commit`
 │
-├── .claude/skills/                # Claude skills (after `heal skills install`)
-│   ├── heal-cli/
-│   ├── heal-code-patch/
-│   ├── heal-code-review/
-│   └── heal-config/
-│
-└── .claude/settings.json          # PostToolUse + Stop hooks call `heal hook edit/stop`
+└── .claude/skills/                # Claude skills (after `heal skills install`)
+    ├── heal-cli/
+    ├── heal-code-patch/
+    ├── heal-code-review/
+    └── heal-config/
 ```
+
+`config.toml` and `calibration.toml` stay tracked in git so the
+team shares the same Severity ladder. `findings/` and
+`skills-install.json` are excluded by `.heal/.gitignore`.
 
 ## What gets written and when
 
-| File / dir                      | Written by                                   | When                                         |
-| ------------------------------- | -------------------------------------------- | -------------------------------------------- |
-| `.heal/config.toml`             | `heal init`                                  | Once at setup; you can edit it freely.       |
-| `.heal/calibration.toml`        | `heal init` / `heal calibrate`               | At setup, then on explicit recalibration.    |
-| `.heal/snapshots/YYYY-MM.jsonl` | post-commit hook + `heal calibrate`          | On every `git commit` and recalibration.     |
-| `.heal/logs/YYYY-MM.jsonl`      | post-commit + Claude PostToolUse / Stop      | On every commit and Claude tool event.       |
-| `.heal/checks/YYYY-MM.jsonl`    | `heal status`                                 | Each fresh `heal status` (cache-miss path).   |
-| `.heal/checks/latest.json`      | `heal status`                                 | Atomic mirror; refreshed on every fresh run. |
-| `.heal/checks/fixed.jsonl`      | `heal mark-fixed` (called by `/heal-code-patch`) | Each commit `/heal-code-patch` lands.          |
-| `.heal/checks/regressed.jsonl`  | `heal status` (reconcile pass)                | When a fixed finding is re-detected.         |
-| `.claude/skills/heal-*/`        | `heal skills install`                        | Once; updated with `heal skills update`.     |
-| `.claude/settings.json` (HEAL hooks) | `heal skills install`                   | Additive merge; uninstall removes only HEAL command lines. |
-| `.heal/skills-install.json`     | `heal skills install` / `update`             | Drift-detection manifest.                    |
+| File / dir                       | Written by                                       | When                                         |
+| -------------------------------- | ------------------------------------------------ | -------------------------------------------- |
+| `.heal/.gitignore`               | `heal init`                                      | Once at setup.                               |
+| `.heal/config.toml`              | `heal init`                                      | Once at setup; you can edit it freely.       |
+| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                   | At setup, then on explicit recalibration.    |
+| `.heal/findings/latest.json`     | `heal status`                                    | Each fresh `heal status` (cache-miss path).  |
+| `.heal/findings/fixed.json`      | `heal mark-fixed` (called by `/heal-code-patch`) | Each commit `/heal-code-patch` lands.        |
+| `.heal/findings/regressed.jsonl` | `heal status` (reconcile pass)                   | When a fixed finding is re-detected.         |
+| `.claude/skills/heal-*/`         | `heal skills install`                            | Once; updated with `heal skills update`.     |
+| `.heal/skills-install.json`      | `heal skills install` / `update`                 | Drift-detection manifest.                    |
 
-The pre-v0.2 `.heal/state.json` was retired along with the
-SessionStart nudge — `EventLog::iter_segments` over `snapshots/` is
-now the single way to query historical state.
+There is no event log, no monthly rotation, no `.heal/snapshots/`,
+`.heal/logs/`, `.heal/docs/`, or `.heal/reports/` directory. heal
+keeps only the current state plus the small audit trail in
+`regressed.jsonl`.
 
-## The event log
+## The findings cache
 
-`snapshots/`, `logs/`, and `checks/` share the same on-disk format:
+`.heal/findings/` holds three artefacts; `heal status` is the only
+writer of `latest.json`, and `heal mark-fixed` is the only writer of
+`fixed.json` / `regressed.jsonl`.
 
-- **One file per month**: `YYYY-MM.jsonl` (UTC).
-- **Append-only**: every record is one JSON object on one line.
-- **Transparent gzip**: readers handle `.gz` files alongside plain
-  text. `heal compact` (also called automatically from
-  `heal hook commit`) gzips segments older than 90 days and deletes
-  those past 365 days.
-
-Every record has the same outer shape:
-
-```json
-{
-  "timestamp": "2026-04-29T05:14:22Z",
-  "event": "commit",
-  "data": {
-    /* … shape depends on event … */
-  }
-}
-```
-
-The `event` field tells you what kind of payload `data` is.
-
-### `snapshots/` — metric payloads
-
-Written on every commit (`event = "commit"`) and every recalibration
-(`event = "calibrate"`). The two co-exist; readers filter by `event`
-before decoding.
-
-```json
-{
-  "version": 1,
-  "git_sha": "a0a6d1a…",
-  "loc": {
-    /* LocReport */
-  },
-  "complexity": {
-    /* or null if disabled */
-  },
-  "churn": {
-    /* … */
-  },
-  "change_coupling": {
-    /* pairs[].direction = "symmetric" | "one_way" */
-  },
-  "duplication": {
-    /* … */
-  },
-  "hotspot": {
-    /* … */
-  },
-  "lcom": {
-    /* classes[].cluster_count, clusters[].methods */
-  },
-  "severity_counts": { "critical": 2, "high": 5, "medium": 12, "ok": 84 },
-  "codebase_files": 142,
-  "delta": {
-    /* SnapshotDelta, or null on the first snapshot */
-  }
-}
-```
-
-`delta` summarises what changed since the previous snapshot. The
-post-commit nudge does not consume it — Severity is computed from the
-current `Finding` set against `calibration.toml`.
-
-### `logs/` — event timeline
-
-Lightweight records, no metric payloads. `heal logs` walks them.
-
-| Event type | Written when                                |
-| ---------- | ------------------------------------------- |
-| `commit`   | A `git commit` landed (CommitInfo metadata) |
-| `edit`     | Claude edited a file (PostToolUse hook)     |
-| `stop`     | A Claude turn ended (Stop hook)             |
-
-`commit` events carry only metadata (sha, parent, author, message
-summary, files changed); the full metric payload stays in
-`snapshots/`. That split keeps timeline queries fast regardless of
-how many metrics are enabled.
-
-### `checks/` — the result cache
-
-The TODO list `/heal-code-patch` consumes. `heal status` is the only writer.
+### `latest.json` — the current TODO
 
 ```json
 {
@@ -193,45 +102,44 @@ The TODO list `/heal-code-patch` consumes. `heal status` is the only writer.
   "head_sha": "a0a6d1a…",
   "worktree_clean": true,
   "config_hash": "9f8e7d6c5b4a3210",     // FNV-1a over config + calibration
-  "severity_counts": { … },
+  "severity_counts": { "critical": 2, "high": 5, "medium": 12, "ok": 84 },
   "findings": [ /* Vec<Finding> */ ]
 }
 ```
 
 `heal status` short-circuits when `(head_sha, config_hash,
-worktree_clean=true)` matches the latest cached record — re-running on
-the same commit is free.
+worktree_clean=true)` matches the cached record — re-running on the
+same commit is free.
 
-`fixed.jsonl` and `regressed.jsonl` live in the same directory but
-are flat JSON-lines (not the `EventLog` envelope). They're small,
-single-purpose audit trails:
+### `fixed.json` — bounded fix record
 
-```jsonl
+A `BTreeMap<finding_id, FixedFinding>` serialised as a single JSON
+object. Each entry is keyed by the deterministic `finding_id`:
+
+```json
 {
-  "finding_id": "ccn:src/payments/engine.ts:processOrder:9f8e…",
-  "commit_sha": "a1b2c3",
-  "fixed_at": "…"
+  "ccn:src/payments/engine.ts:processOrder:9f8e…": {
+    "commit_sha": "a1b2c3",
+    "fixed_at": "2026-04-30T05:14:22Z"
+  }
 }
 ```
 
-When a previously-fixed `finding_id` re-appears in a new `heal status`,
-the entry moves from `fixed.jsonl` to `regressed.jsonl` and the
-renderer warns.
+Bounded — never append-only. When a previously-fixed `finding_id`
+re-appears in a new `heal status`, heal moves it out of `fixed.json`
+and writes a line to `regressed.jsonl`; the renderer warns.
 
-You can inspect any of these streams with the matching browser:
+### `regressed.jsonl` — the audit trail
+
+The only append-only file in `.heal/`. One JSON line per regression
+event, used solely for the "fix was re-detected" warning surface.
+
+You can inspect the cache directly with `jq`:
 
 ```sh
-# last 5 commit events from logs/
-heal logs --filter commit --limit 5
-
-# every MetricsSnapshot + calibrate event
-heal snapshots --json --limit 20
-
-# every CheckRecord summary
-heal checks --json | jq '.[].check_id'
-
-# raw CheckRecord (full Findings list) by check_id
-heal checks --json | jq '.[] | select(.check_id == "<check_id>")'
+jq '.severity_counts' .heal/findings/latest.json
+jq 'keys | length'    .heal/findings/fixed.json
+tail .heal/findings/regressed.jsonl
 ```
 
 ## Calibration
@@ -244,14 +152,17 @@ so any `floor_critical` / `floor_ok` set in `config.toml` wins over the
 calibrated percentile.
 
 Recalibration is **never automatic**. The default `heal calibrate`
-invocation evaluates the auto-detect triggers (90-day age, ±20%
-codebase file count, 30 days of zero Critical findings) and prints a
-recommendation; the user runs `heal calibrate --force` when ready.
+invocation is a no-op when the file already exists; the user runs
+`heal calibrate --force` when ready. Drift detection (calibration age,
+codebase file count change, clean streak) lives in the `/heal-config`
+skill, which reads `calibration.toml.meta.calibrated_at_sha` /
+`calibrated_at_files` against the current `latest.json` / `fixed.json`
+and recommends `heal calibrate --force` when warranted.
 
-The audit trail lives in `.heal/snapshots/` as
-`event = "calibrate"`. `MetricsSnapshot::latest_in_segments`
-silently skips records that don't decode as a snapshot, so the two
-event shapes coexist without interfering.
+`calibration.toml` has a `[meta]` section that may carry
+`calibrated_at_sha = "<full HEAD sha>"` alongside the existing
+`codebase_files` count, so the skill's drift check is idempotent
+across runs.
 
 ## Calibration vs policy: two layers
 

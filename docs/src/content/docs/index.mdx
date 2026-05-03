@@ -24,10 +24,10 @@ same files get touched repeatedly, and duplicated blocks drift in.
 The agent does not observe these long-term shifts — without an
 external signal, the human is the only one tracking them.
 
-`heal` fills that gap. A git post-commit hook records a metric
-snapshot on every commit and surfaces every Critical / High finding
-to stdout. `heal status` writes the same findings to a cache the
-bundled `/heal-code-patch` Claude skill drains, one finding per commit.
+`heal` fills that gap. A git post-commit hook runs every observer on
+every commit and surfaces every Critical / High finding to stdout.
+`heal status` writes the same findings to a cache the bundled
+`/heal-code-patch` Claude skill drains, one finding per commit.
 
 ## At a glance
 
@@ -37,8 +37,8 @@ bundled `/heal-code-patch` Claude skill drains, one finding per commit.
     hotspot, and LCOM — each classified against the codebase's own percentile distribution.
   </Card>
   <Card title="Hook-driven" icon="puzzle">
-    A git post-commit hook writes the snapshot and surfaces the Severity nudge. No daemon, no
-    scheduler — observers run once per commit.
+    A git post-commit hook runs every observer and surfaces the Severity nudge. No daemon, no
+    scheduler, no persistent event log — observers run once per commit.
   </Card>
   <Card title="Read-only by default; write through the skill" icon="approve-check">
     The CLI never modifies source files. Repair flows through `/heal-code-patch`: one finding per
@@ -51,7 +51,7 @@ bundled `/heal-code-patch` Claude skill drains, one finding per commit.
 </CardGrid>
 
 :::caution[Early-stage project]
-macOS and Linux only. The `.heal/checks/` schema and the
-`heal status` / `heal checks` surfaces stabilised in v0.2; some doc /
-coverage features land in v0.3. Feedback is welcome.
+macOS and Linux only. The `.heal/findings/` schema and the
+`heal status` surface stabilised in v0.2; some doc / coverage
+features land in v0.3. Feedback is welcome.
 :::

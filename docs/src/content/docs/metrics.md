@@ -264,16 +264,14 @@ deferred.
 Every commit, heal:
 
 1. Runs every observer (a single `run_all` pass).
-2. Writes the `MetricsSnapshot` (with `severity_counts`) to
-   `.heal/snapshots/`.
-3. Surfaces every Critical / High Finding to stdout via the
+2. Surfaces every Critical / High Finding to stdout via the
    post-commit nudge.
 
-`heal check` re-runs the analysis on demand, classifies findings by
-Severity, and writes a `CheckRecord` to `.heal/checks/latest.json`.
+`heal status` re-runs the analysis on demand, classifies findings by
+Severity, and writes a `CheckRecord` to `.heal/findings/latest.json`.
 That cache is the TODO list the `/heal-code-patch` skill drains, one finding
 per commit.
 
 The exact JSON shapes and storage details are documented in
-[Architecture › Snapshots](/heal/architecture/#snapshots) for
-scripting.
+[Architecture › The findings cache](/heal/architecture/#the-findings-cache)
+for scripting.

@@ -30,7 +30,6 @@ runs:
 
 - On every commit, it measures the codebase (complexity, churn,
   duplication, hotspots, LCOM).
-- It writes a `MetricsSnapshot` to `.heal/snapshots/`.
 - It surfaces every Critical / High Finding to stdout right inside
   the commit output.
 - On demand (`heal status`), it classifies findings by Severity and
@@ -58,11 +57,9 @@ post-commit hook ──► heal hook commit
                           │
                           ├─ run observers (one pass)
                           │
-                          ├─ write snapshot ──► .heal/snapshots/
-                          │
                           └─ surface Critical / High to stdout
 
-                    (snapshot stored; nudge already surfaced)
+                    (nudge printed; nothing persisted)
 
 
 On demand
@@ -71,14 +68,14 @@ On demand
 heal status
     │
     ├─ classify findings via .heal/calibration.toml
-    ├─ write CheckRecord ──► .heal/checks/latest.json
-    ├─ reconcile fixed.jsonl ↔ regressed.jsonl
+    ├─ write CheckRecord ──► .heal/findings/latest.json
+    ├─ reconcile fixed.json ↔ regressed.jsonl
     └─ render Severity-grouped view
 
 
 claude /heal-code-patch
     │
-    └─ drain .heal/checks/latest.json one finding per commit
+    └─ drain .heal/findings/latest.json one finding per commit
        (Severity order; Critical 🔥 first)
 ```
 
@@ -100,11 +97,14 @@ score), not a Severity. A finding can be `Critical 🔥`,
 `Critical`, `High 🔥`, etc. — the renderer surfaces them as
 separate buckets.
 
-`heal calibrate` watches for drift (calibration over 90 days old,
-codebase file count ±20%, 30 days of zero Critical) and prints a
-recommendation; pass `--force` to actually rescan and overwrite the
-file. Recalibration is **never automatic** — the user controls when
-to reset the baseline.
+`heal calibrate --force` rescans and overwrites
+`.heal/calibration.toml`; without `--force` the command is a no-op
+when the file already exists. Drift detection (calibration age,
+codebase file count change, clean streak) lives in the `/heal-config`
+skill, which compares `calibration.toml.meta` against the current
+findings cache and recommends `heal calibrate --force` when warranted.
+Recalibration is **never automatic** — the user controls when to
+reset the baseline.
 
 ## Read-only by default; write through the skill
 
@@ -117,7 +117,7 @@ through the bundled `/heal-code-patch` Claude skill, which:
 - never amends.
 
 `heal mark-fixed` is the single CLI subcommand that mutates state — it
-appends a line to `fixed.jsonl` and is meant to be called by
+records a `FixedFinding` in `fixed.json` and is meant to be called by
 `/heal-code-patch` after each commit.
 
 ## Why metrics
@@ -145,15 +145,11 @@ For the formulas behind each metric, see [Metrics](/heal/metrics/).
 ## Why hook-driven
 
 Agents produce code well but do not consistently inspect the
-surrounding state. Hooks let the codebase emit signals on its own:
-
-- The **git post-commit hook** writes a snapshot and surfaces the
-  Severity nudge when a commit lands. No daemon, no schedule.
-- Claude's **PostToolUse** / **Stop** hooks log what the agent did to
-  `.heal/logs/`, kept under ~1ms so the session loop isn't slowed.
-
-Both call the same `heal` binary. There is no background process to
-manage.
+surrounding state. Hooks let the codebase emit signals on its own.
+The **git post-commit hook** runs every observer once and surfaces
+the Severity nudge to stdout when a commit lands. No daemon, no
+schedule, no persistent state. heal does not register any Claude
+Code hooks — the loop runs entirely through the bundled skills.
 
 ## What heal is not
 

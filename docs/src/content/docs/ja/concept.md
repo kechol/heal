@@ -31,7 +31,6 @@ CI がテストの実行を監視するのと同じ感覚で、heal はコード
 
 - コミットのたびに、コードベースを計測する（複雑度、Churn、
   Duplication、Hotspot、LCOM）。
-- `MetricsSnapshot` を `.heal/snapshots/` に書き出す。
 - すべての Critical / High Finding を、そのコミット出力の中で
   stdout に出す。
 - オンデマンド（`heal status`）で、Finding を Severity 別に分類し、
@@ -59,11 +58,9 @@ post-commit フック ──► heal hook commit
                           │
                           ├─ オブザーバーを 1 回走らせる
                           │
-                          ├─ スナップショットを書く ──► .heal/snapshots/
-                          │
                           └─ Critical / High を stdout に出す
 
-                    （スナップショットは保存され、ナッジは既に表示済み）
+                    （ナッジを出すだけ、永続化はしない）
 
 
 オンデマンド
@@ -72,14 +69,14 @@ post-commit フック ──► heal hook commit
 heal status
     │
     ├─ .heal/calibration.toml で Finding を分類
-    ├─ CheckRecord を書く ──► .heal/checks/latest.json
-    ├─ fixed.jsonl ↔ regressed.jsonl を整合
+    ├─ CheckRecord を書く ──► .heal/findings/latest.json
+    ├─ fixed.json ↔ regressed.jsonl を整合
     └─ Severity ごとのビューを描画
 
 
 claude /heal-code-patch
     │
-    └─ .heal/checks/latest.json を 1 コミット 1 Finding ずつ消化
+    └─ .heal/findings/latest.json を 1 コミット 1 Finding ずつ消化
        (Severity 順; Critical 🔥 が先頭)
 ```
 
@@ -101,11 +98,14 @@ claude /heal-code-patch
 コアの上位 10%）です。Finding は `Critical 🔥`、`Critical`、
 `High 🔥` などになり得ます — レンダラーは別バケットとして並べます。
 
-`heal calibrate` はドリフトを監視し（calibration が 90 日以上経
-過、コードベースのファイル数が ±20%、30 日連続で Critical が
-0）、推奨を表示します。実際に再スキャンしてファイルを上書きする
-には `--force` を付けます。再 calibrate は **絶対に自動で行いま
-せん** — ベースラインのリセット時期は常にユーザーが決めます。
+`heal calibrate --force` で再スキャンしてファイルを上書きします。
+`--force` なしでファイルが既にある場合は no-op です。ドリフト検
+知（calibration の経過、コードベースのファイル数変化、Critical 連
+続ゼロ期間）は `/heal-config` スキルが担当し、`calibration.toml`
+のメタ情報と現在の findings キャッシュを突き合わせて
+`heal calibrate --force` を推奨します。再 calibrate は **絶対に自
+動で行いません** — ベースラインのリセット時期は常にユーザーが決め
+ます。
 
 ## デフォルトはリードオンリー、書き込みはスキル経由
 
@@ -118,8 +118,8 @@ claude /heal-code-patch
 - amend しない。
 
 `heal mark-fixed` が状態を mutate する唯一の CLI サブコマンドで、
-`fixed.jsonl` に 1 行追記します。`/heal-code-patch` がコミット後に呼ぶこ
-とを想定しています。
+`fixed.json` に `FixedFinding` を記録します。`/heal-code-patch` が
+コミット後に呼ぶことを想定しています。
 
 ## なぜメトリクスなのか
 
@@ -152,15 +152,11 @@ heal には 7 つのメトリクスが付属しています。
 見てくれるわけではありません。フックを使えば、コードベースのほうか
 ら自分でシグナルを出してもらうことができます。
 
-- **git の post-commit フック**は、コミットが入った瞬間にスナップ
-  ショットを書き、Severity ナッジを表示します。デーモンも、スケジュー
-  ラもいりません。
-- Claude の **PostToolUse** / **Stop** フックは、エージェントが何
-  をしたかを `.heal/logs/` に記録します。1ms 程度に抑えてあるので
-  セッションループは遅くなりません。
-
-どちらのフックも、呼ぶ先は同じ `heal` バイナリです。常駐するプロセ
-スはありません。
+**git の post-commit フック**は、コミットが入った瞬間にオブザー
+バーを 1 回走らせて Severity ナッジを stdout に出します。デーモン
+も、スケジューラも、永続化される状態もありません。heal は Claude
+Code のフックを一切登録しません — ループは同梱スキルだけで完結し
+ます。
 
 ## heal ではないもの
 

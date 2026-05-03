@@ -602,12 +602,10 @@ fn default_min_tokens() -> u32 {
     50
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CcnConfig {
     pub enabled: bool,
-    #[serde(default = "default_warn_delta_pct")]
-    pub warn_delta_pct: u32,
     /// Per-metric override for `metrics.top_n` — covers both CCN and
     /// Cognitive listings since they share the "complexity:" section in
     /// `heal metrics`.
@@ -626,32 +624,15 @@ pub struct CcnConfig {
 
 impl Eq for CcnConfig {}
 
-impl Default for CcnConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            warn_delta_pct: default_warn_delta_pct(),
-            top_n: None,
-            floor_critical: None,
-            floor_ok: None,
-        }
-    }
-}
-
 impl Toggle for CcnConfig {
     fn enabled() -> Self {
         Self {
             enabled: true,
-            warn_delta_pct: default_warn_delta_pct(),
             top_n: None,
             floor_critical: None,
             floor_ok: None,
         }
     }
-}
-
-fn default_warn_delta_pct() -> u32 {
-    30
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
