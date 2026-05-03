@@ -64,11 +64,6 @@ pub enum Command {
         #[arg(long, value_name = "PATH")]
         workspace: Option<std::path::PathBuf>,
     },
-    /// Browse `.heal/snapshots/` event entries (`commit` carries the
-    /// `MetricsSnapshot` payload; `calibrate` carries `CalibrationEvent`).
-    /// `heal metrics` is the synthesised view; `heal snapshots` walks the
-    /// raw timeline.
-    Snapshots(LogFilters),
     /// Browse `.heal/checks/` records — newest-first list of every
     /// `CheckRecord` ever written. The current findings live under
     /// `heal status`; the diff against a git ref lives under
@@ -299,27 +294,6 @@ pub struct StatusArgs {
     pub top: Option<usize>,
 }
 
-/// Shared filters for the `heal snapshots` browser. Backs onto
-/// `.heal/snapshots/*.jsonl(.gz)` event logs. `heal checks` takes a
-/// near-identical shape without the `--filter` flag (`CheckRecord`s
-/// carry no event-name dimension) — see [`ChecksFilters`].
-#[derive(Debug, clap::Args)]
-pub struct LogFilters {
-    /// Drop entries older than this RFC 3339 timestamp.
-    #[arg(long)]
-    pub since: Option<String>,
-    /// Keep only entries whose `event` equals this name (e.g. `edit`,
-    /// `commit`, `calibrate`).
-    #[arg(long)]
-    pub filter: Option<String>,
-    /// Keep only the N most recent entries (after filtering).
-    #[arg(long)]
-    pub limit: Option<usize>,
-    /// Emit raw JSONL instead of pretty text.
-    #[arg(long)]
-    pub json: bool,
-}
-
 /// Filters for `heal checks` — same shape as [`LogFilters`] minus the
 /// `--filter` flag, since [`CheckRecord`](crate::core::check_cache::CheckRecord)
 /// has no event-name dimension to match against.
@@ -415,7 +389,6 @@ impl Cli {
                 metric,
                 workspace,
             } => commands::metrics::run(&project, json, metric, workspace.as_deref()),
-            Command::Snapshots(args) => commands::logs::run_snapshots(&project, &args),
             Command::Checks(args) => commands::logs::run_checks(&project, &args),
             Command::Status(args) => commands::status::run(&project, &args),
             Command::Diff(args) => commands::diff::run(

@@ -24,6 +24,5 @@ pub mod feature;
 pub mod observer;
 pub mod observers;
 pub mod skill_assets;
-pub mod snapshot;
 #[cfg(test)]
 mod test_support;

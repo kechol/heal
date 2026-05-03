@@ -87,29 +87,18 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
   pattern (`*Config` struct + `Default` + `Toggle` + register on
   `MetricsConfig`).
 
-### Event log (`.heal/snapshots/YYYY-MM.jsonl`)
-- The `snapshots/` directory uses the generic `heal_core::eventlog::EventLog`
-  store: append-only, month-rotated, reads transparent across `.gz`.
-- `core::compaction::compact` gzips segments in place at 90 days
-  (`YYYY-MM.jsonl` → `YYYY-MM.jsonl.gz`) and deletes them at 365 days.
-  Best-effort from `heal hook commit`; idempotent. Older history is
-  intentionally not preserved — calibration only looks at 90 days,
-  `heal metrics` reads recent commits, and trends beyond a year were
-  never going to be actioned. Don't reintroduce a `.archive/` subdir;
-  the original design did and it added complexity for no reader.
-- **`snapshots/`** holds `MetricsSnapshot` events written by the
-  `commit` hook. `heal metrics` reads these for the metric series and
-  delta. Decode the latest record with
-  `snapshot::MetricsSnapshot::latest_in(&log)`. Records that fail to
-  decode (legacy payloads, mid-write truncation) are skipped silently —
-  do not change `latest_in_segments` to propagate parse errors.
-- The `commit` hook no longer writes a sibling raw-event log under
-  `.heal/logs/`. `heal hook edit` / `heal hook stop` are kept as
-  no-op CLI variants for back-compat with stale `settings.json`
-  registrations; Phase E retires the registration so they stop firing.
-- `EventLog::iter_segments(segments)` exists so callers that already
-  paid for `segments()` (e.g. `heal metrics`) don't re-glob the
-  directory. Use it.
+### No persistent metrics history
+- The `commit` hook does not write to `.heal/snapshots/` (or anywhere
+  else). It runs the observers, classifies against the calibration on
+  disk, and emits a one-line nudge — that's it.
+- `heal metrics` recomputes everything on every invocation. There is no
+  delta vs. a previous snapshot. The motivation: per-team determinism
+  beats trend tracking. With the cache and snapshots gone, every
+  teammate on the same commit + same `config.toml` + same
+  `calibration.toml` sees identical findings.
+- `heal hook edit` / `heal hook stop` are kept as no-op CLI variants
+  for back-compat with stale `settings.json` registrations; Phase E
+  retires the registration so they stop firing.
 
 ### Result cache (`.heal/checks/`)
 - `heal status` is the **only writer** of `.heal/checks/<segment>.jsonl`

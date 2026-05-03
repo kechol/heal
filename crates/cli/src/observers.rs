@@ -12,7 +12,7 @@ use crate::core::calibration::{
 };
 use crate::core::config::Config;
 use crate::core::finding::Finding;
-use crate::core::snapshot::SeverityCounts;
+use crate::core::severity::SeverityCounts;
 use crate::observer::change_coupling::{ChangeCouplingObserver, ChangeCouplingReport};
 use crate::observer::churn::{ChurnObserver, ChurnReport};
 use crate::observer::complexity::{ComplexityObserver, ComplexityReport};
@@ -149,7 +149,11 @@ pub(crate) fn run_all(
 /// table is added under `Calibration::workspaces.<path>`. With no
 /// workspaces declared, the global table holds the whole-repo
 /// distribution exactly as before.
-pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> Calibration {
+pub(crate) fn build_calibration(
+    project: &Path,
+    reports: &ObserverReports,
+    config: &Config,
+) -> Calibration {
     let workspaces = &config.project.workspaces;
 
     let global_filter = |file: &Path| -> bool {
@@ -185,6 +189,7 @@ pub(crate) fn build_calibration(reports: &ObserverReports, config: &Config) -> C
             created_at: chrono::Utc::now(),
             codebase_files,
             strategy: STRATEGY_PERCENTILE.to_owned(),
+            calibrated_at_sha: crate::observer::git::head_sha(project),
         },
         calibration: global_metrics,
         workspaces: workspace_metrics,
@@ -483,6 +488,7 @@ mod tests {
                 created_at: chrono::Utc::now(),
                 codebase_files: 2,
                 strategy: STRATEGY_PERCENTILE.to_owned(),
+                calibrated_at_sha: None,
             },
             calibration: MetricCalibrations {
                 ccn: Some(MetricCalibration {
@@ -642,6 +648,7 @@ mod tests {
                 created_at: chrono::Utc::now(),
                 codebase_files: 0,
                 strategy: STRATEGY_PERCENTILE.to_owned(),
+                calibrated_at_sha: None,
             },
             calibration: MetricCalibrations::default(),
             workspaces: BTreeMap::new(),

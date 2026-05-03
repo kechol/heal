@@ -46,7 +46,7 @@ use crate::core::error::{Error, Result};
 use crate::core::eventlog::{Event, EventLog};
 use crate::core::finding::Finding;
 use crate::core::hash::{fnv1a_64_chunked, fnv1a_hex};
-use crate::core::snapshot::SeverityCounts;
+use crate::core::severity::SeverityCounts;
 
 /// Stable schema version for [`CheckRecord`]. Bump on breaking field
 /// renames so the reader can skip records it can't decode rather than

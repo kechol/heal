@@ -1,39 +1,35 @@
 //! `heal hook <commit|edit|stop>` — single entrypoint invoked by git
 //! hooks and Claude Code's `settings.json` hook commands.
 //!
-//! - `commit` runs observers, writes a `MetricsSnapshot` row to
-//!   `.heal/snapshots/`, and emits a one-line nudge.
+//! - `commit` runs every observer, classifies the result against the
+//!   project's calibration, and emits a one-line nudge. No event-log
+//!   write — `latest.json` (refreshed on every `heal status`) is the
+//!   live state of record.
 //! - `edit` / `stop` are no-ops kept for backward-compatibility with
 //!   any `settings.json` left over from earlier installs. They return
-//!   immediately — Phase E will retire the hook registration so they
-//!   stop firing entirely.
+//!   immediately — Phase E retires the hook registration so they stop
+//!   firing entirely.
 //!
 //! ## Post-commit nudge
 //!
-//! After persisting the snapshot, `run_commit` writes one compact line
-//! to stdout: that the snapshot was recorded, the current
-//! Critical/High count, and a `heal status` nudge when those counts
-//! aren't zero. Per-finding listings and the recalibration banner
-//! moved to `heal metrics` / `heal status` so the post-commit output
-//! never exceeds two lines.
+//! `run_commit` writes one compact line to stdout: a "recorded" marker,
+//! the current Critical/High count, and a `heal status` pointer when
+//! those counts aren't zero. Stays silent on uncalibrated projects so
+//! a fresh `heal init` flow doesn't pollute the commit output.
 
 use std::io::{IsTerminal, Write};
 use std::path::Path;
 
 use crate::core::calibration::Calibration;
-use crate::core::config::load_from_project;
-use crate::core::eventlog::{Event, EventLog};
+use crate::core::config::{load_from_project, Config};
 use crate::core::finding::Finding;
 use crate::core::severity::Severity;
-use crate::core::snapshot::{
-    ansi_wrap, MetricsSnapshot, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW,
-};
+use crate::core::term::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW};
 use crate::core::HealPaths;
-use crate::observers::run_all;
+use crate::observers::{classify, run_all, ObserverReports};
 use anyhow::Result;
 
 use crate::cli::HookEvent;
-use crate::snapshot;
 
 pub fn run(project: &Path, event: HookEvent) -> Result<()> {
     // The hook may be invoked from settings.json on any project Claude
@@ -52,48 +48,47 @@ pub fn run(project: &Path, event: HookEvent) -> Result<()> {
 }
 
 fn run_commit(project: &Path, paths: &HealPaths) -> Result<()> {
-    // ConfigMissing is a v0.1 affordance — we still want a row in
-    // snapshots/ so `heal metrics` doesn't think nothing happened, but
-    // there's nothing to scan or nudge about until `heal init` lands.
+    // ConfigMissing means `heal init` was never run; the hook is no-op
+    // in that case so an unopted project doesn't suddenly show banners.
     let cfg = match load_from_project(project) {
         Ok(c) => c,
-        Err(crate::core::Error::ConfigMissing(_)) => {
-            EventLog::new(paths.snapshots_dir()).append(&Event::new(
-                HookEvent::Commit.as_str(),
-                serde_json::to_value(MetricsSnapshot::default())
-                    .expect("MetricsSnapshot serialization is infallible"),
-            ))?;
-            return Ok(());
-        }
+        Err(crate::core::Error::ConfigMissing(_)) => return Ok(()),
         Err(e) => return Err(e.into()),
     };
 
-    // Run observers ONCE and classify ONCE — the snapshot writer's
-    // severity tally and the nudge's per-finding render both consume
-    // the same Vec.
     let reports = run_all(project, &cfg, None, None);
-    let (calibration, findings) = snapshot::classify_with_calibration(paths, &cfg, &reports);
-    let snap = snapshot::pack_with_delta(project, paths, &cfg, &reports, &findings);
-    EventLog::new(paths.snapshots_dir()).append(&Event::new(
-        HookEvent::Commit.as_str(),
-        serde_json::to_value(&snap).expect("MetricsSnapshot serialization is infallible"),
-    ))?;
+    let (calibration, findings) = classify_with_calibration(paths, &cfg, &reports);
     crate::core::compaction::compact_all(
         paths,
         &crate::core::compaction::CompactionPolicy::default(),
         chrono::Utc::now(),
     )
     .ok();
-    // Best-effort nudge — the user just committed and the snapshot is
-    // already persisted, so don't fail the hook on rendering issues.
+    // Best-effort nudge — don't fail the hook on rendering issues.
     write_nudge(calibration.as_ref(), &findings, &mut std::io::stdout()).ok();
     Ok(())
 }
 
-/// Emit a single-line post-commit summary: snapshot recorded, current
-/// Critical/High counts, and a `heal status` pointer when there's
-/// something to act on. Stays silent on uncalibrated projects so a
-/// fresh `heal init` flow doesn't pollute the commit output.
+/// Classify `reports` against the calibration on disk (if any),
+/// returning both the loaded calibration and the resulting Findings.
+/// `None` calibration means `heal init`/`heal calibrate` hasn't run
+/// yet — the hook stays silent in that case.
+pub(crate) fn classify_with_calibration(
+    paths: &HealPaths,
+    cfg: &Config,
+    reports: &ObserverReports,
+) -> (Option<Calibration>, Vec<Finding>) {
+    let calibration = Calibration::load(&paths.calibration())
+        .ok()
+        .map(|c| c.with_overrides(cfg));
+    let findings = calibration
+        .as_ref()
+        .map(|c| classify(reports, c, cfg))
+        .unwrap_or_default();
+    (calibration, findings)
+}
+
+/// Emit the one-line post-commit summary.
 fn write_nudge(
     calibration: Option<&Calibration>,
     findings: &[Finding],
@@ -148,7 +143,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn commit_writes_a_snapshot_row() {
+    fn commit_runs_observers_without_writing_snapshots() {
         let dir = TempDir::new().unwrap();
         init_repo(dir.path());
         commit(
@@ -165,14 +160,6 @@ mod tests {
         std::fs::write(paths.config(), "").unwrap();
 
         run(dir.path(), HookEvent::Commit).unwrap();
-
-        let snap_events: Vec<Event> = EventLog::new(paths.snapshots_dir())
-            .try_iter()
-            .unwrap()
-            .map(|r| r.unwrap())
-            .collect();
-        assert_eq!(snap_events.len(), 1);
-        assert_eq!(snap_events[0].event, HookEvent::Commit.as_str());
     }
 
     #[test]
@@ -181,8 +168,6 @@ mod tests {
         let paths = HealPaths::new(dir.path());
         paths.ensure().unwrap();
         run(dir.path(), HookEvent::Edit).unwrap();
-        let snap_files: usize = std::fs::read_dir(paths.snapshots_dir()).unwrap().count();
-        assert_eq!(snap_files, 0);
     }
 
     #[test]
@@ -191,8 +176,6 @@ mod tests {
         let paths = HealPaths::new(dir.path());
         paths.ensure().unwrap();
         run(dir.path(), HookEvent::Stop).unwrap();
-        let snap_files: usize = std::fs::read_dir(paths.snapshots_dir()).unwrap().count();
-        assert_eq!(snap_files, 0);
     }
 
     /// `write_nudge` must stay silent on a fresh project with no
@@ -209,8 +192,7 @@ mod tests {
         let cfg = crate::core::config::Config::default();
         cfg.save(&paths.config()).unwrap();
         let reports = run_all(dir.path(), &cfg, None, None);
-        let (calibration, findings) =
-            crate::snapshot::classify_with_calibration(&paths, &cfg, &reports);
+        let (calibration, findings) = classify_with_calibration(&paths, &cfg, &reports);
 
         let mut buf: Vec<u8> = Vec::new();
         write_nudge(calibration.as_ref(), &findings, &mut buf).unwrap();
@@ -242,8 +224,7 @@ mod tests {
         cfg.save(&paths.config()).unwrap();
         crate::commands::calibrate::run(dir.path(), false, false).unwrap();
         let reports = run_all(dir.path(), &cfg, None, None);
-        let (calibration, findings) =
-            crate::snapshot::classify_with_calibration(&paths, &cfg, &reports);
+        let (calibration, findings) = classify_with_calibration(&paths, &cfg, &reports);
 
         let mut buf: Vec<u8> = Vec::new();
         write_nudge(calibration.as_ref(), &findings, &mut buf).unwrap();
@@ -278,8 +259,7 @@ mod tests {
         cfg.save(&paths.config()).unwrap();
         crate::commands::calibrate::run(dir.path(), false, false).unwrap();
         let reports = run_all(dir.path(), &cfg, None, None);
-        let (calibration, findings) =
-            crate::snapshot::classify_with_calibration(&paths, &cfg, &reports);
+        let (calibration, findings) = classify_with_calibration(&paths, &cfg, &reports);
 
         let mut buf: Vec<u8> = Vec::new();
         write_nudge(calibration.as_ref(), &findings, &mut buf).unwrap();

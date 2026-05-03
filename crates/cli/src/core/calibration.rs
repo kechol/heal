@@ -42,14 +42,12 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::core::config::{assign_workspace, Config, WorkspaceOverlay};
 use crate::core::error::{Error, Result};
-use crate::core::eventlog::EventLog;
 use crate::core::severity::Severity;
-use crate::core::snapshot::MetricsSnapshot;
 
 /// Built-in `floor_critical` values (TODO §v0.2 範囲のメトリクス対象).
 /// These are the hard "structurally indefensible" thresholds; the
@@ -98,20 +96,6 @@ pub const STRATEGY_PERCENTILE: &str = "percentile";
 /// percentile-derived clamps to Ok). Five points is the minimum where
 /// linear-interpolated quartiles aren't degenerate.
 pub const MIN_SAMPLES_FOR_PERCENTILES: usize = 5;
-
-/// Recalibration trigger thresholds — mirror the TODO §「自動検出
-/// トリガー」spec. Surfaced via the default `heal calibrate`
-/// invocation when `calibration.toml` already exists; the user always
-/// decides whether to run `heal calibrate --force`.
-pub const TRIGGER_AGE_DAYS: i64 = 90;
-pub const TRIGGER_FILE_DELTA_PCT: f64 = 0.20;
-pub const TRIGGER_CRITICAL_CLEAN_DAYS: i64 = 30;
-
-/// Lookback buffer past `TRIGGER_CRITICAL_CLEAN_DAYS` so the streak
-/// detector still sees the boundary commit when the cutoff lands close
-/// to an event's timestamp. Without this slack a 30-day streak whose
-/// oldest record sits a few seconds before `cutoff` would be cropped.
-const STREAK_LOOKBACK_BUFFER_DAYS: i64 = 5;
 
 /// Comment header prepended by [`Calibration::save`] so anyone opening
 /// `.heal/calibration.toml` immediately sees its provenance and the
@@ -183,6 +167,13 @@ pub struct CalibrationMeta {
     pub created_at: DateTime<Utc>,
     pub codebase_files: u32,
     pub strategy: String,
+    /// HEAD sha at the moment `heal calibrate --force` (or `heal init`)
+    /// produced this calibration. The heal-config skill compares it
+    /// against the current `git rev-parse HEAD` to decide whether the
+    /// codebase has drifted enough to suggest a recalibration. Optional
+    /// so calibrations created outside a git worktree still load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calibrated_at_sha: Option<String>,
 }
 
 impl Default for CalibrationMeta {
@@ -191,6 +182,7 @@ impl Default for CalibrationMeta {
             created_at: DateTime::<Utc>::from_timestamp(0, 0).unwrap_or_default(),
             codebase_files: 0,
             strategy: STRATEGY_PERCENTILE.to_owned(),
+            calibrated_at_sha: None,
         }
     }
 }
@@ -423,23 +415,6 @@ impl Calibration {
         crate::core::fs::atomic_write(path, out.as_bytes())
     }
 
-    /// Project a [`Calibration`] into a [`CalibrationEvent`] suitable
-    /// for the audit log. `reason` records why the recalibration fired;
-    /// the live codebase size is read from `self.meta.codebase_files`.
-    #[must_use]
-    pub fn to_event(&self, reason: String) -> CalibrationEvent {
-        CalibrationEvent {
-            at: self.meta.created_at,
-            p95_ccn: self.calibration.ccn.as_ref().map(|c| c.p95),
-            p95_cognitive: self.calibration.cognitive.as_ref().map(|c| c.p95),
-            p95_duplication: self.calibration.duplication.as_ref().map(|c| c.p95),
-            p95_change_coupling: self.calibration.change_coupling.as_ref().map(|c| c.p95),
-            p90_hotspot: self.calibration.hotspot.as_ref().map(|c| c.p90),
-            files: self.meta.codebase_files,
-            reason,
-        }
-    }
-
     /// Apply config-side floor overrides. Each per-metric section in
     /// `[metrics.<name>]` may set `floor_critical = N` and/or
     /// `floor_ok = N` to raise (or lower) the absolute floors without
@@ -553,142 +528,6 @@ fn apply_metric_overrides(table: &mut MetricCalibrations, config: &Config) {
             c.floor_ok = Some(f);
         }
     }
-}
-
-/// Audit-log entry written to `.heal/snapshots/` whenever
-/// `heal calibrate` (or `heal init`) emits a fresh calibration. Recorded
-/// alongside `commit` events; `MetricsSnapshot::latest_in_segments`
-/// silently skips records that don't decode as a snapshot, so the two
-/// event shapes coexist without interfering.
-///
-/// Serialised under `event = "calibrate"`. Holds only the headline
-/// numbers — full breaks live in `.heal/calibration.toml`.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct CalibrationEvent {
-    pub at: DateTime<Utc>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub p95_ccn: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub p95_cognitive: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub p95_duplication: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub p95_change_coupling: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub p90_hotspot: Option<f64>,
-    pub files: u32,
-    pub reason: String,
-}
-
-/// Outcome of the default `heal calibrate` drift evaluation. Each field
-/// is `Some(...)` when the corresponding trigger fired, holding the
-/// measured drift so the CLI can surface "what" without re-querying.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct RecalibrationCheck {
-    /// Days since the current calibration's `meta.created_at` when
-    /// `> TRIGGER_AGE_DAYS`.
-    pub age_exceeded_days: Option<i64>,
-    /// Signed % change in `codebase_files` (current vs. last
-    /// `CalibrationEvent.files`) when `|Δ| > TRIGGER_FILE_DELTA_PCT`.
-    pub file_count_delta_pct: Option<f64>,
-    /// Continuous "Critical == 0" run length in days when
-    /// `>= TRIGGER_CRITICAL_CLEAN_DAYS`.
-    pub critical_clean_streak_days: Option<i64>,
-}
-
-impl RecalibrationCheck {
-    /// True iff at least one trigger fired.
-    #[must_use]
-    pub fn fired(&self) -> bool {
-        self.age_exceeded_days.is_some()
-            || self.file_count_delta_pct.is_some()
-            || self.critical_clean_streak_days.is_some()
-    }
-
-    /// Evaluate every trigger against the snapshot directory and the
-    /// current calibration. `now` is injected for deterministic tests;
-    /// production callers pass `Utc::now()`.
-    ///
-    /// The implementation is read-only — no events are written. The
-    /// CLI surfaces the result and the user explicitly decides whether
-    /// to invoke `heal calibrate`.
-    pub fn evaluate(snapshots: &EventLog, calibration: &Calibration, now: DateTime<Utc>) -> Self {
-        let segments = snapshots.segments().unwrap_or_default();
-        Self {
-            age_exceeded_days: age_trigger(calibration, now),
-            file_count_delta_pct: file_count_trigger(&segments, calibration),
-            critical_clean_streak_days: critical_streak_trigger(&segments, now),
-        }
-    }
-}
-
-fn age_trigger(calibration: &Calibration, now: DateTime<Utc>) -> Option<i64> {
-    let days = (now - calibration.meta.created_at).num_days();
-    (days > TRIGGER_AGE_DAYS).then_some(days)
-}
-
-fn file_count_trigger(
-    segments: &[crate::core::eventlog::Segment],
-    calibration: &Calibration,
-) -> Option<f64> {
-    let curr = MetricsSnapshot::latest_in_segments(segments)
-        .ok()
-        .flatten()
-        .and_then(|(_, m)| m.codebase_files)?;
-    let baseline =
-        latest_calibration_event(segments).map_or(calibration.meta.codebase_files, |e| e.files);
-    if baseline == 0 {
-        return None;
-    }
-    let pct = (f64::from(curr) - f64::from(baseline)) / f64::from(baseline);
-    (pct.abs() > TRIGGER_FILE_DELTA_PCT).then_some(pct)
-}
-
-fn critical_streak_trigger(
-    segments: &[crate::core::eventlog::Segment],
-    now: DateTime<Utc>,
-) -> Option<i64> {
-    // Streak of consecutive most-recent `commit` snapshots whose
-    // `severity_counts.critical == 0`. Filter by event type *before*
-    // decoding — `MetricsSnapshot` deliberately omits
-    // `deny_unknown_fields` for forward compat, so a `calibrate`
-    // event's JSON would deserialize as a default snapshot and
-    // silently break the streak.
-    let cutoff = now - Duration::days(TRIGGER_CRITICAL_CLEAN_DAYS + STREAK_LOOKBACK_BUFFER_DAYS);
-    let events: Vec<crate::core::eventlog::Event> = EventLog::iter_segments(segments.to_vec())
-        .filter_map(std::result::Result::ok)
-        .filter(|ev| ev.event == "commit" && ev.timestamp >= cutoff)
-        .collect();
-    let mut newest: Option<DateTime<Utc>> = None;
-    let mut oldest: Option<DateTime<Utc>> = None;
-    for ev in events.into_iter().rev() {
-        let Ok(metrics) = serde_json::from_value::<MetricsSnapshot>(ev.data.clone()) else {
-            break;
-        };
-        let Some(counts) = metrics.severity_counts else {
-            // Legacy snapshot pre-Calibration — can't claim Critical-clean.
-            break;
-        };
-        if counts.critical > 0 {
-            break;
-        }
-        newest.get_or_insert(ev.timestamp);
-        oldest = Some(ev.timestamp);
-    }
-    let (newest, oldest) = (newest?, oldest?);
-    let streak = (newest - oldest).num_days();
-    (streak >= TRIGGER_CRITICAL_CLEAN_DAYS).then_some(streak)
-}
-
-fn latest_calibration_event(
-    segments: &[crate::core::eventlog::Segment],
-) -> Option<CalibrationEvent> {
-    EventLog::iter_segments(segments.to_vec())
-        .filter_map(std::result::Result::ok)
-        .filter(|ev| ev.event == "calibrate")
-        .last()
-        .and_then(|ev| serde_json::from_value::<CalibrationEvent>(ev.data).ok())
 }
 
 /// Linear-interpolation percentile (`NumPy` default style). Computes
@@ -1054,6 +893,7 @@ mod tests {
                 created_at: DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap(),
                 codebase_files: 142,
                 strategy: STRATEGY_PERCENTILE.to_owned(),
+                calibrated_at_sha: Some("abcd1234".into()),
             },
             calibration: MetricCalibrations {
                 ccn: Some(MetricCalibration {
@@ -1093,6 +933,7 @@ mod tests {
                 created_at: DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap(),
                 codebase_files: 7,
                 strategy: STRATEGY_PERCENTILE.to_owned(),
+                calibrated_at_sha: None,
             },
             calibration: MetricCalibrations::default(),
             workspaces: BTreeMap::new(),
@@ -1137,165 +978,6 @@ mod tests {
         // And classify still falls through to floor-only after the trip.
         assert_eq!(breaks.classify(30.0), Severity::Critical);
         assert_eq!(breaks.classify(5.0), Severity::Ok);
-    }
-
-    fn cal_with_age(now: DateTime<Utc>, days_old: i64) -> Calibration {
-        Calibration {
-            meta: CalibrationMeta {
-                created_at: now - Duration::days(days_old),
-                codebase_files: 100,
-                strategy: STRATEGY_PERCENTILE.to_owned(),
-            },
-            calibration: MetricCalibrations::default(),
-            workspaces: BTreeMap::new(),
-        }
-    }
-
-    fn snapshot_event(
-        at: DateTime<Utc>,
-        critical: u32,
-        codebase_files: u32,
-    ) -> crate::core::eventlog::Event {
-        let snap = MetricsSnapshot {
-            severity_counts: Some(crate::core::snapshot::SeverityCounts {
-                critical,
-                ..Default::default()
-            }),
-            codebase_files: Some(codebase_files),
-            ..MetricsSnapshot::default()
-        };
-        crate::core::eventlog::Event {
-            timestamp: at,
-            event: "commit".into(),
-            data: serde_json::to_value(&snap).unwrap(),
-        }
-    }
-
-    #[test]
-    fn age_trigger_fires_after_90_days() {
-        let now = Utc::now();
-        let young = cal_with_age(now, 80);
-        let old = cal_with_age(now, 100);
-        assert!(age_trigger(&young, now).is_none());
-        assert_eq!(age_trigger(&old, now), Some(100));
-    }
-
-    #[test]
-    fn file_count_trigger_fires_at_20_pct_growth() {
-        let dir = tempfile::tempdir().unwrap();
-        let log = EventLog::new(dir.path());
-        // Calibration was built at 100 files; latest snapshot says 125 = +25%.
-        log.append(&snapshot_event(Utc::now(), 0, 125)).unwrap();
-        let segments = log.segments().unwrap();
-        let calibration = cal_with_age(Utc::now(), 10);
-        let pct = file_count_trigger(&segments, &calibration).expect("trigger should fire");
-        assert!((pct - 0.25).abs() < 1e-9);
-    }
-
-    #[test]
-    fn file_count_trigger_quiet_within_threshold() {
-        let dir = tempfile::tempdir().unwrap();
-        let log = EventLog::new(dir.path());
-        log.append(&snapshot_event(Utc::now(), 0, 110)).unwrap(); // +10%
-        let segments = log.segments().unwrap();
-        let calibration = cal_with_age(Utc::now(), 10);
-        assert!(file_count_trigger(&segments, &calibration).is_none());
-    }
-
-    #[test]
-    fn critical_streak_trigger_fires_after_30_clean_days() {
-        let dir = tempfile::tempdir().unwrap();
-        let log = EventLog::new(dir.path());
-        let now = Utc::now();
-        // 31-day clean streak: oldest 31 days ago, newest now, both critical = 0.
-        log.append(&snapshot_event(now - Duration::days(31), 0, 100))
-            .unwrap();
-        log.append(&snapshot_event(now - Duration::days(15), 0, 100))
-            .unwrap();
-        log.append(&snapshot_event(now, 0, 100)).unwrap();
-        let segments = log.segments().unwrap();
-        let streak = critical_streak_trigger(&segments, now).expect("streak should fire");
-        assert!(streak >= TRIGGER_CRITICAL_CLEAN_DAYS);
-    }
-
-    #[test]
-    fn critical_streak_trigger_breaks_on_recent_critical() {
-        let dir = tempfile::tempdir().unwrap();
-        let log = EventLog::new(dir.path());
-        let now = Utc::now();
-        log.append(&snapshot_event(now - Duration::days(31), 0, 100))
-            .unwrap();
-        // Most-recent commit had Critical=2 — breaks the streak.
-        log.append(&snapshot_event(now, 2, 100)).unwrap();
-        let segments = log.segments().unwrap();
-        assert!(critical_streak_trigger(&segments, now).is_none());
-    }
-
-    #[test]
-    fn critical_streak_trigger_ignores_calibrate_events() {
-        // A calibrate event interleaved with clean commits must not
-        // break the streak. The bug we're guarding against: without an
-        // `event == "commit"` filter, `calibrate` JSON deserialises as
-        // a default `MetricsSnapshot` (no `deny_unknown_fields`), which
-        // lacks `severity_counts` and would fall into the "legacy
-        // snapshot" break arm.
-        let dir = tempfile::tempdir().unwrap();
-        let log = EventLog::new(dir.path());
-        let now = Utc::now();
-        log.append(&snapshot_event(now - Duration::days(31), 0, 100))
-            .unwrap();
-        let cal_event = CalibrationEvent {
-            at: now - Duration::days(20),
-            p95_ccn: None,
-            p95_cognitive: None,
-            p95_duplication: None,
-            p95_change_coupling: None,
-            p90_hotspot: None,
-            files: 100,
-            reason: "interleaved".into(),
-        };
-        log.append(&crate::core::eventlog::Event {
-            timestamp: cal_event.at,
-            event: "calibrate".into(),
-            data: serde_json::to_value(&cal_event).unwrap(),
-        })
-        .unwrap();
-        log.append(&snapshot_event(now, 0, 100)).unwrap();
-        let segments = log.segments().unwrap();
-        assert!(
-            critical_streak_trigger(&segments, now).is_some(),
-            "calibrate events between clean commits must not break the streak",
-        );
-    }
-
-    #[test]
-    fn evaluate_returns_none_when_quiet() {
-        let dir = tempfile::tempdir().unwrap();
-        let log = EventLog::new(dir.path());
-        let now = Utc::now();
-        log.append(&snapshot_event(now, 1, 100)).unwrap(); // Critical>0 → no streak
-        let cal = cal_with_age(now, 10); // young
-        let check = RecalibrationCheck::evaluate(&log, &cal, now);
-        assert!(!check.fired(), "no triggers should fire on a fresh project");
-    }
-
-    #[test]
-    fn calibration_event_round_trips_through_toml() {
-        // CalibrationEvent is serialised as JSON inside snapshots/, but
-        // verify our struct shape round-trips for completeness.
-        let ev = CalibrationEvent {
-            at: DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap(),
-            p95_ccn: Some(21.7),
-            p95_cognitive: None,
-            p95_duplication: None,
-            p95_change_coupling: None,
-            p90_hotspot: Some(67.0),
-            files: 142,
-            reason: "manual".into(),
-        };
-        let json = serde_json::to_value(&ev).unwrap();
-        let back: CalibrationEvent = serde_json::from_value(json).unwrap();
-        assert_eq!(back, ev);
     }
 
     #[test]

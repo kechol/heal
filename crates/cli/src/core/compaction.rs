@@ -10,9 +10,8 @@
 //!     version for the same month, so readers see no schema change.
 //!   - Segments older than `delete_after` (365d default) are removed
 //!     entirely. Beyond a year there is no realistic reader for the
-//!     event log: snapshots are reconstructed from `git log`,
-//!     calibration uses the last 90 days, and `heal snapshots` /
-//!     `heal checks` are operator views of recent activity.
+//!     event log — `heal checks` is the only operator view, and it
+//!     focuses on recent activity.
 //!
 //! Both passes are idempotent — re-running on a state that's already
 //! compacted is a no-op.
@@ -110,13 +109,10 @@ pub fn compact_all(
     policy: &CompactionPolicy,
     now: DateTime<Utc>,
 ) -> Result<Vec<(&'static str, CompactionStats)>> {
-    [
-        ("snapshots", paths.snapshots_dir()),
-        ("checks", paths.checks_dir()),
-    ]
-    .into_iter()
-    .map(|(label, dir)| compact(&EventLog::new(&dir), policy, now).map(|stats| (label, stats)))
-    .collect()
+    [("checks", paths.checks_dir())]
+        .into_iter()
+        .map(|(label, dir)| compact(&EventLog::new(&dir), policy, now).map(|stats| (label, stats)))
+        .collect()
 }
 
 /// `<dir>/2025-12.jsonl` → `<dir>/2025-12.jsonl.gz`.

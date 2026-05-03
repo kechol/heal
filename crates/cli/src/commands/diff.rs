@@ -23,7 +23,7 @@ use crate::core::check_cache::{iter_records, CheckRecord};
 use crate::core::config::load_from_project;
 use crate::core::finding::Finding;
 use crate::core::severity::Severity;
-use crate::core::snapshot::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW};
+use crate::core::term::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW};
 use crate::core::HealPaths;
 use crate::observer::git;
 

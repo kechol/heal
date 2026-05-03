@@ -36,16 +36,11 @@ impl HealPaths {
         self.root.join("calibration.toml")
     }
 
-    #[must_use]
-    pub fn snapshots_dir(&self) -> PathBuf {
-        self.root.join("snapshots")
-    }
-
     /// Append-only result cache: `<root>/checks/YYYY-MM.jsonl` plus
     /// auxiliary files (`latest.json`, `fixed.jsonl`, `regressed.jsonl`).
     /// Skill workflows read this; `heal status` writes it. Kept under
     /// `.heal/` (not `.cache/`) so it ships with the project alongside
-    /// snapshots.
+    /// `config.toml` and `calibration.toml`.
     #[must_use]
     pub fn checks_dir(&self) -> PathBuf {
         self.root.join("checks")
@@ -85,11 +80,7 @@ impl HealPaths {
 
     /// Create every standard subdirectory. Idempotent.
     pub fn ensure(&self) -> std::io::Result<()> {
-        for dir in [
-            self.root.as_path(),
-            &self.snapshots_dir(),
-            &self.checks_dir(),
-        ] {
+        for dir in [self.root.as_path(), &self.checks_dir()] {
             std::fs::create_dir_all(dir)?;
         }
         Ok(())

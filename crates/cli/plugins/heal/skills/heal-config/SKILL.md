@@ -300,6 +300,39 @@ Effect:
   Run `heal status --refresh` to inspect the new ranking.
 ```
 
+## Recalibration drift check (idempotent)
+
+HEAL does not auto-trigger recalibration anymore — there's no event
+log to watch. Whenever the user invokes this skill, decide whether to
+suggest a recalibration *before* doing anything else, using only:
+
+1. `heal calibrate --json` (no `--force`) — surfaces
+   `meta.calibrated_at_sha`, `meta.calibrated_at_files`, and
+   `meta.created_at` from the existing `calibration.toml`.
+2. `heal status --refresh --json` — surfaces the current Critical /
+   High counts and the live finding list.
+3. `git rev-list <calibrated_at_sha>..HEAD --count` — commits since
+   the calibration was built. Skip when `calibrated_at_sha` is missing
+   (legacy file).
+4. `.heal/checks/fixed.json` (or `fixed.jsonl` until Phase C lands) —
+   how many findings the user has marked as resolved since last
+   calibration.
+
+Suggest `heal calibrate --force` when **any** of these fire:
+
+- `commits since calibration > 200` (the codebase has moved enough that
+  the percentile breaks may no longer reflect today's distribution).
+- `|current_codebase_files - calibrated_at_files| / calibrated_at_files
+  > 0.20` (file count drifted ≥20%).
+- `critical == 0 && high == 0` for the current `latest.json` AND the
+  fixed map shows ≥10 entries since calibration (codebase has
+  graduated; thresholds may now be too lenient).
+
+When none fire, say so and move on — don't recalibrate proactively.
+
+This check is idempotent and read-only. The user always has the final
+say on whether to run `heal calibrate --force`.
+
 ## Constraints
 
 - **Write `.heal/config.toml` only.** Never edit `calibration.toml`

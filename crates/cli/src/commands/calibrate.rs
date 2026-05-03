@@ -1,36 +1,29 @@
 //! `heal calibrate` — calibrate codebase-relative Severity thresholds.
 //!
 //! Behavior:
-//!   - `calibration.toml` missing, or `--force`: rescan every observer,
-//!     rewrite `.heal/calibration.toml`, and append a `CalibrationEvent`
-//!     to `.heal/snapshots/`.
-//!   - `calibration.toml` present (no `--force`): read it and evaluate
-//!     the auto-detect triggers ([`RecalibrationCheck`]); print a
-//!     recommendation and surface `--force` as the way to refresh. No
-//!     files are written.
+//!   - `calibration.toml` missing, or `--force`: rescan every observer
+//!     and rewrite `.heal/calibration.toml`. The new file carries
+//!     `meta.calibrated_at_sha` and `meta.codebase_files` so the
+//!     `heal-config` skill can later judge drift without consulting any
+//!     event log.
+//!   - `calibration.toml` present (no `--force`): print the freshness
+//!     summary and point at `heal calibrate --force` as the way to
+//!     refresh. The `heal-config` skill is responsible for deciding
+//!     whether to suggest a recalibration; HEAL itself never auto-fires.
 //!
 //! HEAL never recalibrates automatically (TODO §「ユーザー提案のみで
-//! 自動再較正はしない」); the post-commit nudge will surface
-//! recalibration drift, but the user must invoke `heal calibrate
-//! --force` themselves.
+//! 自動再較正はしない」). The user (or skill on the user's behalf)
+//! always invokes `heal calibrate --force` themselves.
 
-use std::io::IsTerminal;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use chrono::Utc;
 use serde::Serialize;
 
-use crate::core::calibration::{Calibration, RecalibrationCheck};
+use crate::core::calibration::Calibration;
 use crate::core::config::load_from_project;
-use crate::core::eventlog::{Event, EventLog};
-use crate::core::snapshot::{ansi_wrap, ANSI_GREEN, ANSI_YELLOW};
 use crate::core::HealPaths;
 use crate::observers::{build_calibration, run_all};
-
-/// Reason field on every `CalibrationEvent`. A single value keeps the
-/// audit-log schema stable for external readers.
-const CALIBRATE_REASON: &str = "manual";
 
 pub fn run(project: &Path, force: bool, as_json: bool) -> Result<()> {
     let paths = HealPaths::new(project);
@@ -43,31 +36,28 @@ pub fn run(project: &Path, force: bool, as_json: bool) -> Result<()> {
 
     let calibration_path = paths.calibration();
     if !force && calibration_path.exists() {
-        run_check(&paths, as_json);
+        run_status(&paths, as_json);
         return Ok(());
     }
 
     let reports = run_all(project, &cfg, None, None);
-    let calibration = build_calibration(&reports, &cfg);
+    let calibration = build_calibration(project, &reports, &cfg);
     calibration.save(&calibration_path)?;
-
-    let event = calibration.to_event(CALIBRATE_REASON.to_owned());
-    let payload =
-        serde_json::to_value(&event).expect("CalibrationEvent serialization is infallible");
-    EventLog::new(paths.snapshots_dir()).append(&Event::new("calibrate", payload))?;
 
     if as_json {
         super::emit_json(&CalibrateReport {
             kind: "recalibrated",
             path: calibration_path.display().to_string(),
             calibration: Some(&calibration),
-            recalibration_check: None,
         });
         return Ok(());
     }
 
     println!("Recalibrated {}", calibration_path.display());
     println!("  codebase_files: {}", calibration.meta.codebase_files);
+    if let Some(sha) = calibration.meta.calibrated_at_sha.as_deref() {
+        println!("  calibrated_at:  {}", &sha[..sha.len().min(12)]);
+    }
     if let Some(c) = calibration.calibration.ccn.as_ref() {
         println!("  ccn p95:        {:.1}", c.p95);
     }
@@ -80,7 +70,7 @@ pub fn run(project: &Path, force: bool, as_json: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_check(paths: &HealPaths, as_json: bool) {
+fn run_status(paths: &HealPaths, as_json: bool) {
     let calibration_path = paths.calibration();
     let Ok(calibration) = Calibration::load(&calibration_path) else {
         // The path-exists guard above already filtered this out; if a
@@ -90,7 +80,6 @@ fn run_check(paths: &HealPaths, as_json: bool) {
                 kind: "missing",
                 path: calibration_path.display().to_string(),
                 calibration: None,
-                recalibration_check: None,
             });
         } else {
             println!(
@@ -100,99 +89,48 @@ fn run_check(paths: &HealPaths, as_json: bool) {
         }
         return;
     };
-    let snapshots = EventLog::new(paths.snapshots_dir());
-    let check = RecalibrationCheck::evaluate(&snapshots, &calibration, Utc::now());
 
     if as_json {
         super::emit_json(&CalibrateReport {
-            kind: if check.fired() {
-                "recalibration_recommended"
-            } else {
-                "ok"
-            },
+            kind: "ok",
             path: calibration_path.display().to_string(),
             calibration: Some(&calibration),
-            recalibration_check: Some(RecalibrationCheckJson::from(&check)),
         });
         return;
     }
 
-    let colorize = std::io::stdout().is_terminal();
-
-    if !check.fired() {
-        println!(
-            "{} no recalibration triggers fired (last calibration: {})",
-            ansi_wrap(ANSI_GREEN, "OK", colorize),
-            calibration.meta.created_at.format("%Y-%m-%d"),
-        );
-        println!("Run `heal calibrate --force` to refresh anyway.");
-        return;
-    }
-
     println!(
-        "{}: recalibration triggers fired",
-        ansi_wrap(ANSI_YELLOW, "recommended", colorize),
+        "calibration present at {} (created {})",
+        calibration_path.display(),
+        calibration.meta.created_at.format("%Y-%m-%d"),
     );
-    if let Some(days) = check.age_exceeded_days {
-        println!("  - calibration is {days} days old (>90)");
+    if let Some(sha) = calibration.meta.calibrated_at_sha.as_deref() {
+        println!("  calibrated_at_sha:    {}", &sha[..sha.len().min(12)]);
     }
-    if let Some(pct) = check.file_count_delta_pct {
-        println!(
-            "  - codebase size changed by {:+.0}% since last calibration",
-            pct * 100.0
-        );
-    }
-    if let Some(streak) = check.critical_clean_streak_days {
-        println!(
-            "  - {streak} days of [critical] = 0 (>=30) — codebase may have graduated below \
-             proxy-metric floors, or thresholds may be too lenient"
-        );
-    }
-    println!("Run `heal calibrate --force` to refresh.");
+    println!(
+        "  calibrated_at_files:  {}",
+        calibration.meta.codebase_files,
+    );
+    println!(
+        "Run `heal calibrate --force` to rebuild the percentile breaks from the current codebase."
+    );
 }
 
 /// Stable JSON contract for `heal calibrate --json`. `kind` distinguishes
-/// the four reachable states so callers can branch without parsing prose.
+/// the three reachable states so callers can branch without parsing prose.
 #[derive(Debug, Serialize)]
 struct CalibrateReport<'a> {
-    /// One of `recalibrated`, `ok`, `recalibration_recommended`, `missing`.
+    /// One of `recalibrated`, `ok`, `missing`.
     kind: &'static str,
     path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     calibration: Option<&'a Calibration>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    recalibration_check: Option<RecalibrationCheckJson>,
-}
-
-#[derive(Debug, Serialize)]
-struct RecalibrationCheckJson {
-    fired: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    age_exceeded_days: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    file_count_delta_pct: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    critical_clean_streak_days: Option<i64>,
-}
-
-impl From<&RecalibrationCheck> for RecalibrationCheckJson {
-    fn from(c: &RecalibrationCheck) -> Self {
-        Self {
-            fired: c.fired(),
-            age_exceeded_days: c.age_exceeded_days,
-            file_count_delta_pct: c.file_count_delta_pct,
-            critical_clean_streak_days: c.critical_clean_streak_days,
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::calibration::CalibrationEvent;
     use crate::core::config::Config;
-    use crate::core::eventlog::EventLog as EvLog;
-    use crate::core::snapshot::MetricsSnapshot;
     use crate::test_support::{commit, init_repo};
     use tempfile::TempDir;
 
@@ -205,92 +143,69 @@ mod tests {
     }
 
     #[test]
-    fn calibrate_writes_calibration_toml_and_event_when_missing() {
+    fn calibrate_writes_calibration_toml_when_missing() {
         let dir = TempDir::new().unwrap();
         init_project(dir.path());
         let paths = HealPaths::new(dir.path());
 
-        // No calibration file yet — default run should generate it.
         run(dir.path(), false, false).unwrap();
 
         assert!(
             paths.calibration().exists(),
             "calibration.toml must be written"
         );
-
-        let log = EvLog::new(paths.snapshots_dir());
-        let events: Vec<_> = log.try_iter().unwrap().filter_map(Result::ok).collect();
-        let calibrate_evs: Vec<_> = events.iter().filter(|e| e.event == "calibrate").collect();
-        assert_eq!(
-            calibrate_evs.len(),
-            1,
-            "exactly one calibrate event expected"
+        let calibration = Calibration::load(&paths.calibration()).unwrap();
+        assert!(
+            calibration.meta.calibrated_at_sha.is_some(),
+            "calibrated_at_sha must be captured from HEAD"
         );
-        let ev: CalibrationEvent = serde_json::from_value(calibrate_evs[0].data.clone()).unwrap();
-        assert_eq!(ev.reason, CALIBRATE_REASON);
     }
 
     #[test]
-    fn calibrate_default_runs_check_when_calibration_exists() {
+    fn calibrate_default_does_not_rewrite_when_calibration_exists() {
         let dir = TempDir::new().unwrap();
         init_project(dir.path());
         let paths = HealPaths::new(dir.path());
 
-        // Seed a calibration via --force so the second invocation hits
-        // the read-only check path.
         run(dir.path(), true, false).unwrap();
-
-        // Append a fresh commit-like snapshot so `latest_in_segments`
-        // resolves; mimic what `heal hook commit` would write.
-        let snap = MetricsSnapshot {
-            severity_counts: Some(crate::core::snapshot::SeverityCounts::default()),
-            codebase_files: Some(1),
-            ..MetricsSnapshot::default()
-        };
-        EvLog::new(paths.snapshots_dir())
-            .append(&Event::new("commit", serde_json::to_value(&snap).unwrap()))
+        let mtime_before = std::fs::metadata(paths.calibration())
+            .unwrap()
+            .modified()
             .unwrap();
 
-        let events_before = EvLog::new(paths.snapshots_dir())
-            .try_iter()
-            .unwrap()
-            .filter_map(Result::ok)
-            .filter(|e| e.event == "calibrate")
-            .count();
-
-        // Default run: must NOT append a new calibrate event.
         run(dir.path(), false, false).unwrap();
-
-        let events_after = EvLog::new(paths.snapshots_dir())
-            .try_iter()
+        let mtime_after = std::fs::metadata(paths.calibration())
             .unwrap()
-            .filter_map(Result::ok)
-            .filter(|e| e.event == "calibrate")
-            .count();
+            .modified()
+            .unwrap();
         assert_eq!(
-            events_before, events_after,
-            "default run must not write when calibration.toml exists"
+            mtime_before, mtime_after,
+            "default run must not rewrite calibration.toml"
         );
     }
 
     #[test]
-    fn calibrate_force_overwrites_existing_calibration() {
+    fn calibrate_force_rewrites_existing_calibration() {
         let dir = TempDir::new().unwrap();
         init_project(dir.path());
         let paths = HealPaths::new(dir.path());
 
         run(dir.path(), false, false).unwrap();
-        run(dir.path(), true, false).unwrap();
-
-        let calibrate_count = EvLog::new(paths.snapshots_dir())
-            .try_iter()
+        let first_created = Calibration::load(&paths.calibration())
             .unwrap()
-            .filter_map(Result::ok)
-            .filter(|e| e.event == "calibrate")
-            .count();
-        assert_eq!(
-            calibrate_count, 2,
-            "--force on an existing calibration must append a new event"
+            .meta
+            .created_at;
+
+        // Sleep is unnecessary — `chrono::Utc::now()` advances on each call.
+        run(dir.path(), true, false).unwrap();
+        let second_created = Calibration::load(&paths.calibration())
+            .unwrap()
+            .meta
+            .created_at;
+
+        assert!(
+            second_created >= first_created,
+            "--force must produce a fresh calibration"
         );
     }
 }

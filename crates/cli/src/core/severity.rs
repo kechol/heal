@@ -114,3 +114,94 @@ mod tests {
         }
     }
 }
+
+/// Tally of Findings by Severity. Carried inside `CheckRecord` and the
+/// post-commit nudge — the canonical "how dirty is the codebase" counts.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SeverityCounts {
+    #[serde(default)]
+    pub critical: u32,
+    #[serde(default)]
+    pub high: u32,
+    #[serde(default)]
+    pub medium: u32,
+    #[serde(default)]
+    pub ok: u32,
+}
+
+impl SeverityCounts {
+    /// Tally one classification result. Saturating-add so a 4-billion
+    /// finding codebase doesn't wrap to 0 (it would have other
+    /// problems by then).
+    pub fn tally(&mut self, severity: Severity) {
+        let bucket = match severity {
+            Severity::Critical => &mut self.critical,
+            Severity::High => &mut self.high,
+            Severity::Medium => &mut self.medium,
+            Severity::Ok => &mut self.ok,
+        };
+        *bucket = bucket.saturating_add(1);
+    }
+
+    /// Build a `SeverityCounts` from a slice of findings.
+    #[must_use]
+    pub fn from_findings(findings: &[crate::core::finding::Finding]) -> Self {
+        let mut counts = Self::default();
+        for f in findings {
+            counts.tally(f.severity);
+        }
+        counts
+    }
+
+    /// Inline summary line for human-facing CLI output, e.g.
+    /// `[critical] 3   [high] 12   [medium] 28   [ok] 412`. When
+    /// `colorize` is true the four labels carry ANSI SGR codes (red /
+    /// yellow / cyan / green) suitable for a terminal; pass `false`
+    /// when piping to a file.
+    #[must_use]
+    pub fn render_inline(&self, colorize: bool) -> String {
+        use crate::core::term::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW};
+        format!(
+            "{} {}   {} {}   {} {}   {} {}",
+            ansi_wrap(ANSI_RED, "[critical]", colorize),
+            self.critical,
+            ansi_wrap(ANSI_YELLOW, "[high]", colorize),
+            self.high,
+            ansi_wrap(ANSI_CYAN, "[medium]", colorize),
+            self.medium,
+            ansi_wrap(ANSI_GREEN, "[ok]", colorize),
+            self.ok,
+        )
+    }
+}
+
+#[cfg(test)]
+mod severity_counts_tests {
+    use super::*;
+
+    #[test]
+    fn render_inline_plain_has_no_ansi() {
+        let c = SeverityCounts {
+            critical: 3,
+            high: 12,
+            medium: 28,
+            ok: 412,
+        };
+        let s = c.render_inline(false);
+        assert!(
+            !s.contains('\x1b'),
+            "plain render must not include ANSI codes"
+        );
+        assert!(s.contains("[critical] 3"));
+        assert!(s.contains("[high] 12"));
+        assert!(s.contains("[medium] 28"));
+        assert!(s.contains("[ok] 412"));
+    }
+
+    #[test]
+    fn render_inline_colored_has_reset_after_each_label() {
+        let c = SeverityCounts::default();
+        let s = c.render_inline(true);
+        assert_eq!(s.matches("\x1b[0m").count(), 4);
+    }
+}

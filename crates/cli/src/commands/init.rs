@@ -7,10 +7,11 @@
 //!   3. Write a default `config.toml` (skipped when one already exists
 //!      unless `--force`).
 //!   4. Install a `post-commit` git hook that calls `heal hook commit`.
-//!   5. Run an initial scan, derive `.heal/calibration.toml` from its
-//!      distribution, then append a `MetricsSnapshot` (with
-//!      `severity_counts` already classified by the new calibration)
-//!      to `snapshots/` as an `init` event.
+//!   5. Run an initial scan and derive `.heal/calibration.toml` from
+//!      the resulting distribution. The fresh calibration captures
+//!      `meta.calibrated_at_sha` / `meta.codebase_files` so the
+//!      `heal-config` skill can later judge drift without consulting any
+//!      event log.
 //!   6. Optionally extract the bundled skills to `.claude/skills/` and
 //!      register HEAL's hook commands in `.claude/settings.json`
 //!      (prompted when `claude` is on `PATH` and stdin is a TTY; bypassed
@@ -22,9 +23,8 @@ use std::path::{Path, PathBuf};
 
 use crate::claude_settings;
 use crate::core::config::Config;
-use crate::core::eventlog::{Event, EventLog};
 use crate::core::monorepo::{self, MonorepoSignal};
-use crate::core::snapshot::SeverityCounts;
+use crate::core::severity::SeverityCounts;
 use crate::core::HealPaths;
 use crate::observer::git;
 use crate::observer::loc::LocObserver;
@@ -32,15 +32,13 @@ use crate::skill_assets::{self, skills_dest, ExtractMode, ExtractStats};
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use crate::observers::{build_calibration, run_all};
-use crate::snapshot;
+use crate::observers::{build_calibration, classify, run_all};
 
 const HEAL_HOOK_MARKER: &str = "# heal post-commit hook";
 const POST_COMMIT_SCRIPT: &str = "\
 #!/usr/bin/env sh
 # heal post-commit hook
-# Records a MetricsSnapshot to .heal/snapshots/YYYY-MM.jsonl plus a
-# CommitInfo entry to .heal/logs/YYYY-MM.jsonl after each commit.
+# Re-runs observers and emits the post-commit nudge.
 # Failures are swallowed so a broken HEAL install never blocks a commit.
 if command -v heal >/dev/null 2>&1; then
   heal hook commit || true
@@ -184,7 +182,6 @@ struct InitReport<'a> {
     primary_language: Option<&'a str>,
     config: PathAction<'a, ConfigAction>,
     calibration_path: String,
-    snapshots_dir: String,
     post_commit_hook: PathAction<'a, HookAction>,
     skills: SkillsReport<'a>,
     severity_counts: Option<&'a SeverityCounts>,
@@ -239,7 +236,6 @@ impl<'a> InitReport<'a> {
                 action: config_action,
             },
             calibration_path: paths.calibration().display().to_string(),
-            snapshots_dir: paths.snapshots_dir().display().to_string(),
             post_commit_hook: PathAction {
                 path: hook_path.map(|p| p.display().to_string()),
                 action: hook_action,
@@ -279,7 +275,6 @@ fn print_summary(
         paths.config().display(),
     );
     println!("  calibration       {}", paths.calibration().display());
-    println!("  initial snapshot  {}/", paths.snapshots_dir().display());
     match hook_path {
         Some(p) => println!("  post-commit hook  {}  ({hook_action})", p.display()),
         None => println!("  post-commit hook  {hook_action}"),
@@ -423,18 +418,12 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<Option<Severity
     };
 
     let reports = run_all(project, &cfg, None, None);
-
-    // Save calibration before packing the snapshot so the freshly
-    // saved file is what `classify_with_calibration` reads back.
-    let calibration = build_calibration(&reports, &cfg);
+    let calibration = build_calibration(project, &reports, &cfg);
     calibration.save(&paths.calibration())?;
 
-    let (_, findings) = snapshot::classify_with_calibration(paths, &cfg, &reports);
-    let snap = snapshot::pack(project, paths, &cfg, &reports, &findings);
-    let counts = snap.severity_counts;
-    let payload = serde_json::to_value(&snap).expect("MetricsSnapshot serialization is infallible");
-    EventLog::new(paths.snapshots_dir()).append(&Event::new("init", payload))?;
-    Ok(counts)
+    let cal_with_overrides = calibration.with_overrides(&cfg);
+    let findings = classify(&reports, &cal_with_overrides, &cfg);
+    Ok(Some(SeverityCounts::from_findings(&findings)))
 }
 
 /// Decide whether to install the bundled skills and do it. Returns the
@@ -668,7 +657,7 @@ mod tests {
     }
 
     #[test]
-    fn run_end_to_end_creates_layout_config_and_snapshot() {
+    fn run_end_to_end_creates_layout_config_and_calibration() {
         let dir = TempDir::new().unwrap();
         init_repo(dir.path());
         commit_default(dir.path(), "main.rs", "fn main() {}\n", "solo@example.com");
@@ -676,27 +665,20 @@ mod tests {
         let paths = HealPaths::new(dir.path());
         assert!(paths.config().exists(), "config.toml must exist");
         assert!(paths.calibration().exists(), "calibration.toml must exist");
-        assert!(paths.snapshots_dir().exists(), "snapshots dir must exist");
-        let any_snapshot = std::fs::read_dir(paths.snapshots_dir())
-            .unwrap()
-            .any(|e| e.is_ok());
-        assert!(any_snapshot, "snapshots dir must contain the init record");
         assert!(
             hook_path_for(dir.path()).exists(),
             "post-commit hook must be installed",
         );
 
-        let log = crate::core::eventlog::EventLog::new(paths.snapshots_dir());
-        let (_, metrics) = crate::core::snapshot::MetricsSnapshot::latest_in(&log)
-            .unwrap()
-            .expect("init must write a snapshot record");
+        let calibration =
+            crate::core::calibration::Calibration::load(&paths.calibration()).unwrap();
         assert!(
-            metrics.severity_counts.is_some(),
-            "snapshot must carry severity_counts after pack loads calibration.toml"
+            calibration.meta.calibrated_at_sha.is_some(),
+            "calibrated_at_sha must be captured from HEAD",
         );
         assert!(
-            metrics.codebase_files.is_some(),
-            "snapshot must carry codebase_files for the recalibrate trigger"
+            calibration.meta.codebase_files >= 1,
+            "calibration must record codebase_files",
         );
     }
 
