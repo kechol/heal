@@ -183,7 +183,7 @@ for their bandwidth.
 `heal status` partitions every non-Ok finding into one of three
 buckets driven by `[policy.drain]`:
 
-| Tier                  | Default specs                           | Renderer behavior                     | Skill behavior                                   |
+| Tier                  | Default specs                           | Renderer behavior                      | Skill behavior                                    |
 | --------------------- | --------------------------------------- | -------------------------------------- | ------------------------------------------------- |
 | **T0 / Drain queue**  | `must = ["critical:hotspot"]`           | Always shown, sorted Severity 🔥 desc. | `/heal-code-patch` drains one finding per commit. |
 | **T1 / Should drain** | `should = ["critical", "high:hotspot"]` | Shown by default, separate section.    | Surfaced for review; not auto-drained.            |

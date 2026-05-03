@@ -508,27 +508,27 @@ config.rs (LCOM=4, coupled)
 
 ## Appendix 1: 計測している指標
 
-| 指標 | 対象 | 意味 |
-| --- | --- | --- |
-| **LOC** | 言語ごとのコード行数 | コードベースの規模 |
-| **CCN** | 関数の分岐数 (McCabe) | テストの難しさ |
-| **Cognitive** | 関数の認知的複雑度 (Sonar) | コードの読みにくさ |
-| **Churn** | ファイルの変更頻度 | 変更の集中度 |
-| **Change Coupling** | 一緒に変更されるファイル | ファイル間の暗黙の依存度 |
-| **Duplication** | コピペされたブロック | 重複コードの多さ |
-| **LCOM** | クラスの凝集度の欠如 | クラスの責務の分散度 |
-| **Hotspot** 🔥 | 複雑度 × Churn | バグが生まれやすい場所 |
+| 指標                | 対象                       | 意味                     |
+| ------------------- | -------------------------- | ------------------------ |
+| **LOC**             | 言語ごとのコード行数       | コードベースの規模       |
+| **CCN**             | 関数の分岐数 (McCabe)      | テストの難しさ           |
+| **Cognitive**       | 関数の認知的複雑度 (Sonar) | コードの読みにくさ       |
+| **Churn**           | ファイルの変更頻度         | 変更の集中度             |
+| **Change Coupling** | 一緒に変更されるファイル   | ファイル間の暗黙の依存度 |
+| **Duplication**     | コピペされたブロック       | 重複コードの多さ         |
+| **LCOM**            | クラスの凝集度の欠如       | クラスの責務の分散度     |
+| **Hotspot** 🔥      | 複雑度 × Churn             | バグが生まれやすい場所   |
 
 ---
 
 ## Appendix 2: 対応言語と構成
 
-| 指標 | 対応言語 |
-| --- | --- |
-| **LOC** | すべての言語に対応 |
-| **Churn / Change Coupling / Hotspot** | すべての言語に対応 |
-| **CCN / Cognitive / Duplication** | TypeScript / JavaScript / Python / Go / Scala / Rust |
-| **LCOM** | TypeScript / JavaScript / Python / Rust (Go / Scala は未対応) |
+| 指標                                  | 対応言語                                                      |
+| ------------------------------------- | ------------------------------------------------------------- |
+| **LOC**                               | すべての言語に対応                                            |
+| **Churn / Change Coupling / Hotspot** | すべての言語に対応                                            |
+| **CCN / Cognitive / Duplication**     | TypeScript / JavaScript / Python / Go / Scala / Rust          |
+| **LCOM**                              | TypeScript / JavaScript / Python / Rust (Go / Scala は未対応) |
 
 <br>
 
