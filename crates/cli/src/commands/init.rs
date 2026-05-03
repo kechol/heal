@@ -352,7 +352,6 @@ fn render_skills_line(dest: &Path, action: &SkillsAction) -> String {
 const GITIGNORE_BODY: &str = "\
 # Managed by `heal init` — re-run to refresh.
 findings/
-skills-install.json
 ";
 
 /// Write `.heal/.gitignore` so volatile state stays out of the
@@ -509,17 +508,18 @@ fn handle_skills_install(
 
 fn install_skills(
     project: &Path,
-    paths: &HealPaths,
+    _paths: &HealPaths,
     dest: &Path,
     force: bool,
 ) -> Result<SkillsAction> {
     let mode = if force {
-        // `Update` keeps the manifest in sync; `InstallForce` is reserved for `heal skills install --force`.
+        // `Update { force }` overwrites every file regardless of drift,
+        // matching the "refresh on heal init --force" semantics.
         ExtractMode::Update { force: true }
     } else {
         ExtractMode::InstallSafe
     };
-    let (stats, _manifest) = skill_assets::extract(dest, &paths.skills_install_manifest(), mode)?;
+    let stats = skill_assets::extract(dest, mode)?;
     claude_settings::wire(project)?;
     Ok(extract_counts(&stats))
 }

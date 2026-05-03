@@ -48,9 +48,9 @@ heal init --force        # overwrite an existing config.toml / hook
 `heal init` does:
 
 1. Create `.heal/` with `config.toml`, `calibration.toml`,
-   `findings/`, and a `.gitignore` that excludes `findings/` and
-   `skills-install.json` (so `config.toml` and `calibration.toml` stay
-   tracked and teammates share the same Severity ladder).
+   `findings/`, and a `.gitignore` that excludes `findings/` (so
+   `config.toml` and `calibration.toml` stay tracked and teammates
+   share the same Severity ladder).
 2. Run every observer once and compute the codebase's percentile
    distribution per metric — that becomes `calibration.toml` (with a
    provenance comment header pointing at `heal calibrate --force`).

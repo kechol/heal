@@ -6,17 +6,16 @@
 //! to a sibling under `.claude/skills/`. The install pass also reaches
 //! into `.claude/settings.json` to sweep legacy `heal hook edit` /
 //! `heal hook stop` registrations left over from earlier versions.
-//! No new hooks are registered — heal no longer wires anything into
-//! Claude Code's settings.
+//! No new hooks are registered.
 //!
 //! `install` is the safe default (skips existing files), `update` is
-//! drift-aware (overwrites unchanged-since-install assets, leaves user
-//! edits alone unless `--force`), and `status` exposes the bundled vs.
-//! installed version plus any drift surfaced by the manifest.
+//! drift-aware (overwrites unmodified assets, leaves user edits alone
+//! unless `--force`), and `status` reads each SKILL.md's frontmatter
+//! `metadata:` block to surface the installed version + drift list.
+//! There is no sidecar manifest — the bundled bytes are the source of
+//! truth, and on-disk state alone determines drift.
 
-use std::collections::BTreeSet;
 use std::path::Path;
-use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use serde::Serialize;
@@ -25,7 +24,7 @@ use crate::claude_settings::{self, WireReport, WriteAction};
 use crate::cli::SkillsAction;
 use crate::core::HealPaths;
 use crate::skill_assets::{
-    self, skills_dest, ExtractMode, ExtractStats, ExtractSummary, InstallManifest,
+    self, skills_dest, ExtractMode, ExtractStats, ExtractSummary, INSTALL_SOURCE_BUNDLED,
 };
 
 pub fn run(project: &Path, action: SkillsAction) -> Result<()> {
@@ -35,7 +34,7 @@ pub fn run(project: &Path, action: SkillsAction) -> Result<()> {
         SkillsAction::Install { force, json } => install(project, &paths, &dest, force, json),
         SkillsAction::Update { force, json } => update(project, &paths, &dest, force, json),
         SkillsAction::Status { json } => {
-            status(&paths, &dest, json);
+            status(&dest, json);
             Ok(())
         }
         SkillsAction::Uninstall { json } => uninstall(project, &paths, &dest, json),
@@ -44,7 +43,7 @@ pub fn run(project: &Path, action: SkillsAction) -> Result<()> {
 
 fn install(
     project: &Path,
-    paths: &HealPaths,
+    _paths: &HealPaths,
     dest: &Path,
     force: bool,
     as_json: bool,
@@ -54,22 +53,24 @@ fn install(
     } else {
         ExtractMode::InstallSafe
     };
-    let manifest_path = paths.skills_install_manifest();
-    let (stats, manifest) = skill_assets::extract(dest, &manifest_path, mode)?;
+    let stats = skill_assets::extract(dest, mode)?;
     let wire = claude_settings::wire(project)?;
+    let version = skill_assets::bundled_version();
     if as_json {
-        super::emit_json(&SkillsActionReport::new(
-            SkillsActionKind::Installed,
-            dest,
-            &manifest,
-            &stats,
-            wire,
-        ));
+        super::emit_json(&SkillsActionReport {
+            action: SkillsActionKind::Installed,
+            dest: dest.display().to_string(),
+            version: &version,
+            source: INSTALL_SOURCE_BUNDLED,
+            files: stats.summary(),
+            user_modified_paths: &stats.user_modified,
+            claude: wire,
+        });
         return Ok(());
     }
     println!("skills {} at {}", install_verb(force), dest.display());
-    println!("  version: {}", manifest.heal_version);
-    println!("  source:  {}", manifest.source);
+    println!("  version: {version}");
+    println!("  source:  {INSTALL_SOURCE_BUNDLED}");
     print_extract_summary(&stats);
     print_wire_summary(wire);
     Ok(())
@@ -77,27 +78,28 @@ fn install(
 
 fn update(
     project: &Path,
-    paths: &HealPaths,
+    _paths: &HealPaths,
     dest: &Path,
     force: bool,
     as_json: bool,
 ) -> Result<()> {
-    let manifest_path = paths.skills_install_manifest();
-    let (stats, manifest) =
-        skill_assets::extract(dest, &manifest_path, ExtractMode::Update { force })?;
+    let stats = skill_assets::extract(dest, ExtractMode::Update { force })?;
     let wire = claude_settings::wire(project)?;
+    let version = skill_assets::bundled_version();
     if as_json {
-        super::emit_json(&SkillsActionReport::new(
-            SkillsActionKind::Updated,
-            dest,
-            &manifest,
-            &stats,
-            wire,
-        ));
+        super::emit_json(&SkillsActionReport {
+            action: SkillsActionKind::Updated,
+            dest: dest.display().to_string(),
+            version: &version,
+            source: INSTALL_SOURCE_BUNDLED,
+            files: stats.summary(),
+            user_modified_paths: &stats.user_modified,
+            claude: wire,
+        });
         return Ok(());
     }
     println!("skills updated at {}", dest.display());
-    println!("  version: {}", manifest.heal_version);
+    println!("  version: {version}");
     print_extract_summary(&stats);
     print_wire_summary(wire);
     if !stats.user_modified.is_empty() && !force {
@@ -109,56 +111,39 @@ fn update(
     Ok(())
 }
 
-/// Snapshot for `heal skills status`. Read-only: never touches the
-/// manifest, never invokes `extract`.
-fn status(paths: &HealPaths, dest: &Path, as_json: bool) {
-    let manifest_path = paths.skills_install_manifest();
+/// Snapshot for `heal skills status`. Read-only: reads every bundled
+/// skill's SKILL.md from disk to surface installed version + drift.
+fn status(dest: &Path, as_json: bool) {
     let bundled = skill_assets::bundled_version();
 
-    let Some(manifest) = InstallManifest::load(&manifest_path) else {
-        let state = if dest.exists() {
-            StatusState::NoManifest
-        } else {
-            StatusState::NotInstalled
-        };
+    if !dest.exists() {
         if as_json {
             super::emit_json(&StatusReport {
-                state,
+                state: StatusState::NotInstalled,
                 dest: dest.display().to_string(),
                 bundled: Some(bundled),
                 ..StatusReport::default()
             });
-            return;
-        }
-        match state {
-            StatusState::NotInstalled => {
-                println!("skills: not installed (run `heal skills install`)");
-            }
-            StatusState::NoManifest => {
-                println!(
-                    "skills: directory exists at {} but no manifest ({})",
-                    dest.display(),
-                    manifest_path.display()
-                );
-                println!("  bundled: {bundled}");
-                println!("  hint:    run `heal skills update --force` to refresh metadata.");
-            }
-            StatusState::Installed => unreachable!(),
+        } else {
+            println!("skills: not installed (run `heal skills install`)");
         }
         return;
-    };
+    }
 
-    let cmp = compare_versions(&manifest.heal_version, &bundled);
-    let drift = drifted_assets(dest, &manifest);
+    let installed = read_installed_version(dest);
+    let drift = drifted_assets(dest);
+
+    let cmp = installed
+        .as_deref()
+        .map_or(VersionCmp::BundledNewer, |v| compare_versions(v, &bundled));
 
     if as_json {
         super::emit_json(&StatusReport {
             state: StatusState::Installed,
             dest: dest.display().to_string(),
-            installed: Some(manifest.heal_version.clone()),
+            installed: installed.clone(),
             bundled: Some(bundled),
-            installed_at: Some(manifest.installed_at.to_rfc3339()),
-            source: Some(manifest.source.clone()),
+            source: Some(INSTALL_SOURCE_BUNDLED.to_string()),
             version_status: Some(cmp),
             drift,
         });
@@ -166,10 +151,14 @@ fn status(paths: &HealPaths, dest: &Path, as_json: bool) {
     }
 
     println!("skills: installed at {}", dest.display());
-    println!("  installed: {}", manifest.heal_version);
+    println!(
+        "  installed: {}",
+        installed
+            .as_deref()
+            .unwrap_or("(unknown — pre-metadata install)"),
+    );
     println!("  bundled:   {bundled}");
-    println!("  installed at: {}", manifest.installed_at.to_rfc3339());
-    println!("  source:    {}", manifest.source);
+    println!("  source:    {INSTALL_SOURCE_BUNDLED}");
 
     let label = match cmp {
         VersionCmp::Match => "up-to-date",
@@ -187,17 +176,11 @@ fn status(paths: &HealPaths, dest: &Path, as_json: bool) {
     }
 }
 
-fn uninstall(project: &Path, paths: &HealPaths, dest: &Path, as_json: bool) -> Result<()> {
-    let manifest_path = paths.skills_install_manifest();
-    let removed = remove_installed_skills(dest, &manifest_path)?;
-    let manifest_existed = manifest_path.exists();
-    if manifest_existed {
-        std::fs::remove_file(&manifest_path)
-            .with_context(|| format!("removing {}", manifest_path.display()))?;
-    }
+fn uninstall(project: &Path, _paths: &HealPaths, dest: &Path, as_json: bool) -> Result<()> {
+    let removed = remove_installed_skills(dest)?;
     let claude_settings::UnregisterReport { legacy_swept } = claude_settings::unregister(project)?;
 
-    let action = if removed.is_empty() && !manifest_existed && !legacy_swept {
+    let action = if removed.is_empty() && !legacy_swept {
         UninstallAction::Noop
     } else {
         UninstallAction::Removed
@@ -214,10 +197,8 @@ fn uninstall(project: &Path, paths: &HealPaths, dest: &Path, as_json: bool) -> R
     }
     match action {
         UninstallAction::Removed => {
-            if removed.is_empty() && !manifest_existed {
+            if removed.is_empty() {
                 println!("removed legacy plugin/marketplace install layout");
-            } else if removed.is_empty() {
-                println!("removed install manifest; no skill files were present");
             } else {
                 println!(
                     "removed {} skill(s) under {}",
@@ -227,9 +208,9 @@ fn uninstall(project: &Path, paths: &HealPaths, dest: &Path, as_json: bool) -> R
                 for s in &removed {
                     println!("  - {s}");
                 }
-            }
-            if legacy_swept && !removed.is_empty() {
-                println!("  also removed legacy plugin/marketplace install layout");
+                if legacy_swept {
+                    println!("  also removed legacy plugin/marketplace install layout");
+                }
             }
         }
         UninstallAction::Noop => println!("skills not installed; nothing to do"),
@@ -237,33 +218,88 @@ fn uninstall(project: &Path, paths: &HealPaths, dest: &Path, as_json: bool) -> R
     Ok(())
 }
 
-/// Remove every skill subdirectory recorded in the manifest. Returns
-/// the set of skill names that were actually removed (lexicographic
-/// order). Untracked files in `dest` are left alone — we never recursively
-/// nuke `.claude/skills/` because the user may have other skills there.
-fn remove_installed_skills(dest: &Path, manifest_path: &Path) -> Result<Vec<String>> {
-    let Some(manifest) = InstallManifest::load(manifest_path) else {
-        return Ok(Vec::new());
-    };
-    let skill_names: BTreeSet<String> = manifest
-        .assets
-        .keys()
-        .filter_map(|rel| rel.split('/').next().map(str::to_string))
-        .collect();
-
+/// Walk every bundled skill name and remove the corresponding directory
+/// from `dest` if present. Untracked sibling skills survive — we never
+/// recursively nuke `.claude/skills/` because the user may have other
+/// skills there.
+fn remove_installed_skills(dest: &Path) -> Result<Vec<String>> {
     let mut removed: Vec<String> = Vec::new();
-    for name in &skill_names {
-        let target = dest.join(name);
+    for name in skill_assets::bundled_skill_names() {
+        let target = dest.join(&name);
         if target.exists() {
             std::fs::remove_dir_all(&target)
                 .with_context(|| format!("removing {}", target.display()))?;
-            removed.push(name.clone());
+            removed.push(name);
         }
     }
-    // If `.claude/skills/` is now empty (we owned every entry), remove it
-    // too. Otherwise leave it for whoever else lives there.
     let _ = crate::core::fs::remove_dir_if_empty(dest);
     Ok(removed)
+}
+
+/// Read the installed `heal-version` from the first bundled skill's
+/// SKILL.md whose frontmatter carries the metadata block. Returns
+/// `None` for installs that pre-date the frontmatter convention or for
+/// dest dirs that don't carry any bundled skill.
+fn read_installed_version(dest: &Path) -> Option<String> {
+    for name in skill_assets::bundled_skill_names() {
+        let path = dest.join(&name).join("SKILL.md");
+        let Ok(body) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if let Some(version) = skill_assets::read_installed_version(&body) {
+            return Some(version);
+        }
+    }
+    None
+}
+
+/// Walk every bundled file and return the relative paths whose
+/// canonical (metadata-stripped) on-disk bytes diverge from the
+/// bundled raw bytes — i.e. the user has hand-edited them.
+fn drifted_assets(dest: &Path) -> Vec<String> {
+    use include_dir::DirEntry;
+
+    fn walk_dir(dir: &include_dir::Dir<'_>, dest: &Path, rel_prefix: &Path, out: &mut Vec<String>) {
+        for entry in dir.entries() {
+            match entry {
+                DirEntry::Dir(child) => walk_dir(child, dest, child.path(), out),
+                DirEntry::File(file) => {
+                    let target = dest.join(file.path());
+                    let Ok(on_disk) = std::fs::read(&target) else {
+                        continue;
+                    };
+                    let canonical = if file.path().file_name().is_some_and(|n| n == "SKILL.md") {
+                        match std::str::from_utf8(&on_disk) {
+                            Ok(text) => skill_assets::strip_skill_metadata(text).into_bytes(),
+                            Err(_) => on_disk.clone(),
+                        }
+                    } else {
+                        on_disk.clone()
+                    };
+                    if canonical != file.contents() {
+                        out.push(
+                            file.path()
+                                .components()
+                                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                                .collect::<Vec<_>>()
+                                .join("/"),
+                        );
+                    }
+                    let _ = rel_prefix;
+                }
+            }
+        }
+    }
+
+    let mut drift: Vec<String> = Vec::new();
+    walk_dir(
+        &skill_assets::SKILLS_DIR,
+        dest,
+        skill_assets::SKILLS_DIR.path(),
+        &mut drift,
+    );
+    drift.sort();
+    drift
 }
 
 fn install_verb(force: bool) -> &'static str {
@@ -299,9 +335,6 @@ fn wire_verb(action: WriteAction) -> &'static str {
     }
 }
 
-/// Stable JSON contract for `heal skills install --json` and
-/// `heal skills update --json`. The `action` field discriminates the
-/// two paths so callers can branch without parsing prose.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum SkillsActionKind {
@@ -320,26 +353,6 @@ struct SkillsActionReport<'a> {
     claude: WireReport,
 }
 
-impl<'a> SkillsActionReport<'a> {
-    fn new(
-        action: SkillsActionKind,
-        dest: &Path,
-        manifest: &'a InstallManifest,
-        stats: &'a ExtractStats,
-        wire: WireReport,
-    ) -> Self {
-        Self {
-            action,
-            dest: dest.display().to_string(),
-            version: &manifest.heal_version,
-            source: &manifest.source,
-            files: stats.summary(),
-            user_modified_paths: &stats.user_modified,
-            claude: wire,
-        }
-    }
-}
-
 /// Three reachable states for `heal skills status`. `Default` falls
 /// back to `NotInstalled` because that's the variant `StatusReport`'s
 /// struct-update pattern (`..StatusReport::default()`) coexists with —
@@ -349,7 +362,6 @@ impl<'a> SkillsActionReport<'a> {
 enum StatusState {
     #[default]
     NotInstalled,
-    NoManifest,
     Installed,
 }
 
@@ -361,8 +373,6 @@ struct StatusReport {
     installed: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     bundled: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    installed_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -422,22 +432,6 @@ fn compare_versions(installed: &str, bundled: &str) -> VersionCmp {
     }
 }
 
-/// Walk the manifest's recorded assets and return relative paths whose
-/// on-disk fingerprint no longer matches the install record.
-fn drifted_assets(dest: &Path, manifest: &InstallManifest) -> Vec<String> {
-    let mut drift: Vec<String> = Vec::new();
-    for (rel, fp) in &manifest.assets {
-        let p: PathBuf = dest.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
-        let Ok(bytes) = std::fs::read(&p) else {
-            continue;
-        };
-        if &skill_assets::fingerprint(&bytes) != fp {
-            drift.push(rel.clone());
-        }
-    }
-    drift
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -466,20 +460,30 @@ mod tests {
     fn drift_detection_flags_user_edits() {
         let dir = TempDir::new().unwrap();
         let dest = dir.path().join("skills");
-        let manifest_path = dir.path().join("skills-install.json");
-        let (_, manifest) =
-            skill_assets::extract(&dest, &manifest_path, ExtractMode::InstallSafe).unwrap();
-        // No drift right after install.
-        assert!(drifted_assets(&dest, &manifest).is_empty());
+        skill_assets::extract(&dest, ExtractMode::InstallSafe).unwrap();
+        // No drift right after install — only heal's own metadata stamp.
+        assert!(drifted_assets(&dest).is_empty());
 
         // Tamper with a known-shipped skill file.
         std::fs::write(dest.join("heal-code-patch/SKILL.md"), "tampered\n").unwrap();
-        let drift = drifted_assets(&dest, &manifest);
+        let drift = drifted_assets(&dest);
         assert!(drift.iter().any(|p| p == "heal-code-patch/SKILL.md"));
     }
 
     #[test]
-    fn uninstall_removes_installed_skills_and_manifest() {
+    fn read_installed_version_recovers_from_skill_md() {
+        let dir = TempDir::new().unwrap();
+        let dest = dir.path().join("skills");
+        skill_assets::extract(&dest, ExtractMode::InstallSafe).unwrap();
+        let installed = read_installed_version(&dest);
+        assert_eq!(
+            installed.as_deref(),
+            Some(skill_assets::bundled_version().as_str())
+        );
+    }
+
+    #[test]
+    fn uninstall_removes_installed_skills() {
         let dir = TempDir::new().unwrap();
         let project = dir.path();
         let paths = HealPaths::new(project);
@@ -487,11 +491,9 @@ mod tests {
         let dest = skills_dest(project);
         install(project, &paths, &dest, false, false).unwrap();
         assert!(dest.join("heal-cli/SKILL.md").exists());
-        assert!(paths.skills_install_manifest().exists());
 
         uninstall(project, &paths, &dest, false).unwrap();
         assert!(!dest.join("heal-cli/SKILL.md").exists());
-        assert!(!paths.skills_install_manifest().exists());
     }
 
     #[test]
@@ -513,9 +515,6 @@ mod tests {
         paths.ensure().unwrap();
         let settings = project.join(".claude/settings.json");
         std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
-        // A leftover from the pre-v0.3 install: HEAL's edit hook plus a
-        // user hook side-by-side. After install the HEAL entry should be
-        // gone; the user entry survives.
         std::fs::write(
             &settings,
             r#"{
@@ -554,14 +553,10 @@ mod tests {
         let dest = skills_dest(project);
         uninstall(project, &paths, &dest, false).unwrap();
         assert!(!project.join(".claude/settings.json").exists());
-        assert!(!paths.skills_install_manifest().exists());
     }
 
     #[test]
     fn uninstall_sweeps_legacy_install_with_no_new_install_present() {
-        // Mimic a project still on the pre-`feat(skills)!` layout: extracted
-        // plugin tree, marketplace.json, settings.json with the old keys —
-        // no new manifest, no new hook block.
         let dir = TempDir::new().unwrap();
         let project = dir.path();
         let paths = HealPaths::new(project);

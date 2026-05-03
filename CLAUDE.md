@@ -103,9 +103,9 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
 
 ### Result cache (`.heal/findings/`)
 - `heal init` writes a project-level `.heal/.gitignore` listing
-  `findings/` and `skills-install.json` so volatile state stays out of
-  git history. `config.toml` and `calibration.toml` remain tracked so
-  teammates share the same Severity ladder.
+  `findings/` so volatile state stays out of git history. `config.toml`
+  and `calibration.toml` remain tracked so teammates share the same
+  Severity ladder.
 - `heal status` is the **only writer** of `latest.json`. `heal diff`
   is a pure reader. `heal mark-fixed` is a second writer scoped to
   `fixed.json`. The cache models a TODO list — every Finding has a
@@ -167,9 +167,13 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
 - `heal skills install` extracts the embedded tree to
   `<project>/.claude/skills/<skill-name>/` (no marketplace, no plugin
   wrapper — Claude Code natively discovers project-scope skills under
-  `.claude/skills/`). Each extracted file's fingerprint is recorded in
-  `.heal/skills-install.json` for drift detection on
-  `heal skills update`.
+  `.claude/skills/`). There is no sidecar manifest: each SKILL.md is
+  stamped with a `metadata:` block in its YAML frontmatter
+  (`heal-version`, `heal-source`), and `heal skills update` derives
+  drift by comparing `canonical(on-disk)` (the metadata block stripped)
+  against the bundled raw bytes. Same machine or different teammate's
+  machine — the drift verdict is the same function of the on-disk + 
+  bundled bytes.
 - HEAL no longer registers any Claude Code hooks. `heal skills install`
   / `heal init` only sweep legacy `heal hook edit` / `heal hook stop`
   entries left over from earlier installs (and the pre-v0.2 marketplace

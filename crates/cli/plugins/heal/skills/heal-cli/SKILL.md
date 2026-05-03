@@ -228,22 +228,23 @@ event log to compare against.
 Manage the bundled skill set under `<project>/.claude/skills/`. Each
 top-level child of the embedded tree (`heal-cli`, `heal-config`,
 `heal-code-review`, `heal-code-patch`) extracts to a sibling directory
-under `.claude/skills/`. The same install merges HEAL's hook commands
-into `.claude/settings.json` (PostToolUse → `heal hook edit`, Stop →
-`heal hook stop`); uninstall removes only HEAL's command entries.
+under `.claude/skills/`. HEAL no longer registers any Claude Code
+hooks; install/uninstall sweep stale `heal hook edit` / `heal hook
+stop` entries from `.claude/settings.json` if present.
 
-The drift-detection manifest lives at `.heal/skills-install.json`
-(heal-owned state, not under `.claude/`).
+There is no sidecar manifest. Each `SKILL.md` carries a `metadata:`
+block in its YAML frontmatter (`heal-version`, `heal-source`); drift
+detection compares `canonical(on-disk)` (the metadata block stripped)
+against the bundled raw bytes.
 
 `status --json`:
 
 ```jsonc
 {
-  "state": "installed",                   // or not_installed / no_manifest
+  "state": "installed",                   // or not_installed
   "dest": ".claude/skills",
-  "installed": "0.2.1",
+  "installed": "0.2.1",                   // omitted on pre-metadata installs
   "bundled":   "0.2.1",
-  "installed_at": "2026-04-28T09:00:00Z",
   "source":    "bundled",
   "version_status": "up_to_date",         // or bundled_newer / installed_newer
   "drift": []                             // relative paths edited since install

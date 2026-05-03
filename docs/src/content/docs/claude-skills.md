@@ -203,16 +203,22 @@ After upgrading the `heal` binary:
 heal skills update
 ```
 
-**Drift-aware**. heal records the fingerprint of every installed file
-in `.heal/skills-install.json`. On update:
+**Drift-aware, no manifest needed**. Each installed `SKILL.md`
+carries a `metadata:` block in its YAML frontmatter (`heal-version`,
+`heal-source`). `update` derives drift directly from the on-disk
+bytes: it strips the metadata block and compares the remainder
+against the bundled raw bytes.
 
-- Files matching the recorded bundled fingerprint are overwritten
-  with the new bundled version.
-- Files with a different fingerprint (hand-edited) are left in place,
-  with a warning.
+- Files whose canonical (metadata-stripped) content matches the
+  bundled bytes are overwritten with the new bundled version.
+- Files with hand edits (anything outside the metadata block) are
+  left in place, with a warning.
 - Pass `--force` to overwrite everything, including hand edits.
 
 `heal skills status` reports which files have drifted, side-by-side.
+The same on-disk + bundled byte comparison runs on every machine, so
+re-installs from different teammates produce the same verdict — no
+sidecar manifest to coordinate.
 
 ## Removing it
 
@@ -222,9 +228,8 @@ heal skills uninstall
 
 Removes:
 
-- Every skill directory under `.claude/skills/heal-*` that the
-  manifest recorded.
-- `.heal/skills-install.json`.
+- Every bundled skill directory under `.claude/skills/heal-*` that
+  the install pass owns. Sibling skills you authored survive.
 - Any legacy `heal hook edit` / `heal hook stop` entries in
   `.claude/settings.json` (current heal does not register them; this
   step exists for upgrades from older versions).

@@ -47,7 +47,7 @@ heal status  ──►  calibration.toml で Finding を分類
 ```
 <your-repo>/
 ├── .heal/
-│   ├── .gitignore                # 自動 — findings/ と skills-install.json を除外
+│   ├── .gitignore                # 自動 — findings/ を除外
 │   ├── config.toml               # 自分で編集する（git 管理対象）
 │   ├── calibration.toml          # 自動 — heal init / heal calibrate（git 管理対象）
 │   └── findings/
@@ -65,8 +65,8 @@ heal status  ──►  calibration.toml で Finding を分類
 ```
 
 `config.toml` と `calibration.toml` は git で追跡され、チームで同じ
-Severity ラダーを共有できます。`findings/` と
-`skills-install.json` は `.heal/.gitignore` によって除外されます。
+Severity ラダーを共有できます。`findings/` は `.heal/.gitignore` に
+よって除外されます。
 
 ## 何がいつ書かれるか
 
@@ -79,7 +79,6 @@ Severity ラダーを共有できます。`findings/` と
 | `.heal/findings/fixed.json`     | `heal mark-fixed`（`/heal-code-patch` から呼出）    | `/heal-code-patch` のコミット着地ごと。           |
 | `.heal/findings/regressed.jsonl` | `heal status`（整合パス）                            | 修正済み Finding が再検出されたとき。            |
 | `.claude/skills/heal-*/`         | `heal skills install`                               | 一度だけ。`heal skills update` で更新。           |
-| `.heal/skills-install.json`      | `heal skills install` / `update`                    | ドリフト検出マニフェスト。                        |
 
 イベントログも、月次ローテーションも、`.heal/snapshots/` /
 `.heal/logs/` / `.heal/docs/` / `.heal/reports/` も存在しません。

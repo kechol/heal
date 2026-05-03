@@ -47,9 +47,9 @@ heal init --force        # 既存の config.toml / フックを上書き
 `heal init` の処理:
 
 1. `.heal/` を作成し、`config.toml`、`calibration.toml`、
-   `findings/`、そして `findings/` と `skills-install.json` を除外
-   する `.gitignore` を配置（`config.toml` と `calibration.toml`
-   は git で追跡され、チームで同じ Severity ラダーを共有できます）。
+   `findings/`、そして `findings/` を除外する `.gitignore` を配置
+   （`config.toml` と `calibration.toml` は git で追跡され、チーム
+   で同じ Severity ラダーを共有できます）。
 2. 全オブザーバーを一度走らせ、メトリクスごとにコードベースのパー
    センタイル分布を計算 — これが `calibration.toml` になります
    （先頭には `heal calibrate --force` を案内するコメントヘッダ）。

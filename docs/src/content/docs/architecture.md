@@ -47,7 +47,7 @@ After `heal init`:
 ```
 <your-repo>/
 ├── .heal/
-│   ├── .gitignore                 # auto — excludes findings/ and skills-install.json
+│   ├── .gitignore                 # auto — excludes findings/
 │   ├── config.toml                # you edit this (tracked in git)
 │   ├── calibration.toml           # auto — heal init / heal calibrate (tracked in git)
 │   └── findings/
@@ -65,8 +65,8 @@ After `heal init`:
 ```
 
 `config.toml` and `calibration.toml` stay tracked in git so the
-team shares the same Severity ladder. `findings/` and
-`skills-install.json` are excluded by `.heal/.gitignore`.
+team shares the same Severity ladder. `findings/` is excluded by
+`.heal/.gitignore`.
 
 ## What gets written and when
 
@@ -79,7 +79,6 @@ team shares the same Severity ladder. `findings/` and
 | `.heal/findings/fixed.json`      | `heal mark-fixed` (called by `/heal-code-patch`) | Each commit `/heal-code-patch` lands.        |
 | `.heal/findings/regressed.jsonl` | `heal status` (reconcile pass)                   | When a fixed finding is re-detected.         |
 | `.claude/skills/heal-*/`         | `heal skills install`                            | Once; updated with `heal skills update`.     |
-| `.heal/skills-install.json`      | `heal skills install` / `update`                 | Drift-detection manifest.                    |
 
 There is no event log, no monthly rotation, no `.heal/snapshots/`,
 `.heal/logs/`, `.heal/docs/`, or `.heal/reports/` directory. heal

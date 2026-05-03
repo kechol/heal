@@ -8,36 +8,31 @@
 //! No marketplace, no plugin wrapper — Claude Code natively discovers
 //! project-scope skills under `.claude/skills/`.
 //!
-//! ## Why a manifest?
+//! ## Drift detection without a manifest
 //!
-//! `heal skills update` needs three things the embedded tree alone can't
-//! tell it:
-//!   1. Which version was last installed (so `status` can compare against
-//!      the bundled version).
-//!   2. Which files the user has edited locally since the last install
-//!      (so a routine `update` doesn't blow away hand-tuned skills).
-//!   3. A timestamp + source provenance per agentskills.io conventions.
+//! The bundled bytes are the source of truth. There is no
+//! `skills-install.json` — every install metadata fact lives inside
+//! the SKILL.md frontmatter under a `metadata:` block (heal-version,
+//! heal-source). Drift is derived directly from the on-disk bytes:
 //!
-//! The manifest lives at `.heal/skills-install.json` (heal-owned state,
-//! decoupled from `.claude/`). Drift detection compares an on-disk
-//! fingerprint against the manifest's recorded fingerprint from the
-//! previous install.
+//!   1. `canonical(on-disk)` strips the `metadata:` block from a
+//!      SKILL.md (other files are returned verbatim).
+//!   2. `canonical(on-disk) == bundled raw bytes` → user has not
+//!      edited; the only difference is heal's own metadata stamp.
+//!   3. `canonical(on-disk) != bundled raw bytes` → user has made
+//!      hand edits; `heal skills update` skips these unless `--force`.
 //!
-//! The fingerprint algorithm is a hand-rolled FNV-1a 64-bit hash formatted
-//! as 16 hex digits. It is *not* cryptographic — its only job is to
-//! distinguish "byte-for-byte identical to last install" from "edited."
-//! FNV is preferred over `std::hash::DefaultHasher` because the std hasher
-//! is explicitly unstable across Rust toolchain versions, which would
-//! invalidate every recorded fingerprint after a `rustc` upgrade.
+//! That makes the on-disk skill files self-describing: a teammate can
+//! re-install on a different machine and the drift verdict is the same
+//! function of `(on-disk bytes, bundled bytes)` no matter which machine
+//! ran the previous install. No untracked manifest to coordinate.
 
-use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
 use include_dir::{include_dir, Dir, DirEntry, File};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 /// Embedded bundle. Each top-level child is a skill directory whose
 /// contents land 1:1 under `<project>/.claude/skills/<skill-name>/`.
@@ -53,7 +48,8 @@ pub fn skills_dest(project: &Path) -> PathBuf {
     project.join(SKILLS_DEST_REL)
 }
 
-/// Source-of-install marker recorded in the manifest.
+/// Source-of-install marker stamped into the SKILL.md `metadata:`
+/// block.
 pub const INSTALL_SOURCE_BUNDLED: &str = "bundled";
 
 /// Caller intent for [`extract`]. Drift handling differs between the three:
@@ -61,8 +57,8 @@ pub const INSTALL_SOURCE_BUNDLED: &str = "bundled";
 /// - [`ExtractMode::InstallSafe`]: leave existing files alone (matches the
 ///   default `heal skills install` ergonomics — initial install or noop).
 /// - [`ExtractMode::InstallForce`]: overwrite every file, drift or not.
-/// - [`ExtractMode::Update { force }`]: overwrite *unchanged* files; skip
-///   files whose on-disk fingerprint diverges from the prior manifest
+/// - [`ExtractMode::Update { force }`]: overwrite *unmodified* files; skip
+///   files whose `canonical()` content diverges from the bundled bytes
 ///   unless `force` is true (matches `heal skills update [--force]`).
 #[derive(Debug, Clone, Copy)]
 pub enum ExtractMode {
@@ -105,47 +101,6 @@ pub struct ExtractSummary {
     pub user_modified: usize,
 }
 
-/// On-disk record of "what was last installed". Read by `heal skills
-/// status` and by `update` for drift detection. Forward-compatible —
-/// readers ignore unknown fields.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct InstallManifest {
-    pub heal_version: String,
-    pub installed_at: DateTime<Utc>,
-    pub source: String,
-    /// Map of `<skill-name>/<rel-path>` → fingerprint hex. The relative
-    /// path uses `/` separators regardless of host OS.
-    pub assets: BTreeMap<String, String>,
-}
-
-impl InstallManifest {
-    fn new(version: String, now: DateTime<Utc>) -> Self {
-        Self {
-            heal_version: version,
-            installed_at: now,
-            source: INSTALL_SOURCE_BUNDLED.to_string(),
-            assets: BTreeMap::new(),
-        }
-    }
-
-    /// Read the manifest from its on-disk path. `None` when the file is
-    /// missing or unparseable — callers treat both as "no prior state."
-    pub fn load(path: &Path) -> Option<Self> {
-        let body = std::fs::read_to_string(path).ok()?;
-        serde_json::from_str(&body).ok()
-    }
-
-    fn save(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("mkdir {}", parent.display()))?;
-        }
-        let body = serde_json::to_string_pretty(self)
-            .expect("InstallManifest serialization is infallible");
-        std::fs::write(path, body).with_context(|| format!("writing {}", path.display()))
-    }
-}
-
 /// Bundled HEAL version. Sourced from the crate's `Cargo.toml` at build
 /// time so install metadata always matches the binary that wrote it.
 #[must_use]
@@ -153,38 +108,39 @@ pub fn bundled_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-/// Walk the embedded tree, write each entry to `dest` (the skills
-/// parent directory), persist the manifest at `manifest_path`, and
-/// return both the per-file outcome and the manifest that was just
-/// persisted.
-pub fn extract(
-    dest: &Path,
-    manifest_path: &Path,
-    mode: ExtractMode,
-) -> Result<(ExtractStats, InstallManifest)> {
+/// Walk the embedded tree and write each entry to `dest` (the skills
+/// parent directory). Returns the per-file outcome; nothing is written
+/// to a sidecar manifest — the SKILL.md frontmatter carries the install
+/// metadata.
+pub fn extract(dest: &Path, mode: ExtractMode) -> Result<ExtractStats> {
     std::fs::create_dir_all(dest)
         .with_context(|| format!("creating skills dest dir {}", dest.display()))?;
-
-    let prior = InstallManifest::load(manifest_path);
-    let version = bundled_version();
-    let mut manifest = InstallManifest::new(version.clone(), Utc::now());
     let install_meta = SkillInstallMeta {
-        version,
+        version: bundled_version(),
         source: INSTALL_SOURCE_BUNDLED.to_string(),
     };
     let mut stats = ExtractStats::default();
+    walk(&SKILLS_DIR, dest, mode, &install_meta, &mut stats)?;
+    Ok(stats)
+}
 
-    walk(
-        &SKILLS_DIR,
-        dest,
-        mode,
-        prior.as_ref(),
-        &install_meta,
-        &mut stats,
-        &mut manifest,
-    )?;
-    manifest.save(manifest_path)?;
-    Ok((stats, manifest))
+/// Names of every top-level skill directory in the embedded bundle —
+/// the ones `heal skills install` extracts. Used by `uninstall` to
+/// scope the removal: untouched user-authored skill directories under
+/// `.claude/skills/` survive.
+#[must_use]
+pub fn bundled_skill_names() -> Vec<String> {
+    SKILLS_DIR
+        .entries()
+        .iter()
+        .filter_map(|e| match e {
+            DirEntry::Dir(d) => d
+                .path()
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned()),
+            DirEntry::File(_) => None,
+        })
+        .collect()
 }
 
 /// Recursive worker for [`extract`]. Walks `dir` (an embedded directory)
@@ -193,10 +149,8 @@ fn walk(
     dir: &Dir<'_>,
     dest: &Path,
     mode: ExtractMode,
-    prior: Option<&InstallManifest>,
     meta: &SkillInstallMeta,
     stats: &mut ExtractStats,
-    manifest: &mut InstallManifest,
 ) -> Result<()> {
     for entry in dir.entries() {
         let rel_path = entry.path();
@@ -205,73 +159,89 @@ fn walk(
             DirEntry::Dir(child) => {
                 std::fs::create_dir_all(&target)
                     .with_context(|| format!("mkdir {}", target.display()))?;
-                walk(child, dest, mode, prior, meta, stats, manifest)?;
+                walk(child, dest, mode, meta, stats)?;
             }
             DirEntry::File(file) => {
-                handle_file(file, &target, rel_path, mode, prior, meta, stats, manifest)?;
+                handle_file(file, &target, rel_path, mode, meta, stats)?;
             }
         }
     }
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_file(
     file: &File<'_>,
     target: &Path,
     rel_path: &Path,
     mode: ExtractMode,
-    prior: Option<&InstallManifest>,
     meta: &SkillInstallMeta,
     stats: &mut ExtractStats,
-    manifest: &mut InstallManifest,
 ) -> Result<()> {
     let rel_key = relative_key(rel_path);
-    let body = canonical_bytes(file, rel_path, meta);
-    let new_fp = fingerprint(&body);
-    manifest.assets.insert(rel_key.clone(), new_fp.clone());
+    let with_metadata = canonical_bytes(file, rel_path, meta);
 
     if !target.exists() {
-        write_asset(target, &body)?;
+        write_asset(target, &with_metadata)?;
         stats.added.push(rel_key);
         return Ok(());
     }
 
+    let on_disk = std::fs::read(target).unwrap_or_default();
     match mode {
         ExtractMode::InstallSafe => {
             stats.skipped.push(rel_key);
-            return Ok(());
+            Ok(())
         }
         ExtractMode::InstallForce => {
-            let pre_fp = fingerprint(&std::fs::read(target).unwrap_or_default());
-            write_asset(target, &body)?;
-            classify(stats, &pre_fp, &new_fp, rel_key);
-            return Ok(());
+            classify_and_write(stats, target, &on_disk, &with_metadata, rel_key)
         }
         ExtractMode::Update { force } => {
-            let pre_fp = fingerprint(&std::fs::read(target).unwrap_or_default());
-            let prior_fp = prior.and_then(|m| m.assets.get(&rel_key)).cloned();
-            let drifted = prior_fp.map_or(pre_fp != new_fp, |p| pre_fp != p);
-            if drifted && !force {
+            if user_modified(file, rel_path, &on_disk) && !force {
                 stats.user_modified.push(rel_key);
                 return Ok(());
             }
-            write_asset(target, &body)?;
-            classify(stats, &pre_fp, &new_fp, rel_key);
+            classify_and_write(stats, target, &on_disk, &with_metadata, rel_key)
         }
     }
+}
+
+/// Write `with_metadata` to `target` and bucket the result. Skips the
+/// disk write entirely when the bytes already match — re-running an
+/// install on a clean tree shouldn't churn mtimes.
+fn classify_and_write(
+    stats: &mut ExtractStats,
+    target: &Path,
+    on_disk: &[u8],
+    with_metadata: &[u8],
+    rel_key: String,
+) -> Result<()> {
+    if on_disk == with_metadata {
+        stats.unchanged.push(rel_key);
+        return Ok(());
+    }
+    write_asset(target, with_metadata)?;
+    stats.updated.push(rel_key);
     Ok(())
 }
 
-/// Fold a just-written asset into either `unchanged` or `updated` by
-/// comparing the file's pre-write fingerprint against the bundled bytes
-/// we just emitted — i.e. did the on-disk content actually change?
-fn classify(stats: &mut ExtractStats, pre_fp: &str, new_fp: &str, rel_key: String) {
-    if pre_fp == new_fp {
-        stats.unchanged.push(rel_key);
-    } else {
-        stats.updated.push(rel_key);
+/// True when the on-disk bytes (after stripping heal's own metadata
+/// block) diverge from the bundled raw bytes — the user has hand-
+/// edited the file.
+fn user_modified(file: &File<'_>, rel_path: &Path, on_disk: &[u8]) -> bool {
+    canonical_user_bytes(rel_path, on_disk) != file.contents()
+}
+
+/// On-disk bytes with heal's own metadata stamp removed, so a
+/// version-only difference doesn't read as a user edit. SKILL.md gets
+/// the `metadata:` block stripped from its frontmatter; every other
+/// file is returned verbatim.
+fn canonical_user_bytes<'a>(rel_path: &Path, on_disk: &'a [u8]) -> std::borrow::Cow<'a, [u8]> {
+    if rel_path.file_name().is_some_and(|n| n == "SKILL.md") {
+        if let Ok(text) = std::str::from_utf8(on_disk) {
+            return std::borrow::Cow::Owned(strip_skill_metadata(text).into_bytes());
+        }
     }
+    std::borrow::Cow::Borrowed(on_disk)
 }
 
 fn write_asset(target: &Path, body: &[u8]) -> Result<()> {
@@ -297,8 +267,7 @@ fn canonical_bytes(file: &File<'_>, rel_path: &Path, meta: &SkillInstallMeta) ->
 /// Per-skill frontmatter metadata. Intentionally **content-derived only**
 /// — no timestamps. A wall-clock value here would make every `extract`
 /// pass produce different bytes for an otherwise-unchanged SKILL.md and
-/// keep flagging it as "updated". The install timestamp lives in
-/// [`InstallManifest::installed_at`] instead.
+/// keep flagging it as "updated".
 #[derive(Debug, Clone)]
 struct SkillInstallMeta {
     version: String,
@@ -322,27 +291,11 @@ fn inject_skill_metadata(body: &str, meta: &SkillInstallMeta) -> String {
     let frontmatter = &after_open[..close_offset];
     let rest = &after_open[close_offset + 5..]; // skip "\n---\n"
 
-    let mut kept_lines: Vec<&str> = Vec::new();
-    let mut in_metadata = false;
-    for line in frontmatter.lines() {
-        if in_metadata {
-            // Members of the previous metadata block are indented; the
-            // first un-indented (non-empty) line resumes regular keys.
-            if line.starts_with(' ') || line.is_empty() {
-                continue;
-            }
-            in_metadata = false;
-        }
-        if line.trim_start().starts_with("metadata:") {
-            in_metadata = true;
-            continue;
-        }
-        kept_lines.push(line);
-    }
+    let kept = strip_metadata_lines(frontmatter);
 
     let mut out = String::with_capacity(body.len() + 200);
     out.push_str("---\n");
-    for line in &kept_lines {
+    for line in &kept {
         out.push_str(line);
         out.push('\n');
     }
@@ -354,12 +307,83 @@ fn inject_skill_metadata(body: &str, meta: &SkillInstallMeta) -> String {
     out
 }
 
-/// Drift-detection fingerprint shared by `extract` (manifest writer) and
-/// `skills::status` (drift reader). Backed by the workspace-shared
-/// FNV-1a 64-bit so the same bytes always map to the same hex digest
-/// across processes and toolchain versions.
-pub(crate) fn fingerprint(bytes: &[u8]) -> String {
-    crate::core::hash::fnv1a_hex(crate::core::hash::fnv1a_64(bytes))
+/// Strip heal's `metadata:` block from a SKILL.md so the result is
+/// byte-comparable against the bundled raw source. Returns the input
+/// unchanged when there's no frontmatter or no metadata block.
+pub fn strip_skill_metadata(body: &str) -> String {
+    if !body.starts_with("---\n") {
+        return body.to_string();
+    }
+    let after_open = &body[4..];
+    let Some(close_offset) = after_open.find("\n---\n") else {
+        return body.to_string();
+    };
+    let frontmatter = &after_open[..close_offset];
+    let rest = &after_open[close_offset + 5..];
+
+    let kept = strip_metadata_lines(frontmatter);
+    let mut out = String::with_capacity(body.len());
+    out.push_str("---\n");
+    for line in &kept {
+        out.push_str(line);
+        out.push('\n');
+    }
+    out.push_str("---\n");
+    out.push_str(rest);
+    out
+}
+
+/// Drop the `metadata:` block from a YAML frontmatter line slice.
+/// Members of the block are indented; the first un-indented (non-empty)
+/// line resumes regular keys.
+fn strip_metadata_lines(frontmatter: &str) -> Vec<&str> {
+    let mut kept: Vec<&str> = Vec::new();
+    let mut in_metadata = false;
+    for line in frontmatter.lines() {
+        if in_metadata {
+            if line.starts_with(' ') || line.is_empty() {
+                continue;
+            }
+            in_metadata = false;
+        }
+        if line.trim_start().starts_with("metadata:") {
+            in_metadata = true;
+            continue;
+        }
+        kept.push(line);
+    }
+    kept
+}
+
+/// Read the `heal-version` value from a SKILL.md's `metadata:` block,
+/// when present. Returns `None` for files without frontmatter, without
+/// a `metadata:` block, or without the key.
+#[must_use]
+pub fn read_installed_version(skill_md_body: &str) -> Option<String> {
+    if !skill_md_body.starts_with("---\n") {
+        return None;
+    }
+    let after_open = &skill_md_body[4..];
+    let close_offset = after_open.find("\n---\n")?;
+    let frontmatter = &after_open[..close_offset];
+    let mut in_metadata = false;
+    for line in frontmatter.lines() {
+        if !in_metadata {
+            if line.trim_start().starts_with("metadata:") {
+                in_metadata = true;
+            }
+            continue;
+        }
+        let trimmed = line.trim_start();
+        if !line.starts_with(' ') && !trimmed.is_empty() {
+            // Block ended without finding the key.
+            return None;
+        }
+        if let Some(value) = trimmed.strip_prefix("heal-version:") {
+            return Some(value.trim().to_string());
+        }
+    }
+    None
 }
 
 fn relative_key(p: &Path) -> String {
@@ -381,21 +405,9 @@ mod tests {
         }
     }
 
-    fn manifest_under(dir: &Path) -> PathBuf {
-        dir.join("skills-install.json")
-    }
-
     #[test]
     fn bundled_version_returns_crate_version() {
         assert_eq!(bundled_version(), env!("CARGO_PKG_VERSION"));
-    }
-
-    #[test]
-    fn fingerprint_is_deterministic() {
-        let a = fingerprint(b"hello");
-        let b = fingerprint(b"hello");
-        assert_eq!(a, b);
-        assert_ne!(a, fingerprint(b"hellx"));
     }
 
     #[test]
@@ -428,15 +440,35 @@ mod tests {
     }
 
     #[test]
+    fn strip_metadata_round_trips_through_inject() {
+        let body = "---\nname: x\ndescription: y\n---\n\nbody\n";
+        let injected = inject_skill_metadata(body, &fixed_meta());
+        let stripped = strip_skill_metadata(&injected);
+        assert_eq!(stripped, body);
+    }
+
+    #[test]
+    fn read_installed_version_finds_value() {
+        let body =
+            "---\nname: x\nmetadata:\n  heal-version: 1.2.3\n  heal-source: bundled\n---\n\nbody\n";
+        assert_eq!(read_installed_version(body), Some("1.2.3".into()));
+    }
+
+    #[test]
+    fn read_installed_version_none_when_metadata_missing() {
+        let body = "---\nname: x\n---\n\nbody\n";
+        assert_eq!(read_installed_version(body), None);
+    }
+
+    #[test]
     fn extract_install_safe_preserves_existing_files() {
         let dir = TempDir::new().unwrap();
         let dest = dir.path().join("skills");
-        let manifest = manifest_under(dir.path());
-        let (stats1, _) = extract(&dest, &manifest, ExtractMode::InstallSafe).unwrap();
+        let stats1 = extract(&dest, ExtractMode::InstallSafe).unwrap();
         assert!(stats1.added.iter().any(|p| p == "heal-cli/SKILL.md"));
         let target = dest.join("heal-code-patch/SKILL.md");
         std::fs::write(&target, "---\nuser edit\n---\n").unwrap();
-        let (stats2, _) = extract(&dest, &manifest, ExtractMode::InstallSafe).unwrap();
+        let stats2 = extract(&dest, ExtractMode::InstallSafe).unwrap();
         assert!(stats2
             .skipped
             .iter()
@@ -449,13 +481,12 @@ mod tests {
     fn extract_update_skips_user_modified_without_force() {
         let dir = TempDir::new().unwrap();
         let dest = dir.path().join("skills");
-        let manifest = manifest_under(dir.path());
-        extract(&dest, &manifest, ExtractMode::InstallSafe).unwrap();
+        extract(&dest, ExtractMode::InstallSafe).unwrap();
 
         let target = dest.join("heal-code-patch/SKILL.md");
         std::fs::write(&target, "---\nuser edit\n---\n").unwrap();
 
-        let (stats, _) = extract(&dest, &manifest, ExtractMode::Update { force: false }).unwrap();
+        let stats = extract(&dest, ExtractMode::Update { force: false }).unwrap();
         assert!(stats
             .user_modified
             .iter()
@@ -468,13 +499,12 @@ mod tests {
     fn extract_update_force_overwrites_user_edits() {
         let dir = TempDir::new().unwrap();
         let dest = dir.path().join("skills");
-        let manifest = manifest_under(dir.path());
-        extract(&dest, &manifest, ExtractMode::InstallSafe).unwrap();
+        extract(&dest, ExtractMode::InstallSafe).unwrap();
 
         let target = dest.join("heal-code-patch/SKILL.md");
         std::fs::write(&target, "---\nuser edit\n---\n").unwrap();
 
-        let (stats, _) = extract(&dest, &manifest, ExtractMode::Update { force: true }).unwrap();
+        let stats = extract(&dest, ExtractMode::Update { force: true }).unwrap();
         assert!(stats
             .updated
             .iter()
@@ -484,26 +514,48 @@ mod tests {
     }
 
     #[test]
-    fn install_manifest_records_version_and_assets() {
+    fn extract_update_unchanged_when_only_metadata_was_stripped() {
+        // If the user (or another tool) wiped the metadata block but left
+        // the rest intact, `update` should refresh the metadata without
+        // flagging the file as user-modified.
         let dir = TempDir::new().unwrap();
         let dest = dir.path().join("skills");
-        let manifest_path = manifest_under(dir.path());
-        let (_, manifest) = extract(&dest, &manifest_path, ExtractMode::InstallSafe).unwrap();
-        assert_eq!(manifest.heal_version, bundled_version());
-        assert_eq!(manifest.source, "bundled");
-        assert!(manifest.assets.contains_key("heal-cli/SKILL.md"));
-        let loaded = InstallManifest::load(&manifest_path).unwrap();
-        assert_eq!(loaded, manifest);
+        extract(&dest, ExtractMode::InstallSafe).unwrap();
+
+        let target = dest.join("heal-code-patch/SKILL.md");
+        let after_install = std::fs::read_to_string(&target).unwrap();
+        let stripped = strip_skill_metadata(&after_install);
+        std::fs::write(&target, &stripped).unwrap();
+
+        let stats = extract(&dest, ExtractMode::Update { force: false }).unwrap();
+        assert!(
+            stats.user_modified.is_empty(),
+            "stripped metadata is heal's own footprint, not a user edit",
+        );
+        let body = std::fs::read_to_string(&target).unwrap();
+        assert!(body.contains("metadata:"), "metadata must be re-stamped");
     }
 
     #[test]
     fn skill_md_install_carries_frontmatter_metadata() {
         let dir = TempDir::new().unwrap();
         let dest = dir.path().join("skills");
-        let manifest = manifest_under(dir.path());
-        extract(&dest, &manifest, ExtractMode::InstallSafe).unwrap();
+        extract(&dest, ExtractMode::InstallSafe).unwrap();
         let body = std::fs::read_to_string(dest.join("heal-code-review/SKILL.md")).unwrap();
         assert!(body.contains("metadata:"));
         assert!(body.contains(&format!("heal-version: {}", bundled_version())));
+        assert_eq!(
+            read_installed_version(&body).as_deref(),
+            Some(bundled_version().as_str())
+        );
+    }
+
+    #[test]
+    fn bundled_skill_names_lists_top_level_dirs() {
+        let names = bundled_skill_names();
+        assert!(names.iter().any(|n| n == "heal-cli"));
+        assert!(names.iter().any(|n| n == "heal-config"));
+        assert!(names.iter().any(|n| n == "heal-code-review"));
+        assert!(names.iter().any(|n| n == "heal-code-patch"));
     }
 }

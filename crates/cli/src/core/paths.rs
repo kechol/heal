@@ -73,20 +73,11 @@ impl HealPaths {
     }
 
     /// `.heal/.gitignore` — written by `heal init` so volatile state
-    /// (`findings/`, `skills-install.json`) doesn't dirty the worktree.
-    /// Tracked tomls (`config.toml`, `calibration.toml`) stay versioned.
+    /// (`findings/`) doesn't dirty the worktree. Tracked tomls
+    /// (`config.toml`, `calibration.toml`) stay versioned.
     #[must_use]
     pub fn gitignore(&self) -> PathBuf {
         self.root.join(".gitignore")
-    }
-
-    /// Manifest tracking which skill files were extracted by
-    /// `heal skills install`, keyed by `<skill-name>/<rel-path>`. Lives
-    /// under `.heal/` (not `.claude/skills/`) so the manifest stays
-    /// heal-owned and Claude never reads files it doesn't recognise.
-    #[must_use]
-    pub fn skills_install_manifest(&self) -> PathBuf {
-        self.root.join("skills-install.json")
     }
 
     /// Create every standard subdirectory. Idempotent.
