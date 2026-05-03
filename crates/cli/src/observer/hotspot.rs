@@ -11,8 +11,7 @@
 //! `compose` is a pure function over already-computed reports so the
 //! `status` command path can reuse the work the Churn/Complexity
 //! observers already did. `Observer::observe` re-runs both observers from
-//! the project root for callers (e.g. future history-snapshot writers)
-//! that don't have reports on hand.
+//! the project root for callers that don't have reports on hand.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

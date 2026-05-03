@@ -317,7 +317,7 @@ fn render_tier_section(
     }
     let mut sorted: Vec<&Finding> = items.to_vec();
     // Severity desc, then 🔥 first within same Severity, then by metric
-    // / file for deterministic snapshot output.
+    // / file for deterministic output.
     sorted.sort_by(|a, b| {
         b.severity
             .cmp(&a.severity)

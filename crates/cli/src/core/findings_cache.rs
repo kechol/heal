@@ -195,9 +195,9 @@ fn workspace_summaries(findings: &[Finding]) -> Vec<WorkspaceSummary> {
 }
 
 /// "A skill committed a fix that resolves this finding". The skill (or
-/// equivalent caller) appends one of these via [`append_fixed`] when it
-/// lands a commit; the next `heal status` reconciles fixed.jsonl against
-/// the new findings.
+/// equivalent caller) inserts one of these via [`upsert_fixed`] when it
+/// lands a commit; the next `heal status` reconciles `fixed.json`
+/// against the new findings.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FixedFinding {
     pub finding_id: String,

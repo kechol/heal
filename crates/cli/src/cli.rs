@@ -44,7 +44,8 @@ pub enum Command {
         #[command(subcommand)]
         event: HookEvent,
     },
-    /// Per-metric summary plus the delta since the previous snapshot.
+    /// Per-metric summary recomputed on every invocation. No history,
+    /// no delta — `(commit, config, calibration)` determines the output.
     Metrics {
         #[arg(long)]
         json: bool,

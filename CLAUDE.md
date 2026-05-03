@@ -69,20 +69,17 @@ public JSON shape (`.heal/findings/latest.json`) is part of this
 contract — bumping `FINDINGS_RECORD_VERSION` is the prescribed escape
 hatch when a field rename is unavoidable.
 
+Most names are self-evident from `crate::core::*` and the
+`.heal/findings/` layout — only the conventions you'd otherwise have
+to derive are listed here.
+
 | Concept                               | Canonical                                                           | Notes                                                       |
 |---------------------------------------|---------------------------------------------------------------------|-------------------------------------------------------------|
-| One observed problem                  | `Finding`                                                           | Carries `metric`, `location`, `severity`, `id` (deterministic). |
-| Result of one `heal status` run       | `FindingsRecord`                                                    | Lives in `.heal/findings/latest.json`. Schema versioned.    |
-| Run-id field on the record            | `id`                                                                | ULID; lexicographic = chronological.                        |
-| Result-cache directory                | `.heal/findings/`                                                   |                                                             |
-| Cache module                          | `crate::core::findings_cache`                                       |                                                             |
-| Schema-version constant               | `FINDINGS_RECORD_VERSION` (currently `2`)                           | Bump on breaking field rename. `read_latest` peeks at the version field and returns `Ok(None)` on any mismatch (forward + backward) so the next `heal status` rewrites silently. |
-| Severity ladder                       | `Severity` { `Ok`, `Medium`, `High`, `Critical` }                   | Lives in `core::severity`. Per-file aggregation uses `cmp::max`. |
-| Calibration                           | `Calibration` (per-metric breaks) + `HotspotCalibration` (per-file aggregate) | `core::calibration`.                              |
-| Skill-committed fix marker            | `FixedFinding`                                                      | Lives in `.heal/findings/fixed.json` (BTreeMap, bounded).   |
-| Re-detected-fix marker                | `RegressedEntry`                                                    | Append-only `.heal/findings/regressed.jsonl`. Carries `regressed_in_record_id` (the `FindingsRecord.id` that re-detected the finding). |
-| Live subcommands                      | `init`, `hook`, `metrics`, `status`, `diff`, `mark-fixed`, `skills`, `calibrate` | `checks`, `compact`, `logs`, `snapshots` were removed. |
-| Observer registry                     | `crate::observer::*` (loc, complexity, churn, change_coupling, duplication, hotspot) | One file per metric.                                |
+| Result of one `heal status` run       | `FindingsRecord`                                                    | `.heal/findings/latest.json`. Schema-versioned via `FINDINGS_RECORD_VERSION` (currently `2`); `read_latest` peeks at the version field and returns `Ok(None)` on any mismatch so the next run silently rewrites under the new schema. |
+| Severity ladder                       | `Severity` { `Ok`, `Medium`, `High`, `Critical` }                   | Per-file aggregation uses `cmp::max` (worst-finding-wins).  |
+| Calibration pair                      | `Calibration` (per-metric percentile breaks) + `HotspotCalibration` (per-file composite) | Both live in `core::calibration`.                |
+| Re-detected-fix cross-ref             | `RegressedEntry::regressed_in_record_id`                            | Points at the `FindingsRecord.id` (ULID, chronological) that re-detected the finding — the only field that links the append-only `regressed.jsonl` back to a specific run. |
+| Live subcommands                      | `init`, `hook`, `metrics`, `status`, `diff`, `mark-fixed`, `skills`, `calibrate` | `checks`, `compact`, `logs`, `snapshots`, and the entire `fix` group were removed. |
 
 ## Conventions and invariants
 
@@ -93,9 +90,10 @@ hatch when a field rename is unavoidable.
   Don't add path-less variants.
 - Top-level commands return `anyhow::Result<()>` and let `?` bridge the
   two error types via `From<core::Error> for anyhow::Error`.
-- `serde_json::to_string` on owned structs (`Snapshot`, `State`) is
-  treated as infallible — use `.expect("… serialization is infallible")`
-  rather than propagating an unreachable error.
+- `serde_json::to_string` on owned structs we control (e.g.
+  `FindingsRecord`, `FixedMap`) is treated as infallible — use
+  `.expect("… serialization is infallible")` rather than propagating
+  an unreachable error.
 
 ### Configuration (`.heal/config.toml`)
 - All config structs use `#[serde(deny_unknown_fields)]`. Typos in user
