@@ -3,10 +3,7 @@ title: アーキテクチャ
 description: heal がどこにデータを置き、いつ何が書き出されるか、各要素がどう組み合わさるか。
 ---
 
-このページでは、heal がどんなファイルを作り、いつ書き出され、何を
-含むかを説明します。ナッジが出ない原因を調べたり、JSON 出力に対し
-てスクリプトを書いたり、heal がバックグラウンドで何をしているのか
-を理解したいときに役立ちます。
+このページでは、heal がどんなファイルを作り、いつ書き出され、何を含むかを説明します。ナッジが出ない原因を調べたり、JSON 出力に対してスクリプトを書いたり、heal がバックグラウンドで何をしているのかを理解したいときに役立ちます。
 
 ## 全体像
 
@@ -35,10 +32,7 @@ heal status  ──►  calibration.toml で Finding を分類
                        └──►  Severity ごとのビューを stdout に描画
 ```
 
-`heal` は単一バイナリです。両方の経路がこれを通ります。デーモンも、
-スケジューラも、バックグラウンドプロセスも、履歴ストリームも一切
-ありません。post-commit フックは全オブザーバーを **一度だけ** 実
-行してナッジを出し、終了します — 永続化は行いません。
+`heal` は単一バイナリです。両方の経路がこれを通ります。デーモンも、スケジューラも、バックグラウンドプロセスも、履歴ストリームも一切ありません。post-commit フックは全オブザーバーを **一度だけ** 実行してナッジを出し、終了します — 永続化は行いません。
 
 ## オンディスクのレイアウト
 
@@ -64,9 +58,7 @@ heal status  ──►  calibration.toml で Finding を分類
     └── heal-config/
 ```
 
-`config.toml` と `calibration.toml` は git で追跡され、チームで同じ
-Severity ラダーを共有できます。`findings/` は `.heal/.gitignore` に
-よって除外されます。
+`config.toml` と `calibration.toml` は git で追跡され、チームで同じ Severity ラダーを共有できます。`findings/` は `.heal/.gitignore` によって除外されます。
 
 ## 何がいつ書かれるか
 
@@ -75,21 +67,16 @@ Severity ラダーを共有できます。`findings/` は `.heal/.gitignore` に
 | `.heal/.gitignore`               | `heal init`                                         | セットアップ時に一度。                            |
 | `.heal/config.toml`              | `heal init`                                         | セットアップ時に一度。自由に編集可。              |
 | `.heal/calibration.toml`         | `heal init` / `heal calibrate`                      | セットアップ時、その後は明示的な再 calibrate 時。 |
-| `.heal/findings/latest.json`    | `heal status`                                       | 新規 `heal status`（キャッシュミス経路）ごと。    |
-| `.heal/findings/fixed.json`     | `heal mark-fixed`（`/heal-code-patch` から呼出）    | `/heal-code-patch` のコミット着地ごと。           |
+| `.heal/findings/latest.json`     | `heal status`                                       | 新規 `heal status`（キャッシュミス経路）ごと。    |
+| `.heal/findings/fixed.json`      | `heal mark-fixed`（`/heal-code-patch` から呼出）    | `/heal-code-patch` のコミット着地ごと。           |
 | `.heal/findings/regressed.jsonl` | `heal status`（整合パス）                            | 修正済み Finding が再検出されたとき。            |
 | `.claude/skills/heal-*/`         | `heal skills install`                               | 一度だけ。`heal skills update` で更新。           |
 
-イベントログも、月次ローテーションも、`.heal/snapshots/` /
-`.heal/logs/` / `.heal/docs/` / `.heal/reports/` も存在しません。
-heal は現在の状態と `regressed.jsonl` の小さな監査トレイルだけを
-保持します。
+イベントログも、月次ローテーションも、`.heal/snapshots/` / `.heal/logs/` / `.heal/docs/` / `.heal/reports/` も存在しません。heal は現在の状態と `regressed.jsonl` の小さな監査トレイルだけを保持します。
 
 ## findings キャッシュ
 
-`.heal/findings/` には 3 つの成果物が並びます。`latest.json` の
-writer は `heal status` だけ、`fixed.json` / `regressed.jsonl` の
-writer は `heal mark-fixed` だけです。
+`.heal/findings/` には 3 つの成果物が並びます。`latest.json` の writer は `heal status` だけ、`fixed.json` / `regressed.jsonl` の writer は `heal mark-fixed` だけです。
 
 ### `latest.json` — 現在の TODO
 
@@ -106,15 +93,11 @@ writer は `heal mark-fixed` だけです。
 }
 ```
 
-`heal status` は `(head_sha, config_hash, worktree_clean=true)` が
-キャッシュレコードと一致するときショートサーキットします — 同じ
-コミット上での再実行は無料です。
+`heal status` は `(head_sha, config_hash, worktree_clean=true)` がキャッシュレコードと一致するときショートサーキットします — 同じコミット上での再実行は無料です。
 
 ### `fixed.json` — 有界の修正記録
 
-`BTreeMap<finding_id, FixedFinding>` を 1 つの JSON オブジェクトと
-してシリアライズしたもの。各エントリは決定論的な `finding_id` を
-キーにします。
+`BTreeMap<finding_id, FixedFinding>` を 1 つの JSON オブジェクトとしてシリアライズしたもの。各エントリは決定論的な `finding_id` をキーにします。
 
 ```json
 {
@@ -125,16 +108,11 @@ writer は `heal mark-fixed` だけです。
 }
 ```
 
-有界です — 追記専用ではありません。新規 `heal status` で過去に
-fixed だった `finding_id` が再出現すると、heal は `fixed.json` から
-取り除いて `regressed.jsonl` に 1 行追記し、レンダラーが警告を出し
-ます。
+有界です — 追記専用ではありません。新規 `heal status` で過去に fixed だった `finding_id` が再出現すると、heal は `fixed.json` から取り除いて `regressed.jsonl` に 1 行追記し、レンダラーが警告を出します。
 
 ### `regressed.jsonl` — 監査トレイル
 
-`.heal/` 配下で唯一の追記専用ファイルです。再検出イベントごとに
-JSON を 1 行追加し、「修正したはずが再検出された」という警告を表
-示するためだけに使います。
+`.heal/` 配下で唯一の追記専用ファイルです。再検出イベントごとに JSON を 1 行追加し、「修正したはずが再検出された」という警告を表示するためだけに使います。
 
 このキャッシュは `jq` で直接覗けます。
 
@@ -146,53 +124,20 @@ tail .heal/findings/regressed.jsonl
 
 ## Calibration
 
-`calibration.toml` は Severity を扱う各メトリクスのコードベース相
-対パーセンタイル区切りを保持します。`heal init` が初回スキャンか
-ら計算し、`heal calibrate --force` がオンデマンドで更新します。
-post-commit ナッジは `Calibration::with_overrides(config)` 経由で
-読むため、`config.toml` の `floor_critical` / `floor_ok` は calibrate
-されたパーセンタイルに勝ちます。
-
-再 calibrate は **絶対に自動では行いません**。デフォルトの
-`heal calibrate` は、ファイルが既にあれば no-op です。実行するか
-は常にユーザー判断（`heal calibrate --force`）。ドリフト検知
-（calibration の経過、コードベースファイル数の変化、Critical 連続
-ゼロ期間）は `/heal-config` スキルが担当し、
-`calibration.toml.meta.calibrated_at_sha` / `calibrated_at_files`
-を現在の `latest.json` / `fixed.json` と突き合わせて
-`heal calibrate --force` を推奨します。
-
-`calibration.toml` の `[meta]` セクションには、既存の
-`codebase_files` カウントに加えて
-`calibrated_at_sha = "<full HEAD sha>"` が記録される場合があります。
-これによりスキルのドリフトチェックは実行間で冪等になります。
+`calibration.toml` は Severity を扱う各メトリクスのコードベース相対パーセンタイル区切りを保持します。`heal init` が初回スキャンから計算し、`heal calibrate --force` がオンデマンドで更新します。`config.toml` の `floor_critical` / `floor_ok` は calibrate されたパーセンタイルに勝ちます。再 calibrate は **絶対に自動では行いません** — [CLI › `heal calibrate`](/heal/ja/cli/#heal-calibrate) を参照。
 
 ## Calibration と policy: 2 つのレイヤ
 
-heal はコード健全性の **測定** と、それに対して何を行うかの **意図**
-を分離しています。
+heal はコード健全性の **測定** と、それに対して何を行うかの **意図** を分離しています。
 
-- **Calibration レイヤ**（`.heal/calibration.toml` + metric ごとの
-  `[metrics.<m>]` override）は「この Finding は赤か？」を判定。
-  3 段の分類器 — `floor_critical`（逃げ道）+ `floor_ok`（卒業ゲー
-  ト、proxy メトリクスのみ）+ パーセンタイル区切り — が Severity
-  を生成します。このレイヤは測定の問い: 値が文献閾値とプロジェクト
-  分布に対してどこに位置するか、に答えます。
-- **Policy レイヤ**（`config.toml` の `[policy.drain]`）は「その
-  Finding はアクション対象か？」を判定。`(Severity, hotspot)` の組
-  が 3 つの drain tier (T0 / `must`、T1 / `should`、Advisory) のいず
-  れかにマップされます。このレイヤは意図の問い: チームが何を drain
-  するとコミットするか、に答えます。
+- **Calibration レイヤ**（`.heal/calibration.toml` + metric ごとの `[metrics.<m>]` override）は「この Finding は赤か？」を判定。3 段の分類器 — `floor_critical`（逃げ道）+ `floor_ok`（卒業ゲート、proxy メトリクスのみ）+ パーセンタイル区切り — が Severity を生成します。このレイヤは測定の問い: 値が文献閾値とプロジェクト分布に対してどこに位置するか、に答えます。
+- **Policy レイヤ**（`config.toml` の `[policy.drain]`）は「その Finding はアクション対象か？」を判定。`(Severity, hotspot)` の組が 3 つの drain tier (T0 / `must`、T1 / `should`、Advisory) のいずれかにマップされます。このレイヤは意図の問い: チームが何を drain するとコミットするか、に答えます。
 
-両レイヤは直交しています — 再 calibrate は Severity 境界を動かしま
-すが policy には触れません。逆に policy を厳しく/緩くしても観測は
-再実行されません。チームは通常 calibration を文献デフォルト近くに保
-ち、自分たちの帯域に合わせて `[policy.drain]` を調整します。
+両レイヤは直交しています — 再 calibrate は Severity 境界を動かしますが policy には触れません。逆に policy を厳しく/緩くしても観測は再実行されません。チームは通常 calibration を文献デフォルト近くに保ち、自分たちの帯域に合わせて `[policy.drain]` を調整します。
 
 ## Drain queue モデル
 
-`heal status` は非 Ok の Finding を `[policy.drain]` 駆動で 3 つのバ
-ケットに分けます。
+`heal status` は非 Ok の Finding を `[policy.drain]` 駆動で 3 つのバケットに分けます。
 
 | Tier | デフォルト spec | レンダラー挙動 | Skill 挙動 |
 | --- | --- | --- | --- |
@@ -200,16 +145,8 @@ heal はコード健全性の **測定** と、それに対して何を行うか
 | **T1 / Should drain** | `should = ["critical", "high:hotspot"]` | デフォルト表示、別セクション。 | レビュー対象、自動 drain しない。 |
 | **Advisory** | それ以外の非 Ok | `--all` 時のみ表示。 | 自動 drain なし、余裕のあるときに review。 |
 
-`Severity::Ok` の Finding は drain 対象外です。レンダラーは Ok 🔥
-pre-section（上位 10% hotspot だがメトリクスフロア未満）と隠し合計
-カウントで表示します。
+`Severity::Ok` の Finding は drain 対象外です。レンダラーは Ok 🔥 pre-section（上位 10% hotspot だがメトリクスフロア未満）と隠し合計カウントで表示します。
 
-Override の可視化: `[metrics.<m>] floor_ok` / `floor_critical` が文
-献デフォルトと異なる場合、`heal status` はヘッダ行に
-`override: ccn floor_ok=15 [override from 11]` のような注釈を出力し
-ます。CI ログや PR diff で policy 変更が監査可能になります。
+Override の可視化: `[metrics.<m>] floor_ok` / `floor_critical` が文献デフォルトと異なる場合、`heal status` はヘッダ行に `override: ccn floor_ok=15 [override from 11]` のような注釈を出力します。CI ログや PR diff で policy 変更が監査可能になります。
 
-`[policy.drain]` の DSL は `<severity>`（hotspot 不問）または
-`<severity>:hotspot`（hotspot=true 必須）。Severity トークンは小文字:
-`critical / high / medium / ok`。詳細は[設定 › Drain ポリシー](/heal/ja/configuration/#drain-ポリシー)
-を参照。
+`[policy.drain]` の DSL は `<severity>`（hotspot 不問）または `<severity>:hotspot`（hotspot=true 必須）。Severity トークンは小文字: `critical / high / medium / ok`。詳細は[設定 › Drain ポリシー](/heal/ja/configuration/#drain-ポリシー)を参照。

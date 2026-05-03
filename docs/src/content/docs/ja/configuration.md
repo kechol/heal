@@ -82,6 +82,80 @@ response_language = "Japanese"
   Claude が解釈できる任意の値が使えます: `"Japanese"`、`"日本語"`、
   `"français"`、`"plain English"` など。任意項目です。
 
+## `[[project.workspaces]]` — モノレポ向け
+
+単一パッケージのリポジトリではデフォルトで十分なので、このセクションは飛ばして構いません。モノレポでは通常、各 workspace を **それぞれ自身の** 分布で calibrate したくなります — 5kloc の CLI と隣にある 50kloc の API は、複雑度のラダーを共有しないほうが自然だからです。各 workspace を 1 度宣言すれば、heal はそれぞれを独立に分類します。
+
+```toml
+[[project.workspaces]]
+path = "packages/web"
+primary_language = "typescript"
+
+[[project.workspaces]]
+path = "packages/api"
+primary_language = "typescript"
+
+[[project.workspaces]]
+path = "services/worker"
+primary_language = "rust"
+```
+
+各エントリの項目:
+
+- `path` — リポジトリルートからの相対ディレクトリ（スラッシュ区切り、先頭に `/` なし、`..` なし）。workspace はネストできません。最長の workspace `path` にマッチしたファイルがその workspace に属し、どの workspace にも属さないファイルは「leftover」コホートとして独自の calibration を持ちます。
+- `primary_language`（任意） — そのサブツリーで自動検出される primary language を上書き。LOC のヒューリスティックが間違った言語を選ぶとき（例: Rust workspace に重い `tests/` の JS フィクスチャがある場合）に有用。
+- `exclude_paths`（任意） — `.gitignore` 文法のパターンを **workspace ルート相対** で評価し、`git.exclude_paths` と `metrics.loc.exclude_paths` の上に積み増します。先頭 `/` は workspace ルートにアンカーし、`!pat` は前の除外を打ち消し、`.gitignore` と同じグロブ（`*`、`**`、`?`、`[abc]`）が使えます。
+
+```toml
+[[project.workspaces]]
+path = "packages/api"
+primary_language = "typescript"
+exclude_paths = ["vendor/", "src/generated/**"]
+```
+
+### workspace ごとのフロア上書き
+
+特定の workspace だけ絶対フロアを厳しく／緩くできます。`[metrics.<m>]` と同じ形でスコープが workspace になります。
+
+```toml
+[[project.workspaces]]
+path = "packages/legacy"
+primary_language = "typescript"
+
+# この workspace は高複雑度なのが分かっているので、移行作業中は卒業
+# ゲートを緩めて CCN finding の山に埋もれないようにする。
+[project.workspaces.metrics.ccn]
+floor_ok = 18
+```
+
+利用できるフィールドはメトリクスごとに `floor_critical` と `floor_ok` です（`ccn` / `cognitive` / `duplication` / `change_coupling` / `lcom`）。workspace の上書きはグローバルの `[metrics.<m>]` *の後* に適用されるため、両方ある場合は workspace の値が勝ちます。
+
+パーセンタイル区切り（p75 / p90 / p95）も workspace ごとに計算されます — `heal calibrate` は宣言された workspace ごとに `[calibration.workspaces."<path>".<metric>]` の表を 1 つずつ記録します。手動セットアップは不要で、`[[project.workspaces]]` を宣言するだけで十分です。
+
+### workspace 間の coupling
+
+`change_coupling` が有効で、共変するペアが 2 つの workspace にまたがる場合（「モジュール境界リーク」）、heal はそのペアを `change_coupling.cross_workspace` に retag します。
+
+```toml
+[metrics.change_coupling]
+enabled         = true
+cross_workspace = "surface"   # または "hide"
+```
+
+- `surface`（デフォルト） — workspace 間ペアは専用の Advisory バケットに入ります。シグナルとしては見えますが drain queue には入りません（これはリファクタではなくアーキテクチャ判断だからです）。
+- `hide` — 完全に落とします。共有スキーマや意図的に co-evolve する API など、その coupling が意図的なときに使います。
+
+どちらも `[[project.workspaces]]` が空のときは無視されます。
+
+### workspace で出力を絞る
+
+`heal status` は `--workspace <path>` で表示を 1 つの workspace に絞れます。`--json` では `workspaces` 配列が workspace ごとの `severity_counts` を持つので、スクリプトから扱えます。
+
+```sh
+heal status --workspace packages/api          # API の finding のみ表示
+heal status --json --workspace packages/web   # JSON でスコープ
+```
+
 ## `[git]`
 
 git の履歴を辿るメトリクス（Churn、Change Coupling、Hotspot）すべ

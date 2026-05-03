@@ -145,23 +145,10 @@ tail .heal/findings/regressed.jsonl
 
 `calibration.toml` carries the codebase-relative percentile breaks
 for every Severity-aware metric. `heal init` computes it from the
-initial scan; `heal calibrate --force` refreshes it on demand. The
-post-commit nudge reads it through `Calibration::with_overrides(config)`
-so any `floor_critical` / `floor_ok` set in `config.toml` wins over the
-calibrated percentile.
-
-Recalibration is **never automatic**. The default `heal calibrate`
-invocation is a no-op when the file already exists; the user runs
-`heal calibrate --force` when ready. Drift detection (calibration age,
-codebase file count change, clean streak) lives in the `/heal-config`
-skill, which reads `calibration.toml.meta.calibrated_at_sha` /
-`calibrated_at_files` against the current `latest.json` / `fixed.json`
-and recommends `heal calibrate --force` when warranted.
-
-`calibration.toml` has a `[meta]` section that may carry
-`calibrated_at_sha = "<full HEAD sha>"` alongside the existing
-`codebase_files` count, so the skill's drift check is idempotent
-across runs.
+initial scan; `heal calibrate --force` refreshes it on demand.
+`floor_critical` / `floor_ok` set in `config.toml` win over the
+calibrated percentile. Recalibration is **never automatic** — see
+[CLI › `heal calibrate`](/heal/cli/#heal-calibrate).
 
 ## Calibration vs policy: two layers
 

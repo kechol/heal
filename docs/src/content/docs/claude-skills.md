@@ -16,11 +16,6 @@ once per repository with `heal skills install`. From that point on:
 - Two helper skills, `/heal-cli` and `/heal-config`, give Claude
   reference material for driving the CLI and tuning `config.toml`.
 
-heal does not register any Claude Code hooks — no PostToolUse, no
-Stop, no SessionStart. The post-commit hook (run by `heal init`'s
-git installation) handles the per-commit signal — see
-[Architecture › The big picture](/heal/architecture/#the-big-picture).
-
 ## Installing it
 
 ```sh
@@ -51,20 +46,6 @@ where Claude Code natively discovers project-scope skills:
 The skill set is embedded in the `heal` binary at compile time, so
 the version installed always matches the binary. After upgrading
 `heal`, run `heal skills update` to refresh.
-
-## No Claude Code hooks
-
-heal does not register PostToolUse, Stop, or SessionStart hooks in
-`.claude/settings.json`. The repair loop runs entirely through the
-`/heal-code-patch` skill (below); the per-commit Severity nudge is
-handled by the git post-commit hook installed by `heal init`.
-
-`heal skills install` (and `heal init`) sweep legacy
-`heal hook edit` / `heal hook stop` entries out of
-`.claude/settings.json` if a previous heal version registered them.
-Other entries you wrote stay untouched. The `heal hook edit` /
-`heal hook stop` subcommands themselves remain as silent no-ops so
-stale settings from older heal versions don't surface errors.
 
 ## The audit skill: `/heal-code-review`
 
@@ -184,16 +165,12 @@ setting heal up for the first time, after a structural change to the
 codebase (a new vendored tree, a layer rewrite), or when you want to
 shift the quality bar without remembering every threshold.
 
-`/heal-config` also owns calibration drift detection (which the CLI
-no longer does). On request — or as part of any config update — it
-reads `calibration.toml.meta.calibrated_at_sha` and `codebase_files`,
-compares them to the current `.heal/findings/latest.json` and
-`.heal/findings/fixed.json`, and recommends `heal calibrate --force`
-when the calibration baseline has drifted (file count moved
+`/heal-config` also recommends `heal calibrate --force` when the
+calibration baseline has drifted enough to matter — file count moved
 significantly, the calibration is old relative to project velocity,
-or every Critical has been drained for a sustained run). The check
-is idempotent — running the skill repeatedly without intervening
-changes produces the same recommendation.
+or every Critical has been drained for a sustained run. The check is
+idempotent: running it repeatedly without intervening changes
+produces the same recommendation.
 
 ## Updating the skills
 
@@ -226,25 +203,9 @@ sidecar manifest to coordinate.
 heal skills uninstall
 ```
 
-Removes:
-
-- Every bundled skill directory under `.claude/skills/heal-*` that
-  the install pass owns. Sibling skills you authored survive.
-- Any legacy `heal hook edit` / `heal hook stop` entries in
-  `.claude/settings.json` (current heal does not register them; this
-  step exists for upgrades from older versions).
-- Any **legacy** install layout left over from older heal versions
-  that distributed via a marketplace plugin: the old
-  `.claude/plugins/heal/` tree, `.claude-plugin/marketplace.json`,
-  and the `extraKnownMarketplaces["heal-local"]` /
-  `enabledPlugins["heal@heal-local"]` entries in `settings.json`.
-
-Project data under `.heal/` is otherwise left untouched.
-
-If you are upgrading from a heal version that still distributed via a
-plugin marketplace, the safe migration path is one
-`heal skills uninstall` followed by `heal skills install`. (`install`
-and `update` intentionally do not migrate the old layout.)
+Removes every bundled skill directory under `.claude/skills/heal-*`
+that the install pass owns. Sibling skills you authored survive, and
+project data under `.heal/` is otherwise left untouched.
 
 ## Why it is bundled
 

@@ -5,10 +5,11 @@ description: Install heal, plug it into a git repository, see the first TODO lis
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-heal observes commit-by-commit metric drift, calibrates Severity from
-the codebase's own distribution, and hands the resulting TODO list to
-a bundled Claude skill that drains it one finding per commit. This
-walkthrough sets all three pieces up.
+**heal turns codebase decay into agent work.** Every commit, it
+re-measures complexity, hotspots, and duplication, then hands the
+resulting TODO list to Claude — which drains it one fix per commit.
+The human steps out of the polling loop. This walkthrough sets that
+loop up in three commands.
 
 ## Requirements
 

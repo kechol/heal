@@ -80,6 +80,110 @@ response_language = "Japanese"
   skills. Any value Claude understands is acceptable: `"Japanese"`,
   `"日本語"`, `"français"`, `"plain English"`. Optional.
 
+## `[[project.workspaces]]` — monorepos
+
+For a single-package repository the defaults are right and you can
+skip this section. In a monorepo, you usually want each workspace
+calibrated against **its own** distribution — a 5kloc CLI doesn't
+share a complexity ladder with the 50kloc API next to it. Declare
+each workspace once and heal classifies its files independently.
+
+```toml
+[[project.workspaces]]
+path = "packages/web"
+primary_language = "typescript"
+
+[[project.workspaces]]
+path = "packages/api"
+primary_language = "typescript"
+
+[[project.workspaces]]
+path = "services/worker"
+primary_language = "rust"
+```
+
+Each entry takes:
+
+- `path` — repo-root-relative directory (slash-separated, no leading
+  `/`, no `..`). Workspaces cannot nest. Files matched by the longest
+  workspace `path` belong to that workspace; files outside every
+  declared workspace form a leftover cohort with its own calibration.
+- `primary_language` (optional) — override the auto-detected primary
+  language for that subtree. Useful when LOC's heuristic picks the
+  wrong language (e.g. a Rust workspace with a heavy `tests/` JS
+  fixture set).
+- `exclude_paths` (optional) — `.gitignore`-syntax patterns
+  evaluated **relative to the workspace root**, layered on top of
+  `git.exclude_paths` and `metrics.loc.exclude_paths`. Leading `/`
+  anchors at the workspace root, `!pat` negates a prior exclusion,
+  and globs (`*`, `**`, `?`, `[abc]`) work as in `.gitignore`.
+
+```toml
+[[project.workspaces]]
+path = "packages/api"
+primary_language = "typescript"
+exclude_paths = ["vendor/", "src/generated/**"]
+```
+
+### Per-workspace floor overrides
+
+Tighten or relax the absolute floors for one workspace without
+touching the others. Same shape as `[metrics.<m>]`, but scoped:
+
+```toml
+[[project.workspaces]]
+path = "packages/legacy"
+primary_language = "typescript"
+
+# This workspace is known to be high-complexity; relax the
+# graduation gate so the team isn't drowning in CCN findings while
+# they migrate it out.
+[project.workspaces.metrics.ccn]
+floor_ok = 18
+```
+
+The fields available per metric are `floor_critical` and `floor_ok`
+(`ccn` / `cognitive` / `duplication` / `change_coupling` / `lcom`).
+Workspace overrides apply *after* the global `[metrics.<m>]`
+overrides, so the workspace value wins when both are present.
+
+The percentile breaks (p75 / p90 / p95) are also computed
+per-workspace — `heal calibrate` records one table per declared
+workspace under `[calibration.workspaces."<path>".<metric>]`. No
+manual setup needed; just declaring `[[project.workspaces]]` is
+enough.
+
+### Cross-workspace coupling
+
+When `change_coupling` is enabled and a co-changing pair spans two
+workspaces (a "module-boundary leak"), heal retags the pair as
+`change_coupling.cross_workspace`:
+
+```toml
+[metrics.change_coupling]
+enabled        = true
+cross_workspace = "surface"   # or "hide"
+```
+
+- `surface` (default) — cross-workspace pairs go into their own
+  Advisory bucket. They surface as a signal but don't enter the
+  drain queue (an architectural call, not a refactor).
+- `hide` — drop them entirely. Useful when the coupling is
+  intentional (shared schema, deliberately co-evolving APIs).
+
+Both settings are ignored when `[[project.workspaces]]` is empty.
+
+### Filtering output by workspace
+
+`heal status` accepts `--workspace <path>` to scope the renderer to
+one workspace, and `--json` carries a top-level `workspaces` array
+with per-workspace `severity_counts` for scripting.
+
+```sh
+heal status --workspace packages/api          # render API findings only
+heal status --json --workspace packages/web   # JSON, scoped
+```
+
 ## `[git]`
 
 Used by every metric that walks git history (churn, change coupling,

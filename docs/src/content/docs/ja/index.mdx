@@ -1,13 +1,11 @@
 ---
 title: heal
-description: コミットごとにコードベースを計測し、コードベース固有の Severity を割り当てて TODO リストを Claude に渡すコードヘルス・ハーネス。
+description: コミットのたびに進むコードベースの劣化を監視し、人間が気づく前に次のリファクタを Claude に渡す。
 ---
 
-import { Card, CardGrid, LinkButton } from '@astrojs/starlight/components';
+import { LinkButton } from '@astrojs/starlight/components';
 
-`heal` はコミットごとにコードベースを計測し、findings をコードベース
-固有の Severity で分類して、次の Claude セッションに TODO リストとして
-渡します。
+`heal` はコミットの間に進むコードベースの劣化 — 複雑度の蓄積、Hotspot、重複 — を監視し、見つけた問題を次の Claude セッションが 1 コミット 1 修正で消化していく TODO に変えます。人間がポーリング役を務める必要はありません。
 
 <LinkButton href="/heal/ja/quick-start/" icon="right-arrow">
   クイックスタート（5 分）
@@ -18,42 +16,6 @@ import { Card, CardGrid, LinkButton } from '@astrojs/starlight/components';
 
 ## なぜ heal なのか
 
-AI コーディングエージェントは、依頼された次の変更を生み出すのは得意
-です。一方でコードベースは継続的に変化していきます。複雑度が積み重
-なり、同じファイルが何度も触られ、重複したコードが少しずつ増えてい
-く。エージェントはこうした長期的な変化を観測しません。外部からのシ
-グナルがなければ、それを追えるのは人間だけです。
+AI コーディングエージェントは、依頼された次の変更を作るのは得意です。一方でコードベースは継続的に変化していきます。複雑度が積み重なり、同じファイルが何度も触られ、重複したコードが少しずつ増えていく。エージェントはこうした長期的な変化を観測しません。外部シグナルがなければ、それを追えるのは人間だけです。
 
-`heal` はそのギャップを埋めます。git の post-commit フックがコミッ
-トごとにオブザーバーを 1 回走らせ、Critical / High の finding を
-stdout に出力します。`heal status` は同じ findings をキャッシュに書
-き込み、同梱の `/heal-code-patch` Claude スキルが 1 finding = 1
-commit のペースで消化します。
-
-## 概要
-
-<CardGrid>
-  <Card title="7 つの較正されたメトリクス" icon="seti:rust">
-    LOC、複雑度 (CCN + Cognitive)、Churn、Change Coupling (一方向 +
-    双方向)、Duplication、Hotspot、LCOM — それぞれが
-    コードベース自身の分布に対するパーセンタイルで分類されます。
-  </Card>
-  <Card title="フック駆動" icon="puzzle">
-    git の post-commit フックがオブザーバー実行と Severity nudge を担当。
-    デーモンもスケジューラも永続化イベントログもなく、オブザーバは コミットごとに 1 回だけ走ります。
-  </Card>
-  <Card title="CLI はリードオンリー、修復は skill 経由" icon="approve-check">
-    CLI 自体はソースを書き換えません。修復は `/heal-code-patch` を通じて 1 finding = 1 commit、dirty
-    worktree では起動拒否、push しない、 amend しない、というルールで進みます。
-  </Card>
-  <Card title="単一バイナリ" icon="rocket">
-    `cargo install heal-cli` で CLI が入ります。Claude スキルセットは バイナリに同梱されており、`heal
-    skills install` で展開します。
-  </Card>
-</CardGrid>
-
-:::caution[早期段階のプロジェクト]
-macOS と Linux のみ対応。`.heal/findings/` スキーマと
-`heal status` のインタフェースは v0.2 で安定しましたが、docs /
-coverage 機能は v0.3 で追加予定です。フィードバック歓迎。
-:::
+`heal` がそのギャップを埋めます。git の post-commit フックがすべての Critical / High finding をコミット出力の中に直接表示し、`heal status` は同じ findings を同梱の `/heal-code-patch` Claude スキルに渡して、1 コミット 1 finding のペースで消化させます。

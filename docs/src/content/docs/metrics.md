@@ -1,57 +1,53 @@
 ---
 title: Metrics
-description: The metrics heal collects on every commit, what each one means, how Severity is assigned, and when to use it.
+description: The metrics heal collects on every commit, what each one means, how Severity is assigned, and why each one is in the toolbox.
 ---
 
-heal ships seven metrics today. None are AI-specific; each is a
-long-standing code-health metric that has been in use for decades.
-heal's contribution is **calibrating them to the codebase's own
-distribution** so a 200-line script and a 200kloc service trigger
-differently for the same raw value, then surfacing the result as a
-TODO list `/heal-code-patch` consumes.
+heal ships seven metrics. None are AI-specific; each is a long-standing
+code-health metric with decades of literature behind it. heal's
+contribution is **calibrating them to the codebase's own distribution**
+— a 200-line script and a 200kloc service trigger differently for the
+same raw value — then handing the result to `/heal-code-patch` as a
+TODO list.
 
-This page summarises each metric. For configuration knobs, see
-[Configuration](/heal/configuration/).
+This page is structured as: how Severity is assigned → how findings
+are bucketed for action → what each metric measures → the special
+case of Hotspot → why CCN/Cognitive deserve a careful read. For
+configuration knobs, see [Configuration](/heal/configuration/).
 
 ## Severity ladder
 
-Every Finding lands on one of four tiers, evaluated in this order:
+Every Finding gets one of `Critical / High / Medium / Ok`,
+classified in **two stages**.
 
-| Tier     | Rule                                                                                  |
-| -------- | ------------------------------------------------------------------------------------- |
-| Critical | `value ≥ floor_critical` (literature anchor — escape hatch for uniformly-bad codebases). |
-| Ok       | `value < floor_ok` (literature anchor — graduation gate, **proxy metrics only**).        |
-| Critical | `value ≥ p95` (the calibrated 95th percentile).                                       |
-| High     | `value ≥ p90`                                                                         |
-| Medium   | `value ≥ p75`                                                                         |
-| Ok       | otherwise                                                                             |
+**Stage 1 — absolute floors (literature-anchored).** These are the
+escape hatches that keep the percentile classifier honest at the
+extremes:
 
-Two absolute floors bracket the percentile classifier:
+| Rule                       | Result   | Why                                                                                           |
+| -------------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| `value ≥ floor_critical`   | Critical | Worst cases stay Critical even on a uniformly-bad codebase (CCN 25, Cognitive 50, Dup 30%). |
+| `value < floor_ok`         | Ok       | Graduation gate, proxy metrics only — a clean codebase isn't held hostage by "top 10% is always red". Defaults: CCN 11, Cognitive 8. |
 
-- `floor_critical` is the upper escape hatch — anything above it stays
-  Critical even on a uniformly-bad codebase. Defaults from McCabe /
-  SonarQube literature: CCN 25, Cognitive 50, Duplication 30%.
-- `floor_ok` is the lower graduation gate — anything below it is Ok
-  regardless of percentile, so a clean codebase isn't held hostage by
-  the "top 10% is always red" loop (Goodhart's Law). Defaults: CCN 11
-  (McCabe "simple, low risk"), Cognitive 8 (Sonar). Only applies to
-  proxy metrics; duplication / change_coupling / lcom rely on their
-  scan-time filters instead.
+**Stage 2 — codebase's own percentile distribution.** Anything that
+falls between the two floors is classified by where it lands in the
+distribution captured at calibration time:
 
-The percentile breaks (`p75 / p90 / p95`) come from the codebase's own
-distribution at calibration time and live in `.heal/calibration.toml`.
-Both floors are config-overridable per metric — see
+| Rule          | Result   |
+| ------------- | -------- |
+| `value ≥ p95` | Critical |
+| `value ≥ p90` | High     |
+| `value ≥ p75` | Medium   |
+| otherwise     | Ok       |
+
+The percentile breaks live in `.heal/calibration.toml`; both floors
+are config-overridable per metric. See
 [Configuration › Floors](/heal/configuration/#floors).
-
-**Hotspot is orthogonal.** It is a flag (top-10% of the hotspot score
-distribution), not a Severity. A finding can be `Critical 🔥`
-(structurally bad AND being touched a lot) or `Critical` (structurally
-bad, quiet) — the renderer surfaces them as separate buckets.
 
 ## Drain tiers
 
-`heal check` groups non-Ok findings into three drain tiers driven by
-the `[policy.drain]` config:
+`heal status` groups every non-Ok Finding into one of three drain
+tiers driven by `[policy.drain]`:
 
 - **T0 — Drain queue** (default `["critical:hotspot"]`). The must-fix
   list `/heal-code-patch` drains.
@@ -61,44 +57,17 @@ the `[policy.drain]` config:
 
 The split is what makes "drain to zero" meaningful: T0 is the goal,
 T1 is hygiene, Advisory is review-when-convenient. CCN as a *proxy*
-metric belongs in T0 only when corroborated by hotspot — otherwise the
-metric drives a Goodhart loop. See
+metric belongs in T0 only when corroborated by hotspot — otherwise
+the metric drives a Goodhart loop. See
 [Configuration › Drain policy](/heal/configuration/#drain-policy).
 
-## Why CCN and Cognitive are *proxies*, not targets
+## The metrics
 
-McCabe (1976) introduced CCN as a static estimate of the minimum number
-of test cases needed for branch coverage — not as a code-quality
-metric. Sonar's Cognitive Complexity (2017) is a readability proxy.
-Driving either toward zero damages readability:
+Six observers run per commit; the seventh — **Hotspot** — composes
+them. Each observer's full configuration knobs live in
+[Configuration](/heal/configuration/).
 
-- Extract Function on a procedurally cohesive function relocates CCN
-  rather than reducing global count.
-- Converting flat positive composites (`if (A && B && C)`) to negative
-  guard chains doesn't move Cognitive (the original isn't nested) and
-  often *increases* reader load.
-
-heal's design accepts this: `floor_ok` graduates clean codebases off
-the proxy metrics, hotspot multiplies leverage on touched files, and
-the drain-tier model keeps the TODO list focused on findings where the
-proxy and the underlying problem agree. See the
-`heal-code-review` skill's `architecture.md` §6 for the trap catalogue.
-
-## Recommended adoption order
-
-1. **LOC** is always on; primary-language detection drives every
-   other observer.
-2. **CCN** + **Cognitive** are enabled by default. Calibration sets
-   per-codebase thresholds on top of the absolute floors.
-3. **Churn** is enabled. Becomes informative after roughly ten
-   commits in the lookback window.
-4. **Hotspot** is the most actionable single signal — leave on.
-5. **Change Coupling** (one-way + symmetric) and **Duplication** are
-   diagnostic. Leave them on; review when investigating a problem.
-6. **LCOM** flags classes that are mechanically separable. Useful
-   for refactor candidates; leave on.
-
-## LOC — Lines of Code
+### LOC — Lines of Code
 
 > _"What does this codebase consist of?"_
 
@@ -115,7 +84,7 @@ language.
 LOC is always enabled; there is no toggle. The cost is negligible
 because `tokei` caches per file.
 
-## Complexity — CCN and Cognitive
+### Complexity — CCN and Cognitive
 
 > _"Which functions are difficult to follow?"_
 
@@ -134,16 +103,14 @@ Both metrics calibrate independently:
 - Cognitive: `floor_critical = 50` (SonarQube Critical baseline),
   `floor_ok = 8` (Sonar — half of the "review" threshold).
 
-Functions strictly below `floor_ok` classify as Ok regardless of where
-they land on the project's percentile ladder. This is the graduation
-gate that lets a uniformly-clean codebase produce zero findings on a
-proxy metric — without it the percentile classifier always flagged the
-top decile (Goodhart's Law).
+Functions strictly below `floor_ok` classify as Ok regardless of the
+percentile ladder — see [Why CCN and Cognitive are
+proxies](#why-ccn-and-cognitive-are-proxies) below for the rationale.
 
 **Languages**: TypeScript and Rust. JS / Python / Go / Scala arrive
 in later releases.
 
-## Churn — how often a file changes
+### Churn — how often a file changes
 
 > _"What is moving?"_
 
@@ -153,12 +120,12 @@ merge commits are not double-counted.
 
 A high-churn file is not inherently problematic — `package.json`
 changes frequently and that's fine. Churn becomes meaningful when
-crossed with complexity (see [Hotspot](#hotspot--churn--complexity)).
+crossed with complexity (see [Hotspot](#hotspot)).
 
 Churn does not have its own Severity ladder; it feeds Hotspot and
 the post-commit nudge.
 
-## Change Coupling — files that move together
+### Change Coupling — files that move together
 
 > _"Which files depend on which, implicitly?"_
 
@@ -185,7 +152,7 @@ visible as a stronger signal than the generic counter.
 entirely so mass reformats can't fabricate coupling between
 unrelated files.
 
-## Duplication — copied blocks
+### Duplication — copied blocks
 
 > _"Where are the duplicates?"_
 
@@ -200,34 +167,7 @@ structural problem).
 
 **Languages**: same as complexity (TypeScript, Rust).
 
-## Hotspot — churn × complexity
-
-> _"Where do regressions concentrate?"_
-
-The "code as a crime scene" view, popularised by Adam Tornhill.
-Hotspot multiplies a file's commit count (churn) by the sum of its
-functions' CCN (complexity):
-
-```
-score = (weight_complexity × ccn_sum) × (weight_churn × commits)
-```
-
-Files with a high score are both changed frequently and difficult
-to read — historically where regressions concentrate.
-
-The weights default to `1.0`. Hotspot uses an independent percentile
-space — `score ≥ p90` flips the **flag**, which the renderer surfaces
-as the `🔥` emoji on top of any other finding for that file. It is
-**not** a Severity tier on its own; a hotspot file can be Critical 🔥,
-High 🔥, Medium 🔥, or even Ok 🔥. The last group — low Severity but
-heavily touched, "why are we still editing this?" candidates —
-appears in a dedicated section under `heal check --all`.
-
-The formula is multiplicative, so a file with high complexity but no
-recent commits scores zero — hotspot is meant to identify _active_
-trouble, not historical debt.
-
-## LCOM — Lack of Cohesion of Methods
+### LCOM — Lack of Cohesion of Methods
 
 > _"Which classes are mechanically separable?"_
 
@@ -255,23 +195,71 @@ These bias toward false positives — surfaced classes are candidates
 for human review, not autonomous decisions. A typed `backend = "lsp"`
 implementation lands in v0.5+.
 
-**Languages**: TypeScript class scope, Rust impl block. Module-scope
-LCOM (Rust file-level free functions, TS named-export groups) is
-deferred.
+**Languages**: TypeScript class scope, Rust impl block.
+
+## Hotspot
+
+Hotspot is special — it isn't a metric on its own, it's a **leverage
+multiplier on top of the other metrics**.
+
+> _"Where do regressions concentrate?"_
+
+The "code as a crime scene" view, popularised by Adam Tornhill.
+Hotspot multiplies a file's commit count (churn) by the sum of its
+functions' CCN (complexity):
+
+```
+score = (weight_complexity × ccn_sum) × (weight_churn × commits)
+```
+
+The output is **not a Severity tier** but a per-file flag (top-10% of
+the score distribution) that the renderer surfaces as the `🔥` emoji
+on top of any other finding for that file. A finding can be
+`Critical 🔥`, `High 🔥`, `Medium 🔥`, or even `Ok 🔥`.
+
+The reason this gets its own section: Hotspot is the **single most
+actionable signal** heal produces. A complex file that nobody touches
+is debt; a complex file the team edits every other day is where the
+next bug ships from. The default drain queue (`critical:hotspot`)
+exists because that intersection is where every minute of refactor
+pays back the most.
+
+The formula is multiplicative, so a file with high complexity but no
+recent commits scores zero — Hotspot is meant to identify **active**
+trouble, not historical debt.
+
+The "Ok 🔥" subset — low Severity but heavily touched, "why are we
+still editing this?" candidates — appears in a dedicated section
+under `heal status --all`.
+
+## Why CCN and Cognitive are *proxies*
+
+McCabe (1976) introduced CCN as a static estimate of the minimum number
+of test cases needed for branch coverage — not as a code-quality
+metric. Sonar's Cognitive Complexity (2017) is a readability proxy.
+Driving either toward zero damages readability:
+
+- Extract Function on a procedurally cohesive function relocates CCN
+  rather than reducing the global count.
+- Converting flat positive composites (`if (A && B && C)`) to negative
+  guard chains doesn't move Cognitive (the original isn't nested) and
+  often *increases* reader load.
+
+heal's design accepts this. `floor_ok` graduates clean codebases off
+the proxy metrics. Hotspot multiplies leverage on touched files. The
+drain-tier model keeps the TODO list focused on findings where the
+proxy and the underlying problem agree. See the `/heal-code-review`
+skill's `architecture.md` §6 for the full trap catalogue.
 
 ## How heal uses these
 
-Every commit, heal:
+Every commit:
 
-1. Runs every observer (a single `run_all` pass).
-2. Surfaces every Critical / High Finding to stdout via the
-   post-commit nudge.
+1. The post-commit hook runs every observer once.
+2. Critical / High findings are printed to stdout — the next problem
+   stays visible without a daemon.
 
 `heal status` re-runs the analysis on demand, classifies findings by
-Severity, and writes a `FindingsRecord` to `.heal/findings/latest.json`.
-That cache is the TODO list the `/heal-code-patch` skill drains, one finding
-per commit.
-
-The exact JSON shapes and storage details are documented in
-[Architecture › The findings cache](/heal/architecture/#the-findings-cache)
-for scripting.
+Severity, and writes the TODO list to `.heal/findings/`. That's what
+`/heal-code-patch` drains, one finding per commit. Re-running on the
+same `(commit, config, calibration)` is a free cache hit.

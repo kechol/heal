@@ -11,6 +11,17 @@ state changes into agent triggers.
 
 Documentation: <https://kechol.github.io/heal/>
 
+## Supported languages
+
+| Metric                                          | Languages                                                  |
+| ----------------------------------------------- | ---------------------------------------------------------- |
+| LOC                                             | Every language [`tokei`](https://github.com/XAMPPRocky/tokei) recognises. |
+| Churn / Change Coupling / Hotspot               | Language-agnostic — driven by `git log`, applies everywhere. |
+| Complexity (CCN + Cognitive) / Duplication / LCOM | TypeScript / JavaScript and Rust. More parsers in later releases. |
+
+Hotspot composes complexity (TS/JS/Rust) with churn (any language), so
+on a non-parsed language it falls back to a churn-only signal.
+
 > ⚠️ **Status: v0.2 in progress.** macOS / Linux only.
 
 ## Install

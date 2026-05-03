@@ -3,163 +3,96 @@ title: Concept
 description: Why heal exists, what problem it solves, and how it approaches your codebase.
 ---
 
-This page describes the design rationale behind heal. To start using
-it directly, see [Quick Start](/heal/quick-start/) and return here
-later.
+This page explains the *why*. To start using heal directly, see
+[Quick Start](/heal/quick-start/) and come back later.
 
 ## The problem
 
-AI coding agents such as Claude Code are effective at producing the
-next requested change. The codebase, meanwhile, evolves continuously:
-each bug fix or feature accumulates complexity, the same files are
-touched repeatedly, and duplicated blocks gradually appear. The agent
-does not observe these long-term shifts — without an external signal,
-the human is the only one tracking them.
+AI coding agents are great at the next change you ask for. But the
+codebase keeps moving in the background: each fix or feature adds a
+little complexity, the same files get touched over and over,
+duplicated blocks slip in. The agent doesn't watch for that — and on
+a real codebase, by the time *you* notice that a file has become
+hard to work with, the regressions are already shipping.
 
-For a small project, that is workable. On a real codebase the result
-is reactive maintenance: by the time someone notices that a file has
-become difficult to work with, the regressions are already in
-production.
+## The idea
 
-## The heal idea
+> **Turn codebase health into agent triggers.**
 
-> **Turn codebase health signals into agent triggers.**
+Instead of asking the human to remember to run a linter, heal lets
+the codebase emit signals on its own.
 
-heal observes the codebase the same way a CI system observes test
-runs:
+- **Every commit**, a post-commit hook re-runs every observer and
+  prints any Critical / High finding right inside the commit output —
+  the next problem stays visible without a daemon.
+- **On demand**, `heal status` writes the same findings to a TODO
+  cache that the bundled `/heal-code-patch` Claude skill drains, one
+  fix per commit.
 
-- On every commit, it measures the codebase (complexity, churn,
-  duplication, hotspots, LCOM).
-- It surfaces every Critical / High Finding to stdout right inside
-  the commit output.
-- On demand (`heal status`), it classifies findings by Severity and
-  writes a TODO list cache that the bundled `/heal-code-patch` skill can
-  drain — one finding per commit.
-
-The result: rather than relying on the human to remember to run a
-linter, the agent receives a structured, prioritised list — and the
-post-commit hook keeps the next move visible without needing a daemon
-or polling.
-
-## The loop
-
-heal is structured around four steps: **observe → calibrate → check →
-fix**.
-
-```
-Every commit
-─────────────────────────────────────────────────
-
-git commit
-    │
-    ▼
-post-commit hook ──► heal hook commit
-                          │
-                          ├─ run observers (one pass)
-                          │
-                          └─ surface Critical / High to stdout
-
-                    (nudge printed; nothing persisted)
-
-
-On demand
-─────────────────────────────────────────────────
-
-heal status
-    │
-    ├─ classify findings via .heal/calibration.toml
-    ├─ write FindingsRecord ──► .heal/findings/latest.json
-    ├─ reconcile fixed.json ↔ regressed.jsonl
-    └─ render Severity-grouped view
-
-
-claude /heal-code-patch
-    │
-    └─ drain .heal/findings/latest.json one finding per commit
-       (Severity order; Critical 🔥 first)
-```
+The result is a loop where the codebase wakes the agent up, rather
+than waiting for the human to do so.
 
 ## Codebase-relative Severity
 
-A naïve threshold ("CCN ≥ 10 is high") works poorly across projects:
-a 200-line script and a 200kloc service operate in different worlds.
-heal calibrates each metric to the **codebase's own distribution**:
+A naïve threshold ("CCN ≥ 10 is high") works poorly across projects
+— a 200-line script and a 200kloc service operate in different
+worlds. heal calibrates each metric to **your codebase's own
+distribution**: the top decile of *your* complexity becomes High, the
+top 5% becomes Critical. Recalibration is manual (`heal calibrate
+--force`) — a refactor that genuinely improves the codebase shouldn't
+silently move the goalposts.
 
-- `p75 / p90 / p95` from the initial scan become the percentile
-  breaks under the literature-derived absolute floor.
-- Above the floor (or above `p95`): Critical.
-- `≥ p90`: High.
-- `≥ p75`: Medium.
-- otherwise: Ok.
+Two literature-grade absolute floors bracket the percentile
+classifier so a uniformly-bad codebase still surfaces its worst
+cases, and a uniformly-clean codebase isn't held hostage by the "top
+10% is always red" loop. See [Metrics](/heal/metrics/) for the full
+ladder.
 
-`Hotspot` is **orthogonal** — it's a flag (top-10% of the hotspot
-score), not a Severity. A finding can be `Critical 🔥`,
-`Critical`, `High 🔥`, etc. — the renderer surfaces them as
-separate buckets.
+## Why Hotspot matters
 
-`heal calibrate --force` rescans and overwrites
-`.heal/calibration.toml`; without `--force` the command is a no-op
-when the file already exists. Drift detection (calibration age,
-codebase file count change, clean streak) lives in the `/heal-config`
-skill, which compares `calibration.toml.meta` against the current
-findings cache and recommends `heal calibrate --force` when warranted.
-Recalibration is **never automatic** — the user controls when to
-reset the baseline.
+Of the seven metrics heal ships, **Hotspot is the one to watch
+first**. A high-complexity file that nobody touches is technical
+debt — interesting, but not urgent. A high-complexity file that
+the team edits every other day is where the next bug ships from.
+Hotspot multiplies churn × complexity to surface exactly those
+files: high score = often touched **and** hard to read = where
+regressions historically concentrate.
 
-## Read-only by default; write through the skill
+The `🔥` flag in `heal status` marks these. A `Critical 🔥` finding
+isn't twice as bad as a `Critical` finding — it's the one that
+actually pays back the time you spend fixing it. The `/heal-code-patch`
+skill drains the `🔥` queue first by default for the same reason.
+
+## Read-only by default; write through skills
 
 The `heal` CLI itself never modifies source files. Repair flows
-through the bundled `/heal-code-patch` Claude skill, which:
+through two bundled Claude skills with deliberately split roles:
 
-- refuses to run on a dirty worktree,
-- commits one finding per fix,
-- never pushes,
-- never amends.
+- **`/heal-code-review`** is the *thinking* skill. Read-only. It
+  reads the cache as a system, deep-reads the flagged code, and
+  proposes architectural moves — the calls a human still has to make.
+  Use this when you want to *understand* what the cache is telling you
+  before changing anything.
+- **`/heal-code-patch`** is the *doing* skill. Mechanical only — it
+  drains the cache one finding per commit using established refactor
+  patterns whose application doesn't require domain judgement. Refuses
+  to start on a dirty worktree, never pushes, never amends. When the
+  next finding needs an architectural decision, it stops and hands
+  back to `/heal-code-review`.
 
-`heal mark-fixed` is the single CLI subcommand that mutates state — it
-records a `FixedFinding` in `fixed.json` and is meant to be called by
-`/heal-code-patch` after each commit.
-
-## Why metrics
-
-Seven metrics ship with heal:
-
-- **LOC** — language composition of the project
-- **Complexity (CCN + Cognitive)** — functions difficult to follow
-- **Churn** — files that change frequently
-- **Change Coupling** — files that change together; both the
-  one-way leader/follower count and the symmetric ("responsibility
-  mixing") subset
-- **Duplication** — code blocks that have been copied
-- **Hotspot** — churn × complexity, the "code as a crime scene" view
-- **LCOM** — classes whose methods don't share state (mechanically
-  separable)
-
-Each is a long-standing, well-studied metric. None are AI-specific.
-heal's contribution is not the metrics themselves — they have existed
-for decades — but using them as **calibrated triggers** for the agent
-loop, removing the human from the polling path.
-
-For the formulas behind each metric, see [Metrics](/heal/metrics/).
-
-## Why hook-driven
-
-Agents produce code well but do not consistently inspect the
-surrounding state. Hooks let the codebase emit signals on its own.
-The **git post-commit hook** runs every observer once and surfaces
-the Severity nudge to stdout when a commit lands. No daemon, no
-schedule, no persistent state. heal does not register any Claude
-Code hooks — the loop runs entirely through the bundled skills.
+This split is the contract that lets you trust autonomy. The boring
+fixes happen on their own; the interesting calls stay with you.
 
 ## What heal is not
 
 - **Not a linter.** Linters report on individual lines. heal reports
   on which files warrant attention and in what order.
-- **Not a code reviewer.** That role belongs to Claude; heal shapes
-  the prompt and the TODO list.
-- **Not a CI gate.** The post-commit hook fires after a commit lands.
-  heal tracks the long-term trajectory of the codebase rather than
-  blocking individual PRs.
+- **Not a code reviewer.** That role belongs to Claude;
+  `/heal-code-review` orchestrates it. heal shapes the prompt and the
+  TODO list.
+- **Not a CI gate.** The post-commit hook fires *after* a commit
+  lands. heal tracks the long-term trajectory of the codebase rather
+  than blocking individual PRs.
 - **Not a replacement for tests.** heal surfaces structural
   complexity; correctness is still your test suite's job.
 
@@ -169,11 +102,8 @@ Code hooks — the loop runs entirely through the bundled skills.
   repository
 - [Metrics](/heal/metrics/) — what each metric measures and how
   Severity is assigned
-- [CLI](/heal/cli/) — the full command surface (`heal status`,
-  `heal diff`, `heal metrics`, `heal calibrate`)
+- [CLI](/heal/cli/) — every subcommand
 - [Configuration](/heal/configuration/) — `.heal/config.toml` and
   `.heal/calibration.toml` reference
-- [Architecture](/heal/architecture/) — on-disk layout, event
-  streams, the cache contract
 - [Claude skills](/heal/claude-skills/) — `/heal-code-review`,
   `/heal-code-patch`, `/heal-cli`, and `/heal-config`

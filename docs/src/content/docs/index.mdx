@@ -1,13 +1,14 @@
 ---
 title: heal
-description: A code-health harness that measures your codebase on every commit, calibrates Severity to its own distribution, and hands the TODO list to Claude.
+description: Watch your codebase decay with every commit and hand the next refactor to Claude before a human has to notice.
 ---
 
-import { Card, CardGrid, LinkButton } from '@astrojs/starlight/components';
+import { LinkButton } from '@astrojs/starlight/components';
 
-`heal` measures your codebase on every commit, classifies findings by
-codebase-relative Severity, and hands the resulting TODO list to your
-next Claude session.
+`heal` watches your codebase decay between commits — complexity
+creep, hotspots, duplication — and turns each finding into a TODO
+your next Claude session can drain, one fix per commit. No human in
+the polling path.
 
 <LinkButton href="/heal/quick-start/" icon="right-arrow">
   Quick Start (5 min)
@@ -24,34 +25,7 @@ same files get touched repeatedly, and duplicated blocks drift in.
 The agent does not observe these long-term shifts — without an
 external signal, the human is the only one tracking them.
 
-`heal` fills that gap. A git post-commit hook runs every observer on
-every commit and surfaces every Critical / High finding to stdout.
-`heal status` writes the same findings to a cache the bundled
-`/heal-code-patch` Claude skill drains, one finding per commit.
-
-## At a glance
-
-<CardGrid>
-  <Card title="Seven calibrated metrics" icon="seti:rust">
-    LOC, complexity (CCN + Cognitive), churn, change coupling (one-way + symmetric), duplication,
-    hotspot, and LCOM — each classified against the codebase's own percentile distribution.
-  </Card>
-  <Card title="Hook-driven" icon="puzzle">
-    A git post-commit hook runs every observer and surfaces the Severity nudge. No daemon, no
-    scheduler, no persistent event log — observers run once per commit.
-  </Card>
-  <Card title="Read-only by default; write through the skill" icon="approve-check">
-    The CLI never modifies source files. Repair flows through `/heal-code-patch`: one finding per
-    commit, refuses on a dirty worktree, never pushes.
-  </Card>
-  <Card title="Single binary" icon="rocket">
-    `cargo install heal-cli` installs the CLI. The Claude skills are bundled in the binary and
-    extracted by `heal skills install`.
-  </Card>
-</CardGrid>
-
-:::caution[Early-stage project]
-macOS and Linux only. The `.heal/findings/` schema and the
-`heal status` surface stabilised in v0.2; some doc / coverage
-features land in v0.3. Feedback is welcome.
-:::
+`heal` fills that gap. A git post-commit hook surfaces every Critical
+/ High finding right inside the commit output, and `heal status`
+hands the same findings to the bundled `/heal-code-patch` Claude
+skill, which drains them one finding per commit.
