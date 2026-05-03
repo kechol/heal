@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::cli::{FindingMetric, SeverityFilter, StatusArgs};
-use crate::core::accepted::{decorate_findings, read_accepted};
+use crate::core::accepted::read_accepted;
 use crate::core::calibration::{FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_OK_CCN, FLOOR_OK_COGNITIVE};
 use crate::core::config::{load_from_project, Config, DrainTier, PolicyDrainConfig};
 use crate::core::finding::Finding;
@@ -111,15 +111,12 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
         )
     };
 
-    // Apply accepted-finding decoration before render or JSON output.
-    // The on-disk `latest.json` keeps raw observer truth (no
-    // `accepted` field on findings, raw severity_counts); the policy
-    // view (`Accepted:` header line, filtered Population, drain queue
-    // skipping accepted) is derived just-in-time so changes to
-    // `accepted.json` take effect without a rescan.
+    // `latest.json` stores raw observer truth; the accepted-finding
+    // overlay (Population minus accepted, drain queue skipping
+    // accepted, `Accepted:` header) is derived just-in-time so
+    // `heal mark accept` takes effect without a rescan.
     let accepted_map = read_accepted(&paths.findings_accepted())?;
-    decorate_findings(&mut record.findings, &accepted_map);
-    record.recompute_summary();
+    record.apply_accepted(&accepted_map);
 
     if args.json {
         match filters.workspace.as_deref() {

@@ -156,13 +156,19 @@ impl FindingsRecord {
         }
     }
 
-    /// Re-derive `severity_counts` and per-workspace summaries from
-    /// the current `findings`. Run after mutating findings (e.g.
-    /// after `core::accepted::decorate_findings` flips `accepted`
-    /// flags) so the aggregate views match the per-finding state.
-    /// `SeverityCounts::from_findings` excludes `accepted = true`,
-    /// so callers don't have to filter manually.
-    pub fn recompute_summary(&mut self) {
+    /// Decorate findings against the team's accepted-finding map and
+    /// re-derive aggregate counts. No-op when the map is empty so
+    /// the common case (no findings have ever been accepted) pays
+    /// neither a slice walk nor a re-aggregation.
+    pub fn apply_accepted(&mut self, map: &crate::core::accepted::AcceptedMap) {
+        if map.is_empty() {
+            return;
+        }
+        crate::core::accepted::decorate_findings(&mut self.findings, map);
+        self.recompute_summary();
+    }
+
+    pub(crate) fn recompute_summary(&mut self) {
         self.severity_counts = SeverityCounts::from_findings(&self.findings);
         self.workspaces = workspace_summaries(&self.findings);
     }

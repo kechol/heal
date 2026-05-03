@@ -35,7 +35,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 use tempfile::TempDir;
 
-use crate::core::accepted::{decorate_findings, read_accepted};
+use crate::core::accepted::read_accepted;
 use crate::core::calibration::Calibration;
 use crate::core::config::{load_from_project, Config, DrainTier, PolicyDrainConfig};
 use crate::core::finding::Finding;
@@ -94,15 +94,12 @@ pub fn run(
     let to_clean = git::worktree_clean(project).unwrap_or(false);
     let mut to_record = build_record(project, &paths, &cfg, to_head_sha, to_clean);
 
-    // Decorate both records with the current accepted map. The "from"
-    // baseline uses **today's** acceptance decisions (apples-to-apples
-    // with the "to" view) — same principle as recomputing baseline
-    // findings under today's calibration.
+    // The baseline uses **today's** accepted-finding decisions —
+    // apples-to-apples with the "to" view, same principle as
+    // recomputing baseline findings under today's calibration.
     let accepted_map = read_accepted(&paths.findings_accepted())?;
-    decorate_findings(&mut from_record.findings, &accepted_map);
-    from_record.recompute_summary();
-    decorate_findings(&mut to_record.findings, &accepted_map);
-    to_record.recompute_summary();
+    from_record.apply_accepted(&accepted_map);
+    to_record.apply_accepted(&accepted_map);
 
     let diff = compute_diff(&from_record, &to_record, workspace, &cfg.policy.drain);
     if as_json {
@@ -308,14 +305,8 @@ pub(crate) struct DiffEntry {
     /// accepted entries — moving away from an accepted state isn't
     /// drain progress (the team already decided not to chase it).
     /// Skipped from JSON when false to keep the wire shape terse.
-    #[serde(default, skip_serializing_if = "is_false_ref")]
+    #[serde(default, skip_serializing_if = "crate::core::finding::is_false")]
     pub from_accepted: bool,
-}
-
-#[inline]
-#[allow(clippy::trivially_copy_pass_by_ref)]
-fn is_false_ref(b: &bool) -> bool {
-    !*b
 }
 
 impl DiffEntry {

@@ -1,33 +1,14 @@
 //! `.heal/findings/accepted.json` — per-finding "won't fix /
-//! acknowledged intrinsic" map. Mirrors `fixed.json` in shape and
-//! atomic-write contract; the asymmetry is semantic.
+//! acknowledged intrinsic" map. Distinct from `fixed.json`: accepted
+//! entries persist across re-detections by design (the team has
+//! decided the finding is intrinsic), where a re-detected `fixed`
+//! entry would move to `regressed.jsonl` and clutter the audit trail.
 //!
-//! - `fixed.json` says "a commit fixed this; if it re-detects, log a
-//!   regression". Per-machine claim about a specific commit; if the
-//!   underlying file didn't change, the next refresh moves the entry
-//!   to `regressed.jsonl` and clutters the audit trail.
-//! - `accepted.json` says "this Finding is intrinsic complexity / a
-//!   cohesive procedural block / an unavoidable boundary; stop
-//!   surfacing it in the drain queue". Team contract; the entry stays
-//!   put across re-detections by design.
-//!
-//! Decoration is applied at render time via [`decorate_findings`]:
-//! `latest.json` keeps the raw observer truth, and every renderer
-//! (`heal status`, `heal diff`, the post-commit nudge, JSON output)
-//! folds in the accepted map just before emitting. That keeps the
-//! observer cache cheap to write and the policy decisions loadable
-//! without a rescan.
-//!
-//! ## Single drift dimension: severity escalation
-//!
-//! Reconciliation surfaces one warning shape only — when a finding
-//! that was accepted at, say, `High` later classifies as `Critical`
-//! the team's original judgement may no longer apply. Other drift
-//! shapes (file deleted, finding no longer detected, metric value
-//! moved within the same severity) stay quiet by design — `heal
-//! accepted list` is the place to surface them, and severity is the
-//! only HEAL-meaningful boundary anyway (metric values are an
-//! implementation detail of the classifier).
+//! Decoration is applied at render time via [`decorate_findings`].
+//! `latest.json` keeps raw observer truth; every renderer (status,
+//! diff, post-commit nudge, JSON output) folds in the accepted map
+//! just before emitting. The observer cache stays cheap to write and
+//! `heal mark accept` takes effect without a rescan.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -39,63 +20,39 @@ use crate::core::error::{Error, Result};
 use crate::core::finding::Finding;
 use crate::core::severity::Severity;
 
-/// One accepted finding: the team's recorded "this is intrinsic"
-/// decision. Snapshots the severity / hotspot / summary at acceptance
-/// time so a later teammate auditing the file can see what the
-/// decision was made against.
+/// One accepted finding. Snapshots the severity / hotspot / summary
+/// at accept time so a later auditor can see what the decision was
+/// made against — the live finding may have drifted by then.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct AcceptedFinding {
-    /// Free-form rationale. Empty string is allowed — the AI agent
-    /// driving `heal mark accept` is expected to fill this, and a
-    /// strict CLI gate would just push the friction onto the user.
-    /// Reviewers reading `accepted.json` should be able to skim
-    /// `reason` to understand the decision.
+    /// Free-form rationale. Empty allowed — the AI agent driving
+    /// `heal mark accept` is expected to fill it; a strict CLI gate
+    /// would just push friction onto the rare hand-invocation case.
     #[serde(default)]
     pub reason: String,
-    /// Project-relative path of the finding's anchor file at accept
-    /// time. Carried forward as a snapshot so `heal accepted list`
-    /// can show it even when the finding is no longer detected.
     pub file: String,
-    /// `Finding.metric` snapshot — preserves the dimension the team
-    /// accepted against (`ccn`, `change_coupling`, `hotspot`, …).
     pub metric: String,
-    /// Severity at acceptance. Drift detection (escalation) compares
-    /// the *current* classification against this snapshot.
+    /// Drift detection (escalation) compares the *current*
+    /// classification against this snapshot.
     pub severity: Severity,
-    /// Hotspot decoration at acceptance time. Snapshot only —
-    /// hotspot transitions don't trigger drift warnings on their
-    /// own.
     #[serde(default)]
     pub hotspot: bool,
-    /// Numeric metric value when one is recoverable from `summary`
-    /// (CCN, Cognitive). `None` for label-shaped metrics
-    /// (`duplication`, `change_coupling`, `hotspot`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metric_value: Option<f64>,
-    /// `Finding.summary` snapshot. Useful for readers of
-    /// `accepted.json` who don't have the original finding handy.
     pub summary: String,
     pub accepted_at: DateTime<Utc>,
-    /// `git config user.name <user.email>` at accept time, when the
-    /// CLI could read it. `None` when git config wasn't available
-    /// (CI bot, detached env). Not used for any logic — purely an
-    /// audit-trail nicety.
+    /// `Name <email>` from git config at accept time. `None` when
+    /// the config wasn't available (CI bot, detached env).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accepted_by: Option<String>,
 }
 
-/// `.heal/findings/accepted.json` map shape, keyed by `Finding.id`.
-/// Mirrors [`crate::core::findings_cache::FixedMap`] so the two
-/// caches read the same way. `BTreeMap` for deterministic on-disk
-/// ordering (important since the file is git-tracked).
 pub type AcceptedMap = BTreeMap<String, AcceptedFinding>;
 
-/// Read `accepted.json`. Returns an empty map when the file doesn't
-/// exist (fresh project) or when the payload is unreadable — the
-/// next mutation rewrites it from a clean baseline. Mirrors
-/// [`crate::core::findings_cache::read_fixed`]'s degrade-quietly
-/// contract so a corrupt file never blocks `heal status`.
+/// Read `accepted.json`. Empty map on missing or corrupt — same
+/// degrade-quietly contract as [`crate::core::findings_cache::read_fixed`]
+/// so a broken file never blocks `heal status`.
 pub fn read_accepted(path: &Path) -> Result<AcceptedMap> {
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
@@ -125,16 +82,15 @@ pub fn write_accepted(path: &Path, map: &AcceptedMap) -> Result<()> {
     crate::core::fs::atomic_write(path, &body)
 }
 
-/// Insert (or overwrite) an accept entry by `finding_id`.
 pub fn upsert_accepted(path: &Path, finding_id: &str, entry: AcceptedFinding) -> Result<()> {
     let mut map = read_accepted(path)?;
     map.insert(finding_id.to_owned(), entry);
     write_accepted(path, &map)
 }
 
-/// Remove an accept entry by `finding_id`. Returns the removed entry
-/// for callers that want to confirm what was unmarked. Returns
-/// `Ok(None)` when the id wasn't present.
+/// Remove an accept entry. Returns the entry that was removed (or
+/// `None` when the id wasn't present) so callers can confirm what
+/// was unmarked.
 pub fn remove_accepted(path: &Path, finding_id: &str) -> Result<Option<AcceptedFinding>> {
     let mut map = read_accepted(path)?;
     let removed = map.remove(finding_id);
@@ -144,16 +100,12 @@ pub fn remove_accepted(path: &Path, finding_id: &str) -> Result<Option<AcceptedF
     Ok(removed)
 }
 
-/// Walk `findings` and set `accepted = true` for each entry whose id
-/// appears in the accepted map. Idempotent and order-independent.
 pub fn decorate_findings(findings: &mut [Finding], map: &AcceptedMap) {
     for f in findings.iter_mut() {
         f.accepted = map.contains_key(&f.id);
     }
 }
 
-/// One severity-escalation drift signal: an accepted finding whose
-/// current Severity now sits above what the team accepted against.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AcceptedDrift {
     pub finding_id: String,
@@ -162,10 +114,11 @@ pub struct AcceptedDrift {
     pub now: Severity,
 }
 
-/// Reconcile the accepted map against the current findings list and
-/// return any escalations. Quiet on file-deleted / not-detected /
-/// same-severity-different-value (those surface in `heal accepted
-/// list`, not as runtime warnings).
+/// Severity escalations only. File-deleted, not-detected, and
+/// same-severity-different-value cases stay quiet — those surface in
+/// `heal mark accept --list`, not as runtime warnings (severity is
+/// HEAL's only decision boundary; raw metric values are an
+/// implementation detail of the classifier).
 #[must_use]
 pub fn reconcile_accepted(map: &AcceptedMap, findings: &[Finding]) -> Vec<AcceptedDrift> {
     let mut out = Vec::new();
@@ -201,25 +154,11 @@ pub fn snapshot(
         metric: finding.metric.clone(),
         severity: finding.severity,
         hotspot: finding.hotspot,
-        metric_value: extract_metric_value(&finding.metric, &finding.summary),
+        metric_value: finding.metric_value(),
         summary: finding.summary.clone(),
         accepted_at,
         accepted_by,
     }
-}
-
-/// Pull the leading numeric metric value out of a Finding's summary
-/// when the metric form carries one (CCN, Cognitive). The set of
-/// metrics with a recoverable value matches `Finding::short_label`'s
-/// number-bearing branches.
-fn extract_metric_value(metric: &str, summary: &str) -> Option<f64> {
-    let prefix = match metric {
-        "ccn" => "CCN=",
-        "cognitive" => "Cognitive=",
-        _ => return None,
-    };
-    let tail = summary.strip_prefix(prefix)?;
-    tail.split_whitespace().next()?.parse().ok()
 }
 
 #[cfg(test)]

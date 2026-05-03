@@ -92,7 +92,7 @@ pub struct Finding {
 
 #[inline]
 #[allow(clippy::trivially_copy_pass_by_ref)]
-fn is_false(b: &bool) -> bool {
+pub(crate) fn is_false(b: &bool) -> bool {
     !*b
 }
 
@@ -161,6 +161,21 @@ impl Finding {
                 .map_or_else(|| "LCOM".to_owned(), |v| format!("LCOM={v}")),
             other => other.to_owned(),
         }
+    }
+
+    /// Numeric value recovered from `summary`, when the metric carries
+    /// one. Mirrors the prefix table `short_label` uses; metrics with
+    /// label-only summaries (`duplication`, `change_coupling`,
+    /// `hotspot`) return `None`.
+    #[must_use]
+    pub fn metric_value(&self) -> Option<f64> {
+        let prefix = match self.metric.as_str() {
+            "ccn" => "CCN=",
+            "cognitive" => "Cognitive=",
+            "lcom" => "LCOM=",
+            _ => return None,
+        };
+        extract_leading_number(&self.summary, prefix)?.parse().ok()
     }
 
     /// Compose the stable id for a finding.

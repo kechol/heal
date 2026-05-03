@@ -58,13 +58,13 @@ fn run_commit(project: &Path, paths: &HealPaths) -> Result<()> {
 
     let reports = run_all(project, &cfg, None, None);
     let (calibration, mut findings) = classify_with_calibration(paths, &cfg, &reports);
-    // Apply accepted-finding decoration so the post-commit nudge
-    // surfaces the same Critical / High counts the user sees in
-    // `heal status`. Without this, the nudge would shame the team
-    // about findings they've already explicitly accepted as
-    // intrinsic — defeating the whole point of `heal mark accept`.
+    // Filter the nudge through accepted findings so the per-commit
+    // Critical / High counts match `heal status` instead of shaming
+    // the team about findings they explicitly accepted as intrinsic.
     let accepted_map = read_accepted(&paths.findings_accepted()).unwrap_or_default();
-    decorate_findings(&mut findings, &accepted_map);
+    if !accepted_map.is_empty() {
+        decorate_findings(&mut findings, &accepted_map);
+    }
     // Best-effort nudge — don't fail the hook on rendering issues.
     write_nudge(calibration.as_ref(), &findings, &mut std::io::stdout()).ok();
     Ok(())
