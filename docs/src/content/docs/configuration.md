@@ -110,8 +110,8 @@ Each entry takes:
   declared workspace form a leftover cohort with its own calibration.
 - `primary_language` (optional) — override the auto-detected primary
   language for that subtree. Useful when LOC's heuristic picks the
-  wrong language (e.g. a Rust workspace with a heavy `tests/` JS
-  fixture set).
+  wrong language (e.g. a Rust workspace with a heavy `tests/`
+  JavaScript fixture set).
 - `exclude_paths` (optional) — `.gitignore`-syntax patterns
   evaluated **relative to the workspace root**, layered on top of
   `git.exclude_paths` and `metrics.loc.exclude_paths`. Leading `/`

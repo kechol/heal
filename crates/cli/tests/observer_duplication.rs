@@ -147,7 +147,7 @@ fn worst_n_blocks_truncates_in_existing_order() {
     assert_eq!(report.worst_n_blocks(99).len(), report.blocks.len());
 }
 
-#[cfg(feature = "lang-ts")]
+#[cfg(feature = "lang-typescript")]
 #[test]
 fn typescript_duplicates_are_detected() {
     let dir = tempfile::tempdir().unwrap();

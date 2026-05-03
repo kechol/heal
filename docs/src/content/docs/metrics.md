@@ -107,8 +107,7 @@ Functions strictly below `floor_ok` classify as Ok regardless of the
 percentile ladder — see [Why CCN and Cognitive are
 proxies](#why-ccn-and-cognitive-are-proxies) below for the rationale.
 
-**Languages**: TypeScript and Rust. JS / Python / Go / Scala arrive
-in later releases.
+**Languages**: TypeScript, JavaScript, Python, Go, Scala, and Rust.
 
 ### Churn — how often a file changes
 
@@ -165,13 +164,14 @@ Calibration uses the per-file duplicate-percentage distribution;
 `floor_critical = 30%` (a third of the file is duplicate is a
 structural problem).
 
-**Languages**: same as complexity (TypeScript, Rust).
+**Languages**: same as complexity (TypeScript, JavaScript, Python, Go, Scala, Rust).
 
 ### LCOM — Lack of Cohesion of Methods
 
 > _"Which classes are mechanically separable?"_
 
-Per class (TS `class_declaration`, Rust `impl_item`), heal builds an
+Per class (TypeScript / JavaScript `class_declaration`, Python
+`class_definition`, Rust `impl_item`), heal builds an
 undirected graph: methods sharing a `this.foo` / `self.foo` field
 reference are connected, and a sibling-method call is a direct edge.
 The number of connected components is the LCOM value.
@@ -195,7 +195,9 @@ These bias toward false positives — surfaced classes are candidates
 for human review, not autonomous decisions. A typed `backend = "lsp"`
 implementation lands in v0.5+.
 
-**Languages**: TypeScript class scope, Rust impl block.
+**Languages**: TypeScript / JavaScript class scope, Python class
+scope, Rust impl block. Go has no class scope; Scala's class /
+trait / object / case-class richness needs the LSP backend (v0.5+).
 
 ## Hotspot
 

@@ -36,7 +36,7 @@ fn returns_empty_report_when_both_metrics_disabled() {
     assert_eq!(report.totals.functions, 0);
 }
 
-#[cfg(all(feature = "lang-ts", feature = "lang-rust"))]
+#[cfg(all(feature = "lang-typescript", feature = "lang-rust"))]
 #[test]
 fn aggregates_metrics_across_typescript_and_rust() {
     let dir = tempfile::tempdir().unwrap();

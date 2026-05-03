@@ -322,7 +322,7 @@ movement is small but reader load drops.
 
 - **Decompose Conditional.** Pull boolean composites into named helpers
   (`isExpired`, `hasOpenSession`). Useful when the composite carries a
-  domain concept. Beware: in TS/JS, `||` and `??` count as decisions —
+  domain concept. Beware: in TypeScript / JavaScript, `||` and `??` count as decisions —
   helper extraction can relocate CCN if the helper itself contains a
   non-trivial chain.
 - **Extract Variable / Introduce Variable.** Give an intermediate

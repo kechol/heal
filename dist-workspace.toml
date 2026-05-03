@@ -11,6 +11,18 @@ ci = "github"
 installers = ["shell", "homebrew"]
 # A GitHub repo to push Homebrew formulas to
 tap = "kechol/homebrew-tap"
+# Cargo features the released binary is built with. Mirrors the
+# `default` set in `crates/cli/Cargo.toml` — kept explicit here so a
+# future Cargo.toml `default = []` change does not silently strip
+# language grammars from Homebrew / shell / cargo-dist artefacts.
+features = [
+    "lang-typescript",
+    "lang-javascript",
+    "lang-python",
+    "lang-go",
+    "lang-scala",
+    "lang-rust",
+]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
 # Path that installers should place binaries in

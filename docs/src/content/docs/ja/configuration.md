@@ -103,7 +103,7 @@ primary_language = "rust"
 各エントリの項目:
 
 - `path` — リポジトリルートからの相対ディレクトリ（スラッシュ区切り、先頭に `/` なし、`..` なし）。workspace はネストできません。最長の workspace `path` にマッチしたファイルがその workspace に属し、どの workspace にも属さないファイルは「leftover」コホートとして独自の calibration を持ちます。
-- `primary_language`（任意） — そのサブツリーで自動検出される primary language を上書き。LOC のヒューリスティックが間違った言語を選ぶとき（例: Rust workspace に重い `tests/` の JS フィクスチャがある場合）に有用。
+- `primary_language`（任意） — そのサブツリーで自動検出される primary language を上書き。LOC のヒューリスティックが間違った言語を選ぶとき（例: Rust workspace に重い `tests/` の JavaScript フィクスチャがある場合）に有用。
 - `exclude_paths`（任意） — `.gitignore` 文法のパターンを **workspace ルート相対** で評価し、`git.exclude_paths` と `metrics.loc.exclude_paths` の上に積み増します。先頭 `/` は workspace ルートにアンカーし、`!pat` は前の除外を打ち消し、`.gitignore` と同じグロブ（`*`、`**`、`?`、`[abc]`）が使えます。
 
 ```toml

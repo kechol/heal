@@ -668,7 +668,11 @@ fn is_generated(path_str: &str, basename: &str, primary_lang: Option<&str>) -> b
         return true;
     }
     match primary_lang {
-        Some("rust") => dir_marker_matches(path_str, &["target/"]),
+        // `target/` is a Cargo / sbt build dir. Gated by primary
+        // language because some non-Rust / non-Scala projects use
+        // `target/` for unrelated meaning (e.g. front-end build
+        // pipelines targeting a `target/` output).
+        Some("rust" | "scala") => dir_marker_matches(path_str, &["target/"]),
         Some("python") => path_str.contains(".egg-info/"),
         _ => false,
     }
@@ -857,6 +861,23 @@ mod pair_class_tests {
         ]);
         classify_and_filter(&mut r, Some("rust"));
         assert_eq!(r.pairs.len(), 0, "lockfile + target/ both dropped");
+    }
+
+    #[test]
+    fn scala_target_pair_dropped() {
+        // sbt's `target/` is build output too — drop alongside Cargo's.
+        let mut r = report(vec![
+            pair(
+                "target/scala-3.3.0/classes/Foo.class",
+                "src/main/scala/Foo.scala",
+                6,
+            ),
+            pair("project/target/streams", "src/main/scala/Foo.scala", 6),
+            pair("src/main/scala/Foo.scala", "src/main/scala/Bar.scala", 4),
+        ]);
+        classify_and_filter(&mut r, Some("scala"));
+        assert_eq!(r.pairs.len(), 1, "target/ pairs dropped, src pair kept");
+        assert_eq!(r.pairs[0].a, PathBuf::from("src/main/scala/Bar.scala"));
     }
 
     #[test]

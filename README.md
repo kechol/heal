@@ -17,10 +17,11 @@ Documentation: <https://kechol.github.io/heal/>
 | ----------------------------------------------- | ---------------------------------------------------------- |
 | LOC                                             | Every language [`tokei`](https://github.com/XAMPPRocky/tokei) recognises. |
 | Churn / Change Coupling / Hotspot               | Language-agnostic — driven by `git log`, applies everywhere. |
-| Complexity (CCN + Cognitive) / Duplication / LCOM | TypeScript / JavaScript and Rust. More parsers in later releases. |
+| Complexity (CCN + Cognitive) / Duplication       | TypeScript / JavaScript / Python / Go / Scala / Rust.      |
+| LCOM                                            | TypeScript / JavaScript / Python / Rust. (Go has no class scope; Scala awaits the LSP backend.) |
 
-Hotspot composes complexity (TS/JS/Rust) with churn (any language), so
-on a non-parsed language it falls back to a churn-only signal.
+Hotspot composes complexity with churn, so on a language without a
+tree-sitter grammar enabled it falls back to a churn-only signal.
 
 > ⚠️ **Status: v0.2 in progress.** macOS / Linux only.
 

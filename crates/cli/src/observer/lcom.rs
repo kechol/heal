@@ -353,22 +353,22 @@ fn collect_methods<'a>(
 // `node` is unused when only no-LCOM languages (Go/Scala) are enabled.
 #[cfg_attr(
     not(any(
-        feature = "lang-ts",
-        feature = "lang-js",
-        feature = "lang-py",
+        feature = "lang-typescript",
+        feature = "lang-javascript",
+        feature = "lang-python",
         feature = "lang-rust"
     )),
     allow(unused_variables)
 )]
 fn is_method_kind(node: Node<'_>, lang: Language) -> bool {
     match lang {
-        #[cfg(feature = "lang-ts")]
+        #[cfg(feature = "lang-typescript")]
         Language::TypeScript | Language::Tsx => {
             matches!(node.kind(), "method_definition" | "method_signature")
         }
-        #[cfg(feature = "lang-js")]
+        #[cfg(feature = "lang-javascript")]
         Language::JavaScript | Language::Jsx => node.kind() == "method_definition",
-        #[cfg(feature = "lang-py")]
+        #[cfg(feature = "lang-python")]
         Language::Python => node.kind() == "function_definition",
         // Go has no class scope; methods attach to types via receivers
         // and live at module scope. Receiver-grouped LCOM lands in
@@ -391,11 +391,11 @@ fn class_name_for(class_node: Node<'_>, source: &[u8], lang: Language) -> String
     // Rust trait impls have both `trait` and `type` fields; we deliberately
     // pick `type` so `impl Foo for Bar` and `impl Bar` collapse to `Bar`.
     let lookup = match lang {
-        #[cfg(feature = "lang-ts")]
+        #[cfg(feature = "lang-typescript")]
         Language::TypeScript | Language::Tsx => "name",
-        #[cfg(feature = "lang-js")]
+        #[cfg(feature = "lang-javascript")]
         Language::JavaScript | Language::Jsx => "name",
-        #[cfg(feature = "lang-py")]
+        #[cfg(feature = "lang-python")]
         Language::Python => "name",
         // Go's LCOM is a no-op (see `is_method_kind`); the field name
         // here doesn't matter.
@@ -442,7 +442,7 @@ struct SelfRefShape {
     call_kind: &'static str,
 }
 
-#[cfg(any(feature = "lang-ts", feature = "lang-js"))]
+#[cfg(any(feature = "lang-typescript", feature = "lang-javascript"))]
 fn ts_js_is_receiver(node: Node<'_>, _: &[u8]) -> bool {
     node.kind() == "this"
 }
@@ -450,12 +450,12 @@ fn ts_js_is_receiver(node: Node<'_>, _: &[u8]) -> bool {
 fn rust_is_receiver(node: Node<'_>, _: &[u8]) -> bool {
     node.kind() == "self"
 }
-#[cfg(feature = "lang-py")]
+#[cfg(feature = "lang-python")]
 fn py_is_receiver(node: Node<'_>, source: &[u8]) -> bool {
     node.kind() == "identifier" && node.utf8_text(source).is_ok_and(|t| t == "self")
 }
 
-#[cfg(any(feature = "lang-ts", feature = "lang-js"))]
+#[cfg(any(feature = "lang-typescript", feature = "lang-javascript"))]
 const SELF_REF_TS_JS: SelfRefShape = SelfRefShape {
     access_kind: "member_expression",
     receiver_field: "object",
@@ -471,7 +471,7 @@ const SELF_REF_RUST: SelfRefShape = SelfRefShape {
     property_field: "field",
     call_kind: "call_expression",
 };
-#[cfg(feature = "lang-py")]
+#[cfg(feature = "lang-python")]
 const SELF_REF_PY: SelfRefShape = SelfRefShape {
     access_kind: "attribute",
     receiver_field: "object",
@@ -489,11 +489,11 @@ const SELF_REF_PY: SelfRefShape = SelfRefShape {
 )]
 fn self_ref_shape(lang: Language) -> Option<SelfRefShape> {
     match lang {
-        #[cfg(feature = "lang-ts")]
+        #[cfg(feature = "lang-typescript")]
         Language::TypeScript | Language::Tsx => Some(SELF_REF_TS_JS),
-        #[cfg(feature = "lang-js")]
+        #[cfg(feature = "lang-javascript")]
         Language::JavaScript | Language::Jsx => Some(SELF_REF_TS_JS),
-        #[cfg(feature = "lang-py")]
+        #[cfg(feature = "lang-python")]
         Language::Python => Some(SELF_REF_PY),
         // Go has no class scope and Scala's class story needs the LSP
         // backend; both languages opt out of LCOM via
@@ -639,19 +639,19 @@ impl Feature for LcomFeature {
 mod tests {
     use super::*;
 
-    #[cfg(feature = "lang-ts")]
+    #[cfg(feature = "lang-typescript")]
     fn run_ts(source: &str) -> Vec<ClassLcom> {
         let parsed = parse(source.to_owned(), Language::TypeScript).unwrap();
         classes_in(&parsed, Path::new("test.ts"))
     }
 
-    #[cfg(feature = "lang-js")]
+    #[cfg(feature = "lang-javascript")]
     fn run_js(source: &str) -> Vec<ClassLcom> {
         let parsed = parse(source.to_owned(), Language::JavaScript).unwrap();
         classes_in(&parsed, Path::new("test.js"))
     }
 
-    #[cfg(feature = "lang-py")]
+    #[cfg(feature = "lang-python")]
     fn run_py(source: &str) -> Vec<ClassLcom> {
         let parsed = parse(source.to_owned(), Language::Python).unwrap();
         classes_in(&parsed, Path::new("test.py"))
@@ -675,7 +675,7 @@ mod tests {
         classes_in(&parsed, Path::new("test.rs"))
     }
 
-    #[cfg(feature = "lang-ts")]
+    #[cfg(feature = "lang-typescript")]
     #[test]
     fn ts_cohesive_class_has_one_cluster() {
         let src = r"
@@ -693,7 +693,7 @@ mod tests {
         assert_eq!(classes[0].cluster_count, 1, "all methods touch `value`");
     }
 
-    #[cfg(feature = "lang-ts")]
+    #[cfg(feature = "lang-typescript")]
     #[test]
     fn ts_split_class_has_multiple_clusters() {
         // Two unrelated responsibility groups: counter (a/b touch `count`)
@@ -714,7 +714,7 @@ mod tests {
         assert_eq!(classes[0].cluster_count, 2);
     }
 
-    #[cfg(feature = "lang-ts")]
+    #[cfg(feature = "lang-typescript")]
     #[test]
     fn ts_method_call_merges_clusters() {
         // `tail()` reaches into both responsibility groups — touches
@@ -794,7 +794,7 @@ mod tests {
         assert_eq!(classes[0].cluster_count, 1);
     }
 
-    #[cfg(feature = "lang-ts")]
+    #[cfg(feature = "lang-typescript")]
     #[test]
     fn empty_class_is_skipped() {
         let src = "class Empty {}";
@@ -802,7 +802,7 @@ mod tests {
         assert!(classes.is_empty());
     }
 
-    #[cfg(feature = "lang-js")]
+    #[cfg(feature = "lang-javascript")]
     #[test]
     fn js_cohesive_class_has_one_cluster() {
         let src = r"
@@ -819,7 +819,7 @@ mod tests {
         assert_eq!(classes[0].cluster_count, 1);
     }
 
-    #[cfg(feature = "lang-js")]
+    #[cfg(feature = "lang-javascript")]
     #[test]
     fn js_split_class_has_multiple_clusters() {
         let src = r"
@@ -835,7 +835,7 @@ mod tests {
         assert_eq!(classes[0].cluster_count, 2);
     }
 
-    #[cfg(feature = "lang-js")]
+    #[cfg(feature = "lang-javascript")]
     #[test]
     fn js_method_call_merges_clusters() {
         // `tail()` bridges {push, tail} (log) ∪ {inc, value} (count).
@@ -855,7 +855,7 @@ mod tests {
         assert_eq!(classes[0].cluster_count, 1);
     }
 
-    #[cfg(feature = "lang-py")]
+    #[cfg(feature = "lang-python")]
     #[test]
     fn py_cohesive_class_has_one_cluster() {
         let src = r"
@@ -875,7 +875,7 @@ class Counter:
         assert_eq!(classes[0].cluster_count, 1);
     }
 
-    #[cfg(feature = "lang-py")]
+    #[cfg(feature = "lang-python")]
     #[test]
     fn py_split_class_has_multiple_clusters() {
         let src = r"
@@ -929,7 +929,7 @@ class Counter {
         assert!(run_scala(src).is_empty());
     }
 
-    #[cfg(feature = "lang-py")]
+    #[cfg(feature = "lang-python")]
     #[test]
     fn py_method_call_merges_clusters() {
         // `tail` touches `log` AND calls `value()` — the bridge.

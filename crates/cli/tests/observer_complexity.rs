@@ -3,14 +3,14 @@
 //! snippets whose scores are derived inline so test failures are easy to
 //! interpret.
 
-#[cfg(feature = "lang-ts")]
+#[cfg(feature = "lang-typescript")]
 use heal_cli::observer::complexity::extract_functions;
-#[cfg(any(feature = "lang-ts", feature = "lang-rust"))]
+#[cfg(any(feature = "lang-typescript", feature = "lang-rust"))]
 use heal_cli::observer::complexity::{analyze, parse, FunctionMetric};
-#[cfg(any(feature = "lang-ts", feature = "lang-rust"))]
+#[cfg(any(feature = "lang-typescript", feature = "lang-rust"))]
 use heal_cli::observer::lang::Language;
 
-#[cfg(feature = "lang-ts")]
+#[cfg(feature = "lang-typescript")]
 fn analyze_ts(source: &str) -> Vec<FunctionMetric> {
     let parsed = parse(source.to_string(), Language::TypeScript).expect("parse ok");
     analyze(&parsed)
@@ -22,7 +22,7 @@ fn analyze_rust(source: &str) -> Vec<FunctionMetric> {
     analyze(&parsed)
 }
 
-#[cfg(any(feature = "lang-ts", feature = "lang-rust"))]
+#[cfg(any(feature = "lang-typescript", feature = "lang-rust"))]
 fn metric<'a>(metrics: &'a [FunctionMetric], name: &str) -> &'a FunctionMetric {
     metrics
         .iter()
@@ -30,7 +30,7 @@ fn metric<'a>(metrics: &'a [FunctionMetric], name: &str) -> &'a FunctionMetric {
         .unwrap_or_else(|| panic!("no metric named {name}; have {metrics:?}"))
 }
 
-#[cfg(feature = "lang-ts")]
+#[cfg(feature = "lang-typescript")]
 #[test]
 fn extracts_all_function_shaped_scopes() {
     // 5 scope kinds the registry must handle:
@@ -76,7 +76,7 @@ const arrow = (n: number) => n * 2;
     assert_eq!(scopes.len(), 5, "expected exactly 5 scopes, got {scopes:?}");
 }
 
-#[cfg(feature = "lang-ts")]
+#[cfg(feature = "lang-typescript")]
 #[test]
 fn ccn_baseline_for_empty_function_is_one() {
     let metrics = analyze_ts("function noop() {}");
@@ -84,7 +84,7 @@ fn ccn_baseline_for_empty_function_is_one() {
     assert_eq!(m.ccn, 1);
 }
 
-#[cfg(feature = "lang-ts")]
+#[cfg(feature = "lang-typescript")]
 #[test]
 fn ccn_sums_decision_points() {
     // Hand count for `mixed`:
@@ -108,7 +108,7 @@ function mixed(xs: number[], flag: boolean) {
     assert_eq!(m.ccn, 5, "got {m:?}");
 }
 
-#[cfg(feature = "lang-ts")]
+#[cfg(feature = "lang-typescript")]
 #[test]
 fn cognitive_baseline_for_straight_line_is_zero() {
     let source = "function add(a: number, b: number): number { return a + b; }";
@@ -117,7 +117,7 @@ fn cognitive_baseline_for_straight_line_is_zero() {
     assert_eq!(m.cognitive, 0);
 }
 
-#[cfg(feature = "lang-ts")]
+#[cfg(feature = "lang-typescript")]
 #[test]
 fn cognitive_nests_with_depth() {
     // From Sonar's PDF: three nested ifs score 1 + 2 + 3 = 6.
@@ -138,7 +138,7 @@ function deep(a: boolean, b: boolean, c: boolean) {
     assert_eq!(m.cognitive, 6, "got {m:?}");
 }
 
-#[cfg(feature = "lang-ts")]
+#[cfg(feature = "lang-typescript")]
 #[test]
 fn cognitive_else_if_chain_does_not_double_nest() {
     // if … else if … else if … else
@@ -165,7 +165,7 @@ function classify(n: number): string {
     assert_eq!(m.cognitive, 4, "got {m:?}");
 }
 
-#[cfg(feature = "lang-ts")]
+#[cfg(feature = "lang-typescript")]
 #[test]
 fn cognitive_logical_chain_counts_operator_switches() {
     // `a && b || c && d`:
@@ -184,7 +184,7 @@ fn cognitive_logical_chain_counts_operator_switches() {
     assert_eq!(m.cognitive, 1, "got {m:?}");
 }
 
-#[cfg(feature = "lang-ts")]
+#[cfg(feature = "lang-typescript")]
 #[test]
 fn nested_function_isolation() {
     // outer's body has 1 if → CCN 2, Cognitive 1.
@@ -222,7 +222,7 @@ function outer(a: boolean, b: boolean, c: boolean) {
     assert_eq!(inner.cognitive, 3, "inner Cognitive (1 + 2): {inner:?}");
 }
 
-#[cfg(feature = "lang-ts")]
+#[cfg(feature = "lang-typescript")]
 #[test]
 fn tsx_grammar_parses_components() {
     let source = r"

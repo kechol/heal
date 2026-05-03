@@ -147,7 +147,7 @@ day-to-day verdict.
   evolve separately.
 - **False positives.** Test fixtures, generated parsers / schema
   types, license/copyright headers, cross-language duplicates with
-  the same intent (same JSON schema in TS and Rust — can't be DRYed
+  the same intent (same JSON schema in TypeScript and Rust — can't be DRYed
   without code-gen).
 
 ## `hotspot` — Composite (churn × complexity)

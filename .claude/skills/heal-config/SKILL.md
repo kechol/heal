@@ -16,7 +16,9 @@ a strictness level the user chose.
 
 The skill is **language-agnostic** — it consults `heal metrics --json`
 to see which observers fired and what the per-language LOC mix is, then
-shapes the config accordingly. It does not assume Rust / TS / Python.
+shapes the config accordingly. It does not assume any specific
+language stack (Rust / TypeScript / JavaScript / Python / Go /
+Scala are all first-class).
 
 Read-only on source files. The only file it writes is
 `.heal/config.toml`. Calibration thresholds live in
@@ -171,8 +173,10 @@ Steps:
    `heal metrics --json --workspace <path>` per declared workspace
    and read the LOC primary. If it differs from the repo-wide primary,
    set `primary_language` on the workspace overlay so the change-
-   coupling pair-class noise filter (TypeScript-specific lockfiles vs
-   Rust-specific ones) matches reality.
+   coupling pair-class noise filter (per-language lockfiles and
+   build-output dirs — `Cargo.lock` / `target/` for Rust, sbt's
+   `target/` for Scala, `.egg-info/` for Python, etc.) matches
+   reality.
 
 4. **Tune per-workspace recipes** (skip when no override is needed):
    - **`exclude_paths`**: workspace-relative `.gitignore` lines layered

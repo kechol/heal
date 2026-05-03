@@ -318,11 +318,11 @@ v0.5+).
 **Algorithm:**
 
 1. Class extraction:
-   - TS/JS: `class_declaration`.
+   - TypeScript / JavaScript: `class_declaration`.
    - Rust: `impl_item` (both inherent and trait impls treated the same).
    - Python: `class_definition`.
 2. Per method, collect self-references:
-   - TS/JS: `member_expression` with `object = this`.
+   - TypeScript / JavaScript: `member_expression` with `object = this`.
    - Rust: `field_expression` with `value = self`.
    - Python: `attribute` with `object = self`.
 3. Build `field_to_methods[field] = {method indices touching it}` and
@@ -366,8 +366,12 @@ escalating.
 ### `observer/lang.rs`
 
 - Language registry: TypeScript, Tsx, JavaScript, Jsx, Python, Go, Scala,
-  Rust. Cargo features: `lang-ts`, `lang-js`, `lang-py`, `lang-go`,
-  `lang-scala`, `lang-rust` (at least one required at compile time).
+  Rust. Cargo features (canonical, long-form): `lang-typescript`,
+  `lang-javascript`, `lang-python`, `lang-go`, `lang-scala`,
+  `lang-rust` (at least one required at compile time). Short-form
+  aliases `lang-ts` / `lang-js` / `lang-py` resolve to the long form
+  for backwards compatibility — source-level `cfg` gates use the
+  canonical names only.
 - Extension dispatch: `Language::from_path`.
 - Tree-sitter queries are **embedded** via `include_str!` from
   `crates/cli/queries/<lang>/<type>.scm`. Compiled once per (lang,

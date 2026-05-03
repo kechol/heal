@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Features
+
+- **JavaScript, Python, Go, and Scala join the default-enabled
+  grammars.** The released binary (Homebrew, shell installer,
+  `cargo install heal-cli`) now ships with all six tree-sitter
+  parsers — `lang-js`, `lang-py`, `lang-go`, `lang-scala` move from
+  opt-in to default alongside the existing `lang-ts` and
+  `lang-rust`. Complexity (CCN + Cognitive) and Duplication run on
+  all six. LCOM stays scoped to TypeScript / JavaScript / Python /
+  Rust — Go has no class scope and Scala awaits the LSP backend
+  (v0.5+).
+- **Cargo feature names switched to long form as canonical.**
+  `lang-typescript`, `lang-javascript`, `lang-python` now match the
+  upstream `tree-sitter-<name>` parser crate names; source-level
+  `cfg(feature = "lang-...")` gates and the CI matrix follow suit.
+  Short forms `lang-ts` / `lang-js` / `lang-py` remain as aliases so
+  existing `cargo build --features lang-ts` invocations keep
+  working. (`lang-go`, `lang-scala`, `lang-rust` were already in
+  long form.)
+
 ## v0.3.1 — 2026-05-03
 
 ### Fixes

@@ -32,16 +32,30 @@ include = [
 workspace = true
 
 [features]
-# Keeps TypeScript and Rust as the default-enabled grammars. JavaScript
-# support is deferred to a later release along with `.js` / `.jsx` query
-# files.
-default = ["lang-ts", "lang-rust"]
-lang-ts = ["dep:tree-sitter-typescript"]
-lang-js = ["dep:tree-sitter-javascript"]
-lang-py = ["dep:tree-sitter-python"]
+# All six grammars ship in the released binary. Each is gated so a
+# downstream binary can drop unused ones via `--no-default-features
+# --features lang-<name>,...` to shrink the build. Long-form names
+# (matching the `tree-sitter-<name>` parser crate) are canonical.
+default = [
+    "lang-typescript",
+    "lang-javascript",
+    "lang-python",
+    "lang-go",
+    "lang-scala",
+    "lang-rust",
+]
+lang-typescript = ["dep:tree-sitter-typescript"]
+lang-javascript = ["dep:tree-sitter-javascript"]
+lang-python = ["dep:tree-sitter-python"]
 lang-go = ["dep:tree-sitter-go"]
 lang-scala = ["dep:tree-sitter-scala"]
 lang-rust = ["dep:tree-sitter-rust"]
+
+# Short-form aliases (legacy). Predate the long-form names; kept so
+# existing `--features lang-ts` invocations don't break.
+lang-ts = ["lang-typescript"]
+lang-js = ["lang-javascript"]
+lang-py = ["lang-python"]
 
 [lib]
 name = "heal_cli"
