@@ -1,4 +1,4 @@
-//! `.heal/checks/` — the result cache for `heal status`.
+//! `.heal/findings/` — the result cache for `heal status`.
 //!
 //! `heal status` is the **single writer** of `latest.json`: every run
 //! produces a [`CheckRecord`] which atomically replaces the file. There
@@ -13,7 +13,7 @@
 //! `latest.json` and `fixed.json` to see what's outstanding vs. claimed
 //! resolved.
 //!
-//! Three files live under `.heal/checks/`:
+//! Three files live under `.heal/findings/`:
 //!   - `latest.json`     — atomic mirror of the most recent record
 //!   - `fixed.json`      — bounded `BTreeMap<finding_id, FixedFinding>`
 //!   - `regressed.jsonl` — append-only "fix re-detected" markers
@@ -236,7 +236,7 @@ pub fn config_hash_from_paths(config: &Path, calibration: &Path) -> String {
 }
 
 /// Atomically write `record` to `latest_path` (i.e.
-/// `.heal/checks/latest.json`). The cache is single-record by design;
+/// `.heal/findings/latest.json`). The cache is single-record by design;
 /// previous runs are overwritten in place.
 pub fn write_record(latest_path: &Path, record: &CheckRecord) -> Result<()> {
     if let Some(parent) = latest_path.parent() {

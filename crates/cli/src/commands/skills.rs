@@ -493,38 +493,56 @@ mod tests {
     }
 
     #[test]
-    fn install_writes_settings_hooks() {
+    fn install_does_not_register_claude_hooks() {
         let dir = TempDir::new().unwrap();
         let project = dir.path();
         let paths = HealPaths::new(project);
         paths.ensure().unwrap();
         let dest = skills_dest(project);
         install(project, &paths, &dest, false, false).unwrap();
-        let settings: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(project.join(".claude/settings.json")).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(
-            settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"],
-            "heal hook edit"
-        );
-        assert_eq!(
-            settings["hooks"]["Stop"][0]["hooks"][0]["command"],
-            "heal hook stop"
-        );
+        // Modern install adds nothing to settings.json: with the event
+        // log gone the Claude Code hooks have no payload to write.
+        assert!(!project.join(".claude/settings.json").exists());
     }
 
     #[test]
-    fn uninstall_clears_settings_hooks() {
+    fn install_sweeps_legacy_heal_hook_entries() {
         let dir = TempDir::new().unwrap();
         let project = dir.path();
         let paths = HealPaths::new(project);
         paths.ensure().unwrap();
+        let settings = project.join(".claude/settings.json");
+        std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+        // A leftover from the pre-v0.3 install: HEAL's edit hook plus a
+        // user hook side-by-side. After install the HEAL entry should be
+        // gone; the user entry survives.
+        std::fs::write(
+            &settings,
+            r#"{
+              "hooks": {
+                "PostToolUse": [
+                  { "matcher": "Edit|Write|MultiEdit",
+                    "hooks": [
+                      { "type": "command", "command": "heal hook edit" },
+                      { "type": "command", "command": "echo edit" }
+                    ]
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
         let dest = skills_dest(project);
         install(project, &paths, &dest, false, false).unwrap();
-        uninstall(project, &paths, &dest, false).unwrap();
-        // settings.json should be deleted entirely (only HEAL hooks were present).
-        assert!(!project.join(".claude/settings.json").exists());
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        let cmds: Vec<&str> = v["hooks"]["PostToolUse"][0]["hooks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| h["command"].as_str().unwrap())
+            .collect();
+        assert_eq!(cmds, vec!["echo edit"]);
     }
 
     #[test]

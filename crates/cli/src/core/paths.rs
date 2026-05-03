@@ -36,22 +36,23 @@ impl HealPaths {
         self.root.join("calibration.toml")
     }
 
-    /// Append-only result cache: `<root>/checks/YYYY-MM.jsonl` plus
-    /// auxiliary files (`latest.json`, `fixed.jsonl`, `regressed.jsonl`).
-    /// Skill workflows read this; `heal status` writes it. Kept under
-    /// `.heal/` (not `.cache/`) so it ships with the project alongside
-    /// `config.toml` and `calibration.toml`.
+    /// Single-record finding cache: `<root>/findings/latest.json`,
+    /// `fixed.json`, `regressed.jsonl`. `heal status` writes it; skill
+    /// workflows and `heal diff` read it. Kept under `.heal/` (not
+    /// `.cache/`) so the layout ships with the project alongside
+    /// `config.toml` and `calibration.toml`. Untracked by git via the
+    /// `.heal/.gitignore` `heal init` writes.
     #[must_use]
-    pub fn checks_dir(&self) -> PathBuf {
-        self.root.join("checks")
+    pub fn findings_dir(&self) -> PathBuf {
+        self.root.join("findings")
     }
 
-    /// Latest `CheckRecord` mirror, written atomically after every
-    /// `heal status`. Skills that just want "the current TODO list" read
-    /// this without scanning the JSONL stream.
+    /// Latest `CheckRecord` mirror, atomically written after every
+    /// `heal status`. The single source of truth for "what does the
+    /// project look like right now".
     #[must_use]
-    pub fn checks_latest(&self) -> PathBuf {
-        self.checks_dir().join("latest.json")
+    pub fn findings_latest(&self) -> PathBuf {
+        self.findings_dir().join("latest.json")
     }
 
     /// "These findings have been fixed by a commit" map, keyed by
@@ -60,15 +61,23 @@ impl HealPaths {
     /// entries whose finding re-detects are removed from the map and
     /// surfaced in `regressed.jsonl`.
     #[must_use]
-    pub fn checks_fixed(&self) -> PathBuf {
-        self.checks_dir().join("fixed.json")
+    pub fn findings_fixed(&self) -> PathBuf {
+        self.findings_dir().join("fixed.json")
     }
 
     /// Regression audit trail. Append-only. Each entry ties a fixed
     /// finding to the `check_id` that re-detected it.
     #[must_use]
-    pub fn checks_regressed_log(&self) -> PathBuf {
-        self.checks_dir().join("regressed.jsonl")
+    pub fn findings_regressed_log(&self) -> PathBuf {
+        self.findings_dir().join("regressed.jsonl")
+    }
+
+    /// `.heal/.gitignore` — written by `heal init` so volatile state
+    /// (`findings/`, `skills-install.json`) doesn't dirty the worktree.
+    /// Tracked tomls (`config.toml`, `calibration.toml`) stay versioned.
+    #[must_use]
+    pub fn gitignore(&self) -> PathBuf {
+        self.root.join(".gitignore")
     }
 
     /// Manifest tracking which skill files were extracted by
@@ -82,7 +91,7 @@ impl HealPaths {
 
     /// Create every standard subdirectory. Idempotent.
     pub fn ensure(&self) -> std::io::Result<()> {
-        for dir in [self.root.as_path(), &self.checks_dir()] {
+        for dir in [self.root.as_path(), &self.findings_dir()] {
             std::fs::create_dir_all(dir)?;
         }
         Ok(())

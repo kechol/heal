@@ -1,37 +1,25 @@
-//! Inject HEAL's Claude Code hooks into `<project>/.claude/settings.json`.
+//! Manage HEAL's `<project>/.claude/settings.json` registration.
 //!
 //! Skills are extracted directly under `.claude/skills/` (handled by
 //! [`crate::skill_assets`]); Claude Code discovers them natively without
-//! a marketplace. This module owns the *other* half of the wiring — the
-//! `Stop` and `PostToolUse` hooks that drive the HEAL event log.
+//! a marketplace. This module owns the *other* half of the wiring.
 //!
-//! Each hook entry boils down to a single inline `command` string:
+//! As of v0.3 HEAL no longer registers any Claude Code hooks — every
+//! event-log dependent feature has been retired. `wire`/`register`
+//! remain so `heal init` / `heal skills install` can:
 //!
-//! ```jsonc
-//! {
-//!   "hooks": {
-//!     "PostToolUse": [
-//!       { "matcher": "Edit|Write|MultiEdit",
-//!         "hooks": [{ "type": "command", "command": "heal hook edit" }] }
-//!     ],
-//!     "Stop": [
-//!       { "hooks": [{ "type": "command", "command": "heal hook stop" }] }
-//!     ]
-//!   }
-//! }
-//! ```
+//!   - sweep legacy `heal hook edit` / `heal hook stop` entries left
+//!     over from earlier installs, and
+//!   - clean up the pre-v0.2 marketplace plugin tree if present.
 //!
-//! Merging is surgical: HEAL's own command lines are added (deduped by
-//! exact match) without disturbing other entries the user wrote. On
-//! `unregister`, only HEAL's command lines are removed; user blocks
-//! survive untouched. Settings outside `hooks` are preserved
-//! byte-for-byte through a `serde_json::Value` round-trip.
+//! Settings outside the swept entries are preserved byte-for-byte via a
+//! `serde_json::Value` round-trip.
 
 use std::path::Path;
 
 use anyhow::{Context, Result};
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 const SETTINGS_FILE: &str = ".claude/settings.json";
 
@@ -47,28 +35,11 @@ const LEGACY_PLUGIN_DEST_REL: &str = ".claude/plugins/heal";
 const LEGACY_MARKETPLACE_NAME: &str = "heal-local";
 const LEGACY_ENABLED_PLUGIN_KEY: &str = "heal@heal-local";
 
-/// Hook commands HEAL contributes. Order is meaningful only for
-/// rendering / unregister-removal — the lookup is by exact `command`
-/// string match.
-const HEAL_HOOKS: &[HealHook] = &[
-    HealHook {
-        event: "PostToolUse",
-        matcher: Some("Edit|Write|MultiEdit"),
-        command: "heal hook edit",
-    },
-    HealHook {
-        event: "Stop",
-        matcher: None,
-        command: "heal hook stop",
-    },
-];
-
-#[derive(Debug, Clone, Copy)]
-struct HealHook {
-    event: &'static str,
-    matcher: Option<&'static str>,
-    command: &'static str,
-}
+/// Hook commands HEAL once registered with Claude Code. Modern installs
+/// no longer add these (the underlying event log is gone), but the
+/// strings live on so `register` / `unregister` can sweep them out of
+/// stale `settings.json` files left behind by earlier versions.
+const LEGACY_HEAL_COMMANDS: &[&str] = &["heal hook edit", "heal hook stop"];
 
 /// Outcome reported by [`register`]. Drives the CLI status line and
 /// lets callers report no-op vs. mutation distinctly.
@@ -96,21 +67,25 @@ pub fn wire(project: &Path) -> Result<WireReport> {
     Ok(WireReport { settings })
 }
 
-/// Idempotent merge of HEAL's hook entries into `settings.json`.
+/// Idempotent settings.json reconciliation. Modern HEAL doesn't add
+/// any Claude Code hooks, so this only sweeps legacy command entries
+/// (`heal hook edit`, `heal hook stop`) left over from earlier
+/// installs. A nonexistent settings file stays nonexistent.
 pub fn register(project: &Path) -> Result<WriteAction> {
     let path = project.join(SETTINGS_FILE);
-    let prior = std::fs::read_to_string(&path).ok();
-    let mut value: Value = match prior.as_deref() {
-        Some(s) => {
-            serde_json::from_str(s).with_context(|| format!("parsing {}", path.display()))?
-        }
-        None => json!({}),
+    let Ok(prior) = std::fs::read_to_string(&path) else {
+        return Ok(WriteAction::Unchanged);
     };
-    upsert_hooks(&mut value);
+    let mut value: Value =
+        serde_json::from_str(&prior).with_context(|| format!("parsing {}", path.display()))?;
+    remove_heal_hooks(&mut value);
     let body = format!(
         "{}\n",
         serde_json::to_string_pretty(&value).expect("settings serialization is infallible")
     );
+    if body == prior {
+        return Ok(WriteAction::Unchanged);
+    }
     write_if_changed(&path, &body)
 }
 
@@ -237,54 +212,10 @@ fn write_if_changed(path: &Path, body: &str) -> Result<WriteAction> {
     })
 }
 
-/// Add each HEAL hook to its `event` array. Two-level dedupe:
-///   * Block level — if a block with the same `matcher` already exists,
-///     reuse it instead of appending a sibling.
-///   * Inner-hook level — if an inner hook with the same `command`
-///     string is already present, leave it alone.
-fn upsert_hooks(value: &mut Value) {
-    let obj = ensure_object(value);
-    let hooks = obj
-        .entry("hooks")
-        .or_insert_with(|| json!({}))
-        .as_object_mut()
-        .expect("hooks is an object after the entry call");
-    for hook in HEAL_HOOKS {
-        let event_array = hooks
-            .entry(hook.event.to_string())
-            .or_insert_with(|| json!([]))
-            .as_array_mut()
-            .expect("event slot is an array after the entry call");
-        upsert_hook_in_event(event_array, hook);
-    }
-}
-
-fn upsert_hook_in_event(event_array: &mut Vec<Value>, hook: &HealHook) {
-    let Some(block) = event_array
-        .iter_mut()
-        .find(|b| matcher_of(b) == hook.matcher)
-    else {
-        event_array.push(new_block(hook));
-        return;
-    };
-    ensure_inner_hooks_array(block);
-    let inner = block
-        .get_mut("hooks")
-        .and_then(Value::as_array_mut)
-        .expect("ensure_inner_hooks_array runs first");
-    if inner
-        .iter()
-        .any(|h| h.get("command").and_then(Value::as_str) == Some(hook.command))
-    {
-        return;
-    }
-    inner.push(command_entry(hook.command));
-}
-
 /// Walk every block under every event and drop inner-hook entries whose
-/// `command` matches one of HEAL's. Empty inner-hook arrays remove the
-/// containing block; empty event arrays are dropped from `hooks`; an
-/// empty `hooks` object is dropped from the root.
+/// `command` matches a [`LEGACY_HEAL_COMMANDS`] entry. Empty inner-hook
+/// arrays remove the containing block; empty event arrays are dropped
+/// from `hooks`; an empty `hooks` object is dropped from the root.
 fn remove_heal_hooks(value: &mut Value) {
     let Some(obj) = value.as_object_mut() else {
         return;
@@ -293,7 +224,6 @@ fn remove_heal_hooks(value: &mut Value) {
         return;
     };
 
-    let heal_commands: Vec<&str> = HEAL_HOOKS.iter().map(|h| h.command).collect();
     for blocks in hooks.values_mut() {
         let Some(blocks) = blocks.as_array_mut() else {
             continue;
@@ -303,7 +233,7 @@ fn remove_heal_hooks(value: &mut Value) {
                 inner.retain(|h| {
                     h.get("command")
                         .and_then(Value::as_str)
-                        .is_none_or(|c| !heal_commands.contains(&c))
+                        .is_none_or(|c| !LEGACY_HEAL_COMMANDS.contains(&c))
                 });
             }
         }
@@ -321,111 +251,58 @@ fn remove_heal_hooks(value: &mut Value) {
     }
 }
 
-fn matcher_of(block: &Value) -> Option<&'static str> {
-    // Returns &'static str when the block's matcher matches one of our
-    // hooks; otherwise None — distinct from Some("") so empty matchers
-    // don't accidentally collide.
-    let m = block.get("matcher").and_then(Value::as_str)?;
-    HEAL_HOOKS.iter().find_map(|h| {
-        if h.matcher == Some(m) {
-            h.matcher
-        } else {
-            None
-        }
-    })
-}
-
-fn new_block(hook: &HealHook) -> Value {
-    let mut block = serde_json::Map::new();
-    if let Some(m) = hook.matcher {
-        block.insert("matcher".into(), Value::String(m.to_string()));
-    }
-    block.insert("hooks".into(), json!([command_entry(hook.command)]));
-    Value::Object(block)
-}
-
-fn command_entry(command: &str) -> Value {
-    json!({ "type": "command", "command": command })
-}
-
-fn ensure_inner_hooks_array(block: &mut Value) {
-    let obj = block
-        .as_object_mut()
-        .expect("hook blocks are JSON objects by Claude's schema");
-    obj.entry("hooks").or_insert_with(|| json!([]));
-}
-
-fn ensure_object(value: &mut Value) -> &mut serde_json::Map<String, Value> {
-    if !value.is_object() {
-        *value = json!({});
-    }
-    value.as_object_mut().expect("just inserted an object")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
 
     #[test]
-    fn register_writes_both_hook_blocks() {
+    fn register_is_noop_when_settings_absent() {
         let dir = TempDir::new().unwrap();
-        register(dir.path()).unwrap();
-        let v: Value =
-            serde_json::from_str(&std::fs::read_to_string(dir.path().join(SETTINGS_FILE)).unwrap())
-                .unwrap();
-        let post = &v["hooks"]["PostToolUse"][0];
-        assert_eq!(post["matcher"], "Edit|Write|MultiEdit");
-        assert_eq!(post["hooks"][0]["command"], "heal hook edit");
-        let stop = &v["hooks"]["Stop"][0];
-        assert!(stop.get("matcher").is_none());
-        assert_eq!(stop["hooks"][0]["command"], "heal hook stop");
+        let action = register(dir.path()).unwrap();
+        assert_eq!(action, WriteAction::Unchanged);
+        assert!(!dir.path().join(SETTINGS_FILE).exists());
     }
 
     #[test]
-    fn register_preserves_user_keys() {
+    fn register_sweeps_legacy_heal_hook_commands() {
         let dir = TempDir::new().unwrap();
         let settings_path = dir.path().join(SETTINGS_FILE);
         std::fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
+        // Pre-v0.3 install: HEAL's edit/stop hooks plus a user hook.
         std::fs::write(
             &settings_path,
-            r#"{"theme":"dark","permissions":{"allow":["Bash(ls *)"]}}"#,
+            r#"{
+              "theme": "dark",
+              "hooks": {
+                "PostToolUse": [
+                  { "matcher": "Edit|Write|MultiEdit",
+                    "hooks": [
+                      { "type": "command", "command": "heal hook edit" },
+                      { "type": "command", "command": "echo edit" }
+                    ]
+                  }
+                ],
+                "Stop": [
+                  { "hooks": [{ "type": "command", "command": "heal hook stop" }] }
+                ]
+              }
+            }"#,
         )
         .unwrap();
         register(dir.path()).unwrap();
         let v: Value =
             serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
+        // User entries survive.
         assert_eq!(v["theme"], "dark");
-        assert_eq!(v["permissions"]["allow"][0], "Bash(ls *)");
-        assert_eq!(
-            v["hooks"]["PostToolUse"][0]["hooks"][0]["command"],
-            "heal hook edit"
-        );
-    }
-
-    #[test]
-    fn register_preserves_user_hooks() {
-        let dir = TempDir::new().unwrap();
-        let settings_path = dir.path().join(SETTINGS_FILE);
-        std::fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
-        std::fs::write(
-            &settings_path,
-            r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo bye"}]}]}}"#,
-        )
-        .unwrap();
-        register(dir.path()).unwrap();
-        let v: Value =
-            serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
-        let stop = &v["hooks"]["Stop"];
-        let commands: Vec<&str> = stop
-            .as_array()
-            .unwrap()
+        let post = v["hooks"]["PostToolUse"][0]["hooks"].as_array().unwrap();
+        let cmds: Vec<&str> = post
             .iter()
-            .flat_map(|b| b["hooks"].as_array().unwrap())
             .map(|h| h["command"].as_str().unwrap())
             .collect();
-        assert!(commands.contains(&"echo bye"));
-        assert!(commands.contains(&"heal hook stop"));
+        assert_eq!(cmds, vec!["echo edit"]);
+        // Stop block had no user entry — collapses out.
+        assert!(v["hooks"].get("Stop").is_none());
     }
 
     #[test]
@@ -433,51 +310,30 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let first = register(dir.path()).unwrap();
         let second = register(dir.path()).unwrap();
-        assert_eq!(first, WriteAction::Created);
+        assert_eq!(first, WriteAction::Unchanged);
         assert_eq!(second, WriteAction::Unchanged);
     }
 
     #[test]
-    fn register_dedupes_when_matcher_block_exists() {
-        let dir = TempDir::new().unwrap();
-        let settings_path = dir.path().join(SETTINGS_FILE);
-        std::fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
-        // Pre-existing PostToolUse block with the same matcher; HEAL must
-        // append into the same block, not create a sibling.
-        std::fs::write(
-            &settings_path,
-            r#"{"hooks":{"PostToolUse":[{"matcher":"Edit|Write|MultiEdit","hooks":[{"type":"command","command":"echo edit"}]}]}}"#,
-        )
-        .unwrap();
-        register(dir.path()).unwrap();
-        let v: Value =
-            serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
-        let blocks = v["hooks"]["PostToolUse"].as_array().unwrap();
-        assert_eq!(
-            blocks.len(),
-            1,
-            "HEAL must reuse the existing matcher block"
-        );
-        let inner = blocks[0]["hooks"].as_array().unwrap();
-        let cmds: Vec<&str> = inner
-            .iter()
-            .map(|h| h["command"].as_str().unwrap())
-            .collect();
-        assert!(cmds.contains(&"echo edit"));
-        assert!(cmds.contains(&"heal hook edit"));
-    }
-
-    #[test]
-    fn unregister_strips_only_heal_entries() {
+    fn unregister_strips_only_legacy_heal_entries() {
         let dir = TempDir::new().unwrap();
         let settings_path = dir.path().join(SETTINGS_FILE);
         std::fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
         std::fs::write(
             &settings_path,
-            r#"{"theme":"dark","hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo bye"}]}]}}"#,
+            r#"{
+              "theme": "dark",
+              "hooks": {
+                "Stop": [
+                  { "hooks": [
+                    { "type": "command", "command": "heal hook stop" },
+                    { "type": "command", "command": "echo bye" }
+                  ]}
+                ]
+              }
+            }"#,
         )
         .unwrap();
-        register(dir.path()).unwrap();
         unregister(dir.path()).unwrap();
         let v: Value =
             serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
@@ -490,16 +346,6 @@ mod tests {
             .map(|h| h["command"].as_str().unwrap())
             .collect();
         assert_eq!(stop_cmds, vec!["echo bye"]);
-        // PostToolUse had no user entry; HEAL's removal collapses the block.
-        assert!(v["hooks"].get("PostToolUse").is_none());
-    }
-
-    #[test]
-    fn unregister_deletes_settings_when_empty() {
-        let dir = TempDir::new().unwrap();
-        register(dir.path()).unwrap();
-        unregister(dir.path()).unwrap();
-        assert!(!dir.path().join(SETTINGS_FILE).exists());
     }
 
     #[test]

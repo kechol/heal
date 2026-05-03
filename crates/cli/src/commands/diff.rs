@@ -109,7 +109,7 @@ fn load_or_recompute_from(
     target_sha: &str,
 ) -> Result<CheckRecord> {
     if let Some(record) =
-        read_latest(&paths.checks_latest())?.filter(|r| r.head_sha.as_deref() == Some(target_sha))
+        read_latest(&paths.findings_latest())?.filter(|r| r.head_sha.as_deref() == Some(target_sha))
     {
         return Ok(record);
     }

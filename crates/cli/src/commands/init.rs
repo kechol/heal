@@ -117,6 +117,7 @@ pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool, as_json: boo
     paths
         .ensure()
         .with_context(|| format!("creating {}", paths.root().display()))?;
+    write_gitignore(&paths)?;
 
     let primary_language = LocObserver::default().scan(project).primary;
     let config_action = write_config(&paths, force)?;
@@ -342,6 +343,23 @@ fn render_skills_line(dest: &Path, action: &SkillsAction) -> String {
                 .to_string()
         }
     }
+}
+
+/// Volatile `.heal/` state that should never be tracked. The list is
+/// intentionally short — `config.toml` and `calibration.toml` stay
+/// versioned so teammates share the same Severity ladder.
+const GITIGNORE_BODY: &str = "\
+# Managed by `heal init` — re-run to refresh.
+findings/
+skills-install.json
+";
+
+/// Write `.heal/.gitignore` so volatile state stays out of the
+/// project's git history. Idempotent: the file is rewritten on every
+/// `heal init` so a `heal-cli` upgrade can refresh the list.
+fn write_gitignore(paths: &HealPaths) -> Result<()> {
+    crate::core::fs::atomic_write(&paths.gitignore(), GITIGNORE_BODY.as_bytes())?;
+    Ok(())
 }
 
 fn write_config(paths: &HealPaths, force: bool) -> Result<ConfigAction> {
@@ -735,10 +753,9 @@ mod tests {
         assert!(matches!(action, SkillsAction::Installed { .. }));
         assert!(dest.exists(), "yes path must extract the skill set");
         assert!(dest.join("heal-cli/SKILL.md").exists());
-        assert!(
-            project.join(".claude/settings.json").exists(),
-            "init must register hook commands in settings.json"
-        );
+        // Modern install adds nothing to settings.json (HEAL no longer
+        // registers Claude Code hooks). The file may or may not exist
+        // depending on whether the user had pre-existing settings.
     }
 
     #[test]

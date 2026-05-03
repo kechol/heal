@@ -1,5 +1,5 @@
 //! `heal mark-fixed --finding-id ... --commit-sha ...` — record (or
-//! refresh) a `FixedFinding` entry in `.heal/checks/fixed.json`.
+//! refresh) a `FixedFinding` entry in `.heal/findings/fixed.json`.
 //!
 //! Agent-facing surface. The `/heal-code-patch` skill calls this after
 //! committing a fix so the next `heal status --refresh` either retires
@@ -23,7 +23,7 @@ pub fn run(project: &Path, finding_id: &str, commit_sha: &str, as_json: bool) ->
         commit_sha: commit_sha.to_owned(),
         fixed_at: Utc::now(),
     };
-    let path = paths.checks_fixed();
+    let path = paths.findings_fixed();
     upsert_fixed(&path, entry.clone())?;
     if as_json {
         #[derive(Serialize)]
@@ -63,7 +63,7 @@ mod tests {
         run(tmp.path(), "ccn:src/a.rs:foo:abc", "deadbeef", false).unwrap();
         run(tmp.path(), "ccn:src/b.rs:bar:def", "cafebabe", false).unwrap();
 
-        let map = read_fixed(&paths.checks_fixed()).unwrap();
+        let map = read_fixed(&paths.findings_fixed()).unwrap();
         assert_eq!(map.len(), 2);
         assert_eq!(map["ccn:src/a.rs:foo:abc"].commit_sha, "deadbeef");
         assert_eq!(map["ccn:src/b.rs:bar:def"].commit_sha, "cafebabe");
@@ -77,7 +77,7 @@ mod tests {
 
         run(tmp.path(), "ccn:src/a.rs:foo:abc", "old", false).unwrap();
         run(tmp.path(), "ccn:src/a.rs:foo:abc", "new", false).unwrap();
-        let map = read_fixed(&paths.checks_fixed()).unwrap();
+        let map = read_fixed(&paths.findings_fixed()).unwrap();
         assert_eq!(map.len(), 1);
         assert_eq!(map["ccn:src/a.rs:foo:abc"].commit_sha, "new");
     }

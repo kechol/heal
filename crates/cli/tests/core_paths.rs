@@ -7,8 +7,8 @@ fn ensure_creates_all_subdirs() {
     paths.ensure().unwrap();
 
     assert!(
-        paths.root().join("checks").is_dir(),
-        "ensure() must create checks/"
+        paths.root().join("findings").is_dir(),
+        "ensure() must create findings/"
     );
 }
 

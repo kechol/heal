@@ -13,7 +13,7 @@ Duplication, Hotspot composition), the post-commit git hook and
 Claude Code's `settings.json` hook commands that drive them, and
 `heal status` / `heal metrics` / `heal diff`
 for surfacing findings. `heal status` runs the analyzer, classifies by
-Severity, and writes `.heal/checks/`; `heal checks` (top-level
+Severity, and writes `.heal/findings/`; `heal checks` (top-level
 browser) and `heal diff <git-ref>` read it. The autonomous repair loop
 (`heal run`, PR generation) lands in v0.2+.
 
@@ -97,17 +97,21 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
   teammate on the same commit + same `config.toml` + same
   `calibration.toml` sees identical findings.
 - `heal hook edit` / `heal hook stop` are kept as no-op CLI variants
-  for back-compat with stale `settings.json` registrations; Phase E
-  retires the registration so they stop firing.
+  for back-compat with stale `settings.json` registrations; new installs
+  no longer add them (`heal skills install` actively sweeps them out).
 
-### Result cache (`.heal/checks/`)
+### Result cache (`.heal/findings/`)
+- `heal init` writes a project-level `.heal/.gitignore` listing
+  `findings/` and `skills-install.json` so volatile state stays out of
+  git history. `config.toml` and `calibration.toml` remain tracked so
+  teammates share the same Severity ladder.
 - `heal status` is the **only writer** of `latest.json`. `heal diff`
   is a pure reader. `heal mark-fixed` is a second writer scoped to
   `fixed.json`. The cache models a TODO list — every Finding has a
   deterministic id (`<metric>:<file>:<symbol>:<fnv1a>`) so an unfixed
   problem reappears under the same id on the next run.
 - The cache is **single-record by design**. Three files live under
-  `.heal/checks/`: `latest.json` (the current `CheckRecord`),
+  `.heal/findings/`: `latest.json` (the current `CheckRecord`),
   `fixed.json` (`BTreeMap<finding_id, FixedFinding>` — bounded by
   outstanding fix claims, never appended), and `regressed.jsonl` (the
   one append-only audit trail of "a previously-fixed finding was
@@ -165,10 +169,10 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
   `.claude/skills/`). Each extracted file's fingerprint is recorded in
   `.heal/skills-install.json` for drift detection on
   `heal skills update`.
-- The same install merges HEAL's hook commands into
-  `<project>/.claude/settings.json`: `PostToolUse → "heal hook edit"`,
-  `Stop → "heal hook stop"`. Merge is additive — existing user hook
-  blocks are preserved; uninstall removes only HEAL's command lines.
+- HEAL no longer registers any Claude Code hooks. `heal skills install`
+  / `heal init` only sweep legacy `heal hook edit` / `heal hook stop`
+  entries left over from earlier installs (and the pre-v0.2 marketplace
+  plugin tree if present). User hook entries are preserved.
 - `heal hook` is robust against missing `.heal/`: if a project never
   ran `heal init`, the hook silently no-ops so it doesn't pollute an
   un-opted-in worktree.

@@ -1,4 +1,4 @@
-//! `heal status` — render `.heal/checks/latest.json` and, when needed,
+//! `heal status` — render `.heal/findings/latest.json` and, when needed,
 //! produce it.
 //!
 //! Default flow reads the cached `CheckRecord` from `latest.json` if
@@ -7,7 +7,7 @@
 //! through `crate::core::finding::IntoFindings`, decorate each Finding
 //! with Severity (via `Calibration`) and the per-file hotspot flag
 //! (via `HotspotCalibration`), and write a fresh `CheckRecord`. This
-//! is still the single writer of `.heal/checks/`.
+//! is still the single writer of `.heal/findings/`.
 //!
 //! The renderer groups findings into three drain tiers driven by the
 //! `[policy.drain]` config: **Drain queue** (T0 / `must`), **Should
@@ -60,7 +60,7 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     let cached = if args.refresh {
         None
     } else {
-        read_latest(&paths.checks_latest()).ok().flatten()
+        read_latest(&paths.findings_latest()).ok().flatten()
     };
     let must_scan = cached.is_none();
 
@@ -83,10 +83,10 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     let (record, regressed) = if must_scan {
         let cfg = cfg.as_ref().expect("cfg loaded above when must_scan");
         let record = build_live_record(project, &paths, cfg);
-        write_record(&paths.checks_latest(), &record)?;
+        write_record(&paths.findings_latest(), &record)?;
         let regs = reconcile_fixed(
-            &paths.checks_fixed(),
-            &paths.checks_regressed_log(),
+            &paths.findings_fixed(),
+            &paths.findings_regressed_log(),
             &record,
         )?;
         (record, regs)
@@ -256,7 +256,7 @@ pub(super) fn render(
     if !regressed.is_empty() {
         writeln!(
             out,
-            "  {} {} previously-fixed finding(s) re-detected. See `.heal/checks/regressed.jsonl`.",
+            "  {} {} previously-fixed finding(s) re-detected. See `.heal/findings/regressed.jsonl`.",
             ansi_wrap(ANSI_YELLOW, "regression:", colorize),
             regressed.len(),
         )?;

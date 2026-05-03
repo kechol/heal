@@ -64,7 +64,7 @@ pub enum Command {
         #[arg(long, value_name = "PATH")]
         workspace: Option<std::path::PathBuf>,
     },
-    /// Render the cached `CheckRecord` from `.heal/checks/latest.json`
+    /// Render the cached `CheckRecord` from `.heal/findings/latest.json`
     /// — Critical / High view by default. Runs a fresh scan only when
     /// the cache is missing; pass `--refresh` to force a rescan and
     /// overwrite the cache. The single source of truth that
@@ -80,7 +80,7 @@ pub enum Command {
     /// `heal status --refresh` either retires the entry (genuinely
     /// fixed) or moves it to `regressed.jsonl` (re-detected). Hidden
     /// from `--help` because no human ever invokes this directly;
-    /// implemented as an upsert into `.heal/checks/fixed.json`.
+    /// implemented as an upsert into `.heal/findings/fixed.json`.
     #[command(hide = true)]
     MarkFixed {
         /// `Finding.id` from `heal status --json` output.
@@ -262,10 +262,10 @@ pub struct StatusArgs {
     #[arg(long)]
     pub all: bool,
     /// Emit the `CheckRecord` payload as JSON on stdout. Same shape as
-    /// `.heal/checks/latest.json` — stable contract for skills and CI.
+    /// `.heal/findings/latest.json` — stable contract for skills and CI.
     #[arg(long)]
     pub json: bool,
-    /// Re-scan the project and overwrite `.heal/checks/latest.json`
+    /// Re-scan the project and overwrite `.heal/findings/latest.json`
     /// instead of reading the cached record. Without this, a present
     /// cache is reused as-is; only a missing cache triggers a scan.
     #[arg(long)]
@@ -281,7 +281,7 @@ pub struct StatusArgs {
 #[derive(Debug, clap::Args)]
 pub struct DiffArgs {
     /// Git revision to diff against. Resolves against the local repo;
-    /// the matching `CheckRecord` must already exist in `.heal/checks/`.
+    /// the matching `CheckRecord` must already exist in `.heal/findings/`.
     #[arg(value_name = "GIT_REF", default_value = "HEAD")]
     pub revspec: String,
     /// Restrict to findings inside one declared
