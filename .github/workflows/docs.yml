@@ -1,16 +1,26 @@
 name: Docs
 
-# Build + deploy only on push to main; PRs do not run docs CI. The static
-# site is generated for publication, not as a per-PR check, so spending
-# CI minutes on every doc-touching PR is unnecessary. `workflow_dispatch`
-# is kept as a manual rebuild escape hatch.
+# Build runs on `main` pushes (smoke-test that the static site still
+# builds) and on `vX.Y.Z` tag pushes (release-time build that gets
+# published). Pages deployment normally fires only for tag refs — the
+# published docs site tracks tagged releases, not the rolling `main`
+# branch. `workflow_dispatch` is a manual rebuild escape hatch with an
+# optional `publish` input for emergency out-of-band deploys (off by
+# default, i.e. dispatch builds without publishing). PRs do not run
+# docs CI.
 on:
   push:
     branches: [main]
-    paths:
-      - 'docs/**'
-      - '.github/workflows/docs.yml'
+    # Same shape as `release.yml`'s tag filter (strict `v` prefix,
+    # X.Y.Z, optional prerelease / build suffix) so the docs site
+    # publishes alongside every release the release workflow ships.
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to GitHub Pages (emergency manual deploy; off by default).'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -39,14 +49,22 @@ jobs:
         working-directory: docs
       - run: npm run build
         working-directory: docs
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+      # Pages artifact upload runs only when this build will be
+      # published — tag refs, or a workflow_dispatch with publish=true.
+      # main pushes stop after `npm run build` (smoke test).
+      - if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.publish }}
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.publish }}
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: docs/dist
 
   deploy:
     name: deploy
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Publish for vX.Y.Z tag pushes, or for a workflow_dispatch run
+    # with `publish=true` (emergency manual deploy). main pushes
+    # build but never deploy.
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.publish }}
     needs: build
     runs-on: ubuntu-latest
     permissions:

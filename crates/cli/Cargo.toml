@@ -14,13 +14,13 @@ keywords.workspace = true
 categories.workspace = true
 
 # Files shipped to crates.io. The default Cargo logic only walks `src/`,
-# `Cargo.toml`, `Cargo.lock`, and a few common docs — `plugins/` and
+# `Cargo.toml`, `Cargo.lock`, and a few common docs — `skills/` and
 # `queries/` would be silently dropped, breaking `include_dir!` and
 # `include_str!` in the published tarball.
 include = [
     "src/**/*",
     "tests/**/*",
-    "plugins/**/*",
+    "skills/**/*",
     "queries/**/*.scm",
     "Cargo.toml",
     "README.md",
