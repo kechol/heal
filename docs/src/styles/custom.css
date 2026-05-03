@@ -1,6 +1,7 @@
 /*
- * heal docs theme — soft sage accents on Starlight's neutral grays,
- * with gentle rounded corners and subtle gradients.
+ * heal docs theme — deep teal-green accents on Starlight's neutral
+ * grays, with a warm gold companion token, gentle rounded corners,
+ * and subtle gradients.
  *
  * Important: Starlight inverts the semantic meaning of `--sl-color-white`,
  * `--sl-color-black`, and `--sl-color-gray-1..6` between light and dark
@@ -35,25 +36,27 @@
 }
 
 /* ----------------------------------------------------------------
- * Accent palette — sage green
+ * Accent palette — deep teal-green with a warm gold companion
  * ---------------------------------------------------------------- */
 
 :root[data-theme='light'] {
-  --sl-color-accent-low: #e3eee4;
-  --sl-color-accent: #5d8a5e;
-  --sl-color-accent-high: #2d5a30;
-  --heal-shadow-soft: 0 1px 2px hsl(140 12% 12% / 4%), 0 4px 16px hsl(140 12% 12% / 6%);
-  --heal-shadow-lift: 0 2px 4px hsl(140 12% 12% / 6%), 0 8px 24px hsl(140 12% 12% / 10%);
+  --sl-color-accent-low: #dceae8;
+  --sl-color-accent: #31645e;
+  --sl-color-accent-high: #1d4742;
+  --heal-gold: #b39151;
+  --heal-shadow-soft: 0 1px 2px hsl(175 35% 12% / 5%), 0 4px 16px hsl(175 35% 12% / 7%);
+  --heal-shadow-lift: 0 2px 4px hsl(175 35% 12% / 7%), 0 8px 24px hsl(175 35% 12% / 11%);
 
   /* Soft near-black for headings and prominent footer links — pure
    * #000 looks too heavy on white, especially with bold weights. */
-  --heal-text-strong: #2c3338;
+  --heal-text-strong: #1f2a2a;
 }
 
 :root[data-theme='dark'] {
-  --sl-color-accent-low: #1a2a1c;
-  --sl-color-accent: #8ab48b;
-  --sl-color-accent-high: #cee0ce;
+  --sl-color-accent-low: #1b2e2c;
+  --sl-color-accent: #7eb0a9;
+  --sl-color-accent-high: #c5dfdb;
+  --heal-gold: #cca978;
   --heal-shadow-soft: 0 1px 2px hsl(0 0% 0% / 30%), 0 4px 16px hsl(0 0% 0% / 25%);
   --heal-shadow-lift: 0 2px 4px hsl(0 0% 0% / 35%), 0 8px 24px hsl(0 0% 0% / 35%);
 
@@ -66,8 +69,18 @@
  * ---------------------------------------------------------------- */
 
 .site-title {
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  color: var(--sl-color-accent);
+  text-transform: lowercase;
+  gap: 0.625rem;
+}
+
+/* Starlight defaults the logo to the full nav height; that's too
+ * dominant against the short "heal" wordmark — shrink it so the
+ * symbol and text sit at a similar visual weight. */
+.site-title img {
+  height: 1.75rem;
 }
 
 .sl-markdown-content {
