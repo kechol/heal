@@ -5,12 +5,13 @@
 //! script and a 200kloc service trigger differently for the same raw
 //! CCN. Each metric carries its own quartile-style breaks (p75 / p90
 //! / p95) plus an absolute "no defence" floor (`floor_critical`) drawn
-//! from `McCabe` / `SonarQube`. See TODO §Severity と Calibration for the
-//! design rationale.
+//! from `McCabe` / `SonarQube` so a uniformly-rotten codebase cannot
+//! quietly flatten the ladder.
 //!
 //! Hotspot uses an independent percentile space with **no floor** so
 //! the top 10% (`score >= p90`) is structurally guaranteed regardless
-//! of churn / size — see TODO §Hotspot Score.
+//! of churn / size; the `hotspot=true` flag rides on top of Severity
+//! rather than collapsing into it.
 //!
 //! Layout on disk:
 //!
@@ -49,7 +50,7 @@ use crate::core::config::{assign_workspace, Config, WorkspaceOverlay};
 use crate::core::error::{Error, Result};
 use crate::core::severity::Severity;
 
-/// Built-in `floor_critical` values (TODO §v0.2 範囲のメトリクス対象).
+/// Built-in `floor_critical` values for the metrics shipped today.
 /// These are the hard "structurally indefensible" thresholds; the
 /// codebase-relative percentiles add the softer breaks above them.
 pub const FLOOR_CCN: f64 = 25.0;
@@ -346,8 +347,9 @@ pub struct HotspotCalibration {
 impl HotspotCalibration {
     /// True iff `score >= p90` AND `score >= floor_ok` (when set) —
     /// i.e. the file sits in the top 10% AND its absolute composite
-    /// score is non-trivial. Hotspot is a **flag**, not a Severity
-    /// (TODO §「Severity と Hotspot は直交した属性」).
+    /// score is non-trivial. Hotspot is a **flag**, not a Severity:
+    /// it rides on top of any Finding via `Finding.hotspot` so the
+    /// two axes (how bad? how often touched?) stay independent.
     #[must_use]
     pub fn flag(&self, score: f64) -> bool {
         if let Some(floor) = self.floor_ok {
@@ -823,8 +825,9 @@ mod tests {
         // Floor still applies even when percentiles degenerate.
         assert_eq!(c.classify(30.0), Severity::Critical);
         // NaN comparisons short-circuit to Ok — a tiny sample shouldn't
-        // promote every non-zero value to Critical (TODO 未解決事項
-        // §「sample 数下限ガード」).
+        // promote every non-zero value to Critical. The minimum sample
+        // guard (`MIN_SAMPLES_FOR_PERCENTILES`) is what keeps small
+        // codebases from being painted red by accident.
         assert_eq!(c.classify(5.0), Severity::Ok);
     }
 

@@ -1,7 +1,8 @@
-; LCOM 近似: Python の `class_definition` をクラススコープとして捕捉。
-; methods は `function_definition` (suite 直下)、self refs は
-; `attribute(object: identifier "self", attribute: ...)` を Rust 側で
-; 検出する。`self` は Python ではキーワードではなく単なる識別子なので
-; SelfRefShape の receiver 判定はテキスト比較で行う。
+; LCOM approximation: capture Python `class_definition` as the class
+; scope. Methods (`function_definition` directly under the class suite)
+; and self-references (`attribute(object: identifier "self", attribute:
+; …)`) are extracted on the Rust side. `self` is an ordinary identifier
+; in Python rather than a keyword, so the receiver check in
+; `SelfRefShape` falls back to a text comparison.
 
 (class_definition) @class.scope

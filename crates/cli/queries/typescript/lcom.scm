@@ -1,9 +1,11 @@
-; LCOM 近似: クラススコープのみ捕捉。methods / field-refs の抽出は
-; Rust 側 (`observer::lcom`) で AST を walk しながら行う — tree-sitter
-; query だけで「class_body 直下の method_definition」「method 内の
-; this.X 参照」までを正確に絞り込むのが煩雑なため。
+; LCOM approximation: capture only the class scope here. Methods and
+; field-refs are extracted on the Rust side (`observer::lcom`) by
+; walking the AST — narrowing to "method_definition directly under
+; class_body" and "this.X references inside a method" with tree-sitter
+; queries alone is unwieldy.
 ;
-; abstract / 派生クラス / mixin は v0.2 では一律 class_declaration として
-; 扱う。型情報を要する LCOM4 完全実装は v0.5+ の LSP backend で。
+; abstract / derived classes / mixins are all handled uniformly as
+; `class_declaration` for now. A full LCOM4 implementation that needs
+; type information is reserved for the v0.5+ LSP backend.
 
 (class_declaration) @class.scope

@@ -1,7 +1,9 @@
-; LCOM 近似: impl ブロックを「クラス」相当として捕捉。methods / field-refs
-; の抽出は Rust 側 (`observer::lcom`) で AST を walk しながら行う。
+; LCOM approximation: capture `impl` blocks as the "class" equivalent.
+; Methods and field-refs are extracted on the Rust side
+; (`observer::lcom`) by walking the AST.
 ;
-; trait impl とふつうの impl は同じ扱い。型情報を要する LCOM4 完全
-; 実装は v0.5+ の LSP backend で。
+; Trait impls and inherent impls are treated the same. A full LCOM4
+; implementation that needs type information is reserved for the
+; v0.5+ LSP backend.
 
 (impl_item) @class.scope

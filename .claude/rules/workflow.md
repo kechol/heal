@@ -62,10 +62,32 @@ Forgetting docs == PR not ready.
 | `README.md`, `CHANGELOG.md`, `docs/src/content/docs/*` | English |
 | `docs/src/content/docs/ja/*` | Japanese (mirror) |
 | `.claude/docs/`, `.claude/rules/`, `CLAUDE.md` | English |
-| Source comments | English |
+| Source comments (`.rs`, `.scm`, `Cargo.toml`, etc.) | English |
 
 When updating Japanese pages, watch for unnatural spaces around CJK
 characters — common mechanical-translation artifact.
+
+### R6.1. Internal comments are always English — no exceptions
+
+Every comment that ships in a tracked source file (Rust `//` + `///`
++ `//!`, tree-sitter `.scm` `;`, TOML `#`, shell hook `#`, etc.) is
+written in English. The repo is OSS — comments are read by anyone
+who clones; mixing languages is friction nobody asked for.
+
+**Don't cite chapter titles from local-only design docs.**
+`TODO.md`, `KNOWLEDGE.md`, `.prompt` are gitignored
+(see `terminology.md` R3 / `scope.md` etc.); their chapter titles
+are Japanese **and** they drift on every refactor. References like
+`(TODO §「Severity と Hotspot は直交した属性」)` end up as stale
+broken links in Japanese inside the published source. Inline the
+*reasoning* instead — one sentence in English explaining the
+**why** is more durable than a §pointer to a moving target.
+
+**Exception: literal example values inside quoted strings.**
+`/// values like `"Japanese"`, `"日本語"`, `"ja"`, `"français"`` is
+**content** illustrating what a user might pass to a free-form
+field, not a comment in Japanese. Keep the example multilingual
+when that's what the field accepts.
 
 ## R7. Dogfooding loop after CLI / classification / skill changes
 

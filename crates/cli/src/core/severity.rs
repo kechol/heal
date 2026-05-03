@@ -1,10 +1,11 @@
 //! Severity ladder used by Calibration.
 //!
 //! `Severity` is intentionally a four-step ladder, ordered `Ok < Medium
-//! < High < Critical` so per-file aggregation can use `cmp::max` (TODO
-//! §「1 ファイルに複数メトリクスがある場合の Severity は最大値採用」).
-//! The default is `Ok` so a `Finding` with no calibration applied
-//! reads as "uncalibrated / acceptable".
+//! < High < Critical` so per-file aggregation can use `cmp::max` —
+//! when one file has several findings on it, the worst-finding-wins
+//! rule is the user-visible Severity. The default is `Ok` so a
+//! `Finding` with no calibration applied reads as "uncalibrated /
+//! acceptable".
 //!
 //! Classification proper lives in [`crate::core::calibration`]; this
 //! module owns only the type itself so observers can import the

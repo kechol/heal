@@ -11,9 +11,11 @@
 //!     refresh. The `heal-config` skill is responsible for deciding
 //!     whether to suggest a recalibration; HEAL itself never auto-fires.
 //!
-//! HEAL never recalibrates automatically (TODO §「ユーザー提案のみで
-//! 自動再較正はしない」). The user (or skill on the user's behalf)
-//! always invokes `heal calibrate --force` themselves.
+//! HEAL never recalibrates automatically. Auto-rebuilding the
+//! Severity ladder behind the user's back would shift findings on
+//! teammates' machines silently and constantly invalidate the cache
+//! via `config_hash`; the user (or skill on the user's behalf) always
+//! invokes `heal calibrate --force` themselves.
 
 use std::path::Path;
 

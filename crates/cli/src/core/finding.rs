@@ -6,7 +6,7 @@
 //! [`IntoFindings`] trait. The lowering is deterministic and pure: it
 //! does not consult Calibration, it does not classify severity, and it
 //! does not flag hotspots. Those layers attach **on top** of a Finding
-//! list — see TODO §Severity と Calibration. Until they land, every
+//! list (the `Feature::lower` pass) — until classification runs, every
 //! emitted finding carries `severity = Severity::Ok` and `hotspot =
 //! false`.
 //!
@@ -14,7 +14,7 @@
 //! canonical location + an observer-supplied content seed) hashes to
 //! the same string across processes, toolchains, and commits. The
 //! cache layer relies on this so a re-detected finding ties back to
-//! its prior occurrence — see TODO §Result cache.
+//! its prior occurrence and `fixed.json` reconciliation works.
 
 use std::path::PathBuf;
 

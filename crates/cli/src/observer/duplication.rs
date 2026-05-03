@@ -224,8 +224,9 @@ pub struct DuplicationReport {
     pub blocks: Vec<DuplicateBlock>,
     /// Per-file roll-up. One entry per scanned file (even those with
     /// zero duplication), sorted by path. `duplicate_pct` is the
-    /// calibration input — see TODO §「v0.2 範囲のメトリクス対象 /
-    /// Duplication % / 30%」.
+    /// calibration input; the literature-anchored absolute floor
+    /// `FLOOR_DUPLICATION_PCT = 30` lives in `core::calibration` and
+    /// is what surfaces a file as Critical regardless of percentiles.
     #[serde(default)]
     pub files: Vec<FileDuplication>,
     pub totals: DuplicationTotals,
