@@ -144,11 +144,20 @@ impl SeverityCounts {
         *bucket = bucket.saturating_add(1);
     }
 
-    /// Build a `SeverityCounts` from a slice of findings.
+    /// Build a `SeverityCounts` from a slice of findings, **excluding
+    /// any with `accepted = true`**. The decoration is applied at
+    /// render time by `core::accepted::decorate_findings`; aggregate
+    /// counts therefore mirror what the user sees in the rendered
+    /// `Population:` line. Skills consuming `severity_counts` from
+    /// `latest.json` see the same filtered shape — accepted findings
+    /// are out of the drain queue by definition.
     #[must_use]
     pub fn from_findings(findings: &[crate::core::finding::Finding]) -> Self {
         let mut counts = Self::default();
         for f in findings {
+            if f.accepted {
+                continue;
+            }
             counts.tally(f.severity);
         }
         counts

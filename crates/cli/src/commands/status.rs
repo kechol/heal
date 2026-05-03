@@ -29,6 +29,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::cli::{FindingMetric, SeverityFilter, StatusArgs};
+use crate::core::accepted::{decorate_findings, read_accepted};
 use crate::core::calibration::{FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_OK_CCN, FLOOR_OK_COGNITIVE};
 use crate::core::config::{load_from_project, Config, DrainTier, PolicyDrainConfig};
 use crate::core::finding::Finding;
@@ -91,7 +92,7 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
         None
     };
 
-    let (record, regressed) = if must_scan {
+    let (mut record, regressed) = if must_scan {
         let cfg = cfg.as_ref().expect("cfg loaded above when must_scan");
         let record = build_record(project, &paths, cfg, head_sha, worktree_clean);
         write_record(&paths.findings_latest(), &record)?;
@@ -109,6 +110,16 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
             Vec::new(),
         )
     };
+
+    // Apply accepted-finding decoration before render or JSON output.
+    // The on-disk `latest.json` keeps raw observer truth (no
+    // `accepted` field on findings, raw severity_counts); the policy
+    // view (`Accepted:` header line, filtered Population, drain queue
+    // skipping accepted) is derived just-in-time so changes to
+    // `accepted.json` take effect without a rescan.
+    let accepted_map = read_accepted(&paths.findings_accepted())?;
+    decorate_findings(&mut record.findings, &accepted_map);
+    record.recompute_summary();
 
     if args.json {
         match filters.workspace.as_deref() {
@@ -216,6 +227,16 @@ pub(super) fn render(
         "  Population:  {}",
         record.severity_counts.render_inline(colorize),
     )?;
+    let accepted = accepted_summary(&record.findings);
+    if accepted.count > 0 {
+        writeln!(
+            out,
+            "  {}    {} findings ({} files)",
+            ansi_wrap(ANSI_CYAN, "Accepted:", colorize),
+            accepted.count,
+            accepted.files,
+        )?;
+    }
     if !record.worktree_clean {
         writeln!(
             out,
@@ -253,11 +274,20 @@ pub(super) fn render(
     // `[policy.drain]` and shown as a per-section suffix so the link to
     // `/heal-code-patch` stays explicit without overriding the labels.
     let mut buckets: BTreeMap<(Severity, bool), Vec<&Finding>> = BTreeMap::new();
+    let mut accepted_items: Vec<&Finding> = Vec::new();
     for f in record.findings.iter().filter(|f| filters.passes(f)) {
         if let Some(min) = filters.severity {
             if f.severity < min {
                 continue;
             }
+        }
+        if f.accepted {
+            // Accepted findings are out of the drain queue by design.
+            // Surfaced under `--all` in their own section so the
+            // audit trail stays visible without cluttering the
+            // default view.
+            accepted_items.push(f);
+            continue;
         }
         buckets.entry((f.severity, f.hotspot)).or_default().push(f);
     }
@@ -313,6 +343,17 @@ pub(super) fn render(
         )?;
     }
 
+    if filters.all && !accepted_items.is_empty() {
+        render_tier_section(
+            "📌 Accepted",
+            ANSI_CYAN,
+            &accepted_items,
+            filters.top,
+            colorize,
+            out,
+        )?;
+    }
+
     writeln!(out)?;
     writeln!(
         out,
@@ -363,6 +404,30 @@ fn render_tier_section(
     Ok(())
 }
 
+/// Accepted-finding tally for the header line. `Accepted: N
+/// findings (M files)` runs alongside `Drain queue:` and `Population:`
+/// so the user sees how much the team has explicitly suppressed —
+/// makes the population-vs-drain gap auditable instead of mysterious.
+struct AcceptedSummary {
+    count: usize,
+    files: usize,
+}
+
+fn accepted_summary(findings: &[Finding]) -> AcceptedSummary {
+    let mut count = 0;
+    let mut files: HashSet<&PathBuf> = HashSet::new();
+    for f in findings {
+        if f.accepted {
+            count += 1;
+            files.insert(&f.location.file);
+        }
+    }
+    AcceptedSummary {
+        count,
+        files: files.len(),
+    }
+}
+
 /// Drain-queue counts surfaced in the header. Foregrounds the
 /// actionable T0 / T1 sizes so the user sees "5 things to fix" before
 /// the wider Severity distribution. File counts let a user judge
@@ -380,6 +445,9 @@ fn drain_summary(findings: &[Finding], drain: &PolicyDrainConfig) -> DrainSummar
     let mut t0_files: HashSet<&PathBuf> = HashSet::new();
     let mut t1_files: HashSet<&PathBuf> = HashSet::new();
     for f in findings {
+        if f.accepted {
+            continue;
+        }
         match drain.tier_for(f) {
             Some(DrainTier::Must) => {
                 t0_count += 1;

@@ -35,6 +35,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 use tempfile::TempDir;
 
+use crate::core::accepted::{decorate_findings, read_accepted};
 use crate::core::calibration::Calibration;
 use crate::core::config::{load_from_project, Config, DrainTier, PolicyDrainConfig};
 use crate::core::finding::Finding;
@@ -87,10 +88,21 @@ pub fn run(
         )
     })?;
 
-    let from_record = load_or_recompute_from(project, &paths, &cfg, &resolved_ref, &target_sha)?;
+    let mut from_record =
+        load_or_recompute_from(project, &paths, &cfg, &resolved_ref, &target_sha)?;
     let to_head_sha = git::head_sha(project);
     let to_clean = git::worktree_clean(project).unwrap_or(false);
-    let to_record = build_record(project, &paths, &cfg, to_head_sha, to_clean);
+    let mut to_record = build_record(project, &paths, &cfg, to_head_sha, to_clean);
+
+    // Decorate both records with the current accepted map. The "from"
+    // baseline uses **today's** acceptance decisions (apples-to-apples
+    // with the "to" view) — same principle as recomputing baseline
+    // findings under today's calibration.
+    let accepted_map = read_accepted(&paths.findings_accepted())?;
+    decorate_findings(&mut from_record.findings, &accepted_map);
+    from_record.recompute_summary();
+    decorate_findings(&mut to_record.findings, &accepted_map);
+    to_record.recompute_summary();
 
     let diff = compute_diff(&from_record, &to_record, workspace, &cfg.policy.drain);
     if as_json {
@@ -292,6 +304,18 @@ pub(crate) struct DiffEntry {
     /// existing skill consumers that read this single field; new
     /// callers should prefer `from_hotspot` for baseline classification.
     pub hotspot: bool,
+    /// Baseline-side `accepted` flag. T0 progress excludes baseline-
+    /// accepted entries — moving away from an accepted state isn't
+    /// drain progress (the team already decided not to chase it).
+    /// Skipped from JSON when false to keep the wire shape terse.
+    #[serde(default, skip_serializing_if = "is_false_ref")]
+    pub from_accepted: bool,
+}
+
+#[inline]
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_false_ref(b: &bool) -> bool {
+    !*b
 }
 
 impl DiffEntry {
@@ -304,6 +328,7 @@ impl DiffEntry {
             to_severity: curr.map(|c| c.severity),
             from_hotspot: prev.hotspot,
             hotspot: curr.map_or(prev.hotspot, |c| c.hotspot),
+            from_accepted: prev.accepted,
         }
     }
     fn from_new(curr: &Finding) -> Self {
@@ -315,6 +340,7 @@ impl DiffEntry {
             to_severity: Some(curr.severity),
             from_hotspot: false,
             hotspot: curr.hotspot,
+            from_accepted: false,
         }
     }
 }
@@ -374,6 +400,9 @@ pub(crate) fn compute_diff(
     };
 
     let baseline_is_t0 = |e: &DiffEntry| {
+        if e.from_accepted {
+            return false;
+        }
         e.from_severity
             .and_then(|sev| drain.tier_for_attrs(&e.metric, sev, e.from_hotspot))
             == Some(DrainTier::Must)

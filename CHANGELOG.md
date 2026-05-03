@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### Accepted findings filter the drain queue, Population, and nudge
+
+`heal status`, `heal diff`, and the post-commit nudge now exclude
+findings present in `.heal/findings/accepted.json` from the drain
+queue (T0 / T1), the `Population:` severity counts, and the
+"X critical, Y high" nudge after each commit. A new `Accepted: N
+findings (M files)` line appears in the `heal status` header when
+the team has accepted any findings, and a `📌 Accepted` section
+appears under `heal status --all` so the audit trail stays visible
+without cluttering the default view.
+
+The on-disk `.heal/findings/latest.json` keeps raw observer truth —
+no `accepted` field on findings, raw severity_counts. The policy
+view is derived just-in-time on every render, so `heal mark accept`
+takes effect without a rescan. Skills consuming `severity_counts`
+from `latest.json` see the **filtered** shape (accepted findings
+not counted) since the cache is rewritten with filtered counts on
+every fresh scan.
+
+JSON consumers can still see which findings were accepted: each
+`Finding` carries `accepted: bool` (additive, omitted when false),
+and `DiffEntry` carries `from_accepted: bool` (additive).
+
+`/heal-code-review` now proposes the exact `heal mark accept`
+invocation when its triage classifies a finding as Intrinsic or
+Cohesive procedural, with a documented "accept (per-finding) vs
+exclude_paths (per-file/tree)" decision. `/heal-code-patch` skips
+accepted findings from the drain loop.
+
 ### `heal mark` group: generalises `mark-fixed`, adds `mark accept`
 
 `heal mark-fixed` is replaced by `heal mark fix` (and the new sibling

@@ -68,6 +68,10 @@ patterns, end the session with a summary and recommend the user run
 ```
 while there are non-Ok findings in the cache:
     pick the next one (Severity order: Critical🔥 → Critical → High🔥 → High → Medium)
+        # skip findings where `accepted == true` — the team has already
+        # decided these are intrinsic; refactoring them is out of scope
+        # for this skill. They show up under `📌 Accepted` in
+        # `heal status --all`, not in the drain queue.
     read the file(s); plan the smallest fix that addresses the metric
     apply the change
     run tests / type-check / linter (best effort, see "Verification")

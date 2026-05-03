@@ -19,6 +19,7 @@
 use std::io::{IsTerminal, Write};
 use std::path::Path;
 
+use crate::core::accepted::{decorate_findings, read_accepted};
 use crate::core::calibration::Calibration;
 use crate::core::config::{load_from_project, Config};
 use crate::core::finding::Finding;
@@ -56,7 +57,14 @@ fn run_commit(project: &Path, paths: &HealPaths) -> Result<()> {
     };
 
     let reports = run_all(project, &cfg, None, None);
-    let (calibration, findings) = classify_with_calibration(paths, &cfg, &reports);
+    let (calibration, mut findings) = classify_with_calibration(paths, &cfg, &reports);
+    // Apply accepted-finding decoration so the post-commit nudge
+    // surfaces the same Critical / High counts the user sees in
+    // `heal status`. Without this, the nudge would shame the team
+    // about findings they've already explicitly accepted as
+    // intrinsic — defeating the whole point of `heal mark accept`.
+    let accepted_map = read_accepted(&paths.findings_accepted()).unwrap_or_default();
+    decorate_findings(&mut findings, &accepted_map);
     // Best-effort nudge — don't fail the hook on rendering issues.
     write_nudge(calibration.as_ref(), &findings, &mut std::io::stdout()).ok();
     Ok(())
@@ -92,11 +100,11 @@ fn write_nudge(
     }
     let critical = findings
         .iter()
-        .filter(|f| matches!(f.severity, Severity::Critical))
+        .filter(|f| !f.accepted && matches!(f.severity, Severity::Critical))
         .count();
     let high = findings
         .iter()
-        .filter(|f| matches!(f.severity, Severity::High))
+        .filter(|f| !f.accepted && matches!(f.severity, Severity::High))
         .count();
     let colorize = std::io::stdout().is_terminal();
 
