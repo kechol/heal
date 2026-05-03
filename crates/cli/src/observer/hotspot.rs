@@ -3,10 +3,10 @@
 //! optionally re-weighted via `metrics.hotspot.weight_*`.
 //!
 //! The arithmetic is intentionally simple — `(weight_complexity *
-//! ccn_sum) * (weight_churn * commits)` — matching the bash proof of
-//! concept in
-//! KNOWLEDGE.md § 10. Files that lack a churn or complexity contribution
-//! get a score of 0 and are dropped from the report.
+//! ccn_sum) * (weight_churn * commits)` — following Tornhill's
+//! "true risk = volatility × complexity" framing: a file scores high
+//! only when both factors are high, so files that lack a churn or
+//! complexity contribution get a score of 0 and drop out of the report.
 //!
 //! `compose` is a pure function over already-computed reports so the
 //! `status` command path can reuse the work the Churn/Complexity

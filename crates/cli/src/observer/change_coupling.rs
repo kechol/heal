@@ -5,7 +5,8 @@
 //! double-counting) and increment a counter for every unordered pair in
 //! that set. The pair counters become the "coupling" signal — files that
 //! consistently change together expose hidden behavioural coupling that
-//! static analysis can't see (KNOWLEDGE.md § 3.5).
+//! static analysis (imports, type dependencies) can't see, because the
+//! coupling lives in the team's editing habits, not the code graph.
 //!
 //! ## Symmetric vs one-way pairs
 //!
