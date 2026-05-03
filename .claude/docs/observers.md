@@ -15,7 +15,9 @@ Sequential, single-threaded, fixed order:
 
 ```
 LOC → Complexity (CCN + Cognitive) → Churn → ChangeCoupling
-    → Duplication → Hotspot → LCOM
+    → DocPairs (load) → Duplication (+ Markdown pass) → Hotspot
+    → LCOM → DocFreshness → DocDrift → DocCoverage
+    → DocLinkHealth → OrphanPages → TodoDensity
 ```
 
 `run_all(project, cfg, only, workspace)`:
@@ -27,7 +29,10 @@ LOC → Complexity (CCN + Cognitive) → Churn → ChangeCoupling
   observers drop out-of-workspace files; LOC walks only the subtree.
 
 LOC always runs (no per-config gate). Every other observer is
-`enabled`-gated via its `*Config`.
+`enabled`-gated via its `*Config`. The docs family (everything from
+`DocPairs` down) is gated on `cfg.features.docs.enabled`; when off,
+`.heal/doc_pairs.json` is not consulted and the docs reports are all
+`None`.
 
 ---
 
@@ -384,6 +389,112 @@ escalating.
 - Pure `git2` library — no shelling out.
 - `head_sha`, `resolve_ref`, `worktree_clean` (matches `git status`
   semantics via `StatusOptions`), `head_commit_info`.
+
+---
+
+## `[features.docs]` family (v0.4+)
+
+Six observers gated on `cfg.features.docs.enabled = true`. The
+shared SSoT is `.heal/doc_pairs.json` (loaded once per `run_all`
+invocation by `load_doc_pairs`). Layer A observers consume the
+pair list directly; Layer B observers (`doc_link_health`,
+`orphan_pages`, `todo_density`) walk Markdown / RST docs filtered
+by `[features.docs.standalone]`.
+
+### `observer/doc_pairs.rs` (loader)
+
+Read-only loader for the SSoT. The HEAL binary never writes this
+file — generation is the `/heal-doc-pair-setup` skill's
+responsibility (R3 forbids auto-recalibration; same rule extends
+here). Schema versioned by `DOC_PAIRS_VERSION`. Older versions
+silently treat as absent (warning emitted, observers skip).
+
+### `observer/doc_freshness.rs`
+
+**What:** per-pair "src commits since paired doc last changed".
+**Severity:** `[features.docs.doc_freshness]` floors:
+≥`critical_commits` → Critical, ≥`high_commits` → High, ≥1 →
+Medium. Defaults `critical_commits=20`, `high_commits=5`.
+
+**Algorithm:** revwalk HEAD-reachable history once, record commit
+timestamps per watched path (every doc + src in pairs), then for
+each pair count distinct timestamps strictly after the doc's last
+commit time. mtime is forbidden (`scope.md` R2) — distance is
+measured in git commits, not wall-clock days.
+
+### `observer/doc_drift.rs` (Type 1: dangling identifier)
+
+**What:** doc backtick-spans (`` `Foo::bar` ``) that don't
+resolve to any leaf identifier in the paired src AST.
+**Severity:** Critical (uniform). Per-team softer floors via
+`[policy.drain.metrics.doc_drift]`.
+
+**Algorithm:** scan each doc body, strip fenced code blocks,
+extract identifier-shaped backtick spans; parse each paired src
+with tree-sitter, collect leaf-token texts; emit one finding per
+dangling identifier. Type 2 (signature mismatch) and Type 3
+(semantic drift) are deferred (`scope.md` R5).
+
+### `observer/doc_coverage.rs`
+
+**What:** pair entries whose `doc` path doesn't exist on disk.
+**Severity:** Medium (uniform — by design, to avoid the §5.1
+"Coverage trap" of empty-stub manufacturing).
+
+### `observer/doc_link_health.rs`
+
+**What:** internal relative-path / `#anchor` links that don't
+resolve. **External HTTP is out of scope** (`scope.md` R5;
+delegate to CI / `lychee` / `linkchecker`).
+**Severity:** High (uniform — internal breaks are mechanical to
+fix and high-impact).
+
+**Algorithm:** scan Layer A docs + Layer B standalone walk; emit
+one finding per `MissingPath` or `MissingAnchor` link kind.
+Heading slugs use a GitHub-style slugify approximation
+(lowercase + non-alnum → `-`).
+
+### `observer/orphan_pages.rs`
+
+**What:** Layer B docs not linked from any other Layer B doc and
+not paired (Layer A pairs are implicitly reachable via the SSoT).
+Conventional entry points (`README.md`, `index.md` at any depth)
+are seeded as "linked" — they're reachable from outside the doc
+graph.
+**Severity:** Medium.
+
+### `observer/todo_density.rs`
+
+**What:** per-doc count of `TODO` / `FIXME` / `XXX` / `TBD` /
+`[要確認]` / `[要修正]` markers. Markers inside fenced code
+blocks are excluded (those are illustrative).
+**Severity:** ≥10 → High, ≥3 → Medium, else Ok. Thresholds are
+hard-coded in v0.4; consider a config knob in v0.5 if users tune
+them.
+
+### Hotspot integration
+
+`hotspot::compose` accepts an `Option<&DocFreshnessReport>`.
+When supplied, files whose paired doc has drifted receive a
+multiplicative score boost: `boost = 1.0 + min(0.5,
+src_commits_since_doc / 20)`, capped at `1.5×`. The cap exists
+so an extremely stale doc on a moderately-active file can't
+push it past hot files with fresher docs.
+
+The pre-pass that computes `DocFreshness` for the boost is
+reused as `reports.doc_freshness` whenever the user also asked
+for the metric — no double-scan.
+
+### Markdown duplication
+
+`DuplicationObserver::with_docs(Some(DocsDuplicationInputs {...}))`
+adds a parallel pass over Markdown / RST files when
+`[features.docs]` is enabled. Tokenization differs from the code
+path: word-split + lowercase, fenced code blocks stripped, FNV-1a
+hash of lowercased bytes (so prose tokens can't collide with
+code-leaf tokens). Window size = `cfg.metrics.duplication.docs_min_tokens`
+(default 100). Both passes' blocks merge into the single
+`DuplicationReport`.
 
 ---
 

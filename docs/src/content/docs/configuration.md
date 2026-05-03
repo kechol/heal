@@ -336,6 +336,51 @@ min_cluster_count = 2
   below this floor are dropped before Severity classification. `2` is
   the natural baseline (the class is mechanically separable).
 
+## `[features.docs]` (default disabled)
+
+Optional observer family for documentation drift, freshness,
+coverage, and structure. Off by default — turn it on when you
+want HEAL to surface stale docs alongside the code metrics.
+
+```toml
+[features.docs]
+enabled = true
+# pairs_path = ".heal/doc_pairs.json"  # default
+
+[features.docs.doc_freshness]
+high_commits     = 5    # src commits past doc → High severity
+critical_commits = 20   # src commits past doc → Critical severity
+
+[features.docs.standalone]
+include = ["**/*.md", "**/*.rst"]
+exclude = [
+  "CHANGELOG*", "CONTRIBUTING*", "CODE_OF_CONDUCT*", "SECURITY*",
+  "**/adr/**",
+  "target/**", "dist/**", "node_modules/**",
+]
+```
+
+Enabling the feature gives you six new findings types:
+
+| Metric | What it catches |
+|---|---|
+| `doc_freshness` | Per-pair "src commits since paired doc last changed". |
+| `doc_drift` | Doc references an identifier no longer in the paired src AST (Type 1). |
+| `doc_coverage` | Pair entry whose `doc` path doesn't exist on disk. |
+| `doc_link_health` | Internal relative-path / `#anchor` links that don't resolve. |
+| `orphan_pages` | Layer B docs not linked from anywhere. |
+| `todo_density` | Per-doc count of `TODO` / `FIXME` / `XXX` / `TBD` markers. |
+
+**Layer A** (paired docs) and **Layer B** (standalone prose docs)
+serve different observers. Layer A needs a doc ⇔ src mapping in
+`.heal/doc_pairs.json`; the bundled `/heal-doc-pair-setup` skill
+generates it. Layer B is auto-discovered via the `standalone`
+include / exclude globs.
+
+External link checking and example-execution verification are out
+of scope (HEAL is local-only — `lychee` / `linkchecker` cover the
+HTTP side in CI).
+
 ## `[diff]`
 
 Tunes `heal diff`'s worktree-backed mode (used when the requested

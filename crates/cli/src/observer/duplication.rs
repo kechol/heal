@@ -55,6 +55,17 @@ pub struct DuplicationObserver {
     pub min_tokens: u32,
     /// Optional workspace sub-path; see `ComplexityObserver::workspace`.
     pub workspace: Option<PathBuf>,
+    /// Layer B prose-doc duplicate detection. `None` disables the
+    /// markdown pass (the v0.2 behavior). When set, the second scan
+    /// runs over the supplied doc paths with the larger
+    /// `docs_min_tokens` window.
+    pub docs: Option<DocsDuplicationInputs>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DocsDuplicationInputs {
+    pub min_tokens: u32,
+    pub doc_paths: Vec<PathBuf>,
 }
 
 impl DuplicationObserver {
@@ -65,7 +76,17 @@ impl DuplicationObserver {
             excluded: cfg.exclude_lines(),
             min_tokens: cfg.metrics.duplication.min_tokens,
             workspace: None,
+            docs: None,
         }
+    }
+
+    /// Wire up the optional Markdown / RST duplicate-detection pass.
+    /// `doc_paths` are project-relative — the typical resolver is
+    /// `crate::observer::doc_walk::walk_standalone_docs`.
+    #[must_use]
+    pub fn with_docs(mut self, docs: Option<DocsDuplicationInputs>) -> Self {
+        self.docs = docs;
+        self
     }
 
     #[must_use]
@@ -106,20 +127,65 @@ impl DuplicationObserver {
             });
         }
 
-        if files.is_empty() {
-            return report;
+        let mut all_blocks: Vec<DuplicateBlock> = Vec::new();
+        let mut all_files: Vec<FileTokens> = Vec::new();
+        if !files.is_empty() {
+            let blocks = assemble_report_blocks(detect_blocks(&files, window), &files);
+            all_blocks.extend(blocks);
+            all_files.extend(files);
         }
 
-        let report_blocks = assemble_report_blocks(detect_blocks(&files, window), &files);
+        // Second pass: Markdown / prose duplicates with a larger window.
+        // Walks the supplied doc list rather than `walk_supported_files_under`
+        // because prose docs aren't bound to any tree-sitter grammar.
+        if let Some(docs) = self.docs.as_ref() {
+            if docs.min_tokens > 0 && !docs.doc_paths.is_empty() {
+                let docs_window = docs.min_tokens as usize;
+                let mut doc_files: Vec<FileTokens> = Vec::new();
+                for rel in &docs.doc_paths {
+                    let abs = root.join(rel);
+                    let Ok(text) = std::fs::read_to_string(&abs) else {
+                        continue;
+                    };
+                    let (hashes, lines) = tokenize_markdown(&text);
+                    if hashes.len() < docs_window {
+                        continue;
+                    }
+                    doc_files.push(FileTokens {
+                        path: rel.clone(),
+                        hashes,
+                        lines,
+                    });
+                }
+                if !doc_files.is_empty() {
+                    let blocks =
+                        assemble_report_blocks(detect_blocks(&doc_files, docs_window), &doc_files);
+                    all_blocks.extend(blocks);
+                    all_files.extend(doc_files);
+                }
+            }
+        }
+
+        if all_files.is_empty() {
+            return report;
+        }
+        // Sort the merged block list once for stable output.
+        all_blocks.sort_by(|a, b| {
+            b.token_count
+                .cmp(&a.token_count)
+                .then_with(|| a.locations[0].path.cmp(&b.locations[0].path))
+                .then_with(|| a.locations[0].start_line.cmp(&b.locations[0].start_line))
+        });
+
         let (files_summary, affected_count, duplicate_tokens) =
-            file_level_rollup(&files, &report_blocks);
+            file_level_rollup(&all_files, &all_blocks);
 
         report.totals = DuplicationTotals {
-            duplicate_blocks: report_blocks.len(),
+            duplicate_blocks: all_blocks.len(),
             duplicate_tokens,
             files_affected: affected_count,
         };
-        report.blocks = report_blocks;
+        report.blocks = all_blocks;
         report.files = files_summary;
         report
     }
@@ -341,6 +407,38 @@ struct FileTokens {
 struct InternalBlock {
     token_count: usize,
     locations: Vec<(usize, usize)>,
+}
+
+/// Tokenize Markdown / RST prose for the docs duplicate-detection
+/// pass. Differences from `collect_tokens` (the code path):
+///
+/// - Fenced code blocks (` ``` `, ` ~~~ `) are skipped — duplicating an
+///   illustrative snippet across docs is fine, what we care about is
+///   the surrounding prose.
+/// - Whitespace and most punctuation is stripped during tokenization;
+///   each token is a single ASCII-lowercased word.
+/// - Hashes are FNV-1a over the lowercased word bytes — distinct from
+///   the `(kind_id, text)` hashing used by code, so prose hashes can't
+///   collide with leaf-token hashes for spurious cross-language clones.
+/// - Line numbers are 1-based and track the originating Markdown line.
+fn tokenize_markdown(body: &str) -> (Vec<u64>, Vec<u32>) {
+    let mut hashes: Vec<u64> = Vec::new();
+    let mut lines: Vec<u32> = Vec::new();
+    for (line_no, line) in crate::observer::doc_markdown::iter_prose_lines(body) {
+        for word in line
+            .split(|c: char| !c.is_alphanumeric() && c != '_')
+            .filter(|w| !w.is_empty())
+        {
+            let lower = word.to_ascii_lowercase();
+            let mut h = FNV_OFFSET;
+            for b in lower.as_bytes() {
+                h = (h ^ u64::from(*b)).wrapping_mul(HASH_BASE);
+            }
+            hashes.push(h);
+            lines.push(line_no);
+        }
+    }
+    (hashes, lines)
 }
 
 /// Walk the parsed tree pre-order and collect every leaf token that isn't

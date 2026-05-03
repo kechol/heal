@@ -24,6 +24,8 @@ pub struct Config {
     pub policy: PolicyConfig,
     #[serde(default)]
     pub diff: DiffConfig,
+    #[serde(default)]
+    pub features: FeaturesConfig,
 }
 
 /// `heal diff` settings. Defaults are tuned to feel safe on small to
@@ -54,6 +56,158 @@ impl Default for DiffConfig {
     fn default() -> Self {
         Self {
             max_loc_threshold: Self::DEFAULT_MAX_LOC_THRESHOLD,
+        }
+    }
+}
+
+/// Top-level feature flags. Each `[features.<name>]` block gates an
+/// optional capability that defaults to disabled, so an existing
+/// `.heal/config.toml` from a prior version gains no new behavior
+/// merely by upgrading the binary.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct FeaturesConfig {
+    #[serde(default)]
+    pub docs: DocsConfig,
+}
+
+/// `[features.docs]` — optional doc-quality observers that compare
+/// committed documentation against the source it describes (drift,
+/// freshness, coverage, internal link health, orphans, TODO density).
+/// Defaults to disabled. Network access stays out of scope — external
+/// link checking and example execution belong to CI / dedicated tools.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DocsConfig {
+    /// Master enable switch. While false, every docs observer is a
+    /// no-op and `.heal/doc_pairs.json` is not consulted.
+    pub enabled: bool,
+    /// Project-relative path to the doc-pairs `SSoT`. The file is the
+    /// single source of truth for Layer A (paired) src ⇔ doc mappings;
+    /// HEAL only reads it. Generation is the `/heal-doc-pair-setup`
+    /// skill's responsibility. Defaults to `.heal/doc_pairs.json`.
+    #[serde(default = "DocsConfig::default_pairs_path")]
+    pub pairs_path: String,
+    /// Layer B — standalone prose docs (README, concept guides) that
+    /// need link / orphan / todo / duplication checks but no pair
+    /// matching.
+    #[serde(default)]
+    pub standalone: StandaloneDocsConfig,
+    /// Calibration overrides for `doc_freshness`. Held in
+    /// `config.toml` so they survive `heal calibrate --force`
+    /// (invariants R9). Absolute commit-distance floors only — no
+    /// percentile distribution.
+    #[serde(default)]
+    pub doc_freshness: DocFreshnessConfig,
+}
+
+impl Eq for DocsConfig {}
+
+impl DocsConfig {
+    pub(crate) const DEFAULT_PAIRS_PATH: &'static str = ".heal/doc_pairs.json";
+
+    fn default_pairs_path() -> String {
+        Self::DEFAULT_PAIRS_PATH.to_owned()
+    }
+}
+
+impl Default for DocsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            pairs_path: Self::default_pairs_path(),
+            standalone: StandaloneDocsConfig::default(),
+            doc_freshness: DocFreshnessConfig::default(),
+        }
+    }
+}
+
+impl Toggle for DocsConfig {
+    fn enabled() -> Self {
+        Self {
+            enabled: true,
+            ..Self::default()
+        }
+    }
+}
+
+/// `[features.docs.standalone]` — gitignore-syntax globs that pick
+/// the Layer B prose-doc universe out of the project tree. Defaults
+/// include common Markdown / RST docs and exclude history / governance
+/// files where drift signals don't apply (CHANGELOG, ADR, generated
+/// API reference).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct StandaloneDocsConfig {
+    #[serde(default = "StandaloneDocsConfig::default_include")]
+    pub include: Vec<String>,
+    #[serde(default = "StandaloneDocsConfig::default_exclude")]
+    pub exclude: Vec<String>,
+}
+
+impl StandaloneDocsConfig {
+    fn default_include() -> Vec<String> {
+        vec!["**/*.md".to_owned(), "**/*.rst".to_owned()]
+    }
+
+    fn default_exclude() -> Vec<String> {
+        vec![
+            // Governance / history files: drift detection doesn't apply.
+            "CHANGELOG*".to_owned(),
+            "CHANGELOG/**".to_owned(),
+            "CONTRIBUTING*".to_owned(),
+            "CODE_OF_CONDUCT*".to_owned(),
+            "SECURITY*".to_owned(),
+            // ADRs: each entry is dated and not edited after merge.
+            "**/adr/**".to_owned(),
+            // Generated API reference / build artefacts.
+            "target/**".to_owned(),
+            "dist/**".to_owned(),
+            "node_modules/**".to_owned(),
+        ]
+    }
+}
+
+impl Default for StandaloneDocsConfig {
+    fn default() -> Self {
+        Self {
+            include: Self::default_include(),
+            exclude: Self::default_exclude(),
+        }
+    }
+}
+
+/// `[features.docs.doc_freshness]` — absolute commit-distance floors
+/// for the freshness observer. We measure src-side commits since the
+/// last doc-side commit (mtime is forbidden by `scope.md` R2), so the
+/// thresholds count source commits, not days. Per-pair distribution
+/// percentiles aren't useful here — drift signal is absolute.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DocFreshnessConfig {
+    #[serde(default = "DocFreshnessConfig::default_high_commits")]
+    pub high_commits: u32,
+    #[serde(default = "DocFreshnessConfig::default_critical_commits")]
+    pub critical_commits: u32,
+}
+
+impl DocFreshnessConfig {
+    pub(crate) const DEFAULT_HIGH_COMMITS: u32 = 5;
+    pub(crate) const DEFAULT_CRITICAL_COMMITS: u32 = 20;
+
+    fn default_high_commits() -> u32 {
+        Self::DEFAULT_HIGH_COMMITS
+    }
+    fn default_critical_commits() -> u32 {
+        Self::DEFAULT_CRITICAL_COMMITS
+    }
+}
+
+impl Default for DocFreshnessConfig {
+    fn default() -> Self {
+        Self {
+            high_commits: Self::default_high_commits(),
+            critical_commits: Self::default_critical_commits(),
         }
     }
 }
@@ -564,6 +718,12 @@ pub struct DuplicationConfig {
     pub enabled: bool,
     #[serde(default = "default_min_tokens")]
     pub min_tokens: u32,
+    /// Window size in tokens applied to **Markdown / RST docs** when
+    /// `[features.docs]` is enabled. Prose carries more filler per
+    /// concept than code, so the floor is intentionally larger than
+    /// `min_tokens`. Ignored when `features.docs.enabled = false`.
+    #[serde(default = "default_docs_min_tokens")]
+    pub docs_min_tokens: u32,
     /// Per-metric override for `metrics.top_n` — largest duplicate blocks.
     #[serde(default)]
     pub top_n: Option<usize>,
@@ -580,6 +740,7 @@ impl Default for DuplicationConfig {
         Self {
             enabled: false,
             min_tokens: default_min_tokens(),
+            docs_min_tokens: default_docs_min_tokens(),
             top_n: None,
             floor_critical: None,
         }
@@ -591,6 +752,7 @@ impl Toggle for DuplicationConfig {
         Self {
             enabled: true,
             min_tokens: default_min_tokens(),
+            docs_min_tokens: default_docs_min_tokens(),
             top_n: None,
             floor_critical: None,
         }
@@ -599,6 +761,10 @@ impl Toggle for DuplicationConfig {
 
 fn default_min_tokens() -> u32 {
     50
+}
+
+fn default_docs_min_tokens() -> u32 {
+    100
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

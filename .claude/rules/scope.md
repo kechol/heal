@@ -62,11 +62,17 @@ Don't propose these without explicit roadmap discussion:
 
 - `heal run` / autonomous PR generation (v0.4+ target).
 - LSP-based metrics.
-- Doc-skew / doc-coverage observers.
 - Multi-agent provider abstraction.
 - Languages beyond TypeScript / JavaScript / Rust / Python / Go / Scala.
 - Cloud sync, telemetry, network access (HEAL is local-only;
   network access = `git2` over the local repo only).
+- `[features.docs]` extensions deferred past v0.4: external HTTP
+  link checking, executable example verification, issue-tracker /
+  Stack Overflow question coverage, readability scores, terminology
+  consistency vs a glossary, structural-depth analysis. `doc_drift`
+  Type 2 (signature mismatch via per-language code-block parsing)
+  and Type 3 (semantic drift via LLM) also defer — only Type 1
+  (dangling identifier) ships in v0.4.
 
 ## R6. New `.heal/` files require a decision
 

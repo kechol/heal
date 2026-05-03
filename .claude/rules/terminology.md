@@ -75,6 +75,13 @@ derived by clap's `value_enum`.
 Adding a new one is a schema change — bump
 `FINDINGS_RECORD_VERSION` (see `invariants.md` R3).
 
+The `[features.docs]` family adds six fresh top-level metric
+strings (`doc_freshness`, `doc_drift`, `doc_coverage`,
+`doc_link_health`, `orphan_pages`, `todo_density`) that landed
+with the v3 schema. Renaming any of them or introducing a
+submetric (e.g. `doc_drift.signature_mismatch`) is also a
+`FINDINGS_RECORD_VERSION` bump.
+
 ## R6. Hotspot is a decoration, not a target
 
 The drain target is **Critical AND `hotspot=true`** (T0 Must). The

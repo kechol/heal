@@ -18,13 +18,14 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::config::Config;
+use crate::core::config::{Config, DocFreshnessConfig};
 use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
 use crate::observer::churn::{ChurnObserver, ChurnReport, FileChurn};
 use crate::observer::complexity::{ComplexityObserver, ComplexityReport, FileComplexity};
+use crate::observer::doc_freshness::DocFreshnessReport;
 use crate::observer::{ObservationMeta, Observer};
 use crate::observers::ObserverReports;
 
@@ -75,17 +76,32 @@ impl HotspotObserver {
         }
         let churn = self.churn.scan(root);
         let complexity = self.complexity.scan(root);
-        compose(&churn, &complexity, self.weights)
+        compose(&churn, &complexity, None, self.weights)
     }
 }
+
+/// Per-file boost cap when `[features.docs]` surfaces drift. The
+/// boost itself is `1.0 + (src_commits_since_doc / critical_commits)`,
+/// clamped at this constant so a doc that's been stale for years
+/// can't push a moderately-active file's hotspot score arbitrarily
+/// high.
+const DOC_DRIFT_BOOST_MAX: f64 = 1.5;
 
 /// Pure composer: zip a `ChurnReport` and `ComplexityReport` by file path
 /// and emit a per-file score. Files appearing in only one of the two
 /// inputs get a score of 0 and are filtered out.
+///
+/// `doc_freshness` is optional; when supplied, files whose paired doc
+/// is stale receive a multiplicative score boost capped at
+/// `DOC_DRIFT_BOOST_MAX`. The reasoning follows
+/// `documentation-quality-reference.md` §2.3: a hotspot whose doc
+/// no longer describes the code is doubly costly to a reader, so it
+/// belongs higher in the drain queue than a hotspot with fresh docs.
 #[must_use]
 pub fn compose(
     churn: &ChurnReport,
     complexity: &ComplexityReport,
+    doc_freshness: Option<&DocFreshnessReport>,
     weights: HotspotWeights,
 ) -> HotspotReport {
     let mut churn_by_path: BTreeMap<PathBuf, &FileChurn> = BTreeMap::new();
@@ -95,6 +111,30 @@ pub fn compose(
     let mut complexity_by_path: BTreeMap<PathBuf, &FileComplexity> = BTreeMap::new();
     for f in &complexity.files {
         complexity_by_path.insert(f.path.clone(), f);
+    }
+
+    // Build a per-src-file drift boost lookup. A pair entry whose src
+    // contributes to several hotspot rows (e.g. one doc covers `src/a.rs`
+    // and `src/b.rs`) lifts each of them by the same factor.
+    let mut drift_boost: BTreeMap<PathBuf, f64> = BTreeMap::new();
+    if let Some(freshness) = doc_freshness {
+        // The report doesn't carry the user's `critical_commits` floor,
+        // so the boost normalises against the default — a tightened
+        // floor still saturates at `DOC_DRIFT_BOOST_MAX`, just sooner.
+        let denom = f64::from(DocFreshnessConfig::DEFAULT_CRITICAL_COMMITS);
+        for entry in &freshness.entries {
+            if entry.src_commits_since_doc == 0 {
+                continue;
+            }
+            let raw = f64::from(entry.src_commits_since_doc) / denom;
+            let boost = 1.0 + raw.min(DOC_DRIFT_BOOST_MAX - 1.0);
+            for src in &entry.src_paths {
+                let entry = drift_boost.entry(src.clone()).or_insert(1.0);
+                if boost > *entry {
+                    *entry = boost;
+                }
+            }
+        }
     }
 
     let mut entries: Vec<HotspotEntry> = Vec::new();
@@ -107,7 +147,9 @@ pub fn compose(
         if ccn_sum == 0 || commits == 0 {
             continue;
         }
-        let score = weighted_score(commits, ccn_sum, weights);
+        let base = weighted_score(commits, ccn_sum, weights);
+        let boost = drift_boost.get(path).copied().unwrap_or(1.0);
+        let score = base * boost;
         entries.push(HotspotEntry {
             path: path.clone(),
             ccn_sum,

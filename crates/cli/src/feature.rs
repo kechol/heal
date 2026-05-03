@@ -137,16 +137,22 @@ pub struct FeatureRegistry {
 }
 
 impl FeatureRegistry {
-    /// All v0.2 builtin Features. Order matches the v0.1 `classify`
-    /// emission order — same-Severity tiebreakers in the renderer
-    /// rely on it.
+    /// All builtin Features. Order matters — same-Severity ties in the
+    /// renderer fall back to it for stable output. Append new Features
+    /// at the end to keep that contract.
     #[must_use]
     pub fn builtin() -> Self {
         use crate::observer::change_coupling::ChangeCouplingFeature;
         use crate::observer::complexity::ComplexityFeature;
+        use crate::observer::doc_coverage::DocCoverageFeature;
+        use crate::observer::doc_drift::DocDriftFeature;
+        use crate::observer::doc_freshness::DocFreshnessFeature;
+        use crate::observer::doc_link_health::DocLinkHealthFeature;
         use crate::observer::duplication::DuplicationFeature;
         use crate::observer::hotspot::HotspotFeature;
         use crate::observer::lcom::LcomFeature;
+        use crate::observer::orphan_pages::OrphanPagesFeature;
+        use crate::observer::todo_density::TodoDensityFeature;
 
         Self {
             features: vec![
@@ -155,6 +161,12 @@ impl FeatureRegistry {
                 Box::new(ChangeCouplingFeature),
                 Box::new(HotspotFeature),
                 Box::new(LcomFeature),
+                Box::new(DocFreshnessFeature),
+                Box::new(DocDriftFeature),
+                Box::new(DocCoverageFeature),
+                Box::new(DocLinkHealthFeature),
+                Box::new(OrphanPagesFeature),
+                Box::new(TodoDensityFeature),
             ],
         }
     }
@@ -202,7 +214,8 @@ mod tests {
         let r = FeatureRegistry::builtin();
         let names: Vec<&str> = r.iter().map(|f| f.meta().name).collect();
         // Order is the public emission contract — tests / renderer rely
-        // on it for stable Finding ordering.
+        // on it for stable Finding ordering. Docs Features sit at the
+        // end so the v0.2 emission order for code metrics is preserved.
         assert_eq!(
             names,
             vec![
@@ -211,16 +224,31 @@ mod tests {
                 "change_coupling",
                 "hotspot",
                 "lcom",
+                "doc_freshness",
+                "doc_drift",
+                "doc_coverage",
+                "doc_link_health",
+                "orphan_pages",
+                "todo_density",
             ],
         );
     }
 
     #[test]
-    fn every_builtin_is_observer_kind() {
+    fn every_code_feature_is_observer_kind() {
+        // Code Features (the v0.2 set) are FeatureKind::Observer; docs
+        // Features carry FeatureKind::DocsScanner. The check is per-
+        // family rather than per-Feature so adding a new code observer
+        // continues to require Observer kind.
         for f in FeatureRegistry::builtin().iter() {
+            let want_kind = match f.meta().name {
+                "doc_freshness" | "doc_drift" | "doc_coverage" | "doc_link_health"
+                | "orphan_pages" | "todo_density" => FeatureKind::DocsScanner,
+                _ => FeatureKind::Observer,
+            };
             assert_eq!(
                 f.meta().kind,
-                FeatureKind::Observer,
+                want_kind,
                 "unexpected kind for {}",
                 f.meta().name,
             );

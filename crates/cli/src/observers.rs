@@ -12,14 +12,24 @@ use crate::core::calibration::{
     FLOOR_OK_COGNITIVE, STRATEGY_PERCENTILE,
 };
 use crate::core::config::Config;
+use crate::core::doc_pairs::DocPairsFile;
 use crate::core::finding::Finding;
 use crate::observer::change_coupling::{ChangeCouplingObserver, ChangeCouplingReport};
 use crate::observer::churn::{ChurnObserver, ChurnReport};
 use crate::observer::complexity::{ComplexityObserver, ComplexityReport};
-use crate::observer::duplication::{DuplicationObserver, DuplicationReport};
+use crate::observer::doc_coverage::{DocCoverageObserver, DocCoverageReport};
+use crate::observer::doc_drift::{DocDriftObserver, DocDriftReport};
+use crate::observer::doc_freshness::{DocFreshnessObserver, DocFreshnessReport};
+use crate::observer::doc_link_health::{
+    paired_doc_paths, DocLinkHealthObserver, DocLinkHealthReport,
+};
+use crate::observer::doc_walk::walk_standalone_docs;
+use crate::observer::duplication::{DocsDuplicationInputs, DuplicationObserver, DuplicationReport};
 use crate::observer::hotspot::{compose as compose_hotspot, HotspotReport, HotspotWeights};
 use crate::observer::lcom::{LcomObserver, LcomReport};
 use crate::observer::loc::{LocObserver, LocReport};
+use crate::observer::orphan_pages::{OrphanPagesObserver, OrphanPagesReport};
+use crate::observer::todo_density::{TodoDensityObserver, TodoDensityReport};
 
 use crate::cli::MetricKind;
 
@@ -32,6 +42,28 @@ pub struct ObserverReports {
     pub duplication: Option<DuplicationReport>,
     pub hotspot: Option<HotspotReport>,
     pub lcom: Option<LcomReport>,
+    /// `[features.docs]` `SSoT` loaded from `.heal/doc_pairs.json`.
+    /// `None` whenever the feature is disabled or the file is absent
+    /// — docs observers down-stream return empty reports so the rest
+    /// of the pipeline ignores them.
+    pub doc_pairs: Option<DocPairsFile>,
+    /// Per-pair "src commits since doc" output from
+    /// [`DocFreshnessObserver`]. `None` when the docs feature is off
+    /// or `doc_pairs` is absent.
+    pub doc_freshness: Option<DocFreshnessReport>,
+    /// Dangling identifiers detected by [`DocDriftObserver`]. Same
+    /// gating as [`Self::doc_freshness`].
+    pub doc_drift: Option<DocDriftReport>,
+    /// Pairs whose `doc` no longer exists on disk. Same gating as
+    /// [`Self::doc_freshness`].
+    pub doc_coverage: Option<DocCoverageReport>,
+    /// Broken internal links across Layer A + Layer B docs. External
+    /// HTTP checks are out of scope (R5).
+    pub doc_link_health: Option<DocLinkHealthReport>,
+    /// Layer B docs that no other doc references.
+    pub orphan_pages: Option<OrphanPagesReport>,
+    /// Per-doc TODO/FIXME/XXX/TBD/[要確認] marker counts.
+    pub todo_density: Option<TodoDensityReport>,
 }
 
 /// Run the observers needed for the requested metric. `only = None`
@@ -46,6 +78,7 @@ pub struct ObserverReports {
 /// scopes every observer's internal walk or git diff to files under
 /// the sub-path, so totals, pair counts, and lift reflect only the
 /// chosen workspace's universe. Pass `None` for whole-repo behavior.
+#[allow(clippy::too_many_lines)] // each observer is one cheap branch; flat reads better than splitting
 pub(crate) fn run_all(
     project: &Path,
     cfg: &Config,
@@ -58,6 +91,9 @@ pub(crate) fn run_all(
         Some(MetricKind::Hotspot) if matches!(m, MetricKind::Churn | MetricKind::Complexity) => {
             true
         }
+        // doc_freshness reads `.heal/doc_pairs.json` — independent of
+        // every other observer, so the filter is the simple equality
+        // case above. No cross-metric implication needed.
         _ => false,
     };
 
@@ -96,12 +132,51 @@ pub(crate) fn run_all(
             );
             report
         });
+    // Load the docs SSoT and Layer B walk once, before hotspot
+    // composition so the optional drift boost can run, then reuse the
+    // results for every downstream docs observer.
+    let doc_pairs = if cfg.features.docs.enabled {
+        load_doc_pairs(project, cfg)
+    } else {
+        None
+    };
+    let standalone_docs: Vec<std::path::PathBuf> = if cfg.features.docs.enabled {
+        walk_standalone_docs(project, cfg)
+    } else {
+        Vec::new()
+    };
     let duplication =
         (want(MetricKind::Duplication) && cfg.metrics.duplication.enabled).then(|| {
+            let docs_inputs = if cfg.features.docs.enabled && !standalone_docs.is_empty() {
+                Some(DocsDuplicationInputs {
+                    min_tokens: cfg.metrics.duplication.docs_min_tokens,
+                    doc_paths: standalone_docs.clone(),
+                })
+            } else {
+                None
+            };
             DuplicationObserver::from_config(cfg)
                 .with_workspace(ws_buf.clone())
+                .with_docs(docs_inputs)
                 .scan(project)
         });
+    // Resolve the live pair list once and share across every Layer A
+    // observer. `live_pairs` does an existence check per doc + per src,
+    // so calling it three times (freshness, drift, coverage) burned
+    // ~300 stat() calls on a 50-pair project.
+    let live_pairs: Vec<_> =
+        crate::observer::doc_freshness::live_pairs(doc_pairs.as_ref(), project);
+    // doc_freshness pre-pass for hotspot composition. Always built
+    // when the docs feature is on and pairs loaded — the boost is
+    // small enough that gating it on `want(DocFreshness)` would
+    // change `Hotspot`'s output based on a flag that doesn't pertain
+    // to it.
+    let hotspot_doc_freshness =
+        if cfg.features.docs.enabled && cfg.metrics.hotspot.enabled && !live_pairs.is_empty() {
+            Some(DocFreshnessObserver::from_config_and_pairs(cfg, live_pairs.clone()).scan(project))
+        } else {
+            None
+        };
     let hotspot = match (
         want(MetricKind::Hotspot) && cfg.metrics.hotspot.enabled,
         churn.as_ref(),
@@ -109,6 +184,7 @@ pub(crate) fn run_all(
         (true, Some(ch)) => Some(compose_hotspot(
             ch,
             &complexity,
+            hotspot_doc_freshness.as_ref(),
             HotspotWeights {
                 churn: cfg.metrics.hotspot.weight_churn,
                 complexity: cfg.metrics.hotspot.weight_complexity,
@@ -121,6 +197,58 @@ pub(crate) fn run_all(
             .with_workspace(ws_buf)
             .scan(project)
     });
+    // Reuse the freshness pre-pass when the user asked for the metric
+    // explicitly — same inputs, same output, just exposed as
+    // `reports.doc_freshness`.
+    let doc_freshness = if want(MetricKind::DocFreshness) && doc_pairs.is_some() {
+        if let Some(report) = hotspot_doc_freshness.clone() {
+            Some(report)
+        } else {
+            Some(DocFreshnessObserver::from_config_and_pairs(cfg, live_pairs.clone()).scan(project))
+        }
+    } else {
+        None
+    };
+    let doc_drift = (want(MetricKind::DocDrift) && doc_pairs.is_some())
+        .then(|| DocDriftObserver::from_config_and_pairs(cfg, live_pairs.clone()).scan(project));
+    let doc_coverage = (want(MetricKind::DocCoverage) && doc_pairs.is_some()).then(|| {
+        // doc_coverage runs against the *raw* pair list — the whole
+        // point is to surface pairs whose `doc` is missing on disk.
+        let pairs = doc_pairs
+            .as_ref()
+            .map(|f| f.pairs.clone())
+            .unwrap_or_default();
+        DocCoverageObserver::from_config_and_pairs(cfg, pairs).scan(project)
+    });
+    let paired_doc_paths_owned = paired_doc_paths(doc_pairs.as_ref());
+    let doc_link_health =
+        (want(MetricKind::DocLinkHealth) && cfg.features.docs.enabled).then(|| {
+            DocLinkHealthObserver::from_config_and_inputs(
+                cfg,
+                standalone_docs.clone(),
+                paired_doc_paths_owned.clone(),
+            )
+            .scan(project)
+        });
+    let orphan_pages = (want(MetricKind::OrphanPages) && cfg.features.docs.enabled).then(|| {
+        OrphanPagesObserver::from_config_and_inputs(
+            cfg,
+            standalone_docs.clone(),
+            paired_doc_paths_owned.clone(),
+        )
+        .scan(project)
+    });
+    let todo_density = (want(MetricKind::TodoDensity) && cfg.features.docs.enabled).then(|| {
+        // todo_density scans every Layer B doc plus every Layer A doc
+        // — author-confessed incompleteness is interesting on both.
+        let mut docs = standalone_docs.clone();
+        for paired in &paired_doc_paths_owned {
+            if !docs.contains(paired) {
+                docs.push(paired.clone());
+            }
+        }
+        TodoDensityObserver::from_config_and_inputs(cfg, docs).scan(project)
+    });
     ObserverReports {
         loc,
         complexity,
@@ -130,6 +258,47 @@ pub(crate) fn run_all(
         duplication,
         hotspot,
         lcom,
+        doc_pairs,
+        doc_freshness,
+        doc_drift,
+        doc_coverage,
+        doc_link_health,
+        orphan_pages,
+        todo_density,
+    }
+}
+
+/// Read `.heal/doc_pairs.json` (or whatever `cfg.features.docs.pairs_path`
+/// resolves to) and surface any integrity issues to stderr.
+///
+/// `Ok(None)` from the reader means the file is absent — emit a one-line
+/// hint pointing the user at `/heal-doc-pair-setup` (R3 forbids
+/// auto-generation). A hard parse error is also folded into a warning
+/// rather than aborting `heal status`; the user still sees the rest of
+/// the findings.
+fn load_doc_pairs(project: &Path, cfg: &Config) -> Option<DocPairsFile> {
+    let pairs_path = &cfg.features.docs.pairs_path;
+    match DocPairsFile::read(project, pairs_path) {
+        Ok(Some(file)) => {
+            for warning in file.integrity_check(project) {
+                eprintln!(
+                    "warn: {pairs_path}: pair[{}] references missing path {}",
+                    warning.pair_index,
+                    warning.missing_path.display(),
+                );
+            }
+            Some(file)
+        }
+        Ok(None) => {
+            eprintln!(
+                "warn: {pairs_path} not found — run `claude /heal-doc-pair-setup` to generate it"
+            );
+            None
+        }
+        Err(err) => {
+            eprintln!("warn: {pairs_path}: {err}");
+            None
+        }
     }
 }
 
@@ -512,6 +681,13 @@ mod tests {
             duplication: Some(duplication),
             hotspot: Some(hotspot),
             lcom: None,
+            doc_pairs: None,
+            doc_freshness: None,
+            doc_drift: None,
+            doc_coverage: None,
+            doc_link_health: None,
+            orphan_pages: None,
+            todo_density: None,
         };
 
         let cal = Calibration {

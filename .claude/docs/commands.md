@@ -154,7 +154,10 @@ for CI / scripting; no idempotency contract.
 
 Per-section trait (`MetricSection`) registered in `all_sections()`:
 `Loc`, `Complexity`, `Churn`, `ChangeCoupling`, `Duplication`,
-`Hotspot`, `Lcom`. Each section provides:
+`Hotspot`, `Lcom`, plus the docs-only sections (active when
+`[features.docs] enabled = true`): `DocFreshness`, `DocDrift`,
+`DocCoverage`, `DocLinkHealth`, `OrphanPages`, `TodoDensity`. Each
+section provides:
 
 - `render_text(&report) → String` with `top_n` cutoff.
 - `raw_json(&report) → serde_json::Value` (full typed report; omitted

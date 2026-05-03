@@ -11,11 +11,17 @@
 mod churn;
 mod complexity;
 mod coupling;
+mod doc_coverage;
+mod doc_drift;
+mod doc_freshness;
+mod doc_link_health;
 mod duplication;
 mod hotspot;
 mod lcom;
 mod loc;
+mod orphan_pages;
 mod section;
+mod todo_density;
 
 use std::io::{self, Write};
 use std::path::Path;

@@ -91,7 +91,7 @@ fn compose_multiplies_churn_and_ccn_sum() {
     // a: commits=10, ccn_sum=10 → score 100
     // b: commits=2,  ccn_sum=20 → score 40
 
-    let report = compose(&churn, &complexity, HotspotWeights::default());
+    let report = compose(&churn, &complexity, None, HotspotWeights::default());
     assert_eq!(report.entries.len(), 2);
     assert_eq!(report.entries[0].path.to_string_lossy(), "src/a.rs");
     assert!((report.entries[0].score - 100.0).abs() < f64::EPSILON);
@@ -109,7 +109,7 @@ fn compose_applies_weights() {
         churn: 2.0,
         complexity: 3.0,
     };
-    let report = compose(&churn, &complexity, weights);
+    let report = compose(&churn, &complexity, None, weights);
     // (2*4) * (3*5) = 8 * 15 = 120
     assert_eq!(report.entries.len(), 1);
     assert!((report.entries[0].score - 120.0).abs() < f64::EPSILON);
@@ -119,7 +119,7 @@ fn compose_applies_weights() {
 fn compose_drops_files_missing_one_signal() {
     let churn = churn_report(&[("only_churn.rs", 5), ("both.rs", 3)]);
     let complexity = complexity_report(&[("both.rs", &[4]), ("only_complex.rs", &[10])]);
-    let report = compose(&churn, &complexity, HotspotWeights::default());
+    let report = compose(&churn, &complexity, None, HotspotWeights::default());
     assert_eq!(report.entries.len(), 1);
     assert_eq!(report.entries[0].path.to_string_lossy(), "both.rs");
 }
@@ -128,8 +128,57 @@ fn compose_drops_files_missing_one_signal() {
 fn compose_skips_zero_ccn_or_zero_commits() {
     let churn = churn_report(&[("a.rs", 0), ("b.rs", 1)]);
     let complexity = complexity_report(&[("a.rs", &[5]), ("b.rs", &[])]);
-    let report = compose(&churn, &complexity, HotspotWeights::default());
+    let report = compose(&churn, &complexity, None, HotspotWeights::default());
     assert!(report.entries.is_empty());
+}
+
+#[test]
+fn compose_boosts_score_when_doc_drifts() {
+    use heal_cli::observer::doc_freshness::{
+        DocFreshnessEntry, DocFreshnessReport, DocFreshnessTotals,
+    };
+
+    let churn = churn_report(&[("src/a.rs", 5), ("src/b.rs", 5)]);
+    let complexity = complexity_report(&[("src/a.rs", &[10]), ("src/b.rs", &[10])]);
+    // Pair `src/a.rs` with a stale doc (10 src commits past the doc).
+    // `src/b.rs` has no pair → no boost.
+    let freshness = DocFreshnessReport {
+        entries: vec![DocFreshnessEntry {
+            doc_path: PathBuf::from("docs/a.md"),
+            src_paths: vec![PathBuf::from("src/a.rs")],
+            src_commits_since_doc: 10,
+            doc_last_commit_time: None,
+        }],
+        totals: DocFreshnessTotals {
+            pairs: 1,
+            stale_pairs: 1,
+        },
+    };
+    let report = compose(
+        &churn,
+        &complexity,
+        Some(&freshness),
+        HotspotWeights::default(),
+    );
+    let a_score = report
+        .entries
+        .iter()
+        .find(|e| e.path.to_string_lossy() == "src/a.rs")
+        .unwrap()
+        .score;
+    let b_score = report
+        .entries
+        .iter()
+        .find(|e| e.path.to_string_lossy() == "src/b.rs")
+        .unwrap()
+        .score;
+    assert!(
+        a_score > b_score,
+        "drift boost should lift a.rs above b.rs (got a={a_score}, b={b_score})",
+    );
+    // Drift boost is capped — a 10 / 20 = 0.5 lift gives a 1.5x
+    // multiplier, so a.rs ≤ 1.5x b.rs.
+    assert!(a_score <= b_score * 1.6, "boost saturates");
 }
 
 #[test]

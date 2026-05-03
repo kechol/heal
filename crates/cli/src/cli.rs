@@ -151,6 +151,19 @@ pub enum MetricKind {
     Duplication,
     Hotspot,
     Lcom,
+    /// `[features.docs]` — src commits since paired doc last changed.
+    DocFreshness,
+    /// `[features.docs]` — Type 1 dangling identifier mentions in
+    /// docs whose paired src no longer defines them.
+    DocDrift,
+    /// `[features.docs]` — pairs whose `doc` no longer exists on disk.
+    DocCoverage,
+    /// `[features.docs]` — broken internal links across docs.
+    DocLinkHealth,
+    /// `[features.docs]` — Layer B docs not linked from anywhere.
+    OrphanPages,
+    /// `[features.docs]` — TODO/FIXME/XXX marker density per doc.
+    TodoDensity,
 }
 
 impl MetricKind {
@@ -167,6 +180,12 @@ impl MetricKind {
             Self::Duplication => "duplication",
             Self::Hotspot => "hotspot",
             Self::Lcom => "lcom",
+            Self::DocFreshness => "doc_freshness",
+            Self::DocDrift => "doc_drift",
+            Self::DocCoverage => "doc_coverage",
+            Self::DocLinkHealth => "doc_link_health",
+            Self::OrphanPages => "orphan_pages",
+            Self::TodoDensity => "todo_density",
         }
     }
 }
@@ -186,6 +205,18 @@ pub enum FindingMetric {
     Hotspot,
     /// `lcom` — class-level Lack of Cohesion of Methods.
     Lcom,
+    /// `[features.docs]` — src commits past the paired doc.
+    DocFreshness,
+    /// `[features.docs]` — dangling identifier mentions.
+    DocDrift,
+    /// `[features.docs]` — paired docs missing from disk.
+    DocCoverage,
+    /// `[features.docs]` — broken internal links.
+    DocLinkHealth,
+    /// `[features.docs]` — orphan Layer B docs.
+    OrphanPages,
+    /// `[features.docs]` — TODO marker density per doc.
+    TodoDensity,
 }
 
 impl FindingMetric {
@@ -201,6 +232,12 @@ impl FindingMetric {
             Self::Coupling => matches!(metric, "change_coupling" | "change_coupling.symmetric"),
             Self::Hotspot => metric == "hotspot",
             Self::Lcom => metric == "lcom",
+            Self::DocFreshness => metric == "doc_freshness",
+            Self::DocDrift => metric == "doc_drift",
+            Self::DocCoverage => metric == "doc_coverage",
+            Self::DocLinkHealth => metric == "doc_link_health",
+            Self::OrphanPages => metric == "orphan_pages",
+            Self::TodoDensity => metric == "todo_density",
         }
     }
 }

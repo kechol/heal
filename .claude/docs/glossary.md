@@ -70,9 +70,15 @@ key form matches `MetricsConfig` field names.
 | `change_coupling.symmetric` | (under `ChangeCoupling`) | (under `change-coupling`) | Both directions strong. |
 | `change_coupling.expected` | (Advisory tier) | — | TestSrc / DocSrc demoted to Advisory at `Severity::Medium`. |
 | `change_coupling.cross_workspace` | (Advisory tier) | — | Cross-workspace pair surfaced as Advisory. |
-| `duplication` | `Duplication` | `duplication` | Type-1 (token-exact) clones. |
-| `hotspot` | `Hotspot` | `hotspot` | Composite of churn × complexity. **Is** an emitted metric (file-level Finding) but its severity is always `Ok` — the importance is signaled via `hotspot=true` flag on **other** Findings. |
+| `duplication` | `Duplication` | `duplication` | Type-1 (token-exact) clones over code; `[features.docs]` adds a parallel Markdown / RST pass with its own `docs_min_tokens` window. |
+| `hotspot` | `Hotspot` | `hotspot` | Composite of churn × complexity. **Is** an emitted metric (file-level Finding) but its severity is always `Ok` — the importance is signaled via `hotspot=true` flag on **other** Findings. When `[features.docs]` is on, `compose` multiplies the score by up to 1.5× when the file's paired doc is stale. |
 | `lcom` | `Lcom` | `lcom` | Per-class cluster count. |
+| `doc_freshness` | `DocFreshness` | `doc-freshness` | `[features.docs]` only. Per-pair "src commits since paired doc last changed." Layer A. |
+| `doc_drift` | `DocDrift` | `doc-drift` | `[features.docs]` only. Type 1 dangling identifier — doc references a name no longer in the paired src AST. Layer A. |
+| `doc_coverage` | `DocCoverage` | `doc-coverage` | `[features.docs]` only. Pair entries whose `doc` path is missing on disk. Layer A. |
+| `doc_link_health` | `DocLinkHealth` | `doc-link-health` | `[features.docs]` only. Internal relative-path / anchor link breakage. Layer A + B. **External HTTP is out of scope** (`scope.md` R5). |
+| `orphan_pages` | `OrphanPages` | `orphan-pages` | `[features.docs]` only. Layer B docs not linked from anywhere; `README.md` / `index.md` exempt as conventional entry points. |
+| `todo_density` | `TodoDensity` | `todo-density` | `[features.docs]` only. Per-doc count of `TODO` / `FIXME` / `XXX` / `TBD` / `[要確認]` / `[要修正]`. Layer A + B. |
 
 Don't invent new submetric strings without bumping `FINDINGS_RECORD_VERSION`
 (see `.claude/rules/data-model.md`).
@@ -119,6 +125,7 @@ below). Constants live in `core::calibration` (`FLOOR_CCN`,
 | `.heal/findings/fixed.json` | `heal mark fix` writes; `heal status` reconciles | **yes** | `BTreeMap<finding_id, FixedFinding>`. Bounded by outstanding claims. |
 | `.heal/findings/regressed.jsonl` | `heal status` appends | **yes** | Append-only audit trail of re-detected fixes. |
 | `.heal/findings/accepted.json` | `heal mark accept` writes; renderers read | **yes** | `BTreeMap<finding_id, AcceptedFinding>`. Team contract for "won't fix / intrinsic" findings. Decorates `Finding.accepted: bool` at render time. |
+| `.heal/doc_pairs.json` | `/heal-doc-pair-setup` writes; HEAL binary reads | **yes** | `[features.docs]` SSoT. `DocPairsFile` (schema-versioned by `DOC_PAIRS_VERSION`). Maps Layer A doc paths to one or more srcs. HEAL never auto-generates it — `R3` (no auto-recalibration) extends to this file. |
 
 | Term | Canonical | Wrong / drift |
 |---|---|---|
@@ -182,8 +189,12 @@ prefixed `heal-`. Trigger forms in skill bodies are slash-commands.
 | `heal-config` | `/heal-config` | Calibrate + write `.heal/config.toml`. |
 | `heal-code-review` | `/heal-code-review` | Read-only architectural analysis. **Was** `heal-code-check`. |
 | `heal-code-patch` | `/heal-code-patch` | Drain cache, one finding per commit. **Was** `heal-code-fix`. |
+| `heal-doc-pair-setup` | `/heal-doc-pair-setup` | `[features.docs]` only. Detect doc ⇔ src pairs and write `.heal/doc_pairs.json`. SSoT writer. |
+| `heal-doc-review` | `/heal-doc-review` | `[features.docs]` only. Read-only Diátaxis-grounded review of doc findings. |
+| `heal-doc-patch` | `/heal-doc-patch` | `[features.docs]` only. Mechanical drain of doc findings (broken links, dangling identifiers, resolvable TODOs). |
 
-The pair `heal-code-review` ↔ `heal-code-patch` is intentional: review =
+The pair `heal-code-review` ↔ `heal-code-patch` and the parallel
+`heal-doc-review` ↔ `heal-doc-patch` are intentional: review =
 read-only, patch = mechanical write. Don't merge them.
 
 | Canonical | Notes |

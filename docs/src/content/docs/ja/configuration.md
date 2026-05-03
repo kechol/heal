@@ -311,6 +311,51 @@ min_cluster_count = 2
   未満のクラスは Severity 分類の前にドロップされます。`2` が自然な
   ベースラインです（クラスが機械的に分割可能）。
 
+## `[features.docs]` (デフォルト無効)
+
+ドキュメントのドリフト・鮮度・カバレッジ・構造を観測するオプションの
+observer ファミリ。デフォルトでは無効。コードと同じ仕組みで腐ったドキュメントを
+拾いたいときに有効化する。
+
+```toml
+[features.docs]
+enabled = true
+# pairs_path = ".heal/doc_pairs.json"  # デフォルト
+
+[features.docs.doc_freshness]
+high_commits     = 5    # doc 以降の src commit 数 → High
+critical_commits = 20   # doc 以降の src commit 数 → Critical
+
+[features.docs.standalone]
+include = ["**/*.md", "**/*.rst"]
+exclude = [
+  "CHANGELOG*", "CONTRIBUTING*", "CODE_OF_CONDUCT*", "SECURITY*",
+  "**/adr/**",
+  "target/**", "dist/**", "node_modules/**",
+]
+```
+
+有効化すると 6 つの新しい Finding が surface される。
+
+| Metric | 検出するもの |
+|---|---|
+| `doc_freshness` | ペア毎の「doc が最後に変わって以降の src commit 数」。 |
+| `doc_drift` | doc が言及している識別子がペア src の AST に存在しない (Type 1)。 |
+| `doc_coverage` | ペアの `doc` パスが disk に存在しない。 |
+| `doc_link_health` | ドキュメント内の相対リンク・`#anchor` が解決しない。 |
+| `orphan_pages` | どこからもリンクされていない Layer B ドキュメント。 |
+| `todo_density` | doc あたりの `TODO` / `FIXME` / `XXX` / `TBD` / `[要確認]` マーカー数。 |
+
+**Layer A** (ペア管理されるドキュメント) と **Layer B** (独立した
+prose ドキュメント) で観測対象が異なる。Layer A は
+`.heal/doc_pairs.json` に doc ⇔ src の対応を持たせる必要があり、
+バンドル skill `/heal-doc-pair-setup` が生成する。Layer B は
+`standalone` の include / exclude glob で自動収集される。
+
+外部リンクチェックや実行可能例の検証は scope 外 (HEAL はネットワーク
+アクセスをしない方針 — HTTP リンクは CI 側の `lychee` / `linkchecker`
+に委譲)。
+
 ## `[diff]`
 
 `heal diff` の worktree モード（要求された git ref が

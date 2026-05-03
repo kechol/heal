@@ -52,8 +52,11 @@ use crate::core::severity::SeverityCounts;
 /// Stable schema version for [`FindingsRecord`]. Bump on breaking
 /// field renames so the reader can skip records it can't decode rather
 /// than failing the whole stream. v2 renamed `check_id` → `id` and
-/// `regressed_check_id` → `regressed_in_record_id`.
-pub const FINDINGS_RECORD_VERSION: u32 = 2;
+/// `regressed_check_id` → `regressed_in_record_id`. v3 added the docs
+/// observer family (`doc_freshness`, `doc_drift`, `doc_coverage`,
+/// `doc_link_health`, `orphan_pages`, `todo_density`) — old caches
+/// silently invalidate so the next run rewrites under the new schema.
+pub const FINDINGS_RECORD_VERSION: u32 = 3;
 
 /// One execution of `heal status`. The unit of read in the cache:
 /// `latest.json` holds the single most-recent record. `heal diff` reads

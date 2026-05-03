@@ -19,9 +19,12 @@ Documentation: <https://kechol.github.io/heal/>
 | Churn / Change Coupling / Hotspot               | Language-agnostic — driven by `git log`, applies everywhere. |
 | Complexity (CCN + Cognitive) / Duplication       | TypeScript / JavaScript / Python / Go / Scala / Rust.      |
 | LCOM                                            | TypeScript / JavaScript / Python / Rust. (Go has no class scope; Scala awaits the LSP backend.) |
+| Docs (drift / freshness / coverage / orphans / TODO density) | Markdown / RST docs paired against the same set of source languages. Off by default — enable via `[features.docs]` in `.heal/config.toml`. |
 
 Hotspot composes complexity with churn, so on a language without a
 tree-sitter grammar enabled it falls back to a churn-only signal.
+When `[features.docs]` is on, hotspot scores get an additional boost
+when the file's paired doc has fallen behind.
 
 > ⚠️ **Status: v0.2 in progress.** macOS / Linux only.
 

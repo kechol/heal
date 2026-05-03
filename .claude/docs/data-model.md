@@ -246,14 +246,25 @@ pub struct SeverityCounts { critical: u32, high: u32, medium: u32, ok: u32 }
 Tree:
 
 ```
-Config { project, git, metrics, policy, diff }
+Config { project, git, metrics, policy, diff, features }
   ├── ProjectConfig { response_language, workspaces: Vec<WorkspaceOverlay> }
   ├── GitConfig { since_days = 90, exclude_paths }
   ├── MetricsConfig { top_n = 5, loc, churn, hotspot, change_coupling,
   │                   duplication, ccn, cognitive, lcom }
   ├── PolicyConfig { drain, rules }
-  └── DiffConfig { max_loc_threshold = 200_000 }
+  ├── DiffConfig { max_loc_threshold = 200_000 }
+  └── FeaturesConfig { docs }
+        └── DocsConfig { enabled = false, pairs_path = ".heal/doc_pairs.json",
+                          standalone, doc_freshness }
+              ├── StandaloneDocsConfig { include, exclude }
+              └── DocFreshnessConfig { high_commits = 5, critical_commits = 20 }
 ```
+
+`DuplicationConfig` adds a `docs_min_tokens = 100` field that the
+Markdown duplication pass uses when `[features.docs]` is on. The
+field is on `DuplicationConfig` rather than under `[features.docs]`
+because the underlying observer is `Duplication`; gating logic in
+`run_all` skips the Markdown pass when the feature flag is off.
 
 ### Schema invariants
 

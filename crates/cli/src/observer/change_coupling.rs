@@ -1026,6 +1026,13 @@ mod pair_class_tests {
                 duplication: None,
                 hotspot: None,
                 lcom: None,
+                doc_pairs: None,
+                doc_freshness: None,
+                doc_drift: None,
+                doc_coverage: None,
+                doc_link_health: None,
+                orphan_pages: None,
+                todo_density: None,
             }
         }
 

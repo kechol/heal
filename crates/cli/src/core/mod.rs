@@ -4,6 +4,7 @@
 pub mod accepted;
 pub mod calibration;
 pub mod config;
+pub mod doc_pairs;
 pub mod error;
 pub mod finding;
 pub mod findings_cache;

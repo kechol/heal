@@ -75,5 +75,11 @@ pub(super) fn all_sections() -> Vec<Box<dyn MetricSection>> {
         Box::new(super::duplication::DuplicationSection),
         Box::new(super::hotspot::HotspotSection),
         Box::new(super::lcom::LcomSection),
+        Box::new(super::doc_freshness::DocFreshnessSection),
+        Box::new(super::doc_drift::DocDriftSection),
+        Box::new(super::doc_coverage::DocCoverageSection),
+        Box::new(super::doc_link_health::DocLinkHealthSection),
+        Box::new(super::orphan_pages::OrphanPagesSection),
+        Box::new(super::todo_density::TodoDensitySection),
     ]
 }

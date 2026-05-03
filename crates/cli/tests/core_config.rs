@@ -724,6 +724,80 @@ fn assign_workspace_returns_none_for_files_outside_any_workspace() {
 }
 
 #[test]
+fn features_docs_default_disabled() {
+    let cfg: Config = Config::from_toml_str("").unwrap();
+    assert!(!cfg.features.docs.enabled);
+    assert_eq!(cfg.features.docs.pairs_path, ".heal/doc_pairs.json");
+    assert_eq!(cfg.features.docs.doc_freshness.high_commits, 5);
+    assert_eq!(cfg.features.docs.doc_freshness.critical_commits, 20);
+    // Standalone defaults pre-populate sensible Markdown / RST globs.
+    assert!(cfg
+        .features
+        .docs
+        .standalone
+        .include
+        .iter()
+        .any(|p| p == "**/*.md"));
+    // ADR / CHANGELOG live outside the drift universe by default.
+    assert!(cfg
+        .features
+        .docs
+        .standalone
+        .exclude
+        .iter()
+        .any(|p| p.starts_with("CHANGELOG")));
+}
+
+#[test]
+fn features_docs_enable_round_trips() {
+    let cfg = r#"
+        [features.docs]
+        enabled = true
+        pairs_path = ".heal/custom_pairs.json"
+
+        [features.docs.doc_freshness]
+        high_commits = 3
+        critical_commits = 12
+
+        [features.docs.standalone]
+        include = ["docs/**/*.md"]
+        exclude = ["docs/legacy/**"]
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    assert!(parsed.features.docs.enabled);
+    assert_eq!(parsed.features.docs.pairs_path, ".heal/custom_pairs.json");
+    assert_eq!(parsed.features.docs.doc_freshness.high_commits, 3);
+    assert_eq!(parsed.features.docs.doc_freshness.critical_commits, 12);
+    assert_eq!(
+        parsed.features.docs.standalone.include,
+        vec!["docs/**/*.md".to_string()]
+    );
+    assert_eq!(
+        parsed.features.docs.standalone.exclude,
+        vec!["docs/legacy/**".to_string()]
+    );
+}
+
+#[test]
+fn features_docs_rejects_unknown_field() {
+    let bad = r"
+        [features.docs]
+        enabled = true
+        bogus = 1
+    ";
+    assert!(Config::from_toml_str(bad).is_err());
+}
+
+#[test]
+fn features_docs_freshness_rejects_unknown_field() {
+    let bad = r"
+        [features.docs.doc_freshness]
+        bogus = 1
+    ";
+    assert!(Config::from_toml_str(bad).is_err());
+}
+
+#[test]
 fn assign_workspace_segment_wise_match_not_substring() {
     let cfg = r#"
         [[project.workspaces]]

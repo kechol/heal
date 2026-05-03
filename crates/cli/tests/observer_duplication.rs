@@ -1,7 +1,9 @@
 //! Integration coverage for `DuplicationObserver`: tempdir fixtures
 //! exercising tokenization, bucketing, and greedy block extension.
 
-use heal_cli::observer::duplication::DuplicationObserver;
+use std::path::PathBuf;
+
+use heal_cli::observer::duplication::{DocsDuplicationInputs, DuplicationObserver};
 
 mod common;
 use common::write;
@@ -12,6 +14,7 @@ fn observer(min_tokens: u32) -> DuplicationObserver {
         excluded: Vec::new(),
         min_tokens,
         workspace: None,
+        docs: None,
     }
 }
 
@@ -109,6 +112,7 @@ fn excluded_substrings_skip_files() {
         excluded: vec!["vendor".to_string()],
         min_tokens: 20,
         workspace: None,
+        docs: None,
     };
     let report = observer.scan(dir.path());
     // Only one file remains after exclusion → nothing to compare against.
@@ -145,6 +149,72 @@ fn worst_n_blocks_truncates_in_existing_order() {
 
     // n exceeding length returns everything available.
     assert_eq!(report.worst_n_blocks(99).len(), report.blocks.len());
+}
+
+#[test]
+fn markdown_duplicate_pass_detects_repeated_prose() {
+    let dir = tempfile::tempdir().unwrap();
+    // A long enough prose block to clear the docs window. Repeated
+    // verbatim across two docs.
+    let prose = "this is a long passage about installing the cli that we copy across docs \
+                 because the maintainer never extracted it into a single shared include and \
+                 the writers each pasted the same instructions into their own pages and now \
+                 every page repeats the same sentences about installation and configuration \
+                 prerequisites and that pattern is what duplication detection is meant to surface.\n";
+    write(dir.path(), "docs/install.md", prose);
+    write(dir.path(), "docs/getting_started.md", prose);
+
+    let mut o = observer(20);
+    o.docs = Some(DocsDuplicationInputs {
+        min_tokens: 30,
+        doc_paths: vec![
+            PathBuf::from("docs/install.md"),
+            PathBuf::from("docs/getting_started.md"),
+        ],
+    });
+    let report = o.scan(dir.path());
+    assert!(
+        !report.blocks.is_empty(),
+        "expected at least one duplicate block across docs",
+    );
+    assert!(report.blocks.iter().any(|b| {
+        let paths: Vec<String> = b
+            .locations
+            .iter()
+            .map(|l| l.path.to_string_lossy().into_owned())
+            .collect();
+        paths.contains(&"docs/install.md".to_string())
+            && paths.contains(&"docs/getting_started.md".to_string())
+    }));
+}
+
+#[test]
+fn markdown_duplicate_pass_skips_fenced_code_blocks() {
+    let dir = tempfile::tempdir().unwrap();
+    // Identical fenced code block in both docs — the prose around it
+    // is unique. The Markdown pass should NOT flag the fenced block.
+    let body_a =
+        "intro paragraph one\n\n```\nfn shared(){println!(\"hi\");}\n```\n\nunique tail a\n";
+    let body_b =
+        "intro paragraph two\n\n```\nfn shared(){println!(\"hi\");}\n```\n\nunique tail b\n";
+    write(dir.path(), "docs/a.md", body_a);
+    write(dir.path(), "docs/b.md", body_b);
+
+    let mut o = observer(50); // high enough to skip code path
+    o.docs = Some(DocsDuplicationInputs {
+        min_tokens: 5,
+        doc_paths: vec![PathBuf::from("docs/a.md"), PathBuf::from("docs/b.md")],
+    });
+    let report = o.scan(dir.path());
+    // No block should reference the fenced content since fences are
+    // stripped during tokenization.
+    assert!(
+        report.blocks.is_empty()
+            || !report.blocks.iter().any(|b| b
+                .locations
+                .iter()
+                .any(|l| l.path.to_string_lossy().contains("docs/"))),
+    );
 }
 
 #[cfg(feature = "lang-typescript")]

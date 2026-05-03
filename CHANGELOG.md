@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+### ⚠ BREAKING
+
+- **`FINDINGS_RECORD_VERSION` bumped to 3.** Caches written by older
+  HEAL versions silently invalidate on read; the next `heal status`
+  rewrites `.heal/findings/latest.json` under the new schema. Six
+  new `Finding.metric` strings (`doc_freshness`, `doc_drift`,
+  `doc_coverage`, `doc_link_health`, `orphan_pages`, `todo_density`)
+  are now part of the JSON contract.
+
+### Features
+
+- **`[features.docs]` (default disabled): documentation as a
+  first-class observer family.** Opt-in feature flag in
+  `.heal/config.toml` adds six observers that track
+  documentation drift against the source it describes:
+  `doc_freshness`, `doc_drift` (Type 1 dangling identifier),
+  `doc_coverage` (initial pass), `doc_link_health` (internal
+  links only — `scope.md` R5 forbids HTTP), `orphan_pages`, and
+  `todo_density`.
+- **`.heal/doc_pairs.json` SSoT.** Layer A pair mappings (which
+  doc describes which src) live in a tracked JSON file generated
+  by the new `/heal-doc-pair-setup` skill. The HEAL binary is a
+  read-only consumer.
+- **Three new bundled skills.** `/heal-doc-pair-setup` writes the
+  SSoT, `/heal-doc-review` proposes a Diátaxis-grounded fix
+  TODO, `/heal-doc-patch` mechanically drains the docs slice of
+  the cache. Borrows the loop / refusal pattern from
+  `/heal-code-patch`; the allow-list / escalate-list is doc-
+  specific.
+- **Markdown duplication detection.** When `[features.docs]` is
+  on, the existing `Duplication` observer adds a Markdown / RST
+  pass with its own `docs_min_tokens` window (default 100 tokens)
+  and a code-fence-stripping tokenizer.
+- **Hotspot ↔ doc drift integration.** `hotspot::compose` now
+  optionally consumes a `DocFreshnessReport`; files whose paired
+  doc is stale receive a multiplicative score boost (capped at
+  1.5×) so reader-misleading hotspots rank above clean ones.
+
 ## v0.3.2 — 2026-05-04
 
 ### Features

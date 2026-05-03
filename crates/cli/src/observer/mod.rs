@@ -7,12 +7,20 @@ use serde::{Deserialize, Serialize};
 pub mod change_coupling;
 pub mod churn;
 pub mod complexity;
+pub mod doc_coverage;
+pub mod doc_drift;
+pub mod doc_freshness;
+pub mod doc_link_health;
+pub(crate) mod doc_markdown;
+pub mod doc_walk;
 pub mod duplication;
 pub mod git;
 pub mod hotspot;
 pub mod lang;
 pub mod lcom;
 pub mod loc;
+pub mod orphan_pages;
+pub mod todo_density;
 mod walk;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
