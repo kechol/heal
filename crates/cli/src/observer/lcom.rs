@@ -98,7 +98,10 @@ impl LcomObserver {
             let Ok(parsed) = parse(source, lang) else {
                 continue;
             };
-            for class in classes_in(&parsed, &path) {
+            let rel = path
+                .strip_prefix(root)
+                .map_or_else(|_| path.clone(), Path::to_path_buf);
+            for class in classes_in(&parsed, &rel) {
                 report.classes.push(class);
             }
         }
@@ -948,5 +951,48 @@ class Bridged:
         let classes = run_py(src);
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].cluster_count, 1);
+    }
+
+    #[cfg(feature = "lang-rust")]
+    #[test]
+    fn scan_strips_project_root_from_class_file() {
+        // Regression: LCOM observer used to store absolute paths in
+        // `ClassLcom.file` because `walk_supported_files_under` returns
+        // absolute paths and `scan` forwarded them verbatim. Absolute
+        // paths flow into `Finding.location.file` and `Finding::make_id`,
+        // breaking deterministic id stability across machines and
+        // teammates' `fixed.json` reconciliation. Every other observer
+        // calls `path.strip_prefix(root)` after the walk; this pins
+        // that contract for `LcomObserver::scan`.
+        use std::fs;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let src = "
+struct Counter { a: u32, b: u32 }
+impl Counter {
+    fn use_a(&self) -> u32 { self.a }
+    fn use_b(&self) -> u32 { self.b }
+}
+";
+        fs::write(tmp.path().join("counter.rs"), src).unwrap();
+
+        let observer = LcomObserver {
+            enabled: true,
+            min_cluster_count: 2,
+            ..LcomObserver::default()
+        };
+        let report = observer.scan(tmp.path());
+
+        assert!(
+            !report.classes.is_empty(),
+            "fixture must produce at least one class",
+        );
+        for class in &report.classes {
+            assert!(
+                class.file.is_relative(),
+                "ClassLcom.file must be project-relative; got {:?}",
+                class.file,
+            );
+        }
     }
 }

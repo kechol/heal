@@ -4,7 +4,7 @@ use std::io::{self, Write};
 
 use serde_json::json;
 
-use super::section::{MetricSection, SectionCtx};
+use super::section::{write_section_header, MetricSection, SectionCtx};
 use crate::cli::MetricKind;
 
 pub(super) struct ChangeCouplingSection;
@@ -19,18 +19,18 @@ impl MetricSection for ChangeCouplingSection {
             return Ok(());
         };
         let top_n = ctx.cfg.metrics.top_n_change_coupling();
-        writeln!(w)?;
+        write_section_header("Change Coupling", ctx, w)?;
         if report.pairs.is_empty() {
             writeln!(
                 w,
-                "  change coupling: no pairs at min_coupling={} ({} commits scanned)",
+                "  no pairs at min_coupling={} ({} commits scanned)",
                 report.min_coupling, report.totals.commits_considered,
             )?;
             return Ok(());
         }
         writeln!(
             w,
-            "  change coupling: {} pairs across {} files (min_coupling={}, {} commits scanned)",
+            "  {} pairs across {} files (min_coupling={}, {} commits scanned)",
             report.totals.pairs,
             report.totals.files,
             report.min_coupling,

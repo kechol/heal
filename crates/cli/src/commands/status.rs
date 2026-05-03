@@ -9,14 +9,15 @@
 //! (via `HotspotCalibration`), and write a fresh `FindingsRecord`. This
 //! is still the single writer of `.heal/findings/`.
 //!
-//! The renderer groups findings into three drain tiers driven by the
-//! `[policy.drain]` config: **Drain queue** (T0 / `must`), **Should
-//! drain** (T1 / `should`), and **Advisory** (the rest above
-//! `Severity::Ok`). Default `must = ["critical:hotspot"]`,
-//! `should = ["critical", "high:hotspot"]`. Within each tier rows are
-//! sorted by `Severity` 🔥 desc. Advisory + Ok are hidden unless
+//! The renderer groups findings by `(Severity, hotspot)` and labels the
+//! sections by Severity (🔴 Critical 🔥 → 🔴 Critical → 🟠 High 🔥 → …).
+//! Each section header carries a `[T0 Must drain]` / `[T1 Should drain]`
+//! / `[Advisory]` suffix derived from `[policy.drain]` so the link to
+//! `/heal-code-patch` stays explicit. Default policy:
+//! `must = ["critical:hotspot"]`, `should = ["critical", "high:hotspot"]`.
+//! Sections below `🟠 High 🔥` (plain High, Medium, Ok) are hidden unless
 //! `--all` is passed; the footer surfaces a "next steps" line pointing
-//! at `claude /heal-code-patch` for the Drain queue.
+//! at `claude /heal-code-patch` for the Must-drain queue.
 //!
 //! `--json` emits the `FindingsRecord` in the exact shape of `latest.json`
 //! so skills and CI scripts have one stable contract.
@@ -246,9 +247,6 @@ pub(super) fn render(
     out: &mut impl Write,
 ) -> Result<()> {
     let drain = &cfg.policy.drain;
-    let title = ansi_wrap(ANSI_CYAN, "── HEAL status", colorize);
-    let bar: String = "─".repeat(50);
-    writeln!(out, "{title} {bar}")?;
     writeln!(
         out,
         "  Calibrated: {}  ({} findings, head {})",
@@ -288,91 +286,77 @@ pub(super) fn render(
 
     let show_low = filters.all || matches!(filters.severity, Some(Severity::Medium | Severity::Ok));
 
-    // Single pass: bucket each finding into its drain tier, the Ok pile,
-    // or — when relevant — the Ok 🔥 pre-section pile.
-    let mut hotspot_oks: Vec<&Finding> = Vec::new();
-    let mut by_tier: BTreeMap<DrainTier, Vec<&Finding>> = BTreeMap::new();
-    let mut ok_findings: Vec<&Finding> = Vec::new();
+    // Bucket by (severity, hotspot). Sections are labelled by Severity so
+    // the header counts (`[critical] N`) line up with the visible content;
+    // the drain-tier (`[T0 Must drain]` etc.) is inferred from
+    // `[policy.drain]` and shown as a per-section suffix so the link to
+    // `/heal-code-patch` stays explicit without overriding the labels.
+    let mut buckets: BTreeMap<(Severity, bool), Vec<&Finding>> = BTreeMap::new();
     for f in record.findings.iter().filter(|f| filters.passes(f)) {
         if let Some(min) = filters.severity {
             if f.severity < min {
                 continue;
             }
         }
-        if f.severity == Severity::Ok {
-            if show_low && f.hotspot {
-                hotspot_oks.push(f);
-            }
-            ok_findings.push(f);
-            continue;
-        }
-        if let Some(tier) = drain.tier_for(f) {
-            by_tier.entry(tier).or_default().push(f);
-        }
+        buckets.entry((f.severity, f.hotspot)).or_default().push(f);
     }
 
-    if !hotspot_oks.is_empty() {
-        render_tier_section(
-            "Ok 🔥 (low Severity, top-10% hotspot)",
-            ANSI_CYAN,
-            &hotspot_oks,
-            filters.top,
-            colorize,
-            out,
-        )?;
-        writeln!(out)?;
-    }
-
-    let tiers: &[(DrainTier, &str, &str, bool)] = &[
-        (DrainTier::Must, "🎯 Drain queue (T0)", ANSI_RED, true),
-        (DrainTier::Should, "🟡 Should drain (T1)", ANSI_YELLOW, true),
-        // Advisory only renders under --all (or explicit low severity).
-        (DrainTier::Advisory, "ℹ️  Advisory", ANSI_CYAN, show_low),
+    // Default-visible sections cover the drain queue + should-drain rows
+    // under the literature-anchored policy default. Everything below the
+    // Should line is gated behind `--all` (or an explicit low `--severity`).
+    let order: &[(Severity, bool, &str, &str, bool)] = &[
+        (Severity::Critical, true, "🔴 Critical 🔥", ANSI_RED, true),
+        (Severity::Critical, false, "🔴 Critical", ANSI_RED, true),
+        (Severity::High, true, "🟠 High 🔥", ANSI_YELLOW, true),
+        (Severity::High, false, "🟠 High", ANSI_YELLOW, show_low),
+        (
+            Severity::Medium,
+            true,
+            "🟡 Medium 🔥",
+            ANSI_YELLOW,
+            show_low,
+        ),
+        (Severity::Medium, false, "🟡 Medium", ANSI_YELLOW, show_low),
+        (Severity::Ok, true, "✅ Ok 🔥", ANSI_CYAN, show_low),
+        (Severity::Ok, false, "✅ Ok", ANSI_GREEN, show_low),
     ];
 
     let mut hidden_count = 0usize;
-    for (tier, label, color, visible) in tiers {
-        let Some(items) = by_tier.get(tier) else {
+    for (sev, hot, label, color, visible) in order {
+        let Some(items) = buckets.get(&(*sev, *hot)) else {
             continue;
         };
         if !*visible {
             hidden_count += items.len();
             continue;
         }
-        render_tier_section(label, color, items, filters.top, colorize, out)?;
+        let suffix = drain
+            .tier_for(items[0])
+            .map(|t| {
+                let name = match t {
+                    DrainTier::Must => "T0 Must drain",
+                    DrainTier::Should => "T1 Should drain",
+                    DrainTier::Advisory => "Advisory",
+                };
+                format!(" [{name}]")
+            })
+            .unwrap_or_default();
+        let full_label = format!("{label}{suffix}");
+        render_tier_section(&full_label, color, items, filters.top, colorize, out)?;
     }
 
-    if show_low && !ok_findings.is_empty() {
-        render_tier_section(
-            "✅ Ok",
-            ANSI_GREEN,
-            &ok_findings,
-            filters.top,
-            colorize,
-            out,
-        )?;
-    } else if !show_low && (hidden_count > 0 || !ok_findings.is_empty()) {
-        let advisory_hidden = hidden_count;
-        let ok_hidden = ok_findings.len();
+    if !show_low && hidden_count > 0 {
         writeln!(
             out,
-            "  Hidden: {advisory_hidden} advisory, {ok_hidden} Ok findings  [pass --all to show]",
+            "  Hidden: {hidden_count} findings  [pass --all to show]",
         )?;
     }
 
     writeln!(out)?;
-    let must_count = by_tier.get(&DrainTier::Must).map_or(0, Vec::len);
-    let should_count = by_tier.get(&DrainTier::Should).map_or(0, Vec::len);
-    writeln!(
-        out,
-        "  Goal: 0 in Drain queue  (T0: {must_count}, T1: {should_count})",
-    )?;
     writeln!(
         out,
         "  Next: `claude /heal-code-patch` drains the T0 queue one finding per commit",
     )?;
-    let close: String = "─".repeat(60);
-    writeln!(out, "{close}")?;
     Ok(())
 }
 
@@ -519,58 +503,71 @@ mod tests {
     }
 
     #[test]
-    fn drain_queue_renders_before_should_drain() {
-        // Critical 🔥 → Drain queue (T0); plain Critical → Should drain (T1).
-        // Drain queue must print first so the operator sees must-fix items
-        // above bandwidth-permitting items.
+    fn critical_hotspot_renders_before_plain_critical() {
+        // Critical 🔥 (T0 Must drain) must print before plain Critical
+        // (T1 Should drain) so the operator sees must-fix items first.
         let rec = record(vec![
             finding("ccn", "src/cool.ts", Severity::Critical, false),
             finding("ccn", "src/hot.ts", Severity::Critical, true),
         ]);
         let out = render_to_string(&rec, &default_filters());
-        let must_idx = out.find("Drain queue").expect("Drain queue section");
-        let should_idx = out.find("Should drain").expect("Should drain section");
+        let hot_idx = out.find("Critical 🔥").expect("Critical 🔥 section");
+        let plain_idx = {
+            // "Critical 🔥" header contains "Critical"; find the second occurrence.
+            let after_hot = &out[hot_idx + "Critical 🔥".len()..];
+            after_hot
+                .find("🔴 Critical ")
+                .map(|i| hot_idx + "Critical 🔥".len() + i)
+                .or_else(|| {
+                    after_hot
+                        .find("🔴 Critical")
+                        .map(|i| hot_idx + "Critical 🔥".len() + i)
+                })
+                .expect("plain Critical section")
+        };
         assert!(
-            must_idx < should_idx,
-            "Drain queue must render before Should drain:\n{out}",
+            hot_idx < plain_idx,
+            "Critical 🔥 must render before plain Critical:\n{out}",
         );
-        // Both files appear in their respective tier sections.
+        assert!(out.contains("[T0 Must drain]"), "T0 tier suffix:\n{out}");
+        assert!(out.contains("[T1 Should drain]"), "T1 tier suffix:\n{out}");
         assert!(out.contains("src/hot.ts"));
         assert!(out.contains("src/cool.ts"));
     }
 
     #[test]
-    fn default_hides_advisory_and_ok() {
+    fn default_hides_medium_and_ok() {
         let rec = record(vec![
-            finding("ccn", "src/hot.ts", Severity::Critical, true), // → T0
-            finding("ccn", "src/lukewarm.ts", Severity::Medium, false), // → Advisory
-            finding("ccn", "src/cold.ts", Severity::Ok, false),     // → Ok
+            finding("ccn", "src/hot.ts", Severity::Critical, true), // visible
+            finding("ccn", "src/lukewarm.ts", Severity::Medium, false), // hidden
+            finding("ccn", "src/cold.ts", Severity::Ok, false),     // hidden
         ]);
         let out = render_to_string(&rec, &default_filters());
-        assert!(out.contains("Drain queue"), "T0 must render");
+        assert!(out.contains("🔴 Critical 🔥"), "Critical 🔥 must render");
         assert!(
-            !out.contains("Advisory"),
-            "Advisory must be hidden by default:\n{out}"
+            !out.contains("🟡 Medium"),
+            "Medium must be hidden by default:\n{out}"
         );
         assert!(
-            out.contains("1 advisory, 1 Ok"),
+            !out.contains("✅ Ok"),
+            "Ok must be hidden by default:\n{out}"
+        );
+        assert!(
+            out.contains("Hidden: 2 findings"),
             "Hidden summary must surface counts:\n{out}",
         );
     }
 
     #[test]
-    fn all_flag_shows_advisory_and_ok() {
+    fn all_flag_shows_medium_and_ok() {
         let rec = record(vec![
-            finding("ccn", "src/lukewarm.ts", Severity::Medium, false), // → Advisory
-            finding("ccn", "src/cold.ts", Severity::Ok, false),         // → Ok
+            finding("ccn", "src/lukewarm.ts", Severity::Medium, false),
+            finding("ccn", "src/cold.ts", Severity::Ok, false),
         ]);
         let mut filters = default_filters();
         filters.all = true;
         let out = render_to_string(&rec, &filters);
-        assert!(
-            out.contains("Advisory"),
-            "Advisory must render with --all:\n{out}"
-        );
+        assert!(out.contains("🟡 Medium"), "Medium must render with --all");
         assert!(out.contains("✅ Ok"), "Ok section must render with --all");
     }
 
@@ -602,17 +599,14 @@ mod tests {
 
     #[test]
     fn severity_filter_drops_below_floor() {
-        // src/warm.ts (High, no hotspot) lands in Advisory under default
-        // policy. `--severity high` keeps it (>= High); `--severity` also
-        // implies show_low so Advisory becomes visible.
         let rec = record(vec![
-            finding("ccn", "src/hot.ts", Severity::Critical, false), // → Should
-            finding("ccn", "src/warm.ts", Severity::High, false),    // → Advisory
-            finding("ccn", "src/lukewarm.ts", Severity::Medium, false), // → Advisory but filtered out
+            finding("ccn", "src/hot.ts", Severity::Critical, false),
+            finding("ccn", "src/warm.ts", Severity::High, false),
+            finding("ccn", "src/lukewarm.ts", Severity::Medium, false),
         ]);
         let mut filters = default_filters();
         filters.severity = Some(Severity::High);
-        filters.all = true; // make Advisory visible
+        filters.all = true; // make low-severity sections visible
         let out = render_to_string(&rec, &filters);
         assert!(out.contains("src/hot.ts"));
         assert!(out.contains("src/warm.ts"));
@@ -623,25 +617,22 @@ mod tests {
     }
 
     #[test]
-    fn all_flag_surfaces_low_severity_hotspot_section() {
-        // Ok 🔥 — touched-a-lot but below floor. Appears in the dedicated
-        // pre-section as well as the Ok bucket under --all.
+    fn ok_hotspot_renders_after_drain_sections_under_all() {
+        // Ok 🔥 — touched-a-lot but below floor. Must render below
+        // Critical / High sections so the drain queue stays at the top.
         let rec = record(vec![
+            finding("ccn", "src/hot.ts", Severity::Critical, true),
             finding("hotspot", "src/touch_a_lot.ts", Severity::Ok, true),
-            finding("hotspot", "src/quiet.ts", Severity::Ok, false),
         ]);
         let mut filters = default_filters();
         filters.all = true;
         let out = render_to_string(&rec, &filters);
+        let critical_idx = out.find("🔴 Critical 🔥").expect("Critical 🔥 section");
+        let ok_hot_idx = out.find("✅ Ok 🔥").expect("Ok 🔥 section");
         assert!(
-            out.contains("Ok 🔥"),
-            "low-Severity hotspot section must appear under --all:\n{out}",
+            critical_idx < ok_hot_idx,
+            "Drain queue (Critical 🔥) must render above Ok 🔥:\n{out}",
         );
-        assert!(
-            out.contains("src/touch_a_lot.ts"),
-            "Ok-with-hotspot must surface in the section:\n{out}",
-        );
-        assert!(out.contains("src/quiet.ts"));
     }
 
     #[test]
@@ -690,14 +681,18 @@ mod tests {
     }
 
     #[test]
-    fn empty_record_renders_goal_line() {
+    fn empty_record_renders_next_hint() {
         let rec = record(Vec::new());
         let out = render_to_string(&rec, &default_filters());
-        assert!(
-            out.contains("Goal: 0 in Drain queue"),
-            "goal line must reference Drain queue:\n{out}",
-        );
         assert!(out.contains("Next:"));
         assert!(out.contains("/heal-code-patch"));
+        assert!(
+            !out.contains("── HEAL status"),
+            "leading divider should be removed:\n{out}",
+        );
+        assert!(
+            !out.contains("Goal:"),
+            "trailing Goal line should be removed:\n{out}",
+        );
     }
 }

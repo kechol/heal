@@ -5,7 +5,7 @@ use std::io::{self, Write};
 
 use serde_json::json;
 
-use super::section::{MetricSection, SectionCtx};
+use super::section::{write_section_header, MetricSection, SectionCtx};
 use crate::cli::MetricKind;
 
 pub(super) struct ChurnSection;
@@ -20,21 +20,17 @@ impl MetricSection for ChurnSection {
             return Ok(());
         };
         let top_n = ctx.cfg.metrics.top_n_churn();
-        writeln!(w)?;
+        write_section_header("Churn", ctx, w)?;
         if report.files.is_empty() {
-            writeln!(
-                w,
-                "  churn: no commits in the last {} days",
-                report.since_days,
-            )?;
+            writeln!(w, "  no commits in the last {} days", report.since_days)?;
             return Ok(());
         }
         writeln!(
             w,
-            "  churn (last {} days): {} files across {} commits (+{}/-{} lines)",
-            report.since_days,
+            "  {} files across {} commits (last {} days, +{}/-{} lines)",
             report.totals.files,
             report.totals.commits,
+            report.since_days,
             report.totals.lines_added,
             report.totals.lines_deleted,
         )?;

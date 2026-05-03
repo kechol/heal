@@ -17,7 +17,7 @@ mod lcom;
 mod loc;
 mod section;
 
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 
 use anyhow::Result;
@@ -69,12 +69,13 @@ pub fn run(
     }
     let cfg = cfg.expect("cfg_exists branch implies cfg loaded");
     let reports = reports.expect("cfg present implies reports built");
+    let stdout = std::io::stdout();
+    let colorize = stdout.is_terminal();
     let ctx = SectionCtx {
         cfg: &cfg,
         reports: &reports,
+        colorize,
     };
-
-    let stdout = std::io::stdout();
     let mut w = stdout.lock();
     write_header(&mut w, project, &paths, workspace)?;
     for s in &sections {
@@ -123,7 +124,11 @@ fn build_json(
         payload.insert("workspace".into(), json!(ws.display().to_string()));
     }
     if let (Some(cfg), Some(reports)) = (cfg, reports) {
-        let ctx = SectionCtx { cfg, reports };
+        let ctx = SectionCtx {
+            cfg,
+            reports,
+            colorize: false,
+        };
         // Raw reports balloon for large repos (the `worst` precomputation
         // already captures what filtered consumers need); only emit them
         // in the unfiltered path so `--metric X --json` stays lean for

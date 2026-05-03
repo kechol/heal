@@ -4,7 +4,7 @@ use std::io::{self, Write};
 
 use serde_json::json;
 
-use super::section::{MetricSection, SectionCtx};
+use super::section::{write_section_header, MetricSection, SectionCtx};
 use crate::cli::MetricKind;
 
 pub(super) struct LcomSection;
@@ -19,20 +19,20 @@ impl MetricSection for LcomSection {
             return Ok(());
         };
         let top_n = ctx.cfg.metrics.top_n_lcom();
-        writeln!(w)?;
+        write_section_header("LCOM", ctx, w)?;
         if report.classes.is_empty() {
             writeln!(
                 w,
-                "  lcom: no classes scanned (TS / Rust class scope only in v0.2)",
+                "  no classes scanned (supported: TS / JS / Python / Rust)",
             )?;
             return Ok(());
         }
         writeln!(
             w,
-            "  lcom: {} classes scanned, {} ≥ min_cluster_count={} (max clusters {})",
-            report.totals.classes_scanned,
+            "  {} classes ≥ min_cluster_count={} across {} scanned (max clusters={})",
             report.totals.classes_with_lcom,
             report.min_cluster_count,
+            report.totals.classes_scanned,
             report.totals.max_cluster_count,
         )?;
         if report.totals.classes_with_lcom == 0 {

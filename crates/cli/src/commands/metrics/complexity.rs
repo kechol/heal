@@ -4,7 +4,7 @@ use std::io::{self, Write};
 
 use serde_json::json;
 
-use super::section::{MetricSection, SectionCtx};
+use super::section::{write_section_header, MetricSection, SectionCtx};
 use crate::cli::MetricKind;
 use crate::observer::complexity::{ComplexityMetric, ComplexityReport};
 
@@ -22,14 +22,14 @@ impl MetricSection for ComplexitySection {
         if !obs.ccn_enabled && !obs.cognitive_enabled {
             return Ok(());
         }
-        writeln!(w)?;
+        write_section_header("Complexity", ctx, w)?;
         if report.files.is_empty() {
-            writeln!(w, "  complexity: no supported source files found")?;
+            writeln!(w, "  no supported source files found")?;
             return Ok(());
         }
         writeln!(
             w,
-            "  complexity: {} functions across {} files (max CCN {}, max Cognitive {})",
+            "  {} functions across {} files (max CCN={}, max Cognitive={})",
             report.totals.functions,
             report.totals.files,
             report.totals.max_ccn,

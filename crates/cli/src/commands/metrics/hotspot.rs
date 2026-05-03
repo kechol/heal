@@ -4,7 +4,7 @@ use std::io::{self, Write};
 
 use serde_json::json;
 
-use super::section::{MetricSection, SectionCtx};
+use super::section::{write_section_header, MetricSection, SectionCtx};
 use crate::cli::MetricKind;
 
 pub(super) struct HotspotSection;
@@ -19,17 +19,14 @@ impl MetricSection for HotspotSection {
             return Ok(());
         };
         let top_n = ctx.cfg.metrics.top_n_hotspot();
-        writeln!(w)?;
+        write_section_header("Hotspot", ctx, w)?;
         if report.entries.is_empty() {
-            writeln!(
-                w,
-                "  hotspot: no files have both churn and complexity signal"
-            )?;
+            writeln!(w, "  no files have both churn and complexity signal")?;
             return Ok(());
         }
         writeln!(
             w,
-            "  hotspot: {} files (max score {:.1})",
+            "  {} files (max score={:.1})",
             report.totals.files, report.totals.max_score,
         )?;
         writeln!(w, "  top hotspots (CCN_sum × commits):")?;

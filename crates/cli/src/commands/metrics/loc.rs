@@ -4,7 +4,7 @@ use std::io::{self, Write};
 
 use serde_json::json;
 
-use super::section::{MetricSection, SectionCtx};
+use super::section::{write_section_header, MetricSection, SectionCtx};
 use crate::cli::MetricKind;
 
 pub(super) struct LocSection;
@@ -17,14 +17,15 @@ impl MetricSection for LocSection {
     fn render_text(&self, ctx: &SectionCtx<'_>, w: &mut dyn Write) -> io::Result<()> {
         let report = &ctx.reports.loc;
         let top_n = ctx.cfg.metrics.top_n_loc();
-        writeln!(w)?;
+        write_section_header("LOC", ctx, w)?;
+        writeln!(
+            w,
+            "  {} LOC across {} files",
+            report.totals.code,
+            report.total_files(),
+        )?;
         if let Some(name) = report.primary.as_deref() {
-            writeln!(
-                w,
-                "  primary language: {name} ({} LOC, {} files total)",
-                report.totals.code,
-                report.total_files(),
-            )?;
+            writeln!(w, "  primary language: {name}")?;
         } else {
             writeln!(w, "  primary language: (none detected)")?;
         }

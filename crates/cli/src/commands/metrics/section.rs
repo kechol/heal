@@ -14,6 +14,7 @@ use std::io::{self, Write};
 
 use crate::cli::MetricKind;
 use crate::core::config::Config;
+use crate::core::term::{ansi_wrap, ANSI_CYAN};
 use crate::observers::ObserverReports;
 
 /// Read-only context handed to every section. Holding `cfg` and the
@@ -22,6 +23,22 @@ use crate::observers::ObserverReports;
 pub(super) struct SectionCtx<'a> {
     pub cfg: &'a Config,
     pub reports: &'a ObserverReports,
+    pub colorize: bool,
+}
+
+/// Write the visual section divider every `MetricSection::render_text`
+/// uses as its first line. Centralised so the divider rule (a blank
+/// line followed by a cyan title bar) stays consistent and skips colour
+/// codes when stdout is not a TTY.
+pub(super) fn write_section_header(
+    label: &str,
+    ctx: &SectionCtx<'_>,
+    w: &mut dyn Write,
+) -> io::Result<()> {
+    writeln!(w)?;
+    let title = format!("── {label} ──");
+    writeln!(w, "{}", ansi_wrap(ANSI_CYAN, &title, ctx.colorize))?;
+    Ok(())
 }
 
 pub(super) trait MetricSection {

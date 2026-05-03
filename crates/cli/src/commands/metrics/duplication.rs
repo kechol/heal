@@ -4,7 +4,7 @@ use std::io::{self, Write};
 
 use serde_json::json;
 
-use super::section::{MetricSection, SectionCtx};
+use super::section::{write_section_header, MetricSection, SectionCtx};
 use crate::cli::MetricKind;
 
 pub(super) struct DuplicationSection;
@@ -19,18 +19,14 @@ impl MetricSection for DuplicationSection {
             return Ok(());
         };
         let top_n = ctx.cfg.metrics.top_n_duplication();
-        writeln!(w)?;
+        write_section_header("Duplication", ctx, w)?;
         if report.blocks.is_empty() {
-            writeln!(
-                w,
-                "  duplication: no blocks ≥ {} tokens detected",
-                report.min_tokens,
-            )?;
+            writeln!(w, "  no blocks ≥ {} tokens detected", report.min_tokens)?;
             return Ok(());
         }
         writeln!(
             w,
-            "  duplication: {} blocks affecting {} files (min_tokens={}, total duplicate tokens {})",
+            "  {} blocks across {} files (min_tokens={}, {} duplicate tokens total)",
             report.totals.duplicate_blocks,
             report.totals.files_affected,
             report.min_tokens,
