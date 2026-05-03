@@ -47,7 +47,7 @@ impl HealPaths {
         self.root.join("findings")
     }
 
-    /// Latest `CheckRecord` mirror, atomically written after every
+    /// Latest `FindingsRecord` mirror, atomically written after every
     /// `heal status`. The single source of truth for "what does the
     /// project look like right now".
     #[must_use]
@@ -66,7 +66,7 @@ impl HealPaths {
     }
 
     /// Regression audit trail. Append-only. Each entry ties a fixed
-    /// finding to the `check_id` that re-detected it.
+    /// finding to the `id` of the `FindingsRecord` that re-detected it.
     #[must_use]
     pub fn findings_regressed_log(&self) -> PathBuf {
         self.findings_dir().join("regressed.jsonl")

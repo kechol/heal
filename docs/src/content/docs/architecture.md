@@ -28,7 +28,7 @@ user: heal status (or `claude /heal-code-patch`)
 heal status  ──►  classify Findings via calibration.toml
                        │
                        ├──►  .heal/findings/latest.json
-                       │       (CheckRecord — the TODO list)
+                       │       (FindingsRecord — the TODO list)
                        │
                        ├──►  reconcile fixed.json ↔ regressed.jsonl
                        │
@@ -51,7 +51,7 @@ After `heal init`:
 │   ├── config.toml                # you edit this (tracked in git)
 │   ├── calibration.toml           # auto — heal init / heal calibrate (tracked in git)
 │   └── findings/
-│       ├── latest.json            # current CheckRecord (TODO list)
+│       ├── latest.json            # current FindingsRecord (TODO list)
 │       ├── fixed.json             # BTreeMap<finding_id, FixedFinding> — bounded
 │       └── regressed.jsonl        # append-only audit trail of re-detected fixes
 │
@@ -95,8 +95,8 @@ writer of `latest.json`, and `heal mark-fixed` is the only writer of
 
 ```json
 {
-  "version": 1,
-  "check_id": "01HKM3Q6Z1B7…",          // ULID
+  "version": 2,
+  "id": "01HKM3Q6Z1B7…",                 // ULID
   "started_at": "2026-04-30T05:14:22Z",
   "head_sha": "a0a6d1a…",
   "worktree_clean": true,

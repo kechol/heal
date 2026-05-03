@@ -16,8 +16,8 @@ the lower entries are for investigation and maintenance.
 | ---------------- | ------------------------------------------------------------------------------------------------------ |
 | `heal init`      | Set up `.heal/`, calibrate, and install the post-commit hook in the current repository.                |
 | `heal skills`    | Install / update / inspect / remove the bundled Claude skill set.                                      |
-| `heal status`    | Render the cached `CheckRecord` from `.heal/findings/latest.json` (or refresh it). The "current TODO". |
-| `heal diff`      | Diff the live worktree against a cached `CheckRecord` (default git ref: `HEAD`). Like `git diff`.      |
+| `heal status`    | Render the cached `FindingsRecord` from `.heal/findings/latest.json` (or refresh it). The "current TODO". |
+| `heal diff`      | Diff the live worktree against a cached `FindingsRecord` (default git ref: `HEAD`). Like `git diff`.      |
 | `heal metrics`   | Per-metric summary recomputed from the current worktree on every invocation.                           |
 | `heal calibrate` | Recalibrate codebase-relative Severity thresholds.                                                     |
 
@@ -128,7 +128,7 @@ heal status --severity critical          # only Critical (and above with --all)
 heal status --feature src/payments       # restrict to one path prefix
 heal status --all                        # show Medium / Ok plus the low-Severity hotspot section
 heal status --top 5                      # cap each Severity bucket at 5 rows
-heal status --json                       # CheckRecord shape on stdout
+heal status --json                       # FindingsRecord shape on stdout
 ```
 
 By default `heal status` is a read-only render of `.heal/findings/latest.json`:
@@ -199,7 +199,7 @@ flat artefacts:
 
 | File                            | Shape                            | Purpose                                                                  |
 | ------------------------------- | -------------------------------- | ------------------------------------------------------------------------ |
-| `.heal/findings/latest.json`    | `CheckRecord` (single object)    | The current TODO list — refreshed by `heal status --refresh`.            |
+| `.heal/findings/latest.json`    | `FindingsRecord` (single object)    | The current TODO list — refreshed by `heal status --refresh`.            |
 | `.heal/findings/fixed.json`     | `BTreeMap<finding_id, FixedFinding>` | Bounded record of fixes claimed by `heal mark-fixed`.                |
 | `.heal/findings/regressed.jsonl`| append-only JSON-lines           | Audit trail for fixes that were re-detected.                             |
 
@@ -217,7 +217,7 @@ browser command — those were removed when the event log was retired.
 
 ## `heal diff`
 
-Diff the live worktree against a cached `CheckRecord` whose `head_sha`
+Diff the live worktree against a cached `FindingsRecord` whose `head_sha`
 matches the resolved git ref. Default ref: `HEAD` ("how does my live
 worktree compare to the last commit?"):
 
@@ -299,7 +299,7 @@ rm -rf .heal/snapshots .heal/logs .heal/docs .heal/reports .heal/checks
   commit, run it to refresh the cache and see what's still on the
   TODO list.
 - **`heal diff`** (no args) shows progress mid-session by comparing
-  the live worktree against the cached `CheckRecord` for HEAD —
+  the live worktree against the cached `FindingsRecord` for HEAD —
   useful before committing a fix.
 - **Preserve the post-commit hook.** Removing it stops the Severity
   nudge from running after each commit, but `heal status` still works

@@ -13,7 +13,7 @@ use anyhow::Result;
 use chrono::Utc;
 use serde::Serialize;
 
-use crate::core::check_cache::{upsert_fixed, FixedFinding};
+use crate::core::findings_cache::{upsert_fixed, FixedFinding};
 use crate::core::HealPaths;
 
 pub fn run(project: &Path, finding_id: &str, commit_sha: &str, as_json: bool) -> Result<()> {
@@ -51,7 +51,7 @@ pub fn run(project: &Path, finding_id: &str, commit_sha: &str, as_json: bool) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::check_cache::read_fixed;
+    use crate::core::findings_cache::read_fixed;
     use tempfile::TempDir;
 
     #[test]

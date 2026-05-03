@@ -268,7 +268,7 @@ Every commit, heal:
    post-commit nudge.
 
 `heal status` re-runs the analysis on demand, classifies findings by
-Severity, and writes a `CheckRecord` to `.heal/findings/latest.json`.
+Severity, and writes a `FindingsRecord` to `.heal/findings/latest.json`.
 That cache is the TODO list the `/heal-code-patch` skill drains, one finding
 per commit.
 

@@ -6,7 +6,7 @@
 //! Two paths:
 //!
 //! 1. **Cache hit.** `latest.json.head_sha` matches the resolved ref
-//!    → read the cached `CheckRecord` directly. Fast.
+//!    → read the cached `FindingsRecord` directly. Fast.
 //! 2. **Worktree fallback.** `git worktree add --detach <tempdir> <sha>`
 //!    materialises the source at the ref, runs the observer pipeline
 //!    against it (using the *current* `config.toml`/`calibration.toml`
@@ -28,9 +28,9 @@ use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 use tempfile::TempDir;
 
-use crate::core::check_cache::{read_latest, CheckRecord};
 use crate::core::config::{load_from_project, Config};
 use crate::core::finding::Finding;
+use crate::core::findings_cache::{read_latest, FindingsRecord};
 use crate::core::severity::Severity;
 use crate::core::term::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW};
 use crate::core::HealPaths;
@@ -99,7 +99,7 @@ pub fn run(
     Ok(())
 }
 
-/// Build the "from" `CheckRecord`. Prefers the cached `latest.json` when
+/// Build the "from" `FindingsRecord`. Prefers the cached `latest.json` when
 /// its `head_sha` matches the target; otherwise materialises the source
 /// at `<sha>` in a tempdir-backed `git worktree` and runs the observer
 /// pipeline against it (after the LOC threshold check).
@@ -109,7 +109,7 @@ fn load_or_recompute_from(
     cfg: &Config,
     revspec: &str,
     target_sha: &str,
-) -> Result<CheckRecord> {
+) -> Result<FindingsRecord> {
     if let Some(record) =
         read_latest(&paths.findings_latest())?.filter(|r| r.head_sha.as_deref() == Some(target_sha))
     {
@@ -151,7 +151,7 @@ fn recompute_at_ref(
     paths: &HealPaths,
     cfg: &Config,
     target_sha: &str,
-) -> Result<CheckRecord> {
+) -> Result<FindingsRecord> {
     let tmp = TempDir::new().context("creating tempdir for `git worktree add`")?;
     let workdir = tmp.path().join("heal-diff");
     let _guard = WorktreeGuard::add(project, &workdir, target_sha)?;
@@ -274,7 +274,11 @@ impl DiffEntry {
     }
 }
 
-pub(crate) fn compute_diff(from: &CheckRecord, to: &CheckRecord, workspace: Option<&str>) -> Diff {
+pub(crate) fn compute_diff(
+    from: &FindingsRecord,
+    to: &FindingsRecord,
+    workspace: Option<&str>,
+) -> Diff {
     let in_scope = |f: &Finding| -> bool {
         match workspace {
             None => true,
@@ -330,8 +334,8 @@ fn render_diff(
     revspec: &str,
     from_sha: &str,
     workspace: Option<&str>,
-    from: &CheckRecord,
-    to: &CheckRecord,
+    from: &FindingsRecord,
+    to: &FindingsRecord,
     diff: &Diff,
     show_all: bool,
     colorize: bool,
@@ -435,8 +439,8 @@ fn render_bucket(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::check_cache::CheckRecord;
     use crate::core::finding::{Finding, Location};
+    use crate::core::findings_cache::FindingsRecord;
     use crate::core::severity::Severity;
     use std::path::PathBuf;
 
@@ -455,8 +459,8 @@ mod tests {
         f
     }
 
-    fn record(findings: Vec<Finding>) -> CheckRecord {
-        CheckRecord::new(Some("abc".into()), true, "h".into(), findings)
+    fn record(findings: Vec<Finding>) -> FindingsRecord {
+        FindingsRecord::new(Some("abc".into()), true, "h".into(), findings)
     }
 
     #[test]

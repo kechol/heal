@@ -39,11 +39,13 @@ Behind the scenes:
   Failures are swallowed so HEAL never blocks a commit. No event log
   is written — `latest.json` (refreshed on `heal status --refresh`) is
   the live state.
-- `heal status` writes its result to `.heal/checks/latest.json` plus an
-  append-only `.heal/checks/YYYY-MM.jsonl` segment. Re-running on the
-  same `(head_sha, config_hash, worktree_clean=true)` is a free cache
-  hit.
-- `fixed.jsonl` and `regressed.jsonl` track the per-finding fix history.
+- `heal status` writes its result to `.heal/findings/latest.json`. The
+  cache is single-record by design — there is no historical stream.
+  Re-running on the same `(head_sha, config_hash, worktree_clean=true)`
+  is a free cache hit.
+- `.heal/findings/fixed.json` (a `BTreeMap<finding_id, FixedFinding>`)
+  and `.heal/findings/regressed.jsonl` track the per-finding fix
+  history.
 
 ## Subcommands (alphabetical)
 
@@ -73,7 +75,7 @@ overwrite the file. JSON shape:
 The single source of truth for the current TODO list. Renders cached
 findings; pass `--refresh` to rescan first. Useful args:
 
-- `--refresh` — rescan and overwrite `.heal/checks/latest.json`.
+- `--refresh` — rescan and overwrite `.heal/findings/latest.json`.
 - `--all` — surface Medium and Ok tiers (default hides them).
 - `--severity {critical|high|medium|ok}` — restrict to one floor.
 - `--metric {ccn|cognitive|complexity|duplication|coupling|hotspot|lcom}` —
@@ -81,12 +83,13 @@ findings; pass `--refresh` to rescan first. Useful args:
 - `--feature <PATH-PREFIX>` — restrict to findings under a path.
 - `--top <N>` — cap each Severity bucket.
 
-JSON shape: `CheckRecord` — same shape as `.heal/checks/latest.json`.
+JSON shape: `FindingsRecord` — same shape as `.heal/findings/latest.json`.
 Key fields:
 
 ```jsonc
 {
-  "check_id": "01HZA…",                      // ULID, lexicographic = chronological
+  "version": 2,
+  "id": "01HZA…",                            // ULID, lexicographic = chronological
   "started_at": "2026-04-28T09:00:00Z",
   "head_sha": "deadbeef…",
   "worktree_clean": true,
@@ -107,43 +110,23 @@ Key fields:
 }
 ```
 
-### `heal checks [filters] [--json]`
-
-Browse `.heal/checks/` — newest-first list of every `CheckRecord`
-written so far. Filters: `--since <RFC3339>`, `--limit <N>`. JSON: a
-JSON array of full records.
-
-### `heal compact [--verbose] [--json]`
-
-Rotate `.heal/{snapshots,logs,checks}/` segments — gzip past 90 days,
-delete past 365. Idempotent; the post-commit hook also runs it
-best-effort. JSON shape:
-
-```jsonc
-{
-  "gzipped": 3,
-  "deleted": 0,
-  "dirs": [
-    { "name": "snapshots", "gzipped": [".heal/snapshots/2025-12.jsonl.gz"], "deleted": [] },
-    { "name": "logs",      "gzipped": [], "deleted": [] },
-    { "name": "checks",    "gzipped": [], "deleted": [] }
-  ]
-}
-```
-
 ### `heal diff [<git-ref>] [--all] [--json]`
 
-Diff the current findings against a cached `CheckRecord` whose
-`head_sha` matches the resolved git ref. Default ref is `HEAD`:
-"how does my live worktree compare to the last commit?"
+Diff the current findings against a `FindingsRecord` for the resolved
+git ref. Default ref is `HEAD`: "how does my live worktree compare to
+the last commit?"
 
 `<git-ref>` accepts anything `git rev-parse` understands —
-`HEAD`, `main`, `v0.2.1`, `HEAD~3`, or a (partial / full) SHA.
-The ref's `CheckRecord` must already be cached in `.heal/checks/`;
-if not, the command errors with a hint to commit + run
-`heal status` (or check the ref out and run `heal status --refresh`).
-The right-hand side is always a fresh in-memory scan of the
-current worktree (never persisted).
+`HEAD`, `main`, `v0.2.1`, `HEAD~3`, or a (partial / full) SHA. If
+`.heal/findings/latest.json` already corresponds to the resolved ref
+(matching `head_sha`), `heal diff` reads it directly. On a miss it
+materialises the source at the ref via `git worktree add --detach`,
+runs the observer pipeline there using the *current* `config.toml` /
+`calibration.toml` (apples-to-apples), and tears the worktree down on
+exit. Gated by `[diff].max_loc_threshold` (default `200_000` LOC) —
+over the threshold the command exits with code 2 and prints a manual
+two-branch recipe. The right-hand side is always a fresh in-memory
+scan of the current worktree (never persisted).
 
 Buckets: Resolved / Regressed / Improved / New / Unchanged, plus a
 progress percentage. Pass `--all` to also surface Improved +
@@ -168,17 +151,18 @@ Unchanged. JSON shape:
 
 ### `heal mark-fixed --finding-id <ID> --commit-sha <SHA> [--json]`
 
-**Agent-only.** Hidden from the top-level `--help`. Append a
-`FixedFinding` to `.heal/checks/fixed.jsonl` after committing a fix
-so the next `heal status --refresh` either retires the entry
-(genuinely fixed) or moves it to `regressed.jsonl`. JSON:
+**Agent-only.** Hidden from the top-level `--help`. Upserts a
+`FixedFinding` entry into the `BTreeMap` at `.heal/findings/fixed.json`
+after committing a fix so the next `heal status --refresh` either
+retires the entry (genuinely fixed) or moves it to `regressed.jsonl`.
+JSON:
 
 ```jsonc
 {
   "finding_id": "ccn:src/a.rs:foo:abc",
   "commit_sha": "deadbeef…",
   "fixed_at": "2026-04-28T09:00:00Z",
-  "log": ".heal/checks/fixed.jsonl"
+  "path": ".heal/findings/fixed.json"
 }
 ```
 
@@ -200,7 +184,6 @@ hook, initial scan + calibration, optional Claude-skills install.
   "primary_language": "rust",
   "config":       { "path": "…/.heal/config.toml",      "action": "wrote" },
   "calibration_path": "…/.heal/calibration.toml",
-  "snapshots_dir":    "…/.heal/snapshots",
   "post_commit_hook": { "path": "…/.git/hooks/post-commit", "action": "installed" },
   "skills": {
     "dest": "…/.claude/skills",
@@ -287,7 +270,7 @@ Silently no-ops when invoked in a project that has no `.heal/`.
 is). The check is idempotent on a clean worktree — re-running is free.
 
 **Programmatically drain T0 findings.** Read
-`.heal/checks/latest.json`, filter `findings` by your `[policy.drain]`
+`.heal/findings/latest.json`, filter `findings` by your `[policy.drain]`
 spec (default: Critical-with-`hotspot=true`), pick one, fix it, then:
 
 ```sh
@@ -297,8 +280,8 @@ heal status --refresh --json    # re-scan; the finding either disappears or surf
 ```
 
 **Force a fresh scan after policy changes.** Editing `config.toml` or
-`calibration.toml` invalidates every cached `CheckRecord`. Re-run with
-`--refresh` once.
+`calibration.toml` invalidates the cached `FindingsRecord` (the
+`config_hash` shifts). Re-run with `--refresh` once.
 
 **CI gating.** `heal status --refresh --json --severity critical` and
 fail the build if `severity_counts.critical > 0`. Keep `--all` off so

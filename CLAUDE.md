@@ -12,10 +12,10 @@ six metric observers (LOC, CCN, Cognitive, Churn, Change Coupling,
 Duplication, Hotspot composition), the post-commit git hook and
 Claude Code's `settings.json` hook commands that drive them, and
 `heal status` / `heal metrics` / `heal diff`
-for surfacing findings. `heal status` runs the analyzer, classifies by
-Severity, and writes `.heal/findings/`; `heal checks` (top-level
-browser) and `heal diff <git-ref>` read it. The autonomous repair loop
-(`heal run`, PR generation) lands in v0.2+.
+for surfacing findings. `heal status` runs the analyzer, classifies by Severity, writes the
+result to `.heal/findings/`, and renders it. `heal diff <git-ref>`
+reads the same cache to compare against the live worktree. The
+autonomous repair loop (`heal run`, PR generation) lands in v0.2+.
 
 For the user-facing overview see [`README.md`](./README.md).
 
@@ -29,7 +29,7 @@ crates/
       lib.rs                 # internal pub modules — exposed only so tests/ can reach them
       cli.rs                 # clap definitions
       commands/              # one file per subcommand
-      core/                  # config, calibration, check_cache, finding,
+      core/                  # config, calibration, finding, findings_cache,
                              # severity, term, paths, fs, hash, monorepo, error
       observer/              # LOC, complexity (CCN/Cognitive), churn, coupling,
                              # duplication, hotspot composition
@@ -61,6 +61,28 @@ cargo deny   check
 ```
 
 CI (`.github/workflows/ci.yml`) runs all five — keep them green.
+
+## Domain glossary
+
+Use the **canonical** column in new code, comments, and docs. The
+public JSON shape (`.heal/findings/latest.json`) is part of this
+contract — bumping `FINDINGS_RECORD_VERSION` is the prescribed escape
+hatch when a field rename is unavoidable.
+
+| Concept                               | Canonical                                                           | Notes                                                       |
+|---------------------------------------|---------------------------------------------------------------------|-------------------------------------------------------------|
+| One observed problem                  | `Finding`                                                           | Carries `metric`, `location`, `severity`, `id` (deterministic). |
+| Result of one `heal status` run       | `FindingsRecord`                                                    | Lives in `.heal/findings/latest.json`. Schema versioned.    |
+| Run-id field on the record            | `id`                                                                | ULID; lexicographic = chronological.                        |
+| Result-cache directory                | `.heal/findings/`                                                   |                                                             |
+| Cache module                          | `crate::core::findings_cache`                                       |                                                             |
+| Schema-version constant               | `FINDINGS_RECORD_VERSION` (currently `2`)                           | Bump on breaking field rename. `read_latest` peeks at the version field and returns `Ok(None)` on any mismatch (forward + backward) so the next `heal status` rewrites silently. |
+| Severity ladder                       | `Severity` { `Ok`, `Medium`, `High`, `Critical` }                   | Lives in `core::severity`. Per-file aggregation uses `cmp::max`. |
+| Calibration                           | `Calibration` (per-metric breaks) + `HotspotCalibration` (per-file aggregate) | `core::calibration`.                              |
+| Skill-committed fix marker            | `FixedFinding`                                                      | Lives in `.heal/findings/fixed.json` (BTreeMap, bounded).   |
+| Re-detected-fix marker                | `RegressedEntry`                                                    | Append-only `.heal/findings/regressed.jsonl`. Carries `regressed_in_record_id` (the `FindingsRecord.id` that re-detected the finding). |
+| Live subcommands                      | `init`, `hook`, `metrics`, `status`, `diff`, `mark-fixed`, `skills`, `calibrate` | `checks`, `compact`, `logs`, `snapshots` were removed. |
+| Observer registry                     | `crate::observer::*` (loc, complexity, churn, change_coupling, duplication, hotspot) | One file per metric.                                |
 
 ## Conventions and invariants
 
@@ -112,7 +134,7 @@ CI (`.github/workflows/ci.yml`) runs all five — keep them green.
   deterministic id (`<metric>:<file>:<symbol>:<fnv1a>`) so an unfixed
   problem reappears under the same id on the next run.
 - The cache is **single-record by design**. Three files live under
-  `.heal/findings/`: `latest.json` (the current `CheckRecord`),
+  `.heal/findings/`: `latest.json` (the current `FindingsRecord`),
   `fixed.json` (`BTreeMap<finding_id, FixedFinding>` — bounded by
   outstanding fix claims, never appended), and `regressed.jsonl` (the
   one append-only audit trail of "a previously-fixed finding was

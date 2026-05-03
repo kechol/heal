@@ -1,7 +1,7 @@
 //! Stable FNV-1a 64-bit hashing.
 //!
 //! HEAL persists hashes to disk in three places — `Finding.id`,
-//! `CheckRecord.config_hash`, and the plugin fingerprint manifest — and
+//! `FindingsRecord.config_hash`, and the plugin fingerprint manifest — and
 //! all three must stay valid across processes and Rust toolchain
 //! upgrades. `std::hash::DefaultHasher` is explicitly unstable across
 //! releases (see CLAUDE.md §Hashing), so we hand-roll FNV-1a with the
@@ -39,7 +39,7 @@ pub fn fnv1a_64_chunked(chunks: &[&[u8]]) -> u64 {
 
 /// Format a 64-bit digest as zero-padded 16 hex chars. Used wherever
 /// the digest leaks into a user-visible identifier (`Finding.id`,
-/// `CheckRecord.config_hash`, plugin fingerprint manifest).
+/// `FindingsRecord.config_hash`, plugin fingerprint manifest).
 #[must_use]
 pub fn fnv1a_hex(h: u64) -> String {
     format!("{h:016x}")

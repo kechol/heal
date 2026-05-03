@@ -12,16 +12,17 @@ this one applies.
 
 ## Mental model
 
-`heal status` analyzes the project and writes a `CheckRecord` to
-`.heal/checks/latest.json`. Each Finding has a deterministic id —
+`heal status` analyzes the project and writes a `FindingsRecord` to
+`.heal/findings/latest.json`. Each Finding has a deterministic id —
 the same problem keeps the same id across runs, so a finding that
 disappears from the cache after a commit is genuinely fixed (not
 re-numbered).
 
-`fixed.jsonl` is the audit trail of "skill committed a fix". The
-**next** `heal status` reconciles it: if the same `finding_id` shows up
-again, the entry moves to `regressed.jsonl` and the renderer warns. So
-the loop is self-correcting: a botched fix surfaces on the next round.
+`.heal/findings/fixed.json` is the audit trail of "skill committed a
+fix" (a `BTreeMap<finding_id, FixedFinding>`). The **next** `heal
+status` reconciles it: if the same `finding_id` shows up again, the
+entry moves to `regressed.jsonl` and the renderer warns. So the loop
+is self-correcting: a botched fix surfaces on the next round.
 
 ## Role boundary: mechanical fixes only
 
@@ -52,10 +53,10 @@ patterns, end the session with a summary and recommend the user run
    shown, stop and tell the user to commit or stash first. You cannot
    distinguish your changes from theirs once you start editing, and a
    commit-per-finding flow assumes a clean baseline. The cache also
-   carries `worktree_clean=false` in this case — `heal checks` will
-   show it.
+   carries `worktree_clean=false` in this case — `heal status --json`
+   will show it.
 2. **Cache exists.** Run `heal status --json` and capture the
-   `CheckRecord`. The default flow reads `.heal/checks/latest.json`
+   `FindingsRecord`. The default flow reads `.heal/findings/latest.json`
    directly; a missing cache is auto-populated by the same invocation.
 3. **Calibration exists.** If `heal status --json` shows every finding
    as `severity: "ok"`, the project hasn't been calibrated yet — say so
@@ -97,7 +98,7 @@ ask before applying.
 
 Within T0, iterate in `Severity 🔥` order: `Critical 🔥` first, then
 any other entries the user's `must` policy admits. Skip findings
-already present in `.heal/checks/fixed.jsonl` (match by `finding_id`).
+already present in `.heal/findings/fixed.json` (match by `finding_id`).
 
 If the user invoked `/heal-code-patch --metric <name>`, restrict the
 selection to that metric. Default = no filter.

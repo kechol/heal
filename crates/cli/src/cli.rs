@@ -64,13 +64,13 @@ pub enum Command {
         #[arg(long, value_name = "PATH")]
         workspace: Option<std::path::PathBuf>,
     },
-    /// Render the cached `CheckRecord` from `.heal/findings/latest.json`
+    /// Render the cached `FindingsRecord` from `.heal/findings/latest.json`
     /// — Critical / High view by default. Runs a fresh scan only when
     /// the cache is missing; pass `--refresh` to force a rescan and
     /// overwrite the cache. The single source of truth that
     /// `/heal-code-patch` (Claude side) and `heal diff` consume.
     Status(StatusArgs),
-    /// Diff the current findings against a cached `CheckRecord` whose
+    /// Diff the current findings against a cached `FindingsRecord` whose
     /// `head_sha` matches the resolved git ref (default: `HEAD`).
     /// Outputs Resolved / Regressed / Improved / New / Unchanged
     /// buckets — like `git diff`, but for the TODO list.
@@ -250,7 +250,7 @@ pub struct StatusArgs {
     /// there are more).
     #[arg(long)]
     pub all: bool,
-    /// Emit the `CheckRecord` payload as JSON on stdout. Same shape as
+    /// Emit the `FindingsRecord` payload as JSON on stdout. Same shape as
     /// `.heal/findings/latest.json` — stable contract for skills and CI.
     #[arg(long)]
     pub json: bool,
@@ -270,7 +270,7 @@ pub struct StatusArgs {
 #[derive(Debug, clap::Args)]
 pub struct DiffArgs {
     /// Git revision to diff against. Resolves against the local repo;
-    /// the matching `CheckRecord` must already exist in `.heal/findings/`.
+    /// the matching `FindingsRecord` must already exist in `.heal/findings/`.
     #[arg(value_name = "GIT_REF", default_value = "HEAD")]
     pub revspec: String,
     /// Restrict to findings inside one declared

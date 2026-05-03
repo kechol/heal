@@ -68,7 +68,7 @@ On demand
 heal status
     │
     ├─ classify findings via .heal/calibration.toml
-    ├─ write CheckRecord ──► .heal/findings/latest.json
+    ├─ write FindingsRecord ──► .heal/findings/latest.json
     ├─ reconcile fixed.json ↔ regressed.jsonl
     └─ render Severity-grouped view
 

@@ -69,7 +69,7 @@ post-commit フック ──► heal hook commit
 heal status
     │
     ├─ .heal/calibration.toml で Finding を分類
-    ├─ CheckRecord を書く ──► .heal/findings/latest.json
+    ├─ FindingsRecord を書く ──► .heal/findings/latest.json
     ├─ fixed.json ↔ regressed.jsonl を整合
     └─ Severity ごとのビューを描画
 

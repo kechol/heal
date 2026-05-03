@@ -1,12 +1,12 @@
 //! `heal status` — render `.heal/findings/latest.json` and, when needed,
 //! produce it.
 //!
-//! Default flow reads the cached `CheckRecord` from `latest.json` if
+//! Default flow reads the cached `FindingsRecord` from `latest.json` if
 //! one exists. Only when the cache is missing — or `--refresh` is
 //! passed — does this command run every observer, lift the reports
 //! through `crate::core::finding::IntoFindings`, decorate each Finding
 //! with Severity (via `Calibration`) and the per-file hotspot flag
-//! (via `HotspotCalibration`), and write a fresh `CheckRecord`. This
+//! (via `HotspotCalibration`), and write a fresh `FindingsRecord`. This
 //! is still the single writer of `.heal/findings/`.
 //!
 //! The renderer groups findings into three drain tiers driven by the
@@ -18,7 +18,7 @@
 //! `--all` is passed; the footer surfaces a "next steps" line pointing
 //! at `claude /heal-code-patch` for the Drain queue.
 //!
-//! `--json` emits the `CheckRecord` in the exact shape of `latest.json`
+//! `--json` emits the `FindingsRecord` in the exact shape of `latest.json`
 //! so skills and CI scripts have one stable contract.
 
 use std::collections::BTreeMap;
@@ -29,11 +29,11 @@ use anyhow::{Context, Result};
 
 use crate::cli::{FindingMetric, SeverityFilter, StatusArgs};
 use crate::core::calibration::{FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_OK_CCN, FLOOR_OK_COGNITIVE};
-use crate::core::check_cache::{
-    read_latest, reconcile_fixed, write_record, CheckRecord, RegressedEntry,
-};
 use crate::core::config::{load_from_project, Config, DrainTier};
 use crate::core::finding::Finding;
+use crate::core::findings_cache::{
+    read_latest, reconcile_fixed, write_record, FindingsRecord, RegressedEntry,
+};
 use crate::core::severity::Severity;
 use crate::core::term::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW};
 use crate::core::HealPaths;
@@ -166,7 +166,7 @@ impl Filters {
 /// row formatting can evolve without breaking the contract.
 #[allow(clippy::too_many_lines)] // tier-by-tier pour; splitting hurts readability
 pub(super) fn render(
-    record: &CheckRecord,
+    record: &FindingsRecord,
     regressed: &[RegressedEntry],
     filters: &Filters,
     cfg: &Config,
@@ -423,11 +423,11 @@ mod tests {
         f
     }
 
-    fn record(findings: Vec<Finding>) -> CheckRecord {
-        CheckRecord::new(Some("abc1234".into()), true, "h".into(), findings)
+    fn record(findings: Vec<Finding>) -> FindingsRecord {
+        FindingsRecord::new(Some("abc1234".into()), true, "h".into(), findings)
     }
 
-    fn render_to_string(record: &CheckRecord, filters: &Filters) -> String {
+    fn render_to_string(record: &FindingsRecord, filters: &Filters) -> String {
         let mut buf = Vec::new();
         let cfg = Config::default();
         render(record, &[], filters, &cfg, false, &mut buf).unwrap();

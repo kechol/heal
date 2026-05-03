@@ -115,7 +115,7 @@ mod tests {
     }
 }
 
-/// Tally of Findings by Severity. Carried inside `CheckRecord` and the
+/// Tally of Findings by Severity. Carried inside `FindingsRecord` and the
 /// post-commit nudge — the canonical "how dirty is the codebase" counts.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SeverityCounts {

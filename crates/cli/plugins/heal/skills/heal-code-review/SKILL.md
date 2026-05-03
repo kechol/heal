@@ -25,7 +25,7 @@ commit.
 ## Audience
 
 The skill applies to **any** project that has run `heal init` and
-recorded a `CheckRecord`. It is language-agnostic — observers ship
+recorded a `FindingsRecord`. It is language-agnostic — observers ship
 for the languages `heal` supports, and the skill consumes their
 output without further parsing. Refactor proposals are tailored to
 the codebase's apparent style, not pushed from a one-size-fits-all
@@ -54,12 +54,13 @@ main prompt so it stays terse.
 
 ## Mental model
 
-`heal status --all --json` emits a `CheckRecord` containing every
+`heal status --all --json` emits a `FindingsRecord` containing every
 classified `Finding`:
 
 ```jsonc
 {
-  "check_id": "...",          // ULID; lexicographic order = chronological
+  "version": 2,
+  "id": "...",                // ULID; lexicographic order = chronological
   "head_sha": "...",
   "worktree_clean": true,
   "severity_counts": { "critical": 3, "high": 11, "medium": 22, "ok": 0 },
@@ -122,7 +123,7 @@ the design tree with the user.
 
 ### Phase 1 — Explore
 
-1. **Capture the cache.** Read the full `CheckRecord` JSON.
+1. **Capture the cache.** Read the full `FindingsRecord` JSON.
 2. **Cluster the findings.**
    - **By file.** Multiple findings on one path → architectural
      target.
@@ -210,7 +211,7 @@ Each entry is exactly **5 lines**:
     Why it scores:          <root cause: nesting / mixed responsibilities / hidden seam / hub / etc>
     Proposed move:          <named pattern from references/architecture.md, with target>
     Expected drop:          <which metric(s) move, by roughly how much; or "verifies on next heal status">
-    finding-id:             <id from CheckRecord — exact, so heal-code-patch can pick it up>
+    finding-id:             <id from FindingsRecord — exact, so heal-code-patch can pick it up>
 ```
 
 Reach for the smallest vocabulary layer that fits the finding (see

@@ -1,7 +1,7 @@
 //! `.heal/findings/` — the result cache for `heal status`.
 //!
 //! `heal status` is the **single writer** of `latest.json`: every run
-//! produces a [`CheckRecord`] which atomically replaces the file. There
+//! produces a [`FindingsRecord`] which atomically replaces the file. There
 //! is no historical record stream — the cache is bounded by the size of
 //! the current findings list. `heal diff` reads `latest.json`; the only
 //! other writer is `heal mark-fixed`, which mutates the bounded
@@ -49,20 +49,21 @@ use crate::core::finding::Finding;
 use crate::core::hash::{fnv1a_64_chunked, fnv1a_hex};
 use crate::core::severity::SeverityCounts;
 
-/// Stable schema version for [`CheckRecord`]. Bump on breaking field
-/// renames so the reader can skip records it can't decode rather than
-/// failing the whole stream.
-pub const CHECK_RECORD_VERSION: u32 = 1;
+/// Stable schema version for [`FindingsRecord`]. Bump on breaking
+/// field renames so the reader can skip records it can't decode rather
+/// than failing the whole stream. v2 renamed `check_id` → `id` and
+/// `regressed_check_id` → `regressed_in_record_id`.
+pub const FINDINGS_RECORD_VERSION: u32 = 2;
 
 /// One execution of `heal status`. The unit of read in the cache:
 /// `latest.json` holds the single most-recent record. `heal diff` reads
 /// it to bucket-diff against the live worktree.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct CheckRecord {
+pub struct FindingsRecord {
     pub version: u32,
     /// Crockford-base32 ULID. The leading 48 bits are the millisecond
     /// timestamp, so lexicographic order = chronological order.
-    pub check_id: String,
+    pub id: String,
     pub started_at: DateTime<Utc>,
     /// `None` when `heal status` ran outside a git repo or HEAD is
     /// unborn. The cache still records the run; the freshness check
@@ -86,7 +87,7 @@ pub struct CheckRecord {
 }
 
 /// Per-workspace severity tally, alphabetic by path so the JSON shape
-/// is reproducible across runs. Lives on `CheckRecord` so skills don't
+/// is reproducible across runs. Lives on `FindingsRecord` so skills don't
 /// have to re-derive it from `findings[].workspace`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceSummary {
@@ -94,10 +95,10 @@ pub struct WorkspaceSummary {
     pub severity_counts: SeverityCounts,
 }
 
-impl CheckRecord {
+impl FindingsRecord {
     /// Build a record from the freshly classified findings. The id is
     /// generated from the current wall clock; if you need a
-    /// deterministic id (tests), assign `check_id` after construction.
+    /// deterministic id (tests), assign `id` after construction.
     #[must_use]
     pub fn new(
         head_sha: Option<String>,
@@ -109,8 +110,8 @@ impl CheckRecord {
         let severity_counts = SeverityCounts::from_findings(&findings);
         let workspaces = workspace_summaries(&findings);
         Self {
-            version: CHECK_RECORD_VERSION,
-            check_id: ulid::Ulid::new().to_string(),
+            version: FINDINGS_RECORD_VERSION,
+            id: ulid::Ulid::new().to_string(),
             started_at,
             head_sha,
             worktree_clean,
@@ -143,7 +144,7 @@ impl CheckRecord {
             .collect();
         Self {
             version: self.version,
-            check_id: self.check_id.clone(),
+            id: self.id.clone(),
             started_at: self.started_at,
             head_sha: self.head_sha.clone(),
             worktree_clean: self.worktree_clean,
@@ -174,7 +175,7 @@ impl CheckRecord {
 /// Group findings by `Finding.workspace`, drop the unwined bucket, and
 /// produce one [`WorkspaceSummary`] per declared workspace. Output is
 /// alphabetic by path so `heal status --json` is reproducible. Used by
-/// [`CheckRecord::new`].
+/// [`FindingsRecord::new`].
 fn workspace_summaries(findings: &[Finding]) -> Vec<WorkspaceSummary> {
     use std::collections::BTreeMap;
     let mut groups: BTreeMap<String, SeverityCounts> = BTreeMap::new();
@@ -212,7 +213,7 @@ pub struct RegressedEntry {
     pub finding_id: String,
     pub previous_commit_sha: String,
     pub previous_fixed_at: DateTime<Utc>,
-    pub regressed_check_id: String,
+    pub regressed_in_record_id: String,
     pub regressed_at: DateTime<Utc>,
 }
 
@@ -238,17 +239,25 @@ pub fn config_hash_from_paths(config: &Path, calibration: &Path) -> String {
 /// Atomically write `record` to `latest_path` (i.e.
 /// `.heal/findings/latest.json`). The cache is single-record by design;
 /// previous runs are overwritten in place.
-pub fn write_record(latest_path: &Path, record: &CheckRecord) -> Result<()> {
-    let body = serde_json::to_vec_pretty(record).expect("CheckRecord serialization is infallible");
+pub fn write_record(latest_path: &Path, record: &FindingsRecord) -> Result<()> {
+    let body =
+        serde_json::to_vec_pretty(record).expect("FindingsRecord serialization is infallible");
     crate::core::fs::atomic_write(latest_path, &body)
 }
 
-/// Read the most recently written `CheckRecord` via `latest.json`.
+/// Read the most recently written `FindingsRecord` via `latest.json`.
 /// Returns `Ok(None)` when the file doesn't exist (fresh project) or
-/// when the record's `version` is from a future build this binary can't
-/// safely interpret — letting an older binary degrade to "no cache" is
-/// preferable to misreading a newer schema.
-pub fn read_latest(latest_path: &Path) -> Result<Option<CheckRecord>> {
+/// when the record's `version` doesn't match `FINDINGS_RECORD_VERSION`
+/// — both directions degrade silently. An older binary skips a newer
+/// record (no risk of misreading); a newer binary skips an older record
+/// (the next `heal status` rewrites it under the current schema). The
+/// version is peeked separately so a v1 record (with renamed fields)
+/// doesn't fail full deserialization before the gate.
+pub fn read_latest(latest_path: &Path) -> Result<Option<FindingsRecord>> {
+    #[derive(Deserialize)]
+    struct VersionPeek {
+        version: u32,
+    }
     let bytes = match std::fs::read(latest_path) {
         Ok(b) => b,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -259,13 +268,17 @@ pub fn read_latest(latest_path: &Path) -> Result<Option<CheckRecord>> {
             })
         }
     };
-    let record: CheckRecord = serde_json::from_slice(&bytes).map_err(|e| Error::CacheParse {
+    let peek: VersionPeek = serde_json::from_slice(&bytes).map_err(|e| Error::CacheParse {
         path: latest_path.to_path_buf(),
         source: e,
     })?;
-    if record.version > CHECK_RECORD_VERSION {
+    if peek.version != FINDINGS_RECORD_VERSION {
         return Ok(None);
     }
+    let record: FindingsRecord = serde_json::from_slice(&bytes).map_err(|e| Error::CacheParse {
+        path: latest_path.to_path_buf(),
+        source: e,
+    })?;
     Ok(Some(record))
 }
 
@@ -331,7 +344,7 @@ pub fn read_regressed(regressed_log: &Path) -> Result<Vec<RegressedEntry>> {
 pub fn reconcile_fixed(
     fixed_path: &Path,
     regressed_log: &Path,
-    record: &CheckRecord,
+    record: &FindingsRecord,
 ) -> Result<Vec<RegressedEntry>> {
     let mut map = read_fixed(fixed_path)?;
     if map.is_empty() {
@@ -346,7 +359,7 @@ pub fn reconcile_fixed(
             finding_id: entry.finding_id,
             previous_commit_sha: entry.commit_sha,
             previous_fixed_at: entry.fixed_at,
-            regressed_check_id: record.check_id.clone(),
+            regressed_in_record_id: record.id.clone(),
             regressed_at: record.started_at,
         });
     }
@@ -433,10 +446,10 @@ mod tests {
     }
 
     #[test]
-    fn check_id_is_unique_across_calls() {
-        let r1 = CheckRecord::new(None, false, "h".into(), Vec::new());
-        let r2 = CheckRecord::new(None, false, "h".into(), Vec::new());
-        assert_ne!(r1.check_id, r2.check_id);
+    fn id_is_unique_across_calls() {
+        let r1 = FindingsRecord::new(None, false, "h".into(), Vec::new());
+        let r2 = FindingsRecord::new(None, false, "h".into(), Vec::new());
+        assert_ne!(r1.id, r2.id);
     }
 
     #[test]
@@ -446,7 +459,7 @@ mod tests {
         let mut b = finding("beta", Severity::Critical);
         b.workspace = Some("packages/api".into());
         let c = finding("gamma", Severity::Medium); // unscoped
-        let rec = CheckRecord::new(
+        let rec = FindingsRecord::new(
             Some("sha".into()),
             true,
             "h".into(),
@@ -462,7 +475,7 @@ mod tests {
         // identity bits preserved.
         assert_eq!(web.head_sha, rec.head_sha);
         assert_eq!(web.config_hash, rec.config_hash);
-        assert_eq!(web.check_id, rec.check_id);
+        assert_eq!(web.id, rec.id);
     }
 
     #[test]
@@ -485,7 +498,7 @@ mod tests {
     fn write_then_read_round_trips() {
         let tmp = TempDir::new().unwrap();
         let latest = tmp.path().join("checks/latest.json");
-        let rec = CheckRecord::new(
+        let rec = FindingsRecord::new(
             Some("abc".into()),
             true,
             "deadbeef".into(),
@@ -493,7 +506,7 @@ mod tests {
         );
         write_record(&latest, &rec).unwrap();
         let back = read_latest(&latest).unwrap().expect("record present");
-        assert_eq!(back.check_id, rec.check_id);
+        assert_eq!(back.id, rec.id);
         assert_eq!(back.findings.len(), 1);
         assert_eq!(back.severity_counts.critical, 1);
     }
@@ -502,18 +515,18 @@ mod tests {
     fn write_record_overwrites_in_place() {
         let tmp = TempDir::new().unwrap();
         let latest = tmp.path().join("checks/latest.json");
-        let r1 = CheckRecord::new(Some("a".into()), true, "h".into(), Vec::new());
+        let r1 = FindingsRecord::new(Some("a".into()), true, "h".into(), Vec::new());
         write_record(&latest, &r1).unwrap();
-        let r2 = CheckRecord::new(Some("b".into()), true, "h".into(), Vec::new());
+        let r2 = FindingsRecord::new(Some("b".into()), true, "h".into(), Vec::new());
         write_record(&latest, &r2).unwrap();
         // Only the second record survives — there is no historical stream.
         let back = read_latest(&latest).unwrap().unwrap();
-        assert_eq!(back.check_id, r2.check_id);
+        assert_eq!(back.id, r2.id);
     }
 
     #[test]
     fn freshness_requires_clean_worktree_on_both_sides() {
-        let rec = CheckRecord::new(Some("a".into()), true, "h".into(), Vec::new());
+        let rec = FindingsRecord::new(Some("a".into()), true, "h".into(), Vec::new());
         // Same head + config + clean → fresh.
         assert!(rec.is_fresh_against(Some("a"), "h", true));
         // Dirty current worktree → not fresh.
@@ -524,7 +537,7 @@ mod tests {
         assert!(!rec.is_fresh_against(Some("b"), "h", true));
 
         // A previously-dirty record is never fresh, even if everything else matches.
-        let dirty = CheckRecord::new(Some("a".into()), false, "h".into(), Vec::new());
+        let dirty = FindingsRecord::new(Some("a".into()), false, "h".into(), Vec::new());
         assert!(!dirty.is_fresh_against(Some("a"), "h", true));
     }
 
@@ -556,8 +569,8 @@ mod tests {
         )
         .unwrap();
 
-        // New CheckRecord re-detects only the regressed finding.
-        let rec = CheckRecord::new(None, true, "h".into(), vec![regressed.clone()]);
+        // New FindingsRecord re-detects only the regressed finding.
+        let rec = FindingsRecord::new(None, true, "h".into(), vec![regressed.clone()]);
         let surfaced = reconcile_fixed(&fixed_path, &regressed_log, &rec).unwrap();
         assert_eq!(surfaced.len(), 1);
         assert_eq!(surfaced[0].finding_id, regressed.id);
@@ -571,7 +584,7 @@ mod tests {
         let regs = read_regressed(&regressed_log).unwrap();
         assert_eq!(regs.len(), 1);
         assert_eq!(regs[0].finding_id, regressed.id);
-        assert_eq!(regs[0].regressed_check_id, rec.check_id);
+        assert_eq!(regs[0].regressed_in_record_id, rec.id);
     }
 
     #[test]
@@ -592,7 +605,7 @@ mod tests {
         .unwrap();
 
         // New record has no findings — nothing regressed.
-        let rec = CheckRecord::new(None, true, "h".into(), Vec::new());
+        let rec = FindingsRecord::new(None, true, "h".into(), Vec::new());
         let surfaced = reconcile_fixed(&fixed_path, &regressed_log, &rec).unwrap();
         assert!(surfaced.is_empty());
         assert_eq!(read_fixed(&fixed_path).unwrap().len(), 1);

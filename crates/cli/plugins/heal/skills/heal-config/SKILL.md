@@ -314,9 +314,8 @@ suggest a recalibration *before* doing anything else, using only:
 3. `git rev-list <calibrated_at_sha>..HEAD --count` — commits since
    the calibration was built. Skip when `calibrated_at_sha` is missing
    (legacy file).
-4. `.heal/checks/fixed.json` (or `fixed.jsonl` until Phase C lands) —
-   how many findings the user has marked as resolved since last
-   calibration.
+4. `.heal/findings/fixed.json` — how many findings the user has marked
+   as resolved since last calibration.
 
 Suggest `heal calibrate --force` when **any** of these fire:
 

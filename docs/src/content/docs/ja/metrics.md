@@ -268,7 +268,7 @@ named-export グループ）は先送りです。
    に出す。
 
 `heal status` はオンデマンドで分析を再実行し、Finding を Severity で
-分類して `CheckRecord` を `.heal/findings/latest.json` に書き出しま
+分類して `FindingsRecord` を `.heal/findings/latest.json` に書き出しま
 す。このキャッシュを `/heal-code-patch` スキルが 1 コミット 1 Finding ずつ
 消化していきます。
 

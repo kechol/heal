@@ -337,8 +337,8 @@ pub(crate) fn classify(reports: &ObserverReports, cal: &Calibration, cfg: &Confi
 
 /// Run every observer over `scan_root`, classify against the
 /// calibration on disk at `paths`, and pack the result into a fresh
-/// `CheckRecord`. Does not write anything — callers decide whether to
-/// persist the result via `check_cache::write_record`.
+/// `FindingsRecord`. Does not write anything — callers decide whether to
+/// persist the result via `findings_cache::write_record`.
 ///
 /// Used by both `heal status` (`scan_root` = project, sha/clean from
 /// git) and `heal diff` (`scan_root` = transient `git worktree`, sha
@@ -349,7 +349,7 @@ pub(crate) fn build_record(
     cfg: &Config,
     head_sha: Option<String>,
     worktree_clean: bool,
-) -> crate::core::check_cache::CheckRecord {
+) -> crate::core::findings_cache::FindingsRecord {
     let calibration = Calibration::load(&paths.calibration())
         .ok()
         .map(|c| c.with_overrides(cfg));
@@ -363,8 +363,13 @@ pub(crate) fn build_record(
     let reports = run_all(scan_root, cfg, None, None);
     let findings = classify(&reports, cal_ref, cfg);
     let config_hash =
-        crate::core::check_cache::config_hash_from_paths(&paths.config(), &paths.calibration());
-    crate::core::check_cache::CheckRecord::new(head_sha, worktree_clean, config_hash, findings)
+        crate::core::findings_cache::config_hash_from_paths(&paths.config(), &paths.calibration());
+    crate::core::findings_cache::FindingsRecord::new(
+        head_sha,
+        worktree_clean,
+        config_hash,
+        findings,
+    )
 }
 
 fn non_empty(values: &[f64]) -> bool {

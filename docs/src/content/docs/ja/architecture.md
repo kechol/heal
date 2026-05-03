@@ -28,7 +28,7 @@ git commit
 heal status  ──►  calibration.toml で Finding を分類
                        │
                        ├──►  .heal/findings/latest.json
-                       │       (CheckRecord — TODO リスト)
+                       │       (FindingsRecord — TODO リスト)
                        │
                        ├──►  fixed.json ↔ regressed.jsonl を整合
                        │
@@ -51,7 +51,7 @@ heal status  ──►  calibration.toml で Finding を分類
 │   ├── config.toml               # 自分で編集する（git 管理対象）
 │   ├── calibration.toml          # 自動 — heal init / heal calibrate（git 管理対象）
 │   └── findings/
-│       ├── latest.json           # 現在の CheckRecord（TODO リスト）
+│       ├── latest.json           # 現在の FindingsRecord（TODO リスト）
 │       ├── fixed.json            # BTreeMap<finding_id, FixedFinding> — 有界
 │       └── regressed.jsonl       # 再検出された修正の追記専用監査トレイル
 │
@@ -95,8 +95,8 @@ writer は `heal mark-fixed` だけです。
 
 ```json
 {
-  "version": 1,
-  "check_id": "01HKM3Q6Z1B7…",          // ULID
+  "version": 2,
+  "id": "01HKM3Q6Z1B7…",                 // ULID
   "started_at": "2026-04-30T05:14:22Z",
   "head_sha": "a0a6d1a…",
   "worktree_clean": true,
