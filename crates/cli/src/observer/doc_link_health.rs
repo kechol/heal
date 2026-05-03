@@ -16,70 +16,76 @@ use crate::core::doc_pairs::DocPairsFile;
 use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
+use crate::observer::doc_corpus::{read_doc_bodies, DocBody};
 use crate::observer::doc_markdown::{
     extract_links, is_external, iter_prose_lines, resolve_relative, split_link_target,
 };
 
-/// Owns its inputs so the lifecycle matches the rest of the observer
-/// family. The caller pre-walks Layer B docs and pre-extracts Layer A
-/// doc paths so the observer doesn't need a `&Config`.
+/// Owns the bodies it scans so the observer is filesystem-free at
+/// scan time — `root` is only consulted to verify that relative-path
+/// link targets exist on disk. The caller (`observers::run_all`)
+/// reads bodies once and threads the same slice into every Layer B
+/// observer.
 pub struct DocLinkHealthObserver {
     enabled: bool,
-    standalone_docs: Vec<PathBuf>,
-    paired_docs: Vec<PathBuf>,
+    docs: Vec<DocBody>,
 }
 
 impl DocLinkHealthObserver {
     #[must_use]
-    pub fn from_config_and_inputs(
-        cfg: &Config,
-        standalone_docs: Vec<PathBuf>,
-        paired_docs: Vec<PathBuf>,
-    ) -> Self {
+    pub fn from_inputs(cfg: &Config, docs: Vec<DocBody>) -> Self {
         Self {
             enabled: cfg.features.docs.enabled,
-            standalone_docs,
-            paired_docs,
+            docs,
         }
     }
 
+    /// Convenience constructor for tests / out-of-band callers: read
+    /// each path off disk and combine. Production runs go through the
+    /// shared corpus in `observers::run_all` and use
+    /// [`Self::from_inputs`] directly.
+    #[must_use]
+    pub fn from_paths(
+        cfg: &Config,
+        root: &Path,
+        standalone: &[PathBuf],
+        paired: &[PathBuf],
+    ) -> Self {
+        let mut all: Vec<PathBuf> = standalone.to_vec();
+        for p in paired {
+            if !all.contains(p) {
+                all.push(p.clone());
+            }
+        }
+        Self::from_inputs(cfg, read_doc_bodies(root, &all))
+    }
+
     /// Scan every supplied doc body for relative links / anchors and
-    /// emit one finding per broken link.
+    /// emit one finding per broken link. `root` is only consulted to
+    /// verify that resolved relative paths exist on disk.
     #[must_use]
     pub fn scan(&self, root: &Path) -> DocLinkHealthReport {
         let mut report = DocLinkHealthReport::default();
         if !self.enabled {
             return report;
         }
-        let mut targets: Vec<PathBuf> = self.standalone_docs.clone();
-        for paired in &self.paired_docs {
-            if !targets.contains(paired) {
-                targets.push(paired.clone());
-            }
-        }
         let mut total_links = 0usize;
-        for rel in &targets {
-            let abs = root.join(rel);
-            let Ok(body) = std::fs::read_to_string(&abs) else {
-                continue;
-            };
-            let headings = collect_heading_ids(&body);
-            for link in extract_links(&body) {
+        for doc in &self.docs {
+            let headings = collect_heading_ids(&doc.body);
+            for link in extract_links(&doc.body) {
                 if is_external(&link.target) {
                     continue;
                 }
                 total_links += 1;
                 let (path_part, anchor_part) = split_link_target(&link.target);
                 let resolved = if path_part.is_empty() {
-                    rel.clone()
+                    doc.path.clone()
                 } else {
-                    resolve_relative(rel, path_part)
+                    resolve_relative(&doc.path, path_part)
                 };
-                let abs_resolved = root.join(&resolved);
-                let path_ok = abs_resolved.exists();
-                if !path_ok {
+                if !root.join(&resolved).exists() {
                     report.entries.push(DocLinkHealthEntry {
-                        doc_path: rel.clone(),
+                        doc_path: doc.path.clone(),
                         line: link.line,
                         target: link.target.clone(),
                         kind: LinkBreakKind::MissingPath,
@@ -92,7 +98,7 @@ impl DocLinkHealthObserver {
                 {
                     // Same-doc anchor — verify against this doc's own headings.
                     report.entries.push(DocLinkHealthEntry {
-                        doc_path: rel.clone(),
+                        doc_path: doc.path.clone(),
                         line: link.line,
                         target: link.target.clone(),
                         kind: LinkBreakKind::MissingAnchor,
@@ -107,7 +113,7 @@ impl DocLinkHealthObserver {
                 .then_with(|| a.target.cmp(&b.target))
         });
         report.totals = DocLinkHealthTotals {
-            scanned_docs: targets.len(),
+            scanned_docs: self.docs.len(),
             scanned_links: total_links,
             broken: report.entries.len(),
         };

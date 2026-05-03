@@ -20,6 +20,7 @@ use crate::core::config::Config;
 use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
+use crate::observer::doc_corpus::{read_doc_bodies, DocBody};
 
 /// Markers we count. Single-pass over each line so adding a new marker
 /// is a one-element edit.
@@ -27,7 +28,7 @@ const MARKERS: &[&str] = &["TODO", "FIXME", "XXX", "TBD", "[要確認]", "[要�
 
 pub struct TodoDensityObserver {
     enabled: bool,
-    docs: Vec<PathBuf>,
+    docs: Vec<DocBody>,
 }
 
 /// Per-doc marker count below which the finding is informational
@@ -39,31 +40,35 @@ pub(crate) const HIGH_THRESHOLD: u32 = 10;
 
 impl TodoDensityObserver {
     #[must_use]
-    pub fn from_config_and_inputs(cfg: &Config, docs: Vec<PathBuf>) -> Self {
+    pub fn from_inputs(cfg: &Config, docs: Vec<DocBody>) -> Self {
         Self {
             enabled: cfg.features.docs.enabled,
             docs,
         }
     }
 
+    /// Convenience constructor for tests: read each path off disk
+    /// before constructing. Production runs share the corpus through
+    /// [`Self::from_inputs`].
     #[must_use]
-    pub fn scan(&self, root: &Path) -> TodoDensityReport {
+    pub fn from_paths(cfg: &Config, root: &Path, paths: &[PathBuf]) -> Self {
+        Self::from_inputs(cfg, read_doc_bodies(root, paths))
+    }
+
+    #[must_use]
+    pub fn scan(&self) -> TodoDensityReport {
         let mut report = TodoDensityReport::default();
         if !self.enabled || self.docs.is_empty() {
             return report;
         }
         let mut entries: Vec<TodoDensityEntry> = Vec::new();
         for doc in &self.docs {
-            let abs = root.join(doc);
-            let Ok(body) = std::fs::read_to_string(&abs) else {
-                continue;
-            };
-            let count = count_markers(&body);
+            let count = count_markers(&doc.body);
             if count == 0 {
                 continue;
             }
             entries.push(TodoDensityEntry {
-                doc_path: doc.clone(),
+                doc_path: doc.path.clone(),
                 marker_count: count,
             });
         }

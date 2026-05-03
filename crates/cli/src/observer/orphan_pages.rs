@@ -20,34 +20,50 @@ use crate::core::config::Config;
 use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
+use crate::observer::doc_corpus::{read_doc_bodies, DocBody};
 use crate::observer::doc_markdown::{
     extract_links, is_external, resolve_relative, split_link_target,
 };
 
 pub struct OrphanPagesObserver {
     enabled: bool,
-    standalone_docs: Vec<PathBuf>,
+    /// Pre-read Layer B docs whose bodies the observer scans for
+    /// outgoing links. Caller (`run_all`) reads these once and shares
+    /// the slices with link-health and todo-density.
+    standalone: Vec<DocBody>,
+    /// Layer A pair docs — only paths are needed (they're seeded as
+    /// "linked" via the pair entry, no body scan).
     paired_docs: Vec<PathBuf>,
 }
 
 impl OrphanPagesObserver {
     #[must_use]
-    pub fn from_config_and_inputs(
-        cfg: &Config,
-        standalone_docs: Vec<PathBuf>,
-        paired_docs: Vec<PathBuf>,
-    ) -> Self {
+    pub fn from_inputs(cfg: &Config, standalone: Vec<DocBody>, paired_docs: Vec<PathBuf>) -> Self {
         Self {
             enabled: cfg.features.docs.enabled,
-            standalone_docs,
+            standalone,
             paired_docs,
         }
     }
 
+    /// Convenience for tests / out-of-band callers: read each Layer B
+    /// path off disk before constructing. Production runs go through
+    /// the shared corpus in `observers::run_all` and use
+    /// [`Self::from_inputs`] directly.
     #[must_use]
-    pub fn scan(&self, root: &Path) -> OrphanPagesReport {
+    pub fn from_paths(
+        cfg: &Config,
+        root: &Path,
+        standalone: &[PathBuf],
+        paired_docs: Vec<PathBuf>,
+    ) -> Self {
+        Self::from_inputs(cfg, read_doc_bodies(root, standalone), paired_docs)
+    }
+
+    #[must_use]
+    pub fn scan(&self) -> OrphanPagesReport {
         let mut report = OrphanPagesReport::default();
-        if !self.enabled || self.standalone_docs.is_empty() {
+        if !self.enabled || self.standalone.is_empty() {
             return report;
         }
         let mut linked: HashSet<PathBuf> = HashSet::new();
@@ -60,17 +76,13 @@ impl OrphanPagesObserver {
         // nothing else links to them. `README.md` at any depth and
         // `index.md` at the standalone root cover the typical
         // Markdown / Starlight site layouts.
-        for doc in &self.standalone_docs {
-            if is_entry_point(doc) {
-                linked.insert(doc.clone());
+        for doc in &self.standalone {
+            if is_entry_point(&doc.path) {
+                linked.insert(doc.path.clone());
             }
         }
-        for doc in &self.standalone_docs {
-            let abs = root.join(doc);
-            let Ok(body) = std::fs::read_to_string(&abs) else {
-                continue;
-            };
-            for link in extract_links(&body) {
+        for doc in &self.standalone {
+            for link in extract_links(&doc.body) {
                 if is_external(&link.target) {
                     continue;
                 }
@@ -78,17 +90,17 @@ impl OrphanPagesObserver {
                 if path.is_empty() {
                     continue;
                 }
-                linked.insert(resolve_relative(doc, path));
+                linked.insert(resolve_relative(&doc.path, path));
             }
         }
         let orphans: Vec<PathBuf> = self
-            .standalone_docs
+            .standalone
             .iter()
-            .filter(|p| !linked.contains(*p))
-            .cloned()
+            .filter(|d| !linked.contains(&d.path))
+            .map(|d| d.path.clone())
             .collect();
         report.totals = OrphanPagesTotals {
-            scanned_docs: self.standalone_docs.len(),
+            scanned_docs: self.standalone.len(),
             orphans: orphans.len(),
         };
         report.orphans = orphans;

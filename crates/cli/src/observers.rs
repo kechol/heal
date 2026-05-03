@@ -145,12 +145,28 @@ pub(crate) fn run_all(
     } else {
         Vec::new()
     };
+    // Read every Layer A + Layer B doc body once. Four observers (link
+    // health, orphans, TODO density, duplication MD pass) all want the
+    // same bodies; the per-observer `fs::read_to_string` walks paid
+    // 4× I/O on every `heal status`.
+    let paired_doc_paths_owned = paired_doc_paths(doc_pairs.as_ref());
+    let mut all_doc_paths: Vec<std::path::PathBuf> = standalone_docs.clone();
+    for p in &paired_doc_paths_owned {
+        if !all_doc_paths.contains(p) {
+            all_doc_paths.push(p.clone());
+        }
+    }
+    let doc_corpus: Vec<crate::observer::doc_corpus::DocBody> = if cfg.features.docs.enabled {
+        crate::observer::doc_corpus::read_doc_bodies(project, &all_doc_paths)
+    } else {
+        Vec::new()
+    };
     let duplication =
         (want(MetricKind::Duplication) && cfg.metrics.duplication.enabled).then(|| {
             let docs_inputs = if cfg.features.docs.enabled && !standalone_docs.is_empty() {
                 Some(DocsDuplicationInputs {
                     min_tokens: cfg.metrics.duplication.docs_min_tokens,
-                    doc_paths: standalone_docs.clone(),
+                    docs: crate::observer::doc_corpus::select(&doc_corpus, &standalone_docs),
                 })
             } else {
                 None
@@ -220,34 +236,17 @@ pub(crate) fn run_all(
             .unwrap_or_default();
         DocCoverageObserver::from_config_and_pairs(cfg, pairs).scan(project)
     });
-    let paired_doc_paths_owned = paired_doc_paths(doc_pairs.as_ref());
-    let doc_link_health =
-        (want(MetricKind::DocLinkHealth) && cfg.features.docs.enabled).then(|| {
-            DocLinkHealthObserver::from_config_and_inputs(
-                cfg,
-                standalone_docs.clone(),
-                paired_doc_paths_owned.clone(),
-            )
-            .scan(project)
-        });
+    let doc_link_health = (want(MetricKind::DocLinkHealth) && cfg.features.docs.enabled)
+        .then(|| DocLinkHealthObserver::from_inputs(cfg, doc_corpus.clone()).scan(project));
     let orphan_pages = (want(MetricKind::OrphanPages) && cfg.features.docs.enabled).then(|| {
-        OrphanPagesObserver::from_config_and_inputs(
-            cfg,
-            standalone_docs.clone(),
-            paired_doc_paths_owned.clone(),
-        )
-        .scan(project)
+        let standalone = crate::observer::doc_corpus::select(&doc_corpus, &standalone_docs);
+        OrphanPagesObserver::from_inputs(cfg, standalone, paired_doc_paths_owned.clone()).scan()
     });
     let todo_density = (want(MetricKind::TodoDensity) && cfg.features.docs.enabled).then(|| {
         // todo_density scans every Layer B doc plus every Layer A doc
-        // — author-confessed incompleteness is interesting on both.
-        let mut docs = standalone_docs.clone();
-        for paired in &paired_doc_paths_owned {
-            if !docs.contains(paired) {
-                docs.push(paired.clone());
-            }
-        }
-        TodoDensityObserver::from_config_and_inputs(cfg, docs).scan(project)
+        // — author-confessed incompleteness is interesting on both. The
+        // corpus already holds the union; pass it through directly.
+        TodoDensityObserver::from_inputs(cfg, doc_corpus.clone()).scan()
     });
     ObserverReports {
         loc,

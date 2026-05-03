@@ -62,7 +62,7 @@ fn doc_link_health_flags_missing_relative_path() {
 
     let docs = vec![PathBuf::from("README.md"), PathBuf::from("other.md")];
     let cfg = cfg_with_docs();
-    let report = DocLinkHealthObserver::from_config_and_inputs(&cfg, docs, vec![]).scan(dir.path());
+    let report = DocLinkHealthObserver::from_paths(&cfg, dir.path(), &docs, &[]).scan(dir.path());
     assert_eq!(report.totals.broken, 1);
     assert_eq!(report.entries.len(), 1);
     assert_eq!(report.entries[0].target, "./api.md");
@@ -79,12 +79,9 @@ fn doc_link_health_flags_missing_anchor_in_same_doc() {
     );
 
     let cfg = cfg_with_docs();
-    let report = DocLinkHealthObserver::from_config_and_inputs(
-        &cfg,
-        vec![PathBuf::from("README.md")],
-        vec![],
-    )
-    .scan(dir.path());
+    let report =
+        DocLinkHealthObserver::from_paths(&cfg, dir.path(), &[PathBuf::from("README.md")], &[])
+            .scan(dir.path());
     assert_eq!(report.entries.len(), 1);
     assert_eq!(report.entries[0].target, "#nope");
     assert!(matches!(
@@ -103,12 +100,9 @@ fn doc_link_health_skips_external_links() {
     );
 
     let cfg = cfg_with_docs();
-    let report = DocLinkHealthObserver::from_config_and_inputs(
-        &cfg,
-        vec![PathBuf::from("README.md")],
-        vec![],
-    )
-    .scan(dir.path());
+    let report =
+        DocLinkHealthObserver::from_paths(&cfg, dir.path(), &[PathBuf::from("README.md")], &[])
+            .scan(dir.path());
     assert_eq!(report.totals.scanned_links, 0);
     assert!(report.entries.is_empty());
 }
@@ -126,7 +120,7 @@ fn orphan_pages_marks_unlinked_docs() {
         PathBuf::from("linked.md"),
         PathBuf::from("orphan.md"),
     ];
-    let report = OrphanPagesObserver::from_config_and_inputs(&cfg, docs, vec![]).scan(dir.path());
+    let report = OrphanPagesObserver::from_paths(&cfg, dir.path(), &docs, vec![]).scan();
     assert_eq!(report.orphans, vec![PathBuf::from("orphan.md")]);
     assert_eq!(report.totals.orphans, 1);
 }
@@ -142,9 +136,13 @@ fn orphan_pages_treats_paired_docs_as_linked() {
 
     let cfg = cfg_with_docs();
     let docs = vec![PathBuf::from("notes.md"), PathBuf::from("docs/cli.md")];
-    let report =
-        OrphanPagesObserver::from_config_and_inputs(&cfg, docs, vec![PathBuf::from("docs/cli.md")])
-            .scan(dir.path());
+    let report = OrphanPagesObserver::from_paths(
+        &cfg,
+        dir.path(),
+        &docs,
+        vec![PathBuf::from("docs/cli.md")],
+    )
+    .scan();
     assert_eq!(report.orphans, vec![PathBuf::from("notes.md")]);
 }
 
@@ -157,8 +155,8 @@ fn orphan_pages_treats_readme_as_entry_point() {
 
     let cfg = cfg_with_docs();
     let report =
-        OrphanPagesObserver::from_config_and_inputs(&cfg, vec![PathBuf::from("README.md")], vec![])
-            .scan(dir.path());
+        OrphanPagesObserver::from_paths(&cfg, dir.path(), &[PathBuf::from("README.md")], vec![])
+            .scan();
     assert!(report.orphans.is_empty(), "got: {:?}", report.orphans);
 }
 
@@ -169,8 +167,8 @@ fn todo_density_counts_markers_outside_fences() {
     write(dir.path(), "page.md", body);
 
     let cfg = cfg_with_docs();
-    let report = TodoDensityObserver::from_config_and_inputs(&cfg, vec![PathBuf::from("page.md")])
-        .scan(dir.path());
+    let report =
+        TodoDensityObserver::from_paths(&cfg, dir.path(), &[PathBuf::from("page.md")]).scan();
     assert_eq!(report.entries.len(), 1);
     assert_eq!(report.entries[0].marker_count, 3);
 }

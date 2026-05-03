@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 
+use heal_cli::observer::doc_corpus::read_doc_bodies;
 use heal_cli::observer::duplication::{DocsDuplicationInputs, DuplicationObserver};
 
 mod common;
@@ -165,12 +166,13 @@ fn markdown_duplicate_pass_detects_repeated_prose() {
     write(dir.path(), "docs/getting_started.md", prose);
 
     let mut o = observer(20);
+    let doc_paths = vec![
+        PathBuf::from("docs/install.md"),
+        PathBuf::from("docs/getting_started.md"),
+    ];
     o.docs = Some(DocsDuplicationInputs {
         min_tokens: 30,
-        doc_paths: vec![
-            PathBuf::from("docs/install.md"),
-            PathBuf::from("docs/getting_started.md"),
-        ],
+        docs: read_doc_bodies(dir.path(), &doc_paths),
     });
     let report = o.scan(dir.path());
     assert!(
@@ -201,9 +203,10 @@ fn markdown_duplicate_pass_skips_fenced_code_blocks() {
     write(dir.path(), "docs/b.md", body_b);
 
     let mut o = observer(50); // high enough to skip code path
+    let doc_paths = vec![PathBuf::from("docs/a.md"), PathBuf::from("docs/b.md")];
     o.docs = Some(DocsDuplicationInputs {
         min_tokens: 5,
-        doc_paths: vec![PathBuf::from("docs/a.md"), PathBuf::from("docs/b.md")],
+        docs: read_doc_bodies(dir.path(), &doc_paths),
     });
     let report = o.scan(dir.path());
     // No block should reference the fenced content since fences are

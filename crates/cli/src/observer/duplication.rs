@@ -65,7 +65,10 @@ pub struct DuplicationObserver {
 #[derive(Debug, Clone)]
 pub struct DocsDuplicationInputs {
     pub min_tokens: u32,
-    pub doc_paths: Vec<PathBuf>,
+    /// Pre-read Markdown / RST doc bodies. Sharing a [`Vec<DocBody>`]
+    /// with the Layer B observers lets the duplication pass piggyback
+    /// on the same I/O instead of re-reading every doc.
+    pub docs: Vec<crate::observer::doc_corpus::DocBody>,
 }
 
 impl DuplicationObserver {
@@ -81,11 +84,12 @@ impl DuplicationObserver {
     }
 
     /// Wire up the optional Markdown / RST duplicate-detection pass.
-    /// `doc_paths` are project-relative — the typical resolver is
-    /// `crate::observer::doc_walk::walk_standalone_docs`.
+    /// `inputs.docs` are pre-read; typical resolver is
+    /// `observer::doc_corpus::read_doc_bodies` over the result of
+    /// `observer::doc_walk::walk_standalone_docs`.
     #[must_use]
-    pub fn with_docs(mut self, docs: Option<DocsDuplicationInputs>) -> Self {
-        self.docs = docs;
+    pub fn with_docs(mut self, inputs: Option<DocsDuplicationInputs>) -> Self {
+        self.docs = inputs;
         self
     }
 
@@ -136,23 +140,19 @@ impl DuplicationObserver {
         }
 
         // Second pass: Markdown / prose duplicates with a larger window.
-        // Walks the supplied doc list rather than `walk_supported_files_under`
+        // Walks pre-read bodies rather than `walk_supported_files_under`
         // because prose docs aren't bound to any tree-sitter grammar.
         if let Some(docs) = self.docs.as_ref() {
-            if docs.min_tokens > 0 && !docs.doc_paths.is_empty() {
+            if docs.min_tokens > 0 && !docs.docs.is_empty() {
                 let docs_window = docs.min_tokens as usize;
                 let mut doc_files: Vec<FileTokens> = Vec::new();
-                for rel in &docs.doc_paths {
-                    let abs = root.join(rel);
-                    let Ok(text) = std::fs::read_to_string(&abs) else {
-                        continue;
-                    };
-                    let (hashes, lines) = tokenize_markdown(&text);
+                for entry in &docs.docs {
+                    let (hashes, lines) = tokenize_markdown(&entry.body);
                     if hashes.len() < docs_window {
                         continue;
                     }
                     doc_files.push(FileTokens {
-                        path: rel.clone(),
+                        path: entry.path.clone(),
                         hashes,
                         lines,
                     });

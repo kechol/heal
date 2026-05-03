@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub mod change_coupling;
 pub mod churn;
 pub mod complexity;
+pub mod doc_corpus;
 pub mod doc_coverage;
 pub mod doc_drift;
 pub mod doc_freshness;
