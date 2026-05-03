@@ -76,7 +76,7 @@ demand:
   architecture (Cockburn, Evans), DDD (Evans, Vernon), the leverage
   hierarchy of refactor patterns, the trap catalogue, plus the
   rules for _respecting the codebase_ the proposals must pass.
-- `references/readability.md` — the *positive* criterion for
+- `references/readability.md` — the _positive_ criterion for
   proposals: the goal hierarchy (readability → maintainability →
   metric), readability principles (Boswell, Ousterhout, Beck,
   Knuth), and the 5-question judgement test.
@@ -132,7 +132,7 @@ Per-metric, `/heal-code-patch` maps to established refactoring vocabulary
 | --------------------------- | -------------------------------------------------------------------------------------- |
 | `ccn` / `cognitive`         | Extract Function, Replace Nested Conditional with Guard Clauses, Decompose Conditional |
 | `duplication`               | Extract Function / Method, Pull Up Method, Form Template Method, Rule of Three         |
-| `change_coupling`           | Surface the architectural seam — `/heal-code-patch` does not auto-fix coupling           |
+| `change_coupling`           | Surface the architectural seam — `/heal-code-patch` does not auto-fix coupling         |
 | `change_coupling.symmetric` | Same — strong "responsibility mixing" signal needs a human call                        |
 | `lcom`                      | Split the class along the cluster boundary — usually Extract Class                     |
 | `hotspot`                   | Hotspot is a flag, not a problem; act on the underlying CCN/dup/coupling               |

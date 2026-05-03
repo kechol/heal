@@ -11,11 +11,11 @@ for the full argument list.
 
 The day-to-day surface — these are the four you'll actually type.
 
-| Command       | Purpose                                                                                                |
-| ------------- | ------------------------------------------------------------------------------------------------------ |
-| `heal init`   | Set up `.heal/`, calibrate, and install the post-commit hook in the current repository.                |
-| `heal skills` | Install / update / inspect / remove the bundled Claude skill set.                                      |
-| `heal status` | Render the current TODO list (or refresh it). Reads `.heal/findings/`.                                 |
+| Command       | Purpose                                                                                                                |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `heal init`   | Set up `.heal/`, calibrate, and install the post-commit hook in the current repository.                                |
+| `heal skills` | Install / update / inspect / remove the bundled Claude skill set.                                                      |
+| `heal status` | Render the current TODO list (or refresh it). Reads `.heal/findings/`.                                                 |
 | `heal diff`   | Compare the live worktree against an earlier commit (default: the calibration baseline). Like `git diff` for findings. |
 
 ## Automation commands
@@ -24,16 +24,16 @@ These run on your behalf — from the git post-commit hook, from a
 bundled Claude skill, or only when your codebase has shifted enough
 to warrant attention. Hidden from `--help`.
 
-| Command            | Driven by                 | Purpose                                                                                  |
-| ------------------ | ------------------------- | ---------------------------------------------------------------------------------------- |
-| `heal hook`        | git post-commit           | Run observers and emit the Severity nudge after each commit.                             |
-| `heal mark fix`    | `/heal-code-patch` skill  | Record that a commit fixed a finding so the next `heal status` reconciles it.            |
-| `heal mark accept` | `/heal-code-review` skill | Record an intrinsic finding the team has decided not to refactor.                        |
-| `heal metrics`     | `/heal-code-review` skill | Per-metric summary recomputed on every invocation.                                       |
-| `heal calibrate`   | `/heal-config` skill      | Reset Severity thresholds to today's codebase distribution.                              |
+| Command            | Driven by                 | Purpose                                                                       |
+| ------------------ | ------------------------- | ----------------------------------------------------------------------------- |
+| `heal hook`        | git post-commit           | Run observers and emit the Severity nudge after each commit.                  |
+| `heal mark fix`    | `/heal-code-patch` skill  | Record that a commit fixed a finding so the next `heal status` reconciles it. |
+| `heal mark accept` | `/heal-code-review` skill | Record an intrinsic finding the team has decided not to refactor.             |
+| `heal metrics`     | `/heal-code-review` skill | Per-metric summary recomputed on every invocation.                            |
+| `heal calibrate`   | `/heal-config` skill      | Reset Severity thresholds to today's codebase distribution.                   |
 
 `heal metrics` and `heal calibrate` are listed here because the
-bundled skills decide *when* to run them — `/heal-code-review` reads
+bundled skills decide _when_ to run them — `/heal-code-review` reads
 the per-metric summary while orchestrating an audit, and
 `/heal-config` watches for calibration drift and recommends a
 recalibration when the codebase has moved enough. Run them by hand
@@ -166,7 +166,7 @@ heal diff --json                       # machine-readable shape
 ```
 
 `<git-ref>` accepts anything `git rev-parse` understands. heal
-re-evaluates the requested ref under the *current* `config.toml` and
+re-evaluates the requested ref under the _current_ `config.toml` and
 `calibration.toml` so the comparison is apples-to-apples — you're
 seeing how today's rules judge then-and-now, not the historical
 ratings.
@@ -236,11 +236,11 @@ this command. Put `floor_critical` / `floor_ok` overrides in
 at the on-disk state directly, three flat files live under
 `.heal/findings/`:
 
-| File                            | Purpose                                                                  |
-| ------------------------------- | ------------------------------------------------------------------------ |
-| `.heal/findings/latest.json`    | The current TODO list — refreshed by `heal status --refresh`.            |
-| `.heal/findings/fixed.json`     | Bounded record of fixes claimed by `/heal-code-patch`.                   |
-| `.heal/findings/regressed.jsonl`| Audit trail for fixes that were re-detected.                             |
+| File                             | Purpose                                                       |
+| -------------------------------- | ------------------------------------------------------------- |
+| `.heal/findings/latest.json`     | The current TODO list — refreshed by `heal status --refresh`. |
+| `.heal/findings/fixed.json`      | Bounded record of fixes claimed by `/heal-code-patch`.        |
+| `.heal/findings/regressed.jsonl` | Audit trail for fixes that were re-detected.                  |
 
 These are plain files, readable with `jq`:
 

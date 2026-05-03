@@ -24,10 +24,10 @@ classified in **two stages**.
 escape hatches that keep the percentile classifier honest at the
 extremes:
 
-| Rule                       | Result   | Why                                                                                           |
-| -------------------------- | -------- | --------------------------------------------------------------------------------------------- |
-| `value ≥ floor_critical`   | Critical | Worst cases stay Critical even on a uniformly-bad codebase (CCN 25, Cognitive 50, Dup 30%). |
-| `value < floor_ok`         | Ok       | Graduation gate, proxy metrics only — a clean codebase isn't held hostage by "top 10% is always red". Defaults: CCN 11, Cognitive 8. |
+| Rule                     | Result   | Why                                                                                                                                  |
+| ------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `value ≥ floor_critical` | Critical | Worst cases stay Critical even on a uniformly-bad codebase (CCN 25, Cognitive 50, Dup 30%).                                          |
+| `value < floor_ok`       | Ok       | Graduation gate, proxy metrics only — a clean codebase isn't held hostage by "top 10% is always red". Defaults: CCN 11, Cognitive 8. |
 
 **Stage 2 — codebase's own percentile distribution.** Anything that
 falls between the two floors is classified by where it lands in the
@@ -56,7 +56,7 @@ tiers driven by `[policy.drain]`:
 - **Advisory** — anything else above Ok. Hidden unless `--all`.
 
 The split is what makes "drain to zero" meaningful: T0 is the goal,
-T1 is hygiene, Advisory is review-when-convenient. CCN as a *proxy*
+T1 is hygiene, Advisory is review-when-convenient. CCN as a _proxy_
 metric belongs in T0 only when corroborated by hotspot — otherwise
 the metric drives a Goodhart loop. See
 [Configuration › Drain policy](/heal/configuration/#drain-policy).
@@ -232,7 +232,7 @@ The "Ok 🔥" subset — low Severity but heavily touched, "why are we
 still editing this?" candidates — appears in a dedicated section
 under `heal status --all`.
 
-## Why CCN and Cognitive are *proxies*
+## Why CCN and Cognitive are _proxies_
 
 McCabe (1976) introduced CCN as a static estimate of the minimum number
 of test cases needed for branch coverage — not as a code-quality
@@ -243,7 +243,7 @@ Driving either toward zero damages readability:
   rather than reducing the global count.
 - Converting flat positive composites (`if (A && B && C)`) to negative
   guard chains doesn't move Cognitive (the original isn't nested) and
-  often *increases* reader load.
+  often _increases_ reader load.
 
 heal's design accepts this. `floor_ok` graduates clean codebases off
 the proxy metrics. Hotspot multiplies leverage on touched files. The

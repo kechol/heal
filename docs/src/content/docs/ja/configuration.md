@@ -128,7 +128,7 @@ primary_language = "typescript"
 floor_ok = 18
 ```
 
-利用できるフィールドはメトリクスごとに `floor_critical` と `floor_ok` です（`ccn` / `cognitive` / `duplication` / `change_coupling` / `lcom`）。workspace の上書きはグローバルの `[metrics.<m>]` *の後* に適用されるため、両方ある場合は workspace の値が勝ちます。
+利用できるフィールドはメトリクスごとに `floor_critical` と `floor_ok` です（`ccn` / `cognitive` / `duplication` / `change_coupling` / `lcom`）。workspace の上書きはグローバルの `[metrics.<m>]` _の後_ に適用されるため、両方ある場合は workspace の値が勝ちます。
 
 パーセンタイル区切り（p75 / p90 / p95）も workspace ごとに計算されます — `heal calibrate` は宣言された workspace ごとに `[calibration.workspaces."<path>".<metric>]` の表を 1 つずつ記録します。手動セットアップは不要で、`[[project.workspaces]]` を宣言するだけで十分です。
 

@@ -62,16 +62,16 @@ heal status  ──►  calibration.toml で Finding を分類
 
 ## 何がいつ書かれるか
 
-| ファイル / ディレクトリ          | 書き出し元                                          | タイミング                                        |
-| -------------------------------- | --------------------------------------------------- | ------------------------------------------------- |
-| `.heal/.gitignore`               | `heal init`                                         | セットアップ時に一度。                            |
-| `.heal/config.toml`              | `heal init`                                         | セットアップ時に一度。自由に編集可。              |
-| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                      | セットアップ時、その後は明示的な再 calibrate 時。 |
-| `.heal/findings/latest.json`     | `heal status`                                       | 新規 `heal status`（キャッシュミス経路）ごと。    |
-| `.heal/findings/fixed.json`      | `heal mark fix`（`/heal-code-patch` から呼出）      | `/heal-code-patch` のコミット着地ごと。           |
-| `.heal/findings/accepted.json`   | `heal mark accept`（`/heal-code-review` から呼出）  | チームが intrinsic と判断した finding を記録時。  |
-| `.heal/findings/regressed.jsonl` | `heal status`（整合パス）                            | 修正済み Finding が再検出されたとき。            |
-| `.claude/skills/heal-*/`         | `heal skills install`                               | 一度だけ。`heal skills update` で更新。           |
+| ファイル / ディレクトリ          | 書き出し元                                         | タイミング                                        |
+| -------------------------------- | -------------------------------------------------- | ------------------------------------------------- |
+| `.heal/.gitignore`               | `heal init`                                        | セットアップ時に一度。                            |
+| `.heal/config.toml`              | `heal init`                                        | セットアップ時に一度。自由に編集可。              |
+| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                     | セットアップ時、その後は明示的な再 calibrate 時。 |
+| `.heal/findings/latest.json`     | `heal status`                                      | 新規 `heal status`（キャッシュミス経路）ごと。    |
+| `.heal/findings/fixed.json`      | `heal mark fix`（`/heal-code-patch` から呼出）     | `/heal-code-patch` のコミット着地ごと。           |
+| `.heal/findings/accepted.json`   | `heal mark accept`（`/heal-code-review` から呼出） | チームが intrinsic と判断した finding を記録時。  |
+| `.heal/findings/regressed.jsonl` | `heal status`（整合パス）                          | 修正済み Finding が再検出されたとき。             |
+| `.claude/skills/heal-*/`         | `heal skills install`                              | 一度だけ。`heal skills update` で更新。           |
 
 イベントログも、月次ローテーションも、`.heal/snapshots/` / `.heal/logs/` / `.heal/docs/` / `.heal/reports/` も存在しません。heal は現在の状態と `regressed.jsonl` の小さな監査トレイルだけを保持します。
 
@@ -84,13 +84,15 @@ heal status  ──►  calibration.toml で Finding を分類
 ```json
 {
   "version": 2,
-  "id": "01HKM3Q6Z1B7…",                 // ULID
+  "id": "01HKM3Q6Z1B7…", // ULID
   "started_at": "2026-04-30T05:14:22Z",
   "head_sha": "a0a6d1a…",
   "worktree_clean": true,
-  "config_hash": "9f8e7d6c5b4a3210",     // config + calibration の FNV-1a
+  "config_hash": "9f8e7d6c5b4a3210", // config + calibration の FNV-1a
   "severity_counts": { "critical": 2, "high": 5, "medium": 12, "ok": 84 },
-  "findings": [ /* Vec<Finding> */ ]
+  "findings": [
+    /* Vec<Finding> */
+  ]
 }
 ```
 
@@ -140,11 +142,11 @@ heal はコード健全性の **測定** と、それに対して何を行うか
 
 `heal status` は非 Ok の Finding を `[policy.drain]` 駆動で 3 つのバケットに分けます。
 
-| Tier | デフォルト spec | レンダラー挙動 | Skill 挙動 |
-| --- | --- | --- | --- |
-| **T0 / Drain queue** | `must = ["critical:hotspot"]` | 常に表示、Severity 🔥 desc 順。 | `/heal-code-patch` が 1 finding ずつ drain。 |
-| **T1 / Should drain** | `should = ["critical", "high:hotspot"]` | デフォルト表示、別セクション。 | レビュー対象、自動 drain しない。 |
-| **Advisory** | それ以外の非 Ok | `--all` 時のみ表示。 | 自動 drain なし、余裕のあるときに review。 |
+| Tier                  | デフォルト spec                         | レンダラー挙動                  | Skill 挙動                                   |
+| --------------------- | --------------------------------------- | ------------------------------- | -------------------------------------------- |
+| **T0 / Drain queue**  | `must = ["critical:hotspot"]`           | 常に表示、Severity 🔥 desc 順。 | `/heal-code-patch` が 1 finding ずつ drain。 |
+| **T1 / Should drain** | `should = ["critical", "high:hotspot"]` | デフォルト表示、別セクション。  | レビュー対象、自動 drain しない。            |
+| **Advisory**          | それ以外の非 Ok                         | `--all` 時のみ表示。            | 自動 drain なし、余裕のあるときに review。   |
 
 `Severity::Ok` の Finding は drain 対象外です。レンダラーは Ok 🔥 pre-section（上位 10% hotspot だがメトリクスフロア未満）と隠し合計カウントで表示します。
 

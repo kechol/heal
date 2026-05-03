@@ -70,16 +70,16 @@ team shares the same Severity ladder. `findings/` is excluded by
 
 ## What gets written and when
 
-| File / dir                       | Written by                                       | When                                         |
-| -------------------------------- | ------------------------------------------------ | -------------------------------------------- |
-| `.heal/.gitignore`               | `heal init`                                      | Once at setup.                               |
-| `.heal/config.toml`              | `heal init`                                      | Once at setup; you can edit it freely.       |
-| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                   | At setup, then on explicit recalibration.    |
-| `.heal/findings/latest.json`     | `heal status`                                    | Each fresh `heal status` (cache-miss path).  |
-| `.heal/findings/fixed.json`      | `heal mark fix` (called by `/heal-code-patch`)   | Each commit `/heal-code-patch` lands.        |
+| File / dir                       | Written by                                         | When                                        |
+| -------------------------------- | -------------------------------------------------- | ------------------------------------------- |
+| `.heal/.gitignore`               | `heal init`                                        | Once at setup.                              |
+| `.heal/config.toml`              | `heal init`                                        | Once at setup; you can edit it freely.      |
+| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                     | At setup, then on explicit recalibration.   |
+| `.heal/findings/latest.json`     | `heal status`                                      | Each fresh `heal status` (cache-miss path). |
+| `.heal/findings/fixed.json`      | `heal mark fix` (called by `/heal-code-patch`)     | Each commit `/heal-code-patch` lands.       |
 | `.heal/findings/accepted.json`   | `heal mark accept` (called by `/heal-code-review`) | When the team accepts an intrinsic finding. |
-| `.heal/findings/regressed.jsonl` | `heal status` (reconcile pass)                   | When a fixed finding is re-detected.         |
-| `.claude/skills/heal-*/`         | `heal skills install`                            | Once; updated with `heal skills update`.     |
+| `.heal/findings/regressed.jsonl` | `heal status` (reconcile pass)                     | When a fixed finding is re-detected.        |
+| `.claude/skills/heal-*/`         | `heal skills install`                              | Once; updated with `heal skills update`.    |
 
 There is no event log, no monthly rotation, no `.heal/snapshots/`,
 `.heal/logs/`, `.heal/docs/`, or `.heal/reports/` directory. heal
@@ -98,13 +98,15 @@ writer of `accepted.json`.
 ```json
 {
   "version": 2,
-  "id": "01HKM3Q6Z1B7…",                 // ULID
+  "id": "01HKM3Q6Z1B7…", // ULID
   "started_at": "2026-04-30T05:14:22Z",
   "head_sha": "a0a6d1a…",
   "worktree_clean": true,
-  "config_hash": "9f8e7d6c5b4a3210",     // FNV-1a over config + calibration
+  "config_hash": "9f8e7d6c5b4a3210", // FNV-1a over config + calibration
   "severity_counts": { "critical": 2, "high": 5, "medium": 12, "ok": 84 },
-  "findings": [ /* Vec<Finding> */ ]
+  "findings": [
+    /* Vec<Finding> */
+  ]
 }
 ```
 
@@ -154,7 +156,7 @@ calibrated percentile. Recalibration is **never automatic** — see
 
 ## Calibration vs policy: two layers
 
-heal separates the *measurement* of code health from the *intent* of
+heal separates the _measurement_ of code health from the _intent_ of
 what to act on:
 
 - **Calibration layer** (`.heal/calibration.toml` + per-metric
@@ -181,11 +183,11 @@ for their bandwidth.
 `heal status` partitions every non-Ok finding into one of three
 buckets driven by `[policy.drain]`:
 
-| Tier | Default specs | Renderer behaviour | Skill behaviour |
-| --- | --- | --- | --- |
-| **T0 / Drain queue** | `must = ["critical:hotspot"]` | Always shown, sorted Severity 🔥 desc. | `/heal-code-patch` drains one finding per commit. |
-| **T1 / Should drain** | `should = ["critical", "high:hotspot"]` | Shown by default, separate section. | Surfaced for review; not auto-drained. |
-| **Advisory** | everything else above Ok | Hidden unless `--all`. | Never drained; review when convenient. |
+| Tier                  | Default specs                           | Renderer behaviour                     | Skill behaviour                                   |
+| --------------------- | --------------------------------------- | -------------------------------------- | ------------------------------------------------- |
+| **T0 / Drain queue**  | `must = ["critical:hotspot"]`           | Always shown, sorted Severity 🔥 desc. | `/heal-code-patch` drains one finding per commit. |
+| **T1 / Should drain** | `should = ["critical", "high:hotspot"]` | Shown by default, separate section.    | Surfaced for review; not auto-drained.            |
+| **Advisory**          | everything else above Ok                | Hidden unless `--all`.                 | Never drained; review when convenient.            |
 
 Findings classified as `Severity::Ok` are excluded from drain entirely;
 the renderer surfaces them via a dedicated Ok 🔥 pre-section (top-10%

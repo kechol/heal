@@ -41,14 +41,14 @@ heal skills install
 
 リードオンリー。`heal status --all --json` を取り込み、フラグ付きのコードを深く読み込んで、2 つの成果物を返します。
 
-1. **アーキテクチャ的な所見** — Finding を *リスト* ではなく *システム* として読み解いたもの（複雑度・重複・結合・ハブのいずれが支配的軸か）。
+1. **アーキテクチャ的な所見** — Finding を _リスト_ ではなく _システム_ として読み解いたもの（複雑度・重複・結合・ハブのいずれが支配的軸か）。
 2. **優先度付き TODO リスト** — デフォルトでは **T0 (`must`) のみ** を対象とします。T1 (`should`) は別セクション「If bandwidth permits」として、Advisory はカウントのみで surface します。TODO エントリはファイル / 関数を特定した具体的なリファクタ提案で、各エントリには確立されたリファクタパターン名と期待されるメトリクスの動きが付与されます。
 
 スキルは言語非依存で、テンプレートを押し付けるのではなく、コードベースに見て取れるスタイルに合わせて提案を調整します。リファレンスファイルが 3 つ同梱されており、必要なときだけ読み込まれます。
 
 - `references/metrics.md` — 各メトリクス（`loc` / `ccn` / `cognitive` / `churn` / `change_coupling` / `duplication` / `hotspot` / `lcom`）が何を測っているか、背景の文献、しきい値、典型的な偽陽性。
-- `references/architecture.md` — リファクタ提案で使う語彙集: モジュールの深さ（Ousterhout）、レイヤード / ヘキサゴナルアーキテクチャ（Cockburn、Evans）、DDD（Evans、Vernon）、リファクタパターンのレバレッジ階層、トラップカタログ、および提案が満たすべき *コードベース尊重* のルール。
-- `references/readability.md` — 提案の *positive* 基準: ゴール階層（readability → maintainability → metric）、可読性の原則（Boswell、Ousterhout、Beck、Knuth）、5 つの判断質問テスト。
+- `references/architecture.md` — リファクタ提案で使う語彙集: モジュールの深さ（Ousterhout）、レイヤード / ヘキサゴナルアーキテクチャ（Cockburn、Evans）、DDD（Evans、Vernon）、リファクタパターンのレバレッジ階層、トラップカタログ、および提案が満たすべき _コードベース尊重_ のルール。
+- `references/readability.md` — 提案の _positive_ 基準: ゴール階層（readability → maintainability → metric）、可読性の原則（Boswell、Ousterhout、Beck、Knuth）、5 つの判断質問テスト。
 
 `/heal-code-review` は提案のみで、ソースを変更しません。書き込み側は `/heal-code-patch` です。
 
@@ -85,7 +85,7 @@ heal skills install
 | --------------------------- | -------------------------------------------------------------------------------------- |
 | `ccn` / `cognitive`         | Extract Function、Replace Nested Conditional with Guard Clauses、Decompose Conditional |
 | `duplication`               | Extract Function / Method、Pull Up Method、Form Template Method、Rule of Three         |
-| `change_coupling`           | アーキテクチャ的な seam を表面化 — `/heal-code-patch` は coupling を自動修正しない       |
+| `change_coupling`           | アーキテクチャ的な seam を表面化 — `/heal-code-patch` は coupling を自動修正しない     |
 | `change_coupling.symmetric` | 同様 — 強い「責務の混在」シグナルは人間の判断が必要                                    |
 | `lcom`                      | クラスをクラスタ境界で分割 — 通常 Extract Class                                        |
 | `hotspot`                   | Hotspot は問題ではなくフラグ；裏にある CCN/dup/coupling に対処する                     |

@@ -3,7 +3,7 @@ title: Concept
 description: Why heal exists, what problem it solves, and how it approaches your codebase.
 ---
 
-This page explains the *why*. To start using heal directly, see
+This page explains the _why_. To start using heal directly, see
 [Quick Start](/heal/quick-start/) and come back later.
 
 ## The problem
@@ -12,7 +12,7 @@ AI coding agents are great at the next change you ask for. But the
 codebase keeps moving in the background: each fix or feature adds a
 little complexity, the same files get touched over and over,
 duplicated blocks slip in. The agent doesn't watch for that — and on
-a real codebase, by the time *you* notice that a file has become
+a real codebase, by the time _you_ notice that a file has become
 hard to work with, the regressions are already shipping.
 
 ## The idea
@@ -37,7 +37,7 @@ than waiting for the human to do so.
 A naïve threshold ("CCN ≥ 10 is high") works poorly across projects
 — a 200-line script and a 200kloc service operate in different
 worlds. heal calibrates each metric to **your codebase's own
-distribution**: the top decile of *your* complexity becomes High, the
+distribution**: the top decile of _your_ complexity becomes High, the
 top 5% becomes Critical. Recalibration is manual (`heal calibrate
 --force`) — a refactor that genuinely improves the codebase shouldn't
 silently move the goalposts.
@@ -68,12 +68,12 @@ skill drains the `🔥` queue first by default for the same reason.
 The `heal` CLI itself never modifies source files. Repair flows
 through two bundled Claude skills with deliberately split roles:
 
-- **`/heal-code-review`** is the *thinking* skill. Read-only. It
+- **`/heal-code-review`** is the _thinking_ skill. Read-only. It
   reads the cache as a system, deep-reads the flagged code, and
   proposes architectural moves — the calls a human still has to make.
-  Use this when you want to *understand* what the cache is telling you
+  Use this when you want to _understand_ what the cache is telling you
   before changing anything.
-- **`/heal-code-patch`** is the *doing* skill. Mechanical only — it
+- **`/heal-code-patch`** is the _doing_ skill. Mechanical only — it
   drains the cache one finding per commit using established refactor
   patterns whose application doesn't require domain judgement. Refuses
   to start on a dirty worktree, never pushes, never amends. When the
@@ -90,7 +90,7 @@ fixes happen on their own; the interesting calls stay with you.
 - **Not a code reviewer.** That role belongs to Claude;
   `/heal-code-review` orchestrates it. heal shapes the prompt and the
   TODO list.
-- **Not a CI gate.** The post-commit hook fires *after* a commit
+- **Not a CI gate.** The post-commit hook fires _after_ a commit
   lands. heal tracks the long-term trajectory of the codebase rather
   than blocking individual PRs.
 - **Not a replacement for tests.** heal surfaces structural

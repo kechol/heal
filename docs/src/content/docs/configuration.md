@@ -144,7 +144,7 @@ floor_ok = 18
 
 The fields available per metric are `floor_critical` and `floor_ok`
 (`ccn` / `cognitive` / `duplication` / `change_coupling` / `lcom`).
-Workspace overrides apply *after* the global `[metrics.<m>]`
+Workspace overrides apply _after_ the global `[metrics.<m>]`
 overrides, so the workspace value wins when both are present.
 
 The percentile breaks (p75 / p90 / p95) are also computed
@@ -267,7 +267,7 @@ floor_ok       = 8      # ~half of Sonar's "review" threshold
   classifies as Critical regardless of percentile placement, so a
   uniformly-bad codebase still surfaces its worst cases.
 - `floor_ok` — absolute graduation gate. Anything strictly `<
-  floor_ok` classifies as `Ok` regardless of percentile, so a
+floor_ok` classifies as `Ok` regardless of percentile, so a
   uniformly-clean codebase escapes the "top 10% is always Critical"
   loop (Goodhart's Law). Defaults are literature-anchored; teams
   override only when their domain warrants stricter or laxer
