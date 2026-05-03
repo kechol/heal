@@ -172,6 +172,54 @@ the whole point of tracking fixes separately.
 
 ---
 
+## `AcceptedFinding` and `AcceptedMap` (`core::accepted`)
+
+The team's "won't fix / acknowledged intrinsic" lane. Distinct from
+`fixed.json` — accepted entries are not consumed on re-detection;
+they suppress the finding's drain-queue presence indefinitely until
+explicitly removed via `heal mark accept --remove` (or hand-edit).
+
+```rust
+pub struct AcceptedFinding {
+    pub reason: String,                  // free-form; empty allowed
+    pub file: String,                    // snapshot at accept time
+    pub metric: String,                  // snapshot at accept time
+    pub severity: Severity,              // snapshot at accept time
+    pub hotspot: bool,                   // snapshot at accept time
+    pub metric_value: Option<f64>,       // CCN / Cognitive only
+    pub summary: String,                 // snapshot at accept time
+    pub accepted_at: DateTime<Utc>,
+    pub accepted_by: Option<String>,     // "Name <email>" from git config
+}
+
+pub type AcceptedMap = BTreeMap<String, AcceptedFinding>;
+```
+
+`AcceptedMap` is keyed by `Finding.id` and serialised as
+`.heal/findings/accepted.json` (tracked, atomic-write). Schema is
+`#[serde(deny_unknown_fields)]` — a schema rename requires a docs
+sweep here, in `glossary.md`, and in `CHANGELOG.md`.
+
+`Finding.accepted: bool` is **decorated at render time** by
+`decorate_findings(&mut [Finding], &AcceptedMap)`; `latest.json`
+keeps raw observer truth and never carries `accepted: true`. Every
+renderer (`heal status`, `heal diff`, the post-commit nudge, JSON
+output) folds the accepted map in just before emitting. This keeps
+the observer cache cheap to write and lets policy decisions (accept
+/ remove) take effect without a rescan.
+
+`reconcile_accepted(&AcceptedMap, &[Finding]) -> Vec<AcceptedDrift>`
+surfaces severity escalations only. An accepted-at-`High` finding
+that now classifies as `Critical` produces an `AcceptedDrift` so
+the renderer can warn. Other shapes — file deleted, finding no
+longer detected, metric value moved within the same severity —
+stay quiet by design (they belong on `heal mark accept --list`,
+not in the live status banner). Severity is HEAL's decision
+boundary; raw metric values are an implementation detail of the
+classifier.
+
+---
+
 ## `Severity` and `SeverityCounts` (`core::severity`)
 
 ```rust

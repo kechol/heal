@@ -116,6 +116,7 @@ below). Constants live in `core::calibration` (`FLOOR_CCN`,
 | `.heal/findings/latest.json` | `heal status` writes; `heal diff` reads | **yes** | Single record. `FindingsRecord` (schema-versioned). `id` is deterministic so byte-stable across teammates. |
 | `.heal/findings/fixed.json` | `heal mark-fixed` writes; `heal status` reconciles | **yes** | `BTreeMap<finding_id, FixedFinding>`. Bounded by outstanding claims. |
 | `.heal/findings/regressed.jsonl` | `heal status` appends | **yes** | Append-only audit trail of re-detected fixes. |
+| `.heal/findings/accepted.json` | `heal mark accept` writes; renderers read | **yes** | `BTreeMap<finding_id, AcceptedFinding>`. Team contract for "won't fix / intrinsic" findings. Decorates `Finding.accepted: bool` at render time. |
 
 | Term | Canonical | Wrong / drift |
 |---|---|---|
@@ -123,6 +124,8 @@ below). Constants live in `core::calibration` (`FLOOR_CCN`,
 | Schema version constant | `FINDINGS_RECORD_VERSION` | `CHECK_RECORD_VERSION` |
 | Re-detection cross-ref | `RegressedEntry::regressed_in_record_id` | `regressed_check_id` (v1) |
 | Fixed map | `FixedMap` = `BTreeMap<String, FixedFinding>` | `FixedSet` |
+| Accepted map | `AcceptedMap` = `BTreeMap<String, AcceptedFinding>` | `Suppressed*`, `Ignored*`, `Allowed*` |
+| Per-finding suppression | `Accepted` (state) / `accept` (verb) | `suppress`, `ignore`, `acknowledge`, `allow`, `mute` |
 | Idempotency tuple | `(head_sha, config_hash, worktree_clean)` | "freshness key" — OK as prose, not as a code identifier |
 
 **Removed concepts** — never reintroduce these names. The retired list
@@ -168,7 +171,7 @@ the enum in `core::monorepo` instead.
 
 ## Skills (Claude Code)
 
-Skills under `crates/cli/plugins/heal/skills/`. Names are kebab-case and
+Skills under `crates/cli/skills/`. Names are kebab-case and
 prefixed `heal-`. Trigger forms in skill bodies are slash-commands.
 
 | Canonical skill name | Slash-command form | Role |
@@ -186,7 +189,7 @@ read-only, patch = mechanical write. Don't merge them.
 | metadata block | YAML `metadata:` in SKILL.md frontmatter. Carries `heal-version`, `heal-source`. |
 | canonical bytes | On-disk SKILL.md with `metadata:` block stripped (`skill_assets::strip_skill_metadata`). |
 | drift | Function of (canonical on-disk) vs. bundled raw bytes. Not a timestamp; not a state file. |
-| bundled tree | The `crates/cli/plugins/heal/skills/` directory embedded via `include_dir!`. |
+| bundled tree | The `crates/cli/skills/` directory embedded via `include_dir!`. |
 | sidecar manifest | **Removed.** `skills-install.json` no longer exists. |
 | HEAL plugin tree | **Removed.** `.claude-plugin/marketplace.json`, `.claude/plugins/heal/` are pre-v0.2 layouts swept on install. |
 

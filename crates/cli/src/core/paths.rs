@@ -37,11 +37,11 @@ impl HealPaths {
     }
 
     /// Single-record finding cache: `<root>/findings/latest.json`,
-    /// `fixed.json`, `regressed.jsonl`. `heal status` writes it; skill
-    /// workflows and `heal diff` read it. Kept under `.heal/` (not
-    /// `.cache/`) so the layout ships with the project alongside
-    /// `config.toml` and `calibration.toml`. Untracked by git via the
-    /// `.heal/.gitignore` `heal init` writes.
+    /// `fixed.json`, `regressed.jsonl`, `accepted.json`. `heal status`
+    /// writes it; skill workflows and `heal diff` read it. Tracked by
+    /// git alongside `config.toml` and `calibration.toml` so teammates
+    /// on the same commit see identical drain queues without
+    /// re-scanning.
     #[must_use]
     pub fn findings_dir(&self) -> PathBuf {
         self.root.join("findings")
@@ -72,9 +72,20 @@ impl HealPaths {
         self.findings_dir().join("regressed.jsonl")
     }
 
-    /// `.heal/.gitignore` — written by `heal init` so volatile state
-    /// (`findings/`) doesn't dirty the worktree. Tracked tomls
-    /// (`config.toml`, `calibration.toml`) stay versioned.
+    /// "These findings are accepted as intrinsic / won't fix" map,
+    /// keyed by `Finding.id`. Decorates `Finding.accepted: bool` at
+    /// render time so accepted findings are excluded from the drain
+    /// queue and the Population counts. Tracked alongside
+    /// `fixed.json` so the team's acceptance decisions survive across
+    /// machines.
+    #[must_use]
+    pub fn findings_accepted(&self) -> PathBuf {
+        self.findings_dir().join("accepted.json")
+    }
+
+    /// `.heal/.gitignore` — written by `heal init`. Currently empty
+    /// (the findings cache is tracked); reserved for future
+    /// per-machine carve-outs.
     #[must_use]
     pub fn gitignore(&self) -> PathBuf {
         self.root.join(".gitignore")

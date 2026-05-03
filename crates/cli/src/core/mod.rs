@@ -1,6 +1,7 @@
 //! HEAL core: shared types, config, event-log rotation, and the
 //! persisted Calibration schema.
 
+pub mod accepted;
 pub mod calibration;
 pub mod config;
 pub mod error;

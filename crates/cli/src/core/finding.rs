@@ -78,6 +78,22 @@ pub struct Finding {
     pub summary: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fix_hint: Option<String>,
+    /// Decorated at render time by
+    /// [`crate::core::accepted::decorate_findings`] when this finding's
+    /// id is in `.heal/findings/accepted.json`. Renderers (status /
+    /// diff / hook nudge) drop accepted findings from the drain queue
+    /// and the Population counts; skills filter the drain queue on
+    /// this flag. Persisted as `false` (the default) in `latest.json`
+    /// since the cache is per-commit and acceptance is decorated per
+    /// render.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub accepted: bool,
+}
+
+#[inline]
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl Finding {
@@ -99,6 +115,7 @@ impl Finding {
             locations: Vec::new(),
             summary,
             fix_hint: None,
+            accepted: false,
         }
     }
 
@@ -296,10 +313,12 @@ mod tests {
             locations: vec![],
             summary: "hi".into(),
             fix_hint: None,
+            accepted: false,
         };
         let json = serde_json::to_string(&f).unwrap();
         assert!(!json.contains("locations"));
         assert!(!json.contains("fix_hint"));
         assert!(!json.contains("workspace"));
+        assert!(!json.contains("accepted"));
     }
 }
