@@ -282,6 +282,30 @@ A few notes on the choices:
   single biggest behavioural change — it forces `heal-code-patch` to
   drain hotspot-flagged High findings as if they were Critical.
 
+### When Strict is the wrong choice
+
+Strict assumes the codebase is dense enough that its lowered floors
+sit *below* the codebase's natural distribution. When the calibration
+shows the opposite — `Strict.floor_ok > calibration.p95` for `ccn` or
+`cognitive` — Strict produces a Critical floodgate rather than
+sharper signal. The reason is the cascade order: a value that's
+≥ `floor_ok` exits the floor branch and enters the percentile
+classifier; if it's also ≥ p95 (which it now is, since `floor_ok > p95`),
+it lands at Critical immediately. The Medium / High band is empty,
+and the drain queue is dominated by normal codebase code.
+
+Pick Default in that case. Default's literature anchors (`floor_ok=11`
+for CCN, `floor_ok=8` for Cognitive) sit comfortably above most
+calibration p95 values, so the cascade has a meaningful Medium /
+High zone before Critical fires.
+
+The `heal-config` skill checks for this fit before offering Strict
+and surfaces a warning in the strictness question — see SKILL.md
+Phase 2.7. The check is purely advisory; the user can still pick
+Strict if they want the "flag every function above CCN=8" behaviour
+(useful in cryptography / safety-critical domains where CCN=8 is
+genuinely the bar).
+
 ## Hand-edit hygiene
 
 The skill preserves keys outside its recipe. If you hand-edit the

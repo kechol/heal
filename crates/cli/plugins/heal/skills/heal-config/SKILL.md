@@ -209,6 +209,47 @@ without an explicit
 Mention this once in the post-write summary so the user understands
 what to watch.
 
+### Phase 2.7 — Strict-fit check
+
+Before offering Strict in Phase 3, compare this codebase's
+calibration against the Strict recipe. Strict only adds value when
+the codebase actually breaches its floors; on a codebase that's
+already simpler than the Strict gate, Strict floods T0 with
+proxy-metric noise instead of surfacing real targets.
+
+The mechanism: a value `>= floor_ok` exits the floor cascade and
+enters the percentile classifier; if it's also `>= p95`, it lands at
+Critical immediately. So when `Strict.floor_ok > calibration.p95`,
+**every value barely above the gate jumps straight to Critical via
+the percentile cascade** — leaving Medium / High effectively empty
+and Critical flooded with normal codebase code.
+
+For each metric in `{ccn, cognitive}`, compare:
+
+- `Strict.<metric>.floor_ok` (from the recipe table)
+- `calibration.<metric>.p95` (from `heal calibrate --json`'s
+  `calibration.calibration.<metric>.p95`)
+
+If `Strict.floor_ok > calibration.p95` for any metric, Strict floods
+that axis. Note it for Phase 3.
+
+For `duplication`, the same logic uses `floor_critical` (no
+`floor_ok` exists for that metric): if
+`Strict.duplication.floor_critical > calibration.duplication.p95`,
+Strict's Critical line sits above the codebase's natural top —
+not a flood (Strict adds nothing here), just a no-op axis.
+
+Two illustrative cases:
+
+| codebase                          | ccn p95 | Strict floor_ok | verdict                                    |
+|-----------------------------------|---------|-----------------|--------------------------------------------|
+| simple CLI (heal itself)          | 7       | 8               | floods — recommend Default                 |
+| typical web app                   | 12      | 8               | safe — Strict's gate sits below p95        |
+| greenfield with strict review     | 5       | 8               | floods on every metric — recommend Default |
+
+Build a short list of metrics that flood. The list goes into the
+strictness question below — do **not** silently demote Strict.
+
 ### Phase 3 — Choose strictness
 
 Use `AskUserQuestion` to pick one of three levels. Frame it once,
@@ -226,6 +267,19 @@ Options:
     floors raised, drain queue restricted to Critical-only, Medium
     surfaced quietly.
 ```
+
+When Phase 2.7 flagged Strict as flooding on this codebase, prepend
+a warning to the `description` field — name the metrics and the
+numbers. Example:
+
+> ⚠ Strict's `ccn.floor_ok=8` sits above this codebase's `ccn p95=7`.
+> Every CCN ≥8 would land at Critical via the percentile cascade
+> (the Medium / High band is empty). Default's literature floors fit
+> this codebase's actual shape; pick Strict only if the goal is to
+> flag *every* function above CCN=8 as Critical.
+
+Keep the warning short and factual. Don't refuse Strict — surface the
+trade-off and let the user choose.
 
 Don't combine with other questions. If the user picks `Other`, ask one
 follow-up to pin down what they want to relax or tighten — do not

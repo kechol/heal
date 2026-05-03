@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### `heal-config` Strict-fit check
+
+The skill now compares the codebase's calibration against the Strict
+recipe before offering it as a strictness option. When
+`Strict.floor_ok` (for CCN or Cognitive) sits above the codebase's
+`p95`, the percentile cascade lands every value barely above the
+gate at Critical — flooding the drain queue with proxy-metric noise
+instead of surfacing real targets.
+
+When the check fires, the strictness question's Strict option gets
+a warning preface naming the metrics and the numbers, so the user
+sees the trade-off before picking. The warning is advisory; Strict
+remains pickable for domains (cryptography, safety-critical) where
+"every function above CCN=8 is Critical" is the actual goal.
+
 ### Two-tier drain summary in `heal status` and `heal diff`
 
 `heal status` and `heal diff` now foreground the drain queue ahead of
