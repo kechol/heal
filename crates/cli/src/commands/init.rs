@@ -19,31 +19,19 @@
 
 use std::fmt;
 use std::io::{BufRead, IsTerminal, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::claude_settings;
+use crate::commands::hook_install::{self, HookAction};
 use crate::core::config::Config;
 use crate::core::monorepo::{self, MonorepoSignal};
 use crate::core::severity::SeverityCounts;
 use crate::core::HealPaths;
-use crate::observer::git;
 use crate::skill_assets::{self, skills_dest, ExtractMode, ExtractStats};
 use anyhow::{Context, Result};
 use serde::Serialize;
 
 use crate::observers::{build_calibration, classify, run_all};
-
-const HEAL_HOOK_MARKER: &str = "# heal post-commit hook";
-const POST_COMMIT_SCRIPT: &str = "\
-#!/usr/bin/env sh
-# heal post-commit hook
-# Re-runs observers and emits the post-commit nudge.
-# Failures are swallowed so a broken HEAL install never blocks a commit.
-if command -v heal >/dev/null 2>&1; then
-  heal hook commit || true
-fi
-exit 0
-";
 
 /// Outcome of writing the project's `config.toml`. The `tag = "action"`
 /// attribute makes this safe to `#[serde(flatten)]` next to a `path:`
@@ -62,32 +50,6 @@ impl fmt::Display for ConfigAction {
             Self::Wrote => "wrote",
             Self::Overwrote => "overwrote",
             Self::KeptExisting => "kept existing",
-        })
-    }
-}
-
-/// Same shape as [`ConfigAction`] — internally tagged so it flattens
-/// safely under `path:` in the JSON contract.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(tag = "action", rename_all = "snake_case")]
-enum HookAction {
-    Installed,
-    Overwrote,
-    Refreshed,
-    SkippedNoRepo,
-    SkippedUserHook,
-}
-
-impl fmt::Display for HookAction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Installed => "installed",
-            Self::Overwrote => "overwrote",
-            Self::Refreshed => "refreshed",
-            Self::SkippedNoRepo => "skipped (not a git repo)",
-            Self::SkippedUserHook => {
-                "skipped (existing user hook; rerun with --force to overwrite)"
-            }
         })
     }
 }
@@ -119,7 +81,7 @@ pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool, as_json: boo
     write_gitignore(&paths)?;
 
     let config_action = write_config(&paths, force)?;
-    let (hook_action, hook_path) = install_post_commit_hook(project, force)?;
+    let (hook_action, hook_path) = hook_install::install(project, force)?;
     let InitialScan {
         primary_language,
         severity_counts,
@@ -381,58 +343,6 @@ fn write_config(paths: &HealPaths, force: bool) -> Result<ConfigAction> {
     })
 }
 
-fn install_post_commit_hook(project: &Path, force: bool) -> Result<(HookAction, Option<PathBuf>)> {
-    let Some(hooks_dir) = git::hooks_dir(project) else {
-        return Ok((HookAction::SkippedNoRepo, None));
-    };
-    std::fs::create_dir_all(&hooks_dir)
-        .with_context(|| format!("creating {}", hooks_dir.display()))?;
-    let hook_path = hooks_dir.join("post-commit");
-
-    if hook_path.exists() {
-        let body = std::fs::read_to_string(&hook_path).unwrap_or_default();
-        if body.contains(HEAL_HOOK_MARKER) {
-            write_hook(&hook_path)?;
-            return Ok((HookAction::Refreshed, Some(hook_path)));
-        }
-        if !force {
-            return Ok((HookAction::SkippedUserHook, Some(hook_path)));
-        }
-        write_hook(&hook_path)?;
-        return Ok((HookAction::Overwrote, Some(hook_path)));
-    }
-
-    write_hook(&hook_path)?;
-    Ok((HookAction::Installed, Some(hook_path)))
-}
-
-fn write_hook(hook_path: &Path) -> Result<()> {
-    let already_current =
-        std::fs::read_to_string(hook_path).is_ok_and(|prior| prior == POST_COMMIT_SCRIPT);
-    if !already_current {
-        std::fs::write(hook_path, POST_COMMIT_SCRIPT)
-            .with_context(|| format!("writing {}", hook_path.display()))?;
-    }
-    set_executable(hook_path)?;
-    Ok(())
-}
-
-#[cfg(unix)]
-fn set_executable(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let mut perm = std::fs::metadata(path)
-        .with_context(|| format!("stat {}", path.display()))?
-        .permissions();
-    perm.set_mode(0o755);
-    std::fs::set_permissions(path, perm).with_context(|| format!("chmod {}", path.display()))?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn set_executable(_path: &Path) -> Result<()> {
-    Ok(())
-}
-
 struct InitialScan {
     primary_language: Option<String>,
     severity_counts: Option<SeverityCounts>,
@@ -571,12 +481,6 @@ mod tests {
         commit(cwd, file, body, email, "snap");
     }
 
-    fn hook_path_for(project: &Path) -> std::path::PathBuf {
-        git::hooks_dir(project)
-            .expect("test repo must be initialized before requesting hook path")
-            .join("post-commit")
-    }
-
     /// Default invocation for the end-to-end tests: `--no-skills` so the
     /// suite never depends on whether `claude` happens to be on the
     /// runner's PATH.
@@ -620,80 +524,6 @@ mod tests {
     }
 
     #[test]
-    fn install_hook_skips_outside_git_repo() {
-        let dir = TempDir::new().unwrap();
-        let (action, path) = install_post_commit_hook(dir.path(), false).unwrap();
-        assert_eq!(action, HookAction::SkippedNoRepo);
-        assert!(path.is_none(), "hook path is meaningless without a repo");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn install_hook_writes_executable_post_commit() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = TempDir::new().unwrap();
-        init_repo(dir.path());
-        let (action, path) = install_post_commit_hook(dir.path(), false).unwrap();
-        assert_eq!(action, HookAction::Installed);
-        let hook = path.expect("hook path must be returned on a real repo");
-        assert_eq!(hook, hook_path_for(dir.path()));
-        let body = std::fs::read_to_string(&hook).unwrap();
-        assert!(body.contains(HEAL_HOOK_MARKER));
-        assert!(body.contains("heal hook commit"));
-        let mode = std::fs::metadata(&hook).unwrap().permissions().mode();
-        assert_eq!(
-            mode & 0o111,
-            0o111,
-            "hook must be executable; mode={mode:o}"
-        );
-    }
-
-    #[test]
-    fn install_hook_refreshes_own_marker() {
-        let dir = TempDir::new().unwrap();
-        init_repo(dir.path());
-        let hook = hook_path_for(dir.path());
-        std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
-        std::fs::write(
-            &hook,
-            format!("#!/bin/sh\n{HEAL_HOOK_MARKER}\necho stale\n"),
-        )
-        .unwrap();
-        let (action, path) = install_post_commit_hook(dir.path(), false).unwrap();
-        assert_eq!(action, HookAction::Refreshed);
-        assert_eq!(path.as_deref(), Some(hook.as_path()));
-        let body = std::fs::read_to_string(&hook).unwrap();
-        assert!(body.contains("heal hook commit"));
-        assert!(!body.contains("stale"));
-    }
-
-    #[test]
-    fn install_hook_preserves_user_hook_without_force() {
-        let dir = TempDir::new().unwrap();
-        init_repo(dir.path());
-        let hook = hook_path_for(dir.path());
-        std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
-        std::fs::write(&hook, "#!/bin/sh\necho user hook\n").unwrap();
-        let (action, _) = install_post_commit_hook(dir.path(), false).unwrap();
-        assert_eq!(action, HookAction::SkippedUserHook);
-        let body = std::fs::read_to_string(&hook).unwrap();
-        assert!(body.contains("echo user hook"));
-    }
-
-    #[test]
-    fn install_hook_overwrites_user_hook_with_force() {
-        let dir = TempDir::new().unwrap();
-        init_repo(dir.path());
-        let hook = hook_path_for(dir.path());
-        std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
-        std::fs::write(&hook, "#!/bin/sh\necho user hook\n").unwrap();
-        let (action, _) = install_post_commit_hook(dir.path(), true).unwrap();
-        assert_eq!(action, HookAction::Overwrote);
-        let body = std::fs::read_to_string(&hook).unwrap();
-        assert!(body.contains(HEAL_HOOK_MARKER));
-    }
-
-    #[test]
     fn run_end_to_end_creates_layout_config_and_calibration() {
         let dir = TempDir::new().unwrap();
         init_repo(dir.path());
@@ -703,7 +533,7 @@ mod tests {
         assert!(paths.config().exists(), "config.toml must exist");
         assert!(paths.calibration().exists(), "calibration.toml must exist");
         assert!(
-            hook_path_for(dir.path()).exists(),
+            hook_install::hook_path_for(dir.path()).exists(),
             "post-commit hook must be installed",
         );
 

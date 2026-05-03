@@ -1,6 +1,7 @@
 pub mod calibrate;
 pub mod diff;
 pub mod hook;
+pub mod hook_install;
 pub mod init;
 pub mod mark_fixed;
 pub mod metrics;
