@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.3.2 — 2026-05-04
+
 ### Features
 
 - **JavaScript, Python, Go, and Scala join the default-enabled
@@ -21,6 +23,15 @@
   existing `cargo build --features lang-ts` invocations keep
   working. (`lang-go`, `lang-scala`, `lang-rust` were already in
   long form.)
+
+### Chore
+
+- Sweep British English spellings to American English variants
+  (artefact / behaviour / colour / centre / judgement / serialise / …)
+  across `README.md`, `CHANGELOG.md`, `.claude/docs` + `rules` +
+  `skills`, bundled skills under `crates/cli/skills/`, the English
+  Starlight docs, and Rust inline comments. No behavior change;
+  identifiers, JSON keys, and dependency names are untouched.
 
 ## v0.3.1 — 2026-05-03
 
