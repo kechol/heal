@@ -2,279 +2,273 @@
 
 ## Unreleased
 
-### Accepted findings filter the drain queue, Population, and nudge
+## v0.3.0 — 2026-05-03
 
-`heal status`, `heal diff`, and the post-commit nudge now exclude
-findings present in `.heal/findings/accepted.json` from the drain
-queue (T0 / T1), the `Population:` severity counts, and the
-"X critical, Y high" nudge after each commit. A new `Accepted: N
-findings (M files)` line appears in the `heal status` header when
-the team has accepted any findings, and a `📌 Accepted` section
-appears under `heal status --all` so the audit trail stays visible
-without cluttering the default view.
+The CLI-shape and monorepo-aware release. The user-facing surface
+(`heal status` / `heal metrics` / `heal diff` / `heal mark fix`) is
+now stable; the cache is now a single tracked record per repo;
+monorepos are first-class with per-workspace calibration; and
+findings the team has decided are intrinsic can be parked in
+`accepted.json` instead of cluttering the drain queue forever.
 
-The on-disk `.heal/findings/latest.json` keeps raw observer truth —
-no `accepted` field on findings, raw severity_counts. The policy
-view is derived just-in-time on every render, so `heal mark accept`
-takes effect without a rescan. Skills consuming `severity_counts`
-from `latest.json` see the **filtered** shape (accepted findings
-not counted) since the cache is rewritten with filtered counts on
-every fresh scan.
+### ⚠ BREAKING
 
-JSON consumers can still see which findings were accepted: each
-`Finding` carries `accepted: bool` (additive, omitted when false),
-and `DiffEntry` carries `from_accepted: bool` (additive).
+#### CLI rename: `status` / `metrics` / `diff` / `mark fix` are now stable
 
-`/heal-code-review` now proposes the exact `heal mark accept`
-invocation when its triage classifies a finding as Intrinsic or
-Cohesive procedural, with a documented "accept (per-finding) vs
-exclude_paths (per-file/tree)" decision. `/heal-code-patch` skips
-accepted findings from the drain loop.
+The v0.2 names flipped roles:
 
-### `heal mark` group: generalises `mark-fixed`, adds `mark accept`
+| v0.2                | v0.3                     | What it does                                     |
+| ------------------- | ------------------------ | ------------------------------------------------ |
+| `heal check`        | `heal status`            | Render the cached `FindingsRecord`               |
+| `heal status`       | `heal metrics`           | Per-metric one-shot recompute                    |
+| `heal fix diff`     | `heal diff <git-ref>`    | Diff vs a ref (default: calibration baseline)    |
+| `heal fix mark`     | `heal mark fix` (hidden) | Skill-only; agent-driven fix recorder            |
+| `heal fix list`     | (removed)                | Read `.heal/findings/latest.json` directly       |
 
-`heal mark-fixed` is replaced by `heal mark fix` (and the new sibling
-`heal mark accept`). The legacy `heal mark-fixed` invocation still
-works — it prints a one-line stderr deprecation warning and delegates
-to `heal mark fix` so older `/heal-code-patch` skill bundles keep
-running. Refresh the bundle with `heal skills update` to switch to
-the new form.
+**Migration:** rename invocations in scripts and CI, and run
+`heal skills update` so the bundled skills stop referencing the old
+names. `heal mark-fixed` (the v0.2.x interim form) still works as
+a hidden alias that prints a one-line stderr deprecation warning.
 
-`heal mark accept --finding-id <ID> [--reason <TEXT>]` is the
-write-side of the new "won't fix / acknowledged intrinsic" lane —
-called by `/heal-code-review` once it concludes a finding is
-intrinsic complexity. Records the team's decision into
-`.heal/findings/accepted.json` (tracked, mirrors `fixed.json` in
-shape). Both subcommands stay hidden from `--help`; humans drive
-them via the skills.
+#### `.heal/findings/` is git-tracked
 
-The renderer / drain-queue integration (filtering accepted findings
-out of `Population:` and the T0 / T1 tiers) lands in the next
-release entry below.
+`fixed.json`, `regressed.jsonl`, `latest.json`, and the new
+`accepted.json` are all tracked alongside `config.toml` and
+`calibration.toml` so teammates on the same commit see identical
+drain queues without re-scanning. The `.heal/.gitignore` template
+no longer excludes `findings/` — run `heal init --force` to refresh
+it, then commit the resulting findings cache.
 
-### ⚠ BREAKING: `.heal/findings/` is now git-tracked
-
-`fixed.json`, `regressed.jsonl`, and `latest.json` are tracked
-alongside `config.toml` and `calibration.toml` so teammates on the
-same commit see identical drain queues without re-scanning. The
-`.heal/.gitignore` template no longer excludes `findings/` — re-run
-`heal init --force` to refresh it, then commit the resulting
-findings cache.
-
-To make the tracked file byte-stable, `FindingsRecord` no longer
-stores wall-clock metadata:
+To make `latest.json` byte-stable, `FindingsRecord` drops wall-clock
+metadata:
 
 - `id` is now a deterministic 16-hex FNV-1a digest of `(head_sha,
   config_hash, worktree_clean)` (was: ULID).
 - `started_at` is removed (was: `Utc::now()` at scan time).
 - `RegressedEntry.regressed_at` now records when the regression
-  was *detected* (was: when the record was assembled — same wall
-  clock, same value).
+  was _detected_ (was: when the record was assembled).
 
-`heal status` and `heal diff` JSON output drops `started_at` /
-`from_started_at` / `to_started_at` accordingly. Skills that surfaced
-those fields should switch to `head_sha` for "what state is this".
+`heal status` and `heal diff` JSON drop `started_at` /
+`from_started_at` / `to_started_at`. Skills that surfaced those
+fields should switch to `head_sha`. Cache reuse now goes through
+`is_fresh_against` so a `latest.json` from a different commit,
+different config, or dirty scan auto-refreshes without `--refresh`.
 
-`heal status` cache reuse now goes through `is_fresh_against`
-(`(head_sha, config_hash, worktree_clean)`); a `latest.json` from a
-different commit, different config, or a dirty scan auto-refreshes
-without `--refresh`. Previously a stale `latest.json` would persist
-until the user passed `--refresh` explicitly.
+#### `FindingsRecord` schema v1 → v2
 
-### `heal-config` Strict-fit check
+`FindingsRecord` was renamed from `CheckRecord`; `check_id` →
+`id`, `regressed_check_id` → `regressed_in_record_id`. Bumped to
+schema v2; v1 caches deserialise as `Ok(None)` and the next
+`heal status` rewrites them under v2.
 
-The skill now compares the codebase's calibration against the Strict
-recipe before offering it as a strictness option. When
-`Strict.floor_ok` (for CCN or Cognitive) sits above the codebase's
-`p95`, the percentile cascade lands every value barely above the
-gate at Critical — flooding the drain queue with proxy-metric noise
-instead of surfacing real targets.
+#### Snapshots gone, single-record cache
 
-When the check fires, the strictness question's Strict option gets
-a warning preface naming the metrics and the numbers, so the user
-sees the trade-off before picking. The warning is advisory; Strict
-remains pickable for domains (cryptography, safety-critical) where
-"every function above CCN=8 is Critical" is the actual goal.
+`.heal/snapshots/` is removed — no more historical metric stream,
+no more `heal compact`, no more 90-day gzip / 365-day delete cycle.
+The cache is one record (`latest.json`) plus the bounded
+`fixed.json` map and the append-only `regressed.jsonl` audit trail.
+Use `heal diff <ref>` for drift on demand.
 
-### Two-tier drain summary in `heal status` and `heal diff`
+The `heal logs` / `heal snapshots` / `heal checks` browse commands
+are removed alongside.
 
-`heal status` and `heal diff` now foreground the drain queue ahead of
-the raw severity distribution, so the user sees "what to fix" before
-"how big is the population".
-
-`heal status` header changes from a single line to two:
-
-```
-  Drain queue: T0 6 findings (4 files)  ·  T1 27 findings (15 files)
-  Population:  [critical] 25   [high] 27   [medium] 421   [ok] 1577
-```
-
-The T0 / T1 sizes are computed from the active `[policy.drain]`; raw
-severity counts move to a "Population:" line that frames them as
-distribution context, not a goal.
-
-`heal diff` similarly splits its progress block:
-
-```
-  Progress (T0 drain):  3 / 6 resolved → 50% complete
-  Population:           112 / 2050 resolved (6%)
-```
-
-The "Progress" number is now scoped to the must-drain tier, so it
-reads like real progress against the actionable queue. The wider
-population ratio (still computed for back-compat) becomes
-secondary — much of it is Advisory churn (`change_coupling.expected`
-on docs cross-mentions, etc.) and was never a target.
-
-`DiffReport` JSON gains three additive fields — `t0_resolved`,
-`t0_total`, `t0_progress_pct` — and `DiffEntry` gains `from_hotspot`
-so consumers can compute baseline-side T0 counts precisely (the
-existing `hotspot` field is curr-side biased and stays for
-back-compat). `progress_pct` keeps its previous meaning (resolved /
-baseline-total over the full population). New fields are
-`#[serde(default)]` so older payloads parse cleanly.
-
-`PolicyDrainConfig` exposes a `tier_for_attrs(metric, severity,
-hotspot)` helper for callers that don't have a full `Finding` (used
-by `heal diff` to classify `DiffEntry`s).
-
-### `heal diff` defaults to the calibration baseline
-
-Bare `heal diff` (no positional ref) now resolves to the SHA recorded
-in `calibration.toml` as `meta.calibrated_at_sha` — the commit at
-which `heal init` (or the most recent `heal calibrate --force`)
-captured the project's percentile breaks. Falls back to `HEAD` when
-no baseline SHA is recorded (e.g. a calibration produced outside a
-git worktree). Pass `heal diff HEAD` for the previous behaviour.
-
-The motivation is read-naturalness: "Progress: N% complete" should
-mean "drained since calibration", not "since the last commit".
-
-### `heal diff` and `heal metrics` honour `$PAGER`
-
-Both commands now pipe through `$PAGER` (default `less`) when stdout
-is a terminal — same convention as `heal status`. Both gain a
-`--no-pager` flag to opt out; `--json` always writes raw to stdout
-regardless. The pager helper now lives in `core::term` and is shared
-across the three commands.
-
-The leading and trailing `── HEAL diff ────` divider lines are gone
-— a pager already delimits the screen, and the title was redundant.
-
-### `heal init` workspace summary
-
-Renamed the post-init manifest hint from `Monorepo detected:` to
-`Workspace detected:` and enriched it: for Cargo `[workspace]
-members` and npm `workspaces` arrays, init now enumerates each
-declared member directory and labels it with its auto-detected
-primary language. Manifests we can't parse without extra dependencies
-(pnpm yaml, go.work, Nx / Turbo) still show the presence-only line.
-
-The `init --json` payload's `monorepo_signals[]` entries gain an
-optional `members: [{ path, primary_language? }, ...]` array (omitted
-when empty, so existing skill consumers see no change).
-
-The `→ goal: bring [critical] to 0` nudge is gone — per scope.md R1,
-metrics are proxies, not targets, and the line conflicted with that
-framing. The "Next steps" block now also shows `heal diff` and, when
-skills were just installed, the example slash commands
-(`claude /heal-config`, `/heal-code-review`, `/heal-code-patch`).
-
-### ⚠ BREAKING — `exclude_paths` is now `.gitignore` syntax
+#### `exclude_paths` is gitignore syntax
 
 `git.exclude_paths`, `metrics.loc.exclude_paths`, and
 `[[project.workspaces]].exclude_paths` previously matched as
 case-sensitive **substring** patterns. They now parse as
-**`.gitignore`** lines with the full DSL: glob (`*`, `**`, `?`,
-`[abc]`), directory-only (`foo/`), root anchoring (`/foo`), negation
-(`!keep`), and `#` comments.
+**`.gitignore`** lines with the full DSL: globs (`*`, `**`, `?`,
+`[abc]`), directory-only (`foo/`), root anchoring (`/foo`),
+negation (`!keep`), and `#` comments.
 
-**Migration:** most existing configs work without changes. Patterns
-that relied on bare keyword substring behaviour need a small edit:
+**Migration:** most existing configs work unchanged. Patterns that
+relied on bare-keyword substring behaviour need a small edit:
 
-| Old (substring) | New (gitignore) | Why |
-|---|---|---|
-| `target/` | `target/` (unchanged) | Directory pattern works the same |
-| `vendor` | `vendor/` *or* `vendor/**` | Bare keyword used to match `weird-vendor-stuff/`; gitignore matches a file/dir literally named `vendor` only |
-| `pkg/web/vendor/` | `pkg/web/vendor/` (unchanged) | Anchored directory pattern works the same |
-| `.test.ts` | `*.test.ts` (suffix) *or* `**/.test.ts` (exact basename) | Substring matched any path containing the literal `.test.ts` *anywhere* — usually the user's intent is "files whose name ends in `.test.ts`", so `*.test.ts` is the typical replacement; gitignore basename-globs are unanchored by default so no leading `**/` is needed |
+| Old (substring)   | New (gitignore)                                  | Why                                                                                                                                                                  |
+| ----------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `target/`         | `target/` (unchanged)                            | Directory pattern works the same                                                                                                                                     |
+| `vendor`          | `vendor/` _or_ `vendor/**`                       | Bare keyword used to match `weird-vendor-stuff/`; gitignore matches a file/dir literally named `vendor` only                                                         |
+| `pkg/web/vendor/` | `pkg/web/vendor/` (unchanged)                    | Anchored directory pattern works the same                                                                                                                            |
+| `.test.ts`        | `*.test.ts` _or_ `**/.test.ts` (exact basename)  | Substring matched any path containing `.test.ts` _anywhere_; gitignore basename-globs are unanchored by default so the leading `**/` is usually unnecessary          |
 
-`heal status --refresh` after the upgrade reports the new
-`severity_counts`; if a previously-excluded subtree starts surfacing
-findings, the cause is almost always a bare-keyword pattern that
-needs `/` or `*` decoration.
+`Config::validate` now verifies each line parses as gitignore
+syntax — malformed patterns surface as `ConfigInvalid` schema
+errors at load time rather than mysteriously matching nothing.
 
-`Config::validate` (run on every config load) now also verifies each
-exclude line parses as gitignore syntax. Malformed patterns surface
-as `ConfigInvalid` schema errors before any scan starts.
+#### Skill drift derived from frontmatter bytes
 
-### Workspace `exclude_paths` is wired
+`skills-install.json` is gone. Drift detection compares
+`canonical(on-disk SKILL.md)` (frontmatter `metadata:` block
+stripped) against the bundled raw bytes — no more sidecar manifest,
+no more cross-machine drift verdicts diverging because the manifest
+was last touched on a different machine. `heal skills install` /
+`update` / `status` use the byte comparison directly.
 
-`[[project.workspaces]].exclude_paths` was previously declared in the
-schema but inert at scan time. It now applies, scoped to the
-declaring workspace via gitignore-line translation:
+### Features
 
-- `vendor/` under `path = "pkg/web"` → matches `pkg/web/**/vendor/`
-- `/dist` (anchored to workspace root) → `/pkg/web/dist`
-- `!keep.log` → `!pkg/web/**/keep.log`
+#### Monorepo / workspace support
 
-Other workspaces are unaffected.
+- `WorkspaceOverlay` schema: `[[project.workspaces]]` declares a
+  monorepo segment; findings under a declared `path` get
+  `Finding.workspace = "<path>"` so per-workspace JSON shapes round-
+  trip cleanly.
+- Per-workspace calibration tables: each declared workspace gets
+  its own percentile breaks, so a strict `pkg/web` and a legacy
+  `pkg/legacy` calibrate independently. Floor overrides
+  (`floor_critical` / `floor_ok` per metric) layer on top of the
+  global `[metrics.<m>]` overrides.
+- `--workspace <path>` filter on `heal status`, `heal diff`, and
+  `heal metrics` — every observer scopes to the subtree (Loc walks
+  only that path; Complexity / Lcom / Duplication drop
+  out-of-workspace files; Churn / ChangeCoupling recompute
+  `commits_considered` against the in-workspace universe).
+- `WorkspaceOverlay.exclude_paths` now applies at scan time,
+  scoped to the declaring workspace via gitignore translation
+  (`vendor/` under `path = "pkg/web"` → `pkg/web/**/vendor/`).
+- `change_coupling` pairs whose endpoints straddle two declared
+  workspaces are retagged `change_coupling.cross_workspace` and
+  parked in Advisory by default. Configurable via
+  `[metrics.change_coupling] cross_workspace = "surface" | "hide"`.
+- `heal init` post-scan hint renamed `Monorepo detected:` →
+  `Workspace detected:`, now enumerates Cargo `[workspace] members`
+  and npm `workspaces` directories with their auto-detected primary
+  language. The `init --json` payload's `monorepo_signals[]` entries
+  gain an optional `members: [{ path, primary_language? }, ...]`
+  array.
+- `/heal-config` skill gains a workspace setup phase that detects
+  the manifest, proposes `[[project.workspaces]]` blocks per
+  member, and runs the strictness recipe per workspace.
 
-### `heal metrics --workspace <PATH>`
+#### Accepted findings (`heal mark accept`)
 
-New flag scopes every observer to a sub-path. Loc walks only that
-subtree; walk-based observers (Complexity / Lcom / Duplication) drop
-out-of-workspace files; git-based observers (Churn / ChangeCoupling)
-recompute `commits_considered` against the in-workspace universe so
-lift / churn totals stay consistent.
+- `heal mark accept --finding-id <ID> [--reason <TEXT>]` records a
+  "won't fix / acknowledged intrinsic" decision into
+  `.heal/findings/accepted.json` (tracked, mirrors `fixed.json` in
+  shape). Distinct from `fix` — accepted entries persist across
+  re-detections by design.
+- `heal status`, `heal diff`, and the post-commit nudge exclude
+  accepted findings from the drain queue (T0 / T1), the
+  `Population:` severity counts, and the "X critical, Y high"
+  nudge. A new `Accepted: N findings (M files)` line surfaces in
+  the `heal status` header; `--all` adds a `📌 Accepted` section
+  for the audit trail.
+- `Finding` JSON gains `accepted: bool` (additive); `DiffEntry`
+  gains `from_accepted: bool`.
+- `/heal-code-review` proposes the exact `heal mark accept`
+  invocation when triage classifies a finding as Intrinsic or
+  Cohesive procedural, with documented "accept (per-finding) vs
+  exclude_paths (per-file/tree)" guidance. `/heal-code-patch`
+  skips accepted findings from the drain loop.
 
-### Hotspot graduation floor
+#### `heal mark` group
+
+`heal mark-fixed` is replaced by `heal mark fix` (sibling to
+`heal mark accept`). The legacy form prints a one-line stderr
+deprecation warning and delegates so v0.2 skill bundles keep
+running until `heal skills update`. Both subcommands stay hidden
+from `--help`; humans drive them via the skills.
+
+#### `heal diff` improvements
+
+- `heal diff <git-ref>` runs the observer pipeline against a
+  transient `git worktree` materialised at the requested ref and
+  diffs the resulting `FindingsRecord` against the live one. The
+  baseline applies _today's_ rules to historical source so the
+  comparison is apples-to-apples.
+- LOC ceiling: bare repo size > `[diff].max_loc_threshold`
+  (default 200_000) returns exit 2 with guidance to drive the
+  worktree pair by hand, so the cost stays bounded.
+- Bare `heal diff` (no positional ref) defaults to the SHA recorded
+  in `calibration.toml` as `meta.calibrated_at_sha`. Falls back to
+  `HEAD` when no baseline SHA is recorded.
+- New `Progress (T0 drain)` line scopes the percentage to the
+  must-drain tier; the wider `Population:` ratio stays as
+  back-compat secondary signal. `DiffReport` JSON gains
+  `t0_resolved`, `t0_total`, `t0_progress_pct`, and `DiffEntry`
+  gains `from_hotspot` so consumers can compute baseline-side T0
+  counts precisely.
+
+#### Two-tier drain summary in `heal status`
+
+`heal status` foregrounds the drain queue ahead of the raw
+severity distribution:
+
+```
+  Drain queue: T0 6 findings (4 files)  ·  T1 27 findings (15 files)
+  Population:  [critical] 25   [high] 27   [medium] 421   [ok] 1577
+  Accepted:    1 findings (1 files)
+```
+
+T0 / T1 sizes come from the active `[policy.drain]`. The
+`Accepted:` line only appears when the team has accepted any
+findings.
+
+#### Hotspot graduation floor
 
 `HotspotCalibration` gains `floor_ok: Option<f64>` (default
 `FLOOR_OK_HOTSPOT = 22 = 2 × FLOOR_OK_CCN`). Composite scores
 strictly below the floor never flag as hotspots even when they sit
-in the top decile of a uniformly-cold codebase. Override per project
-via `[metrics.hotspot] floor_ok = 50.0`. Legacy snapshots written
-before v0.3+ have `floor_ok = None` and fall back to pure
-percentile-rank behaviour.
+in the top decile of a uniformly-cold codebase. Override per
+project via `[metrics.hotspot] floor_ok = 50.0`.
 
-### Per-workspace calibration floor overrides
-
-`[[project.workspaces]] [project.workspaces.metrics.<metric>]
-floor_critical = N` / `floor_ok = N` overrides apply *after* the
-global `[metrics.<m>]` overrides for that workspace's calibration
-table. Useful when one workspace runs cleaner or legacier than the
-rest:
-
-```toml
-[[project.workspaces]]
-path = "pkg/legacy"
-
-[project.workspaces.metrics.ccn]
-floor_critical = 40
-floor_ok = 18
-```
-
-Supported metrics: `ccn`, `cognitive`, `duplication`,
-`change_coupling`, `lcom`. Scan-time tunables (`since_days`,
-`min_coupling`) remain global for now.
-
-### Expected coupling Advisory bucket
+#### Expected coupling Advisory bucket
 
 `change_coupling` pairs classified as `TestSrc` (test ↔ source) or
-`DocSrc` (doc ↔ source) used to be silently dropped from the drain
-queue. They now emit `change_coupling.expected` Findings at
-`Severity::Medium` so users can see what was demoted under
-`heal status --all` (Advisory tier). The pairs still don't enter
-the drain queue — Medium routes to Advisory by default.
+`DocSrc` (doc ↔ source) now emit `change_coupling.expected`
+Findings at `Severity::Medium` so users can see what was demoted
+under `heal status --all` (Advisory tier). The pairs still don't
+enter the drain queue.
 
-### Cross-workspace coupling Advisory bucket
+#### `heal-config` Strict-fit warning
 
-`change_coupling` pairs whose endpoints belong to *different*
-declared workspaces are retagged
-`change_coupling.cross_workspace` and parked in the Advisory tier by
-default. Configurable via
-`[metrics.change_coupling] cross_workspace = "surface" | "hide"`.
+The skill compares the codebase's calibration against the Strict
+recipe before offering it as a strictness option. When
+`Strict.floor_ok` for CCN or Cognitive sits above the codebase's
+`p95`, the percentile cascade lands every barely-above-floor value
+at Critical — flooding the drain queue. The Strict option now
+carries a warning preface naming the metrics and numbers when this
+fits poorly, so the user sees the trade-off before picking. Strict
+remains pickable for domains (cryptography, safety-critical) where
+"every function above CCN=8 is Critical" is the actual goal.
+
+#### Pager + summary at top
+
+`heal status` renders the summary block (Drain queue, Population,
+Accepted) before the per-Severity sections, and pipes through
+`$PAGER` (default `less`) when stdout is a terminal. `heal diff`
+and `heal metrics` adopt the same convention. `--no-pager` opts
+out; `--json` writes raw to stdout regardless. Leading / trailing
+`── HEAL ────` divider lines are gone — the pager already delimits
+the screen.
+
+### Fixes
+
+- **`heal status` ↔ `heal metrics` polish.** Dogfooded output
+  cleanups: trailing whitespace, spurious blank lines in the LCOM
+  per-class block, missing thousands separators in metrics summary
+  totals (`69ef794`).
+- **CLI rename sweep.** A handful of `status` / `metrics`
+  conflations missed the rename pass landed in follow-up
+  (`e73c537`).
+
+### Chore
+
+- **Bundled skills tracked.** `heal init` extracts skills under
+  `.claude/skills/heal-*/` on first run; the directory is now
+  tracked in this repo so dogfood + CI see the same content.
+- **Internal docs and rules.** `.claude/docs/` (descriptive
+  architecture / data-model / commands / observers / glossary) and
+  `.claude/rules/` (prescriptive scope / terminology / workflow /
+  invariants / skills-and-hooks) split from `CLAUDE.md` so the
+  agent-facing reference scales without bloating the project
+  preamble.
+- **Internal comments are English.** Source comments (`//`, `///`,
+  `//!`, `;` in `.scm`, `#` in `Cargo.toml` / shell hooks) are now
+  uniformly English; rule codified in `.claude/rules/workflow.md`
+  R6.1.
+- **User docs rewrite.** Starlight pages cover the new CLI surface
+  + monorepo + accepted lane, and the Japanese mirror tracks them
+  with a CJK-spacing pass.
 
 ## v0.2.1 — 2026-05-01
 
