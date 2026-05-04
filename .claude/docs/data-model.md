@@ -264,11 +264,15 @@ Config { project, git, metrics, policy, diff, features }
   │                   duplication, ccn, cognitive, lcom }
   ├── PolicyConfig { drain, rules }
   ├── DiffConfig { max_loc_threshold = 200_000 }
-  └── FeaturesConfig { docs }
-        └── DocsConfig { enabled = false, pairs_path = ".heal/doc_pairs.json",
-                          standalone, doc_freshness }
-              ├── StandaloneDocsConfig { include, exclude }
-              └── DocFreshnessConfig { high_commits = 5, critical_commits = 20 }
+  └── FeaturesConfig { docs, test }
+        ├── DocsConfig { enabled = false,
+        │                 pairs_path = ".heal/doc_pairs.json",
+        │                 standalone, doc_freshness }
+        │     ├── StandaloneDocsConfig { include, exclude }
+        │     └── DocFreshnessConfig { high_commits = 5,
+        │                               critical_commits = 20 }
+        └── TestConfig { enabled = false, test_paths, coverage }
+              └── TestCoverageConfig { enabled = false, lcov_paths }
 ```
 
 `DuplicationConfig` adds a `docs_min_tokens = 100` field that the
@@ -276,6 +280,16 @@ Markdown duplication pass uses when `[features.docs]` is on. The
 field is on `DuplicationConfig` rather than under `[features.docs]`
 because the underlying observer is `Duplication`; gating logic in
 `run_all` skips the Markdown pass when the feature flag is off.
+
+`TestConfig.test_paths` defaults cover Rust (`tests/**`,
+`**/*_test.rs`), JS / TS (`**/*.test.{ts,tsx,js,jsx}`,
+`**/*.spec.*`, `**/__tests__/**`), Go (`**/*_test.go`), Python
+(`**/test_*.py`, `**/*_test.py`), and Scala
+(`**/*Test.scala`, `**/*Spec.scala`). When the list is empty the
+fallback heuristic in `observer/shared/file_role.rs::is_test_path`
+applies. `TestCoverageConfig.lcov_paths` defaults to `lcov.info`,
+`coverage/lcov.info`, `target/llvm-cov/lcov.info`,
+`coverage/lcov-report/lcov.info`; the first existing file wins.
 
 ### Schema invariants
 
@@ -311,6 +325,17 @@ because the underlying observer is `Duplication`; gating logic in
 | `[metrics.cognitive]` | `floor_ok` | (override `FLOOR_OK_COGNITIVE = 8.0`) | |
 | `[metrics.lcom]` | `backend` | `tree-sitter-approx` | `lsp` is reserved for v0.5+. |
 | `[metrics.lcom]` | `min_cluster_count` | `2` | |
+| `[metrics.duplication]` | `docs_min_tokens` | `100` | Markdown / RST window — only used when `[features.docs]` is on. |
+| `[features.docs]` | `enabled` | `false` | Master switch for the docs family. |
+| `[features.docs]` | `pairs_path` | `".heal/doc_pairs.json"` | SSoT path consumed by Layer A observers. |
+| `[features.docs.doc_freshness]` | `high_commits` | `5` | src commits past doc → High. |
+| `[features.docs.doc_freshness]` | `critical_commits` | `20` | src commits past doc → Critical. |
+| `[features.docs.standalone]` | `include` | `["**/*.md", "**/*.rst"]` | Layer B globs. |
+| `[features.docs.standalone]` | `exclude` | governance + generated dirs | Layer B exclusions. |
+| `[features.test]` | `enabled` | `false` | Master switch for the test family. |
+| `[features.test]` | `test_paths` | language conventions | gitignore-syntax globs. |
+| `[features.test.coverage]` | `enabled` | `false` | Sub-feature switch for lcov ingestion. |
+| `[features.test.coverage]` | `lcov_paths` | 4 conventional paths | First existing wins. |
 | `[diff]` | `max_loc_threshold` | `200_000` | exit 2 above this. |
 
 ### Workspace overlay

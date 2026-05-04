@@ -47,12 +47,13 @@ After `heal init`:
 ```
 <your-repo>/
 ├── .heal/
-│   ├── .gitignore                 # auto — excludes findings/
+│   ├── .gitignore                 # auto — empty by design (reserved)
 │   ├── config.toml                # you edit this (tracked in git)
 │   ├── calibration.toml           # auto — heal init / heal calibrate (tracked in git)
-│   └── findings/
+│   └── findings/                  # tracked in git — team shares the TODO
 │       ├── latest.json            # current FindingsRecord (TODO list)
-│       ├── fixed.json             # BTreeMap<finding_id, FixedFinding> — bounded
+│       ├── fixed.json             # bounded record of fixes
+│       ├── accepted.json          # "won't fix / intrinsic" lane
 │       └── regressed.jsonl        # append-only audit trail of re-detected fixes
 │
 ├── .git/hooks/post-commit         # one-line shim: calls `heal hook commit`
@@ -62,11 +63,12 @@ After `heal init`:
     ├── heal-code-patch/
     ├── heal-code-review/
     └── heal-config/
+    # heal-doc-* / heal-test-* are also extracted when their feature is on.
 ```
 
-`config.toml` and `calibration.toml` stay tracked in git so the
-team shares the same Severity ladder. `findings/` is excluded by
-`.heal/.gitignore`.
+`config.toml`, `calibration.toml`, and the `findings/` directory
+are all tracked in git. Teammates on the same commit share the
+same Severity ladder and the same drain queue.
 
 ## What gets written and when
 
@@ -79,6 +81,7 @@ team shares the same Severity ladder. `findings/` is excluded by
 | `.heal/findings/fixed.json`      | `heal mark fix` (called by `/heal-code-patch`)     | Each commit `/heal-code-patch` lands.       |
 | `.heal/findings/accepted.json`   | `heal mark accept` (called by `/heal-code-review`) | When the team accepts an intrinsic finding. |
 | `.heal/findings/regressed.jsonl` | `heal status` (reconcile pass)                     | When a fixed finding is re-detected.        |
+| `.heal/doc_pairs.json`           | `/heal-doc-pair-setup` skill (when `[features.docs]` is on) | When the user runs the skill; HEAL is read-only. |
 | `.claude/skills/heal-*/`         | `heal skills install`                              | Once; updated with `heal skills update`.    |
 
 There is no event log, no monthly rotation, no `.heal/snapshots/`,
@@ -97,9 +100,8 @@ writer of `accepted.json`.
 
 ```json
 {
-  "version": 2,
-  "id": "01HKM3Q6Z1B7…", // ULID
-  "started_at": "2026-04-30T05:14:22Z",
+  "version": 3,
+  "id": "9f8e7d6c5b4a3210", // FNV-1a hex of (head_sha, config_hash, worktree_clean)
   "head_sha": "a0a6d1a…",
   "worktree_clean": true,
   "config_hash": "9f8e7d6c5b4a3210", // FNV-1a over config + calibration
@@ -112,7 +114,10 @@ writer of `accepted.json`.
 
 `heal status` short-circuits when `(head_sha, config_hash,
 worktree_clean=true)` matches the cached record — re-running on the
-same commit is free.
+same commit is free. The `id` is a deterministic FNV-1a digest of
+that tuple, so the same commit + config + worktree state always
+produces byte-identical content. That's what lets the file stay
+tracked in git without showing up in every teammate's `git status`.
 
 ### `fixed.json` — bounded fix record
 
@@ -137,11 +142,50 @@ and writes a line to `regressed.jsonl`; the renderer warns.
 The only append-only file in `.heal/`. One JSON line per regression
 event, used solely for the "fix was re-detected" warning surface.
 
+### `accepted.json` — the "won't fix / intrinsic" lane
+
+A `BTreeMap<finding_id, AcceptedFinding>` serialized as a single JSON
+object, written by `heal mark accept` (called by the
+`/heal-code-review` skill when the team decides a finding is
+intrinsic and shouldn't be drained).
+
+```json
+{
+  "ccn:src/payments/engine.ts:processOrder:9f8e…": {
+    "reason": "intrinsic — branchy by design (tax engine)",
+    "file": "src/payments/engine.ts",
+    "metric": "ccn",
+    "severity": "critical",
+    "hotspot": true,
+    "metric_value": 31.0,
+    "summary": "CCN=31 processOrder (TypeScript)",
+    "accepted_at": "2026-04-30T05:14:22Z",
+    "accepted_by": "Alice <alice@example.com>"
+  }
+}
+```
+
+Distinct from `fixed.json` — accepted entries are not consumed when
+the finding re-appears. They suppress the finding's drain-queue
+presence indefinitely, and `heal status` shows them in a separate
+`Accepted: N findings` header line plus a `📌 Accepted` section
+under `--all`.
+
+`Finding.accepted: bool` is decorated at render time by folding
+`accepted.json` into the finding list — `latest.json` itself keeps
+raw observer truth and never carries `accepted: true`. That way
+toggling acceptance doesn't require a rescan.
+
+Removing an entry: hand-edit the file to drop the row, or call
+`heal mark accept --remove` from the skill flow. The next
+`heal status` will surface the underlying finding again.
+
 You can inspect the cache directly with `jq`:
 
 ```sh
 jq '.severity_counts' .heal/findings/latest.json
 jq 'keys | length'    .heal/findings/fixed.json
+jq 'keys | length'    .heal/findings/accepted.json
 tail .heal/findings/regressed.jsonl
 ```
 

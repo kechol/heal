@@ -17,11 +17,16 @@ Layered view of `heal-cli` (the only published crate; binary `heal`).
 │   FeatureRegistry::builtin().lower_all() → Vec<Finding>              │
 │   each Feature: classify against Calibration, decorate hotspot flag  │
 ├──────────────────────────────────────────────────────────────────────┤
-│ observers              src/observer/*                                │
-│   loc  complexity{ccn,cognitive}  churn  change_coupling             │
-│   duplication  hotspot  lcom                                         │
-│   shared infra: walk.rs (gitignore + workspace) lang.rs (tree-sitter)│
-│                 git.rs (git2)                                        │
+│ observers              src/observer/{code,docs,test,shared}/        │
+│   code/  loc  complexity{ccn,cognitive}  churn  change_coupling      │
+│          duplication  hotspot  lcom                                  │
+│   docs/  doc_pairs  doc_freshness  doc_drift  doc_coverage           │
+│          doc_link_health  orphan_pages  todo_density  markdown       │
+│          (gated on cfg.features.docs.enabled)                        │
+│   test/  coverage_pct  skip_ratio  lcov reader                       │
+│          (gated on cfg.features.test.enabled)                        │
+│   shared/ walk (gitignore + workspace) lang (tree-sitter)            │
+│           git (git2)  file_role (is_test_file matcher)               │
 ├──────────────────────────────────────────────────────────────────────┤
 │ core                   src/core/*                                    │
 │   config  calibration  finding  findings_cache  severity             │
@@ -56,13 +61,24 @@ is_fresh_against(head_sha, config_hash, worktree_clean)?
   └── no  → continue
   ↓
 observers::run_all(project, cfg, only=None, workspace=None)
-  ├── LocObserver         (always)
-  ├── ComplexityObserver  (CCN + Cognitive in one pass)
-  ├── ChurnObserver       (cfg-gated)
-  ├── ChangeCouplingObserver (cfg-gated)
-  ├── DuplicationObserver (cfg-gated)
-  ├── HotspotObserver     (composes Churn + Complexity)
-  └── LcomObserver        (cfg-gated)
+  ├── LocObserver               (always)
+  ├── ComplexityObserver        (CCN + Cognitive in one pass)
+  ├── ChurnObserver             (cfg-gated)
+  ├── ChangeCouplingObserver    (cfg-gated; promotes TestSrc → drift on
+  │                              [features.test])
+  ├── DocPairsObserver          (loads .heal/doc_pairs.json;
+  │                              [features.docs] only)
+  ├── DuplicationObserver       (cfg-gated; +Markdown pass on
+  │                              [features.docs])
+  ├── HotspotObserver           (composes Churn + Complexity; optional
+  │                              doc-freshness / coverage boost,
+  │                              capped at 1.5×)
+  ├── LcomObserver              (cfg-gated)
+  ├── DocFreshness, DocDrift,   ([features.docs] only)
+  │   DocCoverage, DocLinkHealth,
+  │   OrphanPages, TodoDensity
+  └── CoverageObserver,         ([features.test] / .test.coverage)
+      SkipRatioObserver
   ↓
 observers::build_calibration(reports, config)
   → MetricCalibration per metric (global + per-workspace)
@@ -129,6 +145,8 @@ load config (silent exit if missing)
 observers::run_all → classify → write_nudge
   ├── 0 critical/high → "heal: recorded · clean"
   └── else            → "heal: recorded · X critical, Y high · heal status"
+                         (+ optional second line "         · N uncovered hotspot"
+                          when [features.test.coverage] is on)
 ```
 
 Failures are swallowed (`heal hook commit || true`) so HEAL never blocks a
@@ -155,12 +173,24 @@ Order is fixed and meaningful:
 4. **ChangeCoupling** — same revwalk pattern. Pair counts → lift filter
    → PairClass demotion.
 5. **Duplication** — tree-sitter token streams + Rabin-Karp rolling hash
-   keyed by FNV-1a 64-bit per token (kind_id + text).
+   keyed by FNV-1a 64-bit per token (kind_id + text). When
+   `[features.docs]` is on, a parallel Markdown / RST pass runs with
+   its own `docs_min_tokens` window (default 100).
 6. **Hotspot** — pure composition: zips Churn & Complexity by file,
    `(weight_complexity × ccn_sum) × (weight_churn × commits)`. Default
-   weights both 1.0.
+   weights both 1.0. Optional multiplicative boost (capped at 1.5×)
+   when paired with `DocFreshnessReport` (stale doc) or
+   `CoverageReport` (uncovered file). Combined boost shares the cap so
+   a doubly-bad file doesn't outrank single-axis-bad files just for
+   accumulating signals.
 7. **Lcom** — tree-sitter class-scope walk + union-find on field/method
    accesses.
+
+When `[features.docs]` is enabled, six additional doc-family observers
+run after the code observers (DocFreshness, DocDrift, DocCoverage,
+DocLinkHealth, OrphanPages, TodoDensity); when `[features.test]` is
+enabled, the test-family observers (CoveragePct, SkipRatio) run too.
+Both families are no-ops when their feature flag is off.
 
 Adding a new observer: register in `run_all`, add a Feature in
 `feature.rs`, plumb config + calibration sections.

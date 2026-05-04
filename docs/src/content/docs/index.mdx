@@ -22,10 +22,21 @@ the polling path.
 AI coding agents are good at producing the next change you request.
 Codebases, however, evolve continuously: complexity accumulates, the
 same files get touched repeatedly, and duplicated blocks drift in.
-The agent does not observe these long-term shifts — without an
+The agent doesn't observe these long-term shifts — without an
 external signal, the human is the only one tracking them.
 
 `heal` fills that gap. A git post-commit hook surfaces every Critical
 / High finding right inside the commit output, and `heal status`
 hands the same findings to the bundled `/heal-code-patch` Claude
 skill, which drains them one finding per commit.
+
+Three feature families shape what heal observes:
+
+- **Code** is always on — complexity, churn, duplication, hotspots,
+  cohesion. The seven metrics every project gets after `heal init`.
+- **Test** (opt-in) reads `lcov.info` from your existing reporter
+  and surfaces uncovered hot paths plus drifting tests.
+- **Docs** (opt-in) compares paired documentation against the source
+  it describes and flags drift, broken links, and orphan pages.
+
+See [Features](/heal/features/) for the full picture.

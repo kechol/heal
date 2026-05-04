@@ -32,7 +32,7 @@ heal status  ──►  calibration.toml で Finding を分類
                        └──►  Severity ごとのビューを stdout に描画
 ```
 
-`heal` は単一バイナリです。両方の経路がこれを通ります。デーモンも、スケジューラも、バックグラウンドプロセスも、履歴ストリームも一切ありません。post-commit フックは全オブザーバーを **一度だけ** 実行してナッジを出し、終了します — 永続化は行いません。
+`heal` は単一バイナリです。両方の経路がこれを通ります。デーモンも、スケジューラも、バックグラウンドプロセスも、履歴ストリームも一切ありません。post-commit フックは全オブザーバを **一度だけ** 実行してナッジを出し、終了します(永続化は行いません)。
 
 ## オンディスクのレイアウト
 
@@ -41,24 +41,27 @@ heal status  ──►  calibration.toml で Finding を分類
 ```
 <your-repo>/
 ├── .heal/
-│   ├── .gitignore                # 自動 — findings/ を除外
-│   ├── config.toml               # 自分で編集する（git 管理対象）
-│   ├── calibration.toml          # 自動 — heal init / heal calibrate（git 管理対象）
-│   └── findings/
-│       ├── latest.json           # 現在の FindingsRecord（TODO リスト）
-│       ├── fixed.json            # BTreeMap<finding_id, FixedFinding> — 有界
+│   ├── .gitignore                # 自動 — 将来用の予約(現状は空)
+│   ├── config.toml               # 自分で編集する(git 追跡対象)
+│   ├── calibration.toml          # 自動 — heal init / heal calibrate(git 追跡対象)
+│   └── findings/                 # git 追跡対象 — チームで TODO を共有
+│       ├── latest.json           # 現在の FindingsRecord(TODO リスト)
+│       ├── fixed.json            # 修正済み記録の有界マップ
+│       ├── accepted.json         # 「直さない」と判断した finding の記録
 │       └── regressed.jsonl       # 再検出された修正の追記専用監査トレイル
 │
 ├── .git/hooks/post-commit         # `heal hook commit` を呼ぶ 1 行のシム
 │
-└── .claude/skills/                # Claude スキル群（`heal skills install` 後）
+└── .claude/skills/                # Claude スキル群(`heal skills install` 後)
     ├── heal-cli/
     ├── heal-code-patch/
     ├── heal-code-review/
     └── heal-config/
+    # [features.docs] / [features.test] を有効化していれば
+    # heal-doc-* / heal-test-* も展開される
 ```
 
-`config.toml` と `calibration.toml` は git で追跡され、チームで同じ Severity ラダーを共有できます。`findings/` は `.heal/.gitignore` によって除外されます。
+`config.toml`、`calibration.toml`、`findings/` の中身はすべて git で追跡されるので、同じコミット上のチームメイトは同じ Severity ラダーと drain キューを共有できます。
 
 ## 何がいつ書かれるか
 
@@ -71,6 +74,7 @@ heal status  ──►  calibration.toml で Finding を分類
 | `.heal/findings/fixed.json`      | `heal mark fix`（`/heal-code-patch` から呼出）     | `/heal-code-patch` のコミット着地ごと。           |
 | `.heal/findings/accepted.json`   | `heal mark accept`（`/heal-code-review` から呼出） | チームが intrinsic と判断した finding を記録時。  |
 | `.heal/findings/regressed.jsonl` | `heal status`（整合パス）                          | 修正済み Finding が再検出されたとき。             |
+| `.heal/doc_pairs.json`           | `/heal-doc-pair-setup` スキル（`[features.docs]` 有効時） | ユーザがスキルを実行したとき。HEAL は読み取り専用。 |
 | `.claude/skills/heal-*/`         | `heal skills install`                              | 一度だけ。`heal skills update` で更新。           |
 
 イベントログも、月次ローテーションも、`.heal/snapshots/` / `.heal/logs/` / `.heal/docs/` / `.heal/reports/` も存在しません。heal は現在の状態と `regressed.jsonl` の小さな監査トレイルだけを保持します。
@@ -83,9 +87,8 @@ heal status  ──►  calibration.toml で Finding を分類
 
 ```json
 {
-  "version": 2,
-  "id": "01HKM3Q6Z1B7…", // ULID
-  "started_at": "2026-04-30T05:14:22Z",
+  "version": 3,
+  "id": "9f8e7d6c5b4a3210", // (head_sha, config_hash, worktree_clean) の FNV-1a hex
   "head_sha": "a0a6d1a…",
   "worktree_clean": true,
   "config_hash": "9f8e7d6c5b4a3210", // config + calibration の FNV-1a
@@ -96,7 +99,7 @@ heal status  ──►  calibration.toml で Finding を分類
 }
 ```
 
-`heal status` は `(head_sha, config_hash, worktree_clean=true)` がキャッシュレコードと一致するときショートサーキットします — 同じコミット上での再実行は無料です。
+`heal status` は `(head_sha, config_hash, worktree_clean=true)` がキャッシュレコードと一致するときショートサーキットします — 同じコミット上での再実行は無料です。`id` はそのタプルの決定論的な FNV-1a ダイジェストなので、同じコミット + 設定 + ワーキングツリー状態は常にバイト同等の内容を生みます。だからこのファイルは git に tracked のまま、各チームメイトの `git status` を汚さずに済みます。
 
 ### `fixed.json` — 有界の修正記録
 
@@ -117,11 +120,38 @@ heal status  ──►  calibration.toml で Finding を分類
 
 `.heal/` 配下で唯一の追記専用ファイルです。再検出イベントごとに JSON を 1 行追加し、「修正したはずが再検出された」という警告を表示するためだけに使います。
 
+### `accepted.json` — 「直さない / intrinsic」レーン
+
+`BTreeMap<finding_id, AcceptedFinding>` を 1 つの JSON オブジェクトとしてシリアライズしたもの。`heal mark accept` が writer で、`/heal-code-review` スキルが「この finding は intrinsic（本質的に避けられない）で drain しない」という判断を記録するときに呼びます。
+
+```json
+{
+  "ccn:src/payments/engine.ts:processOrder:9f8e…": {
+    "reason": "intrinsic — 設計上分岐が多い（税金エンジン）",
+    "file": "src/payments/engine.ts",
+    "metric": "ccn",
+    "severity": "critical",
+    "hotspot": true,
+    "metric_value": 31.0,
+    "summary": "CCN=31 processOrder (TypeScript)",
+    "accepted_at": "2026-04-30T05:14:22Z",
+    "accepted_by": "Alice <alice@example.com>"
+  }
+}
+```
+
+`fixed.json` とは異なり、accepted エントリは finding が再出現しても消費されません。drain キューでの存在を無期限に抑制し、`heal status` は `Accepted: N findings` ヘッダ行と、`--all` 指定時の `📌 Accepted` セクションでそれらを別途表示します。
+
+`Finding.accepted: bool` はレンダリング時に `accepted.json` を finding リストに畳み込むことで装飾されます — `latest.json` 自体は raw observer truth を保ち、`accepted: true` を持ちません。これにより accept のオン / オフを切り替えても再スキャンは不要です。
+
+エントリの削除: ファイルを手編集して該当行を消すか、スキルフローから `heal mark accept --remove` を呼びます。次の `heal status` で元の finding が再び表面化します。
+
 このキャッシュは `jq` で直接覗けます。
 
 ```sh
 jq '.severity_counts' .heal/findings/latest.json
 jq 'keys | length'    .heal/findings/fixed.json
+jq 'keys | length'    .heal/findings/accepted.json
 tail .heal/findings/regressed.jsonl
 ```
 

@@ -54,10 +54,10 @@ heal init --force        # overwrite an existing config.toml / hook
 
 `heal init` does:
 
-1. Create `.heal/` with `config.toml`, `calibration.toml`,
-   `findings/`, and a `.gitignore` that excludes `findings/` (so
-   `config.toml` and `calibration.toml` stay tracked and teammates
-   share the same Severity ladder).
+1. Create `.heal/` with `config.toml`, `calibration.toml`, and
+   `findings/`. `config.toml`, `calibration.toml`, and the cache
+   under `findings/` are all tracked in git, so teammates on the
+   same commit see the same Severity ladder and drain queue.
 2. Run every observer once and compute the codebase's percentile
    distribution per metric — that becomes `calibration.toml`.
 3. Install `.git/hooks/post-commit` (idempotent — re-installation
@@ -65,8 +65,8 @@ heal init --force        # overwrite an existing config.toml / hook
 4. If the `claude` CLI is on `PATH`, prompt to extract the bundled
    skill set into `.claude/skills/`. The prompt defaults to `Y`; pass
    `--yes` to skip the prompt and install, or `--no-skills` to skip
-   without prompting. When `claude` is **not** on `PATH`, the prompt
-   is suppressed silently (the skills would have nothing to talk to).
+   without prompting. When `claude` isn't on `PATH`, the prompt is
+   suppressed silently.
 
 When done, `heal init` prints an "Installed:" summary listing every
 file it wrote — config, calibration, post-commit hook, and the
@@ -93,7 +93,9 @@ The skill set is embedded in the `heal` binary at compile time, so
 in use. `update` is drift-aware: files that have been hand-edited are
 left in place (use `--force` to overwrite anyway).
 
-The bundled set ships four skills:
+The bundled set ships ten skills, grouped by feature family:
+
+**Code (always on):**
 
 - `/heal-code-review` (read-only) ingests `heal status --all --json`,
   deep-reads the flagged code, and produces an architectural reading
@@ -105,7 +107,27 @@ The bundled set ships four skills:
   and writes `config.toml` accordingly. Also detects calibration
   drift and recommends `heal calibrate --force` when warranted.
 
-See [Claude skills](/heal/claude-skills/) for the full skill contracts.
+**`[features.docs]`** (opt-in):
+
+- `/heal-doc-pair-setup` (write `.heal/doc_pairs.json`) detects doc
+  ⇔ src pairings.
+- `/heal-doc-review` (read-only) audits the docs slice through a
+  Diátaxis lens.
+- `/heal-doc-patch` (write) drains broken internal links, dangling
+  identifiers, orphan pages, and resolvable TODOs.
+
+**`[features.test]`** (opt-in):
+
+- `/heal-test-reporter-setup` (read-only) proposes lcov reporter +
+  CI configuration.
+- `/heal-test-review` (read-only) audits the test slice through a
+  test-pyramid lens.
+- `/heal-test-patch` (write) drains uncovered hot paths, drifting
+  tests, and skipped tests whose reason no longer holds.
+
+See [Code › Skills](/heal/code/skills/),
+[Test › Skills](/heal/test/skills/), and
+[Docs › Skills](/heal/docs/skills/) for the full contracts.
 
 ## `heal status`
 
@@ -117,6 +139,8 @@ drains:
 heal status                              # render the cached TODO (default)
 heal status --refresh                    # re-scan and overwrite the cache
 heal status --metric lcom                # only LCOM findings
+heal status --metric coverage-pct        # only coverage findings ([features.test])
+heal status --metric doc-drift           # only doc-drift findings ([features.docs])
 heal status --severity critical          # only Critical (and above with --all)
 heal status --feature src/payments       # restrict to one path prefix
 heal status --all                        # show Medium / Ok plus the low-Severity hotspot section
@@ -182,7 +206,7 @@ in-memory scan of the current worktree — never persisted.
 For very large repos the comparison can be expensive; `[diff]` in
 `config.toml` exposes a LOC ceiling that switches to a manual
 two-branch recipe above the threshold. See
-[Configuration › `[diff]`](/heal/configuration/#diff).
+[Code › Configuration](/heal/code/configuration/#diff).
 
 ## `heal metrics`
 
@@ -191,15 +215,25 @@ heal metrics
 heal metrics --json
 heal metrics --metric complexity
 heal metrics --metric lcom
+heal metrics --metric coverage-pct
+heal metrics --metric doc-freshness
 heal metrics --no-pager
 ```
 
 Prints a summary of every enabled metric — primary language, worst-N
 complex functions, top hotspots, most-split classes. `--metric
-<name>` scopes output to one observer; valid names: `loc`,
-`complexity`, `churn`, `change-coupling`, `duplication`, `hotspot`,
-`lcom`. `--json` produces the same data as machine-readable JSON,
-suitable for piping into `jq`.
+<name>` scopes output to one observer; valid names:
+
+- **Code** (always available): `loc`, `complexity`, `churn`,
+  `change-coupling`, `duplication`, `hotspot`, `lcom`.
+- **`[features.docs]`** (when enabled): `doc-freshness`,
+  `doc-drift`, `doc-coverage`, `doc-link-health`, `orphan-pages`,
+  `todo-density`.
+- **`[features.test]`** (when enabled): `coverage-pct`,
+  `skip-ratio`.
+
+`--json` produces the same data as machine-readable JSON, suitable
+for piping into `jq`.
 
 When stdout is a terminal, `heal metrics` pipes through `$PAGER` (or
 `less`) — same convention as `heal status` / `heal diff`. Pass
@@ -258,6 +292,11 @@ Invoked automatically by the git post-commit hook installed by
 entries first. There is no cool-down: the same problem reappears
 every commit until it's fixed — that's the point. Nothing is written
 to disk; the nudge is the only output.
+
+When `[features.test.coverage]` is enabled and any High / Critical
+`coverage_pct` finding sits on a hotspot file, the nudge gains a
+second indented line counting "uncovered hotspot" findings — the
+shortest possible "the next test should land here" reminder.
 
 Manual invocation is occasionally useful for debugging:
 

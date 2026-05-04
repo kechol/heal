@@ -8,11 +8,20 @@ implementation reference.
 
 ## Big picture
 
-HEAL ships four skills bundled inside the `heal-cli` binary. They are
+HEAL ships ten skills bundled inside the `heal-cli` binary. They are
 extracted to `.claude/skills/<skill>/` on `heal init` (when accepted)
 and on `heal skills install`. Claude Code natively discovers
 project-scope skills under `.claude/skills/` — no marketplace, no
 plugin wrapper.
+
+Skills group along the three feature families:
+
+- **Code** (always-on observer family): `heal-cli`, `heal-config`,
+  `heal-code-review`, `heal-code-patch`.
+- **`[features.docs]`** (opt-in): `heal-doc-pair-setup`,
+  `heal-doc-review`, `heal-doc-patch`.
+- **`[features.test]`** (opt-in): `heal-test-reporter-setup`,
+  `heal-test-review`, `heal-test-patch`.
 
 HEAL **does not register any Claude Code hooks** as of v0.2+. The only
 hook that exists is the post-commit **git** hook installed by
@@ -28,34 +37,44 @@ Source: `crates/cli/skills/`. The path is **inside the crate dir** so
 
 ```
 crates/cli/skills/
-├── heal-cli/                    # CLI reference (read-only)
-│   └── SKILL.md
-├── heal-config/                 # one-shot calibrate + write config
-│   ├── SKILL.md
-│   └── references/
-│       └── config.md
-├── heal-code-review/            # read-only architectural review
-│   ├── SKILL.md
-│   └── references/
-│       ├── architecture.md
-│       ├── metrics.md
-│       └── readability.md
-└── heal-code-patch/             # mechanical drain, one finding/commit
-    └── SKILL.md
+├── heal-cli/                       # CLI reference (read-only)
+├── heal-config/                    # one-shot calibrate + write config
+├── heal-code-review/               # read-only architectural review
+├── heal-code-patch/                # mechanical drain, one finding/commit
+├── heal-doc-pair-setup/            # write .heal/doc_pairs.json (SSoT)
+├── heal-doc-review/                # read-only Diátaxis-grounded doc review
+├── heal-doc-patch/                 # mechanical drain of doc findings
+├── heal-test-reporter-setup/       # propose lcov reporter + CI config
+├── heal-test-review/               # read-only test-pyramid review
+└── heal-test-patch/                # mechanical drain of test findings
 ```
+
+Each skill has at least a `SKILL.md`; some carry `references/` files
+loaded on demand (`heal-config/references/config.md`,
+`heal-code-review/references/{architecture,metrics,readability}.md`,
+`heal-doc-pair-setup/references/doc-pairs-schema.md`, etc.).
 
 ### Per-skill role
 
-| Skill | Role | Pair |
-|---|---|---|
-| `heal-cli` | CLI contract reference; load before shelling out to `heal`. | — |
-| `heal-config` | One-shot: calibrate + write `.heal/config.toml` tuned to a strictness level (Strict / Default / Lenient) chosen via `AskUserQuestion`. Read-only on the codebase. | — |
-| `heal-code-review` | Read every `heal status --all --json` finding, deeply investigate, return one architectural reading + prioritized refactor TODO list. Read-only — proposes only. | write counterpart `heal-code-patch` |
-| `heal-code-patch` | Drain the cache fixing one finding per commit in Severity order. Refuses dirty worktree. Calls `heal mark-fixed` after each commit. **Does not push or open PRs.** | write counterpart of `heal-code-review` |
+| Skill | Family | Role | Pair |
+|---|---|---|---|
+| `heal-cli` | Code | CLI contract reference; load before shelling out to `heal`. | — |
+| `heal-config` | Code | One-shot: calibrate + write `.heal/config.toml` tuned to a strictness level (Strict / Default / Lenient) chosen via `AskUserQuestion`. Read-only on the codebase. | — |
+| `heal-code-review` | Code | Read every `heal status --all --json` finding, deeply investigate, return one architectural reading + prioritized refactor TODO list. Read-only — proposes only. | write counterpart `heal-code-patch` |
+| `heal-code-patch` | Code | Drain the cache fixing one finding per commit in Severity order. Refuses dirty worktree. Calls `heal mark fix` after each commit. **Does not push or open PRs.** | write counterpart of `heal-code-review` |
+| `heal-doc-pair-setup` | `[features.docs]` | One-shot: detect doc ⇔ src pairs (mention regex + directory mirror + optional LLM) and write `.heal/doc_pairs.json`. Read-only on source; only writes the SSoT. Manual entries are preserved across regenerations. | — |
+| `heal-doc-review` | `[features.docs]` | Read every doc-family finding from `heal status --json`, frame through Diátaxis (Tutorial / How-to / Reference / Explanation), and return one architectural reading + prioritized doc-fix TODO. Read-only. | write counterpart `heal-doc-patch` |
+| `heal-doc-patch` | `[features.docs]` | Drain doc findings one finding per commit (broken internal links, dangling identifier removal, orphan registration, resolvable TODOs). Allow-list / escalate-list is doc-specific. Refuses dirty worktree. | write counterpart of `heal-doc-review` |
+| `heal-test-reporter-setup` | `[features.test]` | Detect language stack (Rust / Python / JS-TS / Go / Scala / mixed) and propose lcov reporter + CI config so `lcov.info` lands at one of HEAL's default `lcov_paths`. Read-only — proposes commands without running them. | — |
+| `heal-test-review` | `[features.test]` | Read every test-family finding from `heal status --json`, frame through the test-pyramid lens (unit / integration / e2e), and return one architectural reading + prioritized test-fix TODO. Read-only. | write counterpart `heal-test-patch` |
+| `heal-test-patch` | `[features.test]` | Drain test findings one finding per commit (writing missing unit tests for uncovered hotspots, aligning drifted tests, re-enabling skipped tests whose reason no longer holds). Runs the test suite per commit; refuses to weaken assertions or skip flakes. | write counterpart of `heal-test-review` |
 
-The pair `heal-code-review` ↔ `heal-code-patch` is intentional: review
-includes architecture-level proposals (DDD, layering, module-depth);
-patch is mechanical refactor only.
+Three review ↔ patch pairs (`code`, `doc`, `test`) follow the same
+contract: review = read-only architectural proposal, patch = mechanical
+write with one finding per commit. Don't merge them. Each `*-patch`
+skill restricts its drain to the slice of `latest.json` matching its
+family — `heal-code-patch` skips doc / test findings, `heal-doc-patch`
+skips code / test findings, etc.
 
 ---
 
@@ -220,6 +239,21 @@ Design:
 
 The post-commit hook is the **only** hook HEAL installs. Don't add
 SessionStart, Stop, PostToolUse, or any other Claude Code event.
+
+### Nudge format
+
+Single line by default — post-commit output stays compact:
+
+- No calibration → silent (no output at all).
+- 0 critical / high → `heal: recorded · clean`.
+- Has critical / high → `heal: recorded · X critical, Y high · heal status`.
+
+When `[features.test.coverage]` is enabled and at least one
+`coverage_pct` finding sits on a hotspot file at High / Critical
+severity, a second indented line names the count
+(`         · N uncovered hotspot`). The line is suppressed when the
+coverage feature is off so projects that don't ingest lcov see no
+extra noise.
 
 ---
 

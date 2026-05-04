@@ -53,6 +53,11 @@ export default defineConfig({
               slug: 'concept',
             },
             {
+              label: 'Features',
+              translations: { ja: '機能' },
+              slug: 'features',
+            },
+            {
               label: 'Installation',
               translations: { ja: 'インストール' },
               slug: 'installation',
@@ -69,24 +74,72 @@ export default defineConfig({
               slug: 'cli',
             },
             {
-              label: 'Configuration',
-              translations: { ja: '設定' },
-              slug: 'configuration',
-            },
-            {
-              label: 'Metrics',
-              translations: { ja: 'メトリクス' },
-              slug: 'metrics',
-            },
-            {
-              label: 'Claude skills',
-              translations: { ja: 'Claude スキル' },
-              slug: 'claude-skills',
-            },
-            {
               label: 'Architecture',
               translations: { ja: 'アーキテクチャ' },
               slug: 'architecture',
+            },
+            {
+              label: 'Code',
+              translations: { ja: 'Code' },
+              items: [
+                {
+                  label: 'Configuration',
+                  translations: { ja: '設定' },
+                  slug: 'code/configuration',
+                },
+                {
+                  label: 'Metrics',
+                  translations: { ja: 'メトリクス' },
+                  slug: 'code/metrics',
+                },
+                {
+                  label: 'Skills',
+                  translations: { ja: 'スキル' },
+                  slug: 'code/skills',
+                },
+              ],
+            },
+            {
+              label: 'Test',
+              translations: { ja: 'Test' },
+              items: [
+                {
+                  label: 'Configuration',
+                  translations: { ja: '設定' },
+                  slug: 'test/configuration',
+                },
+                {
+                  label: 'Metrics',
+                  translations: { ja: 'メトリクス' },
+                  slug: 'test/metrics',
+                },
+                {
+                  label: 'Skills',
+                  translations: { ja: 'スキル' },
+                  slug: 'test/skills',
+                },
+              ],
+            },
+            {
+              label: 'Docs',
+              translations: { ja: 'Docs' },
+              items: [
+                {
+                  label: 'Configuration',
+                  translations: { ja: '設定' },
+                  slug: 'docs/configuration',
+                },
+                {
+                  label: 'Metrics',
+                  translations: { ja: 'メトリクス' },
+                  slug: 'docs/metrics',
+                },
+                {
+                  label: 'Skills',
+                  translations: { ja: 'スキル' },
+                  slug: 'docs/skills',
+                },
+              ],
             },
           ],
         },

@@ -50,18 +50,23 @@ ladder.
 
 ## Why Hotspot matters
 
-Of the seven metrics heal ships, **Hotspot is the one to watch
-first**. A high-complexity file that nobody touches is technical
-debt — interesting, but not urgent. A high-complexity file that
-the team edits every other day is where the next bug ships from.
-Hotspot multiplies churn × complexity to surface exactly those
-files: high score = often touched **and** hard to read = where
-regressions historically concentrate.
+Of the seven Code-family metrics heal ships, **Hotspot is the one
+to watch first**. A high-complexity file that nobody touches is
+technical debt — interesting, but not urgent. A high-complexity
+file that the team edits every other day is where the next bug
+ships from. Hotspot multiplies churn × complexity to surface
+exactly those files: high score = often touched **and** hard to
+read = where regressions historically concentrate.
 
 The `🔥` flag in `heal status` marks these. A `Critical 🔥` finding
 isn't twice as bad as a `Critical` finding — it's the one that
 actually pays back the time you spend fixing it. The `/heal-code-patch`
 skill drains the `🔥` queue first by default for the same reason.
+
+When `[features.docs]` or `[features.test.coverage]` is enabled,
+Hotspot's score also gains a multiplicative boost (capped at 1.5×)
+when a file's paired doc has drifted or its line coverage is
+incomplete — see [Features](/heal/features/).
 
 ## Read-only by default; write through skills
 
@@ -96,14 +101,27 @@ fixes happen on their own; the interesting calls stay with you.
 - **Not a replacement for tests.** heal surfaces structural
   complexity; correctness is still your test suite's job.
 
+## Three feature families
+
+heal observes three orthogonal slices of code health. **Code** is
+the always-on family — the seven metrics above. **Test**
+(`[features.test]`, opt-in) ingests `lcov.info` and adds
+`coverage_pct`, `skip_ratio`, plus `change_coupling.drift`. **Docs**
+(`[features.docs]`, opt-in) compares paired documentation against
+its source and adds six doc-quality observers. Each family ships
+its own dedicated review ↔ patch skill pair. See
+[Features](/heal/features/) for the full picture.
+
 ## Further reading
 
 - [Quick Start](/heal/quick-start/) — install and try it on a real
   repository
-- [Metrics](/heal/metrics/) — what each metric measures and how
-  Severity is assigned
+- [Features](/heal/features/) — the Code / Test / Docs family
+  overview
 - [CLI](/heal/cli/) — every subcommand
-- [Configuration](/heal/configuration/) — `.heal/config.toml` and
-  `.heal/calibration.toml` reference
-- [Claude skills](/heal/claude-skills/) — `/heal-code-review`,
+- [Code › Metrics](/heal/code/metrics/) — what each code metric
+  measures and how Severity is assigned
+- [Code › Configuration](/heal/code/configuration/) — `.heal/config.toml`
+  reference for the always-on family
+- [Code › Skills](/heal/code/skills/) — `/heal-code-review`,
   `/heal-code-patch`, `/heal-cli`, and `/heal-config`
