@@ -54,9 +54,16 @@ min_cluster_count = 2
 | Hotspot          | enabled                        |
 | LCOM             | enabled                        |
 
-Disable a metric with `enabled = false` in its section. A disabled
-metric is skipped entirely — its findings never appear in
-`heal status`.
+Disable a metric by adding its name to the top-level
+`[metrics] disabled = [...]` list. A disabled metric is skipped
+entirely — its findings never appear in `heal status`. Names are
+the snake_case form (`lcom`, `change_coupling`, ...); `loc` cannot
+be disabled (every other observer depends on it).
+
+```toml
+[metrics]
+disabled = ["lcom"]
+```
 
 ## `[project]`
 
@@ -209,10 +216,11 @@ exclude_paths = []
 
 ```toml
 [metrics.churn]
-enabled = true
+top_n = 10
 ```
 
-Window length comes from `git.since_days`.
+Window length comes from `git.since_days`. Disable Churn entirely via
+`[metrics] disabled = ["churn", ...]` rather than a per-section flag.
 
 ### `[metrics.ccn]` and `[metrics.cognitive]`
 

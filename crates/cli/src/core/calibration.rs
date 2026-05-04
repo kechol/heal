@@ -681,7 +681,6 @@ mod tests {
         let cfg = Config::from_toml_str(
             r#"
             [metrics.ccn]
-            enabled = true
             floor_critical = 25
 
             [[project.workspaces]]

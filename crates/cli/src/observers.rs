@@ -127,24 +127,25 @@ pub(crate) fn run_all(
     } else {
         ComplexityReport::default()
     };
-    let churn = (want(MetricKind::Churn) && cfg.metrics.churn.enabled).then(|| {
+    let churn = (want(MetricKind::Churn) && cfg.metrics.is_enabled("churn")).then(|| {
         ChurnObserver::from_config(cfg)
             .with_workspace(ws_buf.clone())
             .scan(project)
     });
-    let change_coupling = (want(MetricKind::ChangeCoupling) && cfg.metrics.change_coupling.enabled)
-        .then(|| {
-            ChangeCouplingObserver::from_config(cfg)
-                .with_workspace(ws_buf.clone())
-                .scan(project)
-        })
-        .map(|mut report| {
-            crate::observer::code::change_coupling::classify_and_filter(
-                &mut report,
-                loc.primary.as_deref(),
-            );
-            report
-        });
+    let change_coupling = (want(MetricKind::ChangeCoupling)
+        && cfg.metrics.is_enabled("change_coupling"))
+    .then(|| {
+        ChangeCouplingObserver::from_config(cfg)
+            .with_workspace(ws_buf.clone())
+            .scan(project)
+    })
+    .map(|mut report| {
+        crate::observer::code::change_coupling::classify_and_filter(
+            &mut report,
+            loc.primary.as_deref(),
+        );
+        report
+    });
     // Load the docs SSoT and Layer B walk once, before hotspot
     // composition so the optional drift boost can run, then reuse the
     // results for every downstream docs observer.
@@ -174,8 +175,8 @@ pub(crate) fn run_all(
     } else {
         Vec::new()
     };
-    let duplication =
-        (want(MetricKind::Duplication) && cfg.metrics.duplication.enabled).then(|| {
+    let duplication = (want(MetricKind::Duplication) && cfg.metrics.is_enabled("duplication"))
+        .then(|| {
             let docs_inputs = if cfg.features.docs.enabled && !standalone_docs.is_empty() {
                 Some(DocsDuplicationInputs {
                     min_tokens: cfg.metrics.duplication.docs_min_tokens,
@@ -201,7 +202,8 @@ pub(crate) fn run_all(
     // change `Hotspot`'s output based on a flag that doesn't pertain
     // to it.
     let hotspot_doc_freshness =
-        if cfg.features.docs.enabled && cfg.metrics.hotspot.enabled && !live_pairs.is_empty() {
+        if cfg.features.docs.enabled && cfg.metrics.is_enabled("hotspot") && !live_pairs.is_empty()
+        {
             Some(DocFreshnessObserver::from_config_and_pairs(cfg, live_pairs.clone()).scan(project))
         } else {
             None
@@ -215,7 +217,7 @@ pub(crate) fn run_all(
     let skip_ratio = (want(MetricKind::SkipRatio) && cfg.features.test.enabled)
         .then(|| SkipRatioObserver::from_config(cfg).scan(project));
     let hotspot = match (
-        want(MetricKind::Hotspot) && cfg.metrics.hotspot.enabled,
+        want(MetricKind::Hotspot) && cfg.metrics.is_enabled("hotspot"),
         churn.as_ref(),
     ) {
         (true, Some(ch)) => Some(compose_hotspot(
@@ -230,7 +232,7 @@ pub(crate) fn run_all(
         )),
         _ => None,
     };
-    let lcom = (want(MetricKind::Lcom) && cfg.metrics.lcom.enabled).then(|| {
+    let lcom = (want(MetricKind::Lcom) && cfg.metrics.is_enabled("lcom")).then(|| {
         LcomObserver::from_config(cfg)
             .with_workspace(ws_buf)
             .scan(project)
@@ -413,7 +415,7 @@ fn build_metric_calibrations(
         ok: None,
     };
 
-    let ccn = if config.metrics.ccn.enabled {
+    let ccn = if config.metrics.is_enabled("ccn") {
         let values: Vec<f64> = reports
             .complexity
             .files
@@ -426,7 +428,7 @@ fn build_metric_calibrations(
         None
     };
 
-    let cognitive = if config.metrics.cognitive.enabled {
+    let cognitive = if config.metrics.is_enabled("cognitive") {
         let values: Vec<f64> = reports
             .complexity
             .files

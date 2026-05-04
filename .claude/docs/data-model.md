@@ -296,10 +296,14 @@ applies. `TestCoverageConfig.lcov_paths` defaults to `lcov.info`,
 - All structs derive `#[serde(deny_unknown_fields)]`. Typos surface as
   schema errors (`ConfigInvalid`) instead of silently dropping. **Never
   relax this** — better to require explicit migration.
-- Per-metric `*Config` uses the `Toggle` trait + `default_enabled` glue
-  (`config.rs:307`) so a missing `[metrics.<m>]` section deserializes
-  with `enabled = true`. `Default` impls produce the **same** struct,
-  pinned by test `programmatic_default_matches_serde_default`.
+- Code metrics are on by default; opt out via the top-level
+  `[metrics] disabled = ["lcom", "duplication", ...]` array. Names
+  are validated against the closed set in `DISABLEABLE_METRICS`
+  (every code metric **except `loc`**, which is foundational).
+  Per-metric sections (`[metrics.<m>]`) hold tunables only — the
+  pre-v0.4 `enabled = true/false` per-section toggle is retired.
+  The pin test `programmatic_default_matches_serde_default` still
+  asserts `Config::default()` equals `from_toml_str("")`.
 - `exclude_paths` everywhere is **`.gitignore` syntax** (since the
   `feat!(config)!: exclude_paths is now .gitignore syntax` change).
   Validated at load time; bad lines fail with `ConfigInvalid`.
@@ -308,8 +312,8 @@ applies. `TestCoverageConfig.lcov_paths` defaults to `lcov.info`,
 
 | Section | Knob | Default | Notes |
 |---|---|---|---|
-| `[metrics.loc]` | `inherit_git_excludes` | `true` | LOC has no enabled flag — foundational. |
-| `[metrics.churn]` | `enabled` | `true` | |
+| `[metrics]` | `disabled` | `[]` | Names from `DISABLEABLE_METRICS`; `loc` rejected. |
+| `[metrics.loc]` | `inherit_git_excludes` | `true` | LOC is foundational and cannot be disabled. |
 | `[metrics.hotspot]` | `weight_churn` | `1.0` | |
 | `[metrics.hotspot]` | `weight_complexity` | `1.0` | |
 | `[metrics.hotspot]` | `floor_ok` | `FLOOR_OK_HOTSPOT = 22.0` | |

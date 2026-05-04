@@ -85,7 +85,6 @@ fn observer_reports_with_pairs(pairs: Vec<FilePair>) -> ObserverReports {
 
 fn cfg_test_enabled() -> Config {
     let mut cfg = Config::default();
-    cfg.metrics.change_coupling.enabled = true;
     cfg.features.test = TestConfig {
         enabled: true,
         ..TestConfig::default()
@@ -152,8 +151,7 @@ fn test_pair_drift_is_disabled_when_feature_off() {
         PairClass::TestSrc,
     )];
     let reports = observer_reports_with_pairs(pairs);
-    let mut cfg = Config::default();
-    cfg.metrics.change_coupling.enabled = true;
+    let cfg = Config::default();
     let cal = calibration_with_p50(8.0);
 
     let registry = FeatureRegistry::builtin();

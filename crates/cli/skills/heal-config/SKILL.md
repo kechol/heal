@@ -316,9 +316,10 @@ Build the config in memory, then write it:
    overwrite.
 2. **Apply the recipe** — set the knobs from the strictness table.
 3. **Apply the survey** — fill `git.exclude_paths` with the directories
-   from Phase 2; set per-metric `enabled = false` for the disable
-   candidates *only when the calibration confirmed no signal*; set
-   per-metric tunes from the "Tune candidates" list.
+   from Phase 2; append the disable candidates to
+   `[metrics] disabled = [...]` *only when the calibration confirmed
+   no signal* (`loc` cannot be disabled); set per-metric tunes from
+   the "Tune candidates" list.
 4. **Validate.** `Config::from_toml_str` (the heal binary's loader)
    uses `deny_unknown_fields`, so a typo will surface immediately.
    The simplest sanity check is to call `heal status --refresh --json`
@@ -348,7 +349,7 @@ Config changes:
   - metrics.duplication.min_tokens: 50 → 35      # strict mode
   - metrics.change_coupling.min_lift: 2.0 → 1.5  # strict mode
   - policy.drain.must = ["critical:hotspot", "high:hotspot"]   # strict mode
-  - metrics.lcom.enabled: true → false           # no classes detected
+  - metrics.disabled += ["lcom"]                 # no classes detected
 
 Effect:
   before: critical=3 high=11 medium=22 ok=0

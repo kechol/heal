@@ -152,7 +152,9 @@ commit count desc.
 **Findings:** none directly. Consumed by Hotspot.
 
 **Config:**
-- `metrics.churn.enabled` (default `true`).
+- Disable via `[metrics] disabled = ["churn", ...]` (every code
+  metric is enabled by default; the per-metric `enabled` toggle
+  was retired in v0.4).
 - `git.since_days` (default `90`). Global, not per-metric.
 - `metrics.churn.exclude_paths`: gitignore-syntax.
 

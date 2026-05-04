@@ -10,18 +10,20 @@ is on for every section. Typos surface as schema errors, not silent
 defaults.
 
 When a section is **omitted** from TOML, the schema applies the
-"missing-section default". Every metric's missing-section default is
-`enabled = true` (so a fresh `config.toml` doesn't have to enumerate
-every observer); programmatic `Default::default()` produces the same
-struct, and there's a regression test pinning the two paths together.
+"missing-section default". Every code metric is on by default —
+opt out via the top-level `[metrics] disabled = ["lcom", ...]`
+array (`loc` is rejected because every other observer depends on
+it). Programmatic `Default::default()` produces the same struct,
+pinned by `programmatic_default_matches_serde_default`.
 
 ```
 .heal/config.toml
 ├── [project]      — language hints, project-level metadata
 ├── [git]          — repo-wide observer scope (since-days, exclude paths)
-├── [metrics]      — top-N width + per-metric toggles & thresholds
-│   ├── [metrics.loc]              — foundational; no enable toggle
-│   ├── [metrics.churn]
+├── [metrics]      — top-N width, disabled list, per-metric tunables
+│   ├── disabled = [...]           — names of code metrics to turn off
+│   ├── [metrics.loc]              — foundational; cannot be disabled
+│   ├── [metrics.churn]            — tunables only (no enable toggle)
 │   ├── [metrics.hotspot]
 │   ├── [metrics.change_coupling]
 │   ├── [metrics.duplication]
@@ -71,9 +73,10 @@ still measure.
 
 Top-level metric controls and per-metric sections.
 
-| Key      | Type    | Default | Meaning                                                                                                                              |
-|----------|---------|---------|--------------------------------------------------------------------------------------------------------------------------------------|
-| `top_n`  | `usize` | `5`     | Default `worst_n` width for `heal metrics` rankings. Each metric below can override this with its own `top_n`; absent overrides fall back here. |
+| Key        | Type           | Default | Meaning                                                                                                                                                              |
+|------------|----------------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `top_n`    | `usize`        | `5`     | Default `worst_n` width for `heal metrics` rankings. Each metric below can override this with its own `top_n`; absent overrides fall back here.                       |
+| `disabled` | `Vec<String>`  | `[]`    | Code metrics this project turns off. Names from `DISABLEABLE_METRICS` (every code metric except `loc`); unknown names error at load. Replaced per-metric `enabled` in v0.4. |
 
 ### `[metrics.loc]` — Lines of Code
 
@@ -90,32 +93,34 @@ churn weighting, primary-language detection) depend on it.
 
 Commits-touching-file count over the `since_days` window. Useful as
 the heat half of the hotspot composition; on its own a noisy signal.
+Disable via `[metrics] disabled = ["churn", ...]` on solo-author
+repos with no shared history.
 
 | Key       | Type             | Default | Meaning                                              |
 |-----------|------------------|---------|------------------------------------------------------|
-| `enabled` | `bool`           | `true`  | Disable on solo-author repos with no shared history. |
 | `top_n`   | `Option<usize>`  | `None`  | Override the most-churned files list width.          |
 
 ### `[metrics.hotspot]` — composition of CCN × Churn
 
 Flag, not a Severity. Files in the top 10% by composed score get
 `hotspot=true` on their findings; the drain policy uses this to gate
-T0 vs Advisory.
+T0 vs Advisory. Disable via `[metrics] disabled = ["hotspot", ...]`
+only on tiny repos where complexity and churn agree trivially.
 
 | Key                  | Type             | Default | Meaning                                                                                                                                |
 |----------------------|------------------|---------|----------------------------------------------------------------------------------------------------------------------------------------|
-| `enabled`            | `bool`           | `true`  | Off only on tiny repos where complexity and churn agree trivially.                                                                     |
 | `weight_churn`       | `f64`            | `1.0`   | Relative weight of churn in the geometric-mean composition.                                                                            |
 | `weight_complexity`  | `f64`            | `1.0`   | Relative weight of complexity. Bumping one above the other amplifies that signal — leave equal unless the calibration shows imbalance. |
 | `top_n`              | `Option<usize>`  | `None`  | Override the top-hotspots list width. Also drives the new-in-top-N membership diff in snapshots.                                       |
 
 ### `[metrics.change_coupling]`
 
-Pairs of files that change together more often than chance.
+Pairs of files that change together more often than chance. Disable
+via `[metrics] disabled = ["change_coupling", ...]` on repos with no
+meaningful shared edits.
 
 | Key                    | Type             | Default | Meaning                                                                                                                                                          |
 |------------------------|------------------|---------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `enabled`              | `bool`           | `true`  | Disable on repos with no meaningful shared edits.                                                                                                                |
 | `min_coupling`         | `u32`            | `3`     | Scan-time floor: pairs with fewer than N co-occurrences drop before classification. Raise on noisy histories; lower on small repos.                              |
 | `min_lift`             | `f64`            | `2.0`   | Lift = `P(A∩B) / (P(A)·P(B))`. Pairs below drop as coincidental. `2.0` ≈ "twice chance"; `1.5` is looser; `3.0` is strict.                                       |
 | `symmetric_threshold`  | `f64`            | `0.5`   | Both `P(B|A)` and `P(A|B)` must exceed this for a pair to classify as `Symmetric` (rather than `OneWay`).                                                       |
@@ -125,37 +130,41 @@ Pairs of files that change together more often than chance.
 ### `[metrics.duplication]`
 
 Token-level near-duplicate detection (FNV-1a fingerprint per token
-window).
+window). Disable via `[metrics] disabled = ["duplication", ...]`.
 
 | Key              | Type             | Default | Meaning                                                                                                          |
 |------------------|------------------|---------|------------------------------------------------------------------------------------------------------------------|
-| `enabled`        | `bool`           | `true`  |                                                                                                                  |
 | `min_tokens`     | `u32`            | `50`    | Smallest duplicate block size, in tokens. Lower → more matches and more false positives; higher → only big copies. |
 | `top_n`          | `Option<usize>`  | `None`  | Override the largest-duplicate-blocks list width.                                                                 |
 | `floor_critical` | `Option<f64>`    | `None`  | Per-file duplicate-percentage floor. Defaults to `core::calibration::FLOOR_DUPLICATION_PCT` (30%) if `None`.     |
 
 ### `[metrics.ccn]` — McCabe cyclomatic complexity
 
+Disable via `[metrics] disabled = ["ccn", ...]`.
+
 | Key              | Type             | Default | Meaning                                                                                                                                                   |
 |------------------|------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `enabled`        | `bool`           | `true`  |                                                                                                                                                           |
 | `top_n`          | `Option<usize>`  | `None`  | Override the complexity list width (covers both CCN and Cognitive — they share the `complexity:` section in `heal metrics`).                              |
 | `floor_critical` | `Option<f64>`    | `None`  | Override the absolute Critical floor. Default: `core::calibration::FLOOR_CCN` = 25 (McCabe's "untestable").                                              |
 | `floor_ok`       | `Option<f64>`    | `None`  | Override the Ok graduation gate. Default: `core::calibration::FLOOR_OK_CCN` = 11 (McCabe's "simple, low risk"). Values strictly below classify as Ok regardless of percentile. |
 
 ### `[metrics.cognitive]` — Sonar cognitive complexity
 
+Disable via `[metrics] disabled = ["cognitive", ...]`.
+
 | Key              | Type             | Default | Meaning                                                                                                                                                |
 |------------------|------------------|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `enabled`        | `bool`           | `true`  |                                                                                                                                                        |
 | `floor_critical` | `Option<f64>`    | `None`  | Override the absolute Critical floor. Default: `core::calibration::FLOOR_COGNITIVE` = 50 (Sonar Critical baseline).                                    |
 | `floor_ok`       | `Option<f64>`    | `None`  | Override the Ok graduation gate. Default: `core::calibration::FLOOR_OK_COGNITIVE` = 8 (half of Sonar's "review" threshold). Strictly-below → Ok. |
 
 ### `[metrics.lcom]` — Lack of Cohesion of Methods
 
+Disable via `[metrics] disabled = ["lcom", ...]` on repos with no
+classes (the `tree-sitter-approx` backend silently emits zero
+findings there either way; the explicit disable saves the scan).
+
 | Key                 | Type             | Default          | Meaning                                                                                                                          |
 |---------------------|------------------|------------------|----------------------------------------------------------------------------------------------------------------------------------|
-| `enabled`           | `bool`           | `true`           | Off on repos with no classes. The `tree-sitter-approx` backend silently emits zero findings on such repos either way.            |
 | `backend`           | enum             | `tree-sitter-approx` | Extraction backend. `lsp` is reserved for v0.5+ — config opt-in is allowed but the variant doesn't yet drive any analyzer.   |
 | `min_cluster_count` | `u32`            | `2`              | Classes whose `cluster_count` is below this floor aren't surfaced as Findings. `1` = cohesive, `0` = no methods, so `2` is the natural baseline. |
 | `top_n`             | `Option<usize>`  | `None`           | Override the most-split-classes list width.                                                                                      |

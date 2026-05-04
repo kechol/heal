@@ -47,7 +47,12 @@ min_cluster_count = 2
 | Hotspot          | 有効                        |
 | LCOM             | 有効                        |
 
-無効化するには該当セクションで `enabled = false` を指定します。無効化したメトリクスは完全にスキップされ、`heal status` にも現れません。
+無効化するには最上位の `[metrics] disabled = [...]` リストにメトリクス名を追加します。名前は snake_case 形式(`lcom`、`change_coupling` など)。`loc` は他の全オブザーバが依存するため無効化できません。無効化したメトリクスは完全にスキップされ、`heal status` にも現れません。
+
+```toml
+[metrics]
+disabled = ["lcom"]
+```
 
 ## `[project]`
 
@@ -172,10 +177,10 @@ exclude_paths = []
 
 ```toml
 [metrics.churn]
-enabled = true
+top_n = 10
 ```
 
-ウィンドウ長は `git.since_days` を使います。
+ウィンドウ長は `git.since_days` を使います。Churn 自体を無効化したい場合は最上位の `[metrics] disabled = ["churn", ...]` を使います(セクション内のフラグではありません)。
 
 ### `[metrics.ccn]` と `[metrics.cognitive]`
 

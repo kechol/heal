@@ -168,7 +168,6 @@ fn lower_all_tags_findings_under_test_paths() {
     ];
     let reports = observer_reports_with_pairs(pairs);
     let mut cfg = Config::default();
-    cfg.metrics.change_coupling.enabled = true;
     cfg.features.test = TestConfig {
         enabled: true,
         ..TestConfig::default()
@@ -203,8 +202,7 @@ fn lower_all_tags_findings_under_test_paths() {
 fn lower_all_does_not_tag_when_test_feature_disabled() {
     let pairs = vec![pair("tests/foo.rs", "tests/bar.rs", 10, PairClass::Genuine)];
     let reports = observer_reports_with_pairs(pairs);
-    let mut cfg = Config::default();
-    cfg.metrics.change_coupling.enabled = true;
+    let cfg = Config::default();
     // features.test stays at default (disabled).
     let cal = calibration_with_p50(2.0);
 

@@ -45,7 +45,7 @@ impl ChurnObserver {
     #[must_use]
     pub fn from_config(cfg: &Config) -> Self {
         Self {
-            enabled: cfg.metrics.churn.enabled,
+            enabled: cfg.metrics.is_enabled("churn"),
             excluded: cfg.exclude_lines(),
             since_days: cfg.git.since_days,
             workspace: None,

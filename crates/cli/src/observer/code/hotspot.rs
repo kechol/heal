@@ -60,7 +60,7 @@ impl HotspotObserver {
     #[must_use]
     pub fn from_config(cfg: &Config) -> Self {
         Self {
-            enabled: cfg.metrics.hotspot.enabled,
+            enabled: cfg.metrics.is_enabled("hotspot"),
             weights: HotspotWeights {
                 churn: cfg.metrics.hotspot.weight_churn,
                 complexity: cfg.metrics.hotspot.weight_complexity,
@@ -284,7 +284,7 @@ impl Feature for HotspotFeature {
         }
     }
     fn enabled(&self, cfg: &Config) -> bool {
-        cfg.metrics.hotspot.enabled
+        cfg.metrics.is_enabled("hotspot")
     }
     fn lower(
         &self,

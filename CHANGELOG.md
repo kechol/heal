@@ -24,6 +24,40 @@
 
 ### ⚠ BREAKING
 
+- **Per-metric `enabled` toggle replaced by `[metrics] disabled = [...]`.**
+  Each `[metrics.<m>]` section had its own `enabled = true/false`
+  field along with a `Toggle`-trait pattern that ensured every
+  fresh `Config` defaulted them to enabled. The field's only job
+  was opt-out, the default never changed, and the per-section
+  layout meant a project that wanted to disable two metrics had
+  to enumerate every other metric explicitly to stay consistent.
+  v0.4 collapses opt-out into a single top-level array:
+
+  ```toml
+  [metrics]
+  disabled = ["lcom"]   # opt out by snake_case name
+  ```
+
+  Names are validated against `DISABLEABLE_METRICS` at load
+  time; `loc` is rejected explicitly because every other
+  observer (hotspot, churn weighting, primary-language detection)
+  depends on it. Per-metric `[metrics.<m>]` sections now hold
+  tunables only.
+
+  **Migration:** delete every `enabled = true` (no longer needed)
+  and every `enabled = false` line from `[metrics.<m>]` sections,
+  then add the names of the metrics that were `false` to a single
+  `[metrics] disabled = ["<a>", "<b>", ...]` line. The loader's
+  `deny_unknown_fields` surfaces any leftover `enabled` keys as
+  a schema error so the migration is observable.
+
+  Internally: the `Toggle` trait + `default_enabled<T>()` helper
+  are gone; observers route opt-out through
+  `MetricsConfig::is_enabled(metric)`; `validate_disabled_metrics`
+  guards the array; the pin test
+  `programmatic_default_matches_serde_default` still asserts
+  `Config::default() == from_toml_str("")`.
+
 - **`[[project.workspaces]].primary_language` renamed to `language`.**
   The shorter key reads better in config.toml and matches how
   teams actually talk about a workspace ("the Rust workspace",

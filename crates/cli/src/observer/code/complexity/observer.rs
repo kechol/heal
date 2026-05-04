@@ -40,8 +40,8 @@ impl ComplexityObserver {
     pub fn from_config(cfg: &Config) -> Self {
         Self {
             excluded: cfg.exclude_lines(),
-            ccn_enabled: cfg.metrics.ccn.enabled,
-            cognitive_enabled: cfg.metrics.cognitive.enabled,
+            ccn_enabled: cfg.metrics.is_enabled("ccn"),
+            cognitive_enabled: cfg.metrics.is_enabled("cognitive"),
             workspace: None,
         }
     }
@@ -222,9 +222,10 @@ impl IntoFindings for ComplexityReport {
 
 /// Feature wrapper covering both CCN and Cognitive dimensions of
 /// [`ComplexityReport`]. The underlying scan runs once per project
-/// (it parses every supported file with tree-sitter); per-metric
-/// toggles `cfg.metrics.ccn.enabled` / `cfg.metrics.cognitive.enabled`
-/// gate the respective Findings inside `lower`.
+/// (it parses every supported file with tree-sitter); the
+/// `metrics.disabled` list (queried via
+/// `cfg.metrics.is_enabled("ccn")` / `is_enabled("cognitive")`)
+/// gates the respective Findings inside `lower`.
 pub struct ComplexityFeature;
 
 impl Feature for ComplexityFeature {
@@ -236,7 +237,7 @@ impl Feature for ComplexityFeature {
         }
     }
     fn enabled(&self, cfg: &Config) -> bool {
-        cfg.metrics.ccn.enabled || cfg.metrics.cognitive.enabled
+        cfg.metrics.is_enabled("ccn") || cfg.metrics.is_enabled("cognitive")
     }
     fn lower(
         &self,
@@ -258,7 +259,7 @@ impl Feature for ComplexityFeature {
                     line: Some(fun.start_line),
                     symbol: Some(fun.name.clone()),
                 };
-                if cfg.metrics.ccn.enabled && fun.ccn > 0 {
+                if cfg.metrics.is_enabled("ccn") && fun.ccn > 0 {
                     let f = Finding::new(
                         "ccn",
                         location.clone(),
@@ -268,7 +269,7 @@ impl Feature for ComplexityFeature {
                     let sev = cal_ccn.map_or(Severity::Ok, |c| c.classify(f64::from(fun.ccn)));
                     out.push(decorate(f, sev, hotspot));
                 }
-                if cfg.metrics.cognitive.enabled && fun.cognitive > 0 {
+                if cfg.metrics.is_enabled("cognitive") && fun.cognitive > 0 {
                     let f = Finding::new(
                         "cognitive",
                         location,

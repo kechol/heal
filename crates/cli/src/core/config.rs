@@ -124,15 +124,6 @@ impl Default for DocsConfig {
     }
 }
 
-impl Toggle for DocsConfig {
-    fn enabled() -> Self {
-        Self {
-            enabled: true,
-            ..Self::default()
-        }
-    }
-}
-
 /// `[features.docs.standalone]` — gitignore-syntax globs that pick
 /// the Layer B prose-doc universe out of the project tree. Defaults
 /// include common Markdown / RST docs and exclude history / governance
@@ -283,15 +274,6 @@ impl Default for TestConfig {
     }
 }
 
-impl Toggle for TestConfig {
-    fn enabled() -> Self {
-        Self {
-            enabled: true,
-            ..Self::default()
-        }
-    }
-}
-
 /// `[features.test.coverage]` — lcov.info ingestion. Generation is
 /// outsourced to the user's CI / local toolchain (`cargo llvm-cov`,
 /// `pytest --cov`, `nyc`, `scoverage`); HEAL only reads the file. The
@@ -329,15 +311,6 @@ impl Default for TestCoverageConfig {
         Self {
             enabled: false,
             lcov_paths: Self::default_lcov_paths(),
-        }
-    }
-}
-
-impl Toggle for TestCoverageConfig {
-    fn enabled() -> Self {
-        Self {
-            enabled: true,
-            ..Self::default()
         }
     }
 }
@@ -482,21 +455,31 @@ pub struct MetricsConfig {
     /// fall back to this value.
     #[serde(default = "default_top_n")]
     pub top_n: usize,
+    /// Code metrics this project disables. Strings are `Finding.metric`
+    /// names (`churn`, `hotspot`, `change_coupling`, `duplication`,
+    /// `ccn`, `cognitive`, `lcom`); unknown names surface as a
+    /// `ConfigInvalid` schema error at load. `loc` is foundational and
+    /// cannot be disabled — every other observer (hotspot, churn
+    /// weighting, primary-language detection) depends on it. The list
+    /// is the single switch for opt-out; per-metric `[metrics.<m>]`
+    /// blocks now hold tunables only, no `enabled = true/false`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled: Vec<String>,
     #[serde(default)]
     pub loc: LocConfig,
-    #[serde(default = "default_enabled")]
+    #[serde(default)]
     pub churn: ChurnConfig,
-    #[serde(default = "default_enabled")]
+    #[serde(default)]
     pub hotspot: HotspotConfig,
-    #[serde(default = "default_enabled")]
+    #[serde(default)]
     pub change_coupling: ChangeCouplingConfig,
-    #[serde(default = "default_enabled")]
+    #[serde(default)]
     pub duplication: DuplicationConfig,
-    #[serde(default = "default_enabled")]
+    #[serde(default)]
     pub ccn: CcnConfig,
-    #[serde(default = "default_enabled")]
+    #[serde(default)]
     pub cognitive: CognitiveConfig,
-    #[serde(default = "default_enabled")]
+    #[serde(default)]
     pub lcom: LcomConfig,
 }
 
@@ -508,19 +491,43 @@ impl Default for MetricsConfig {
         // and `from_toml_str("")` produce the same struct.
         Self {
             top_n: default_top_n(),
+            disabled: Vec::new(),
             loc: LocConfig::default(),
-            churn: ChurnConfig::enabled(),
-            hotspot: HotspotConfig::enabled(),
-            change_coupling: ChangeCouplingConfig::enabled(),
-            duplication: DuplicationConfig::enabled(),
-            ccn: CcnConfig::enabled(),
-            cognitive: CognitiveConfig::enabled(),
-            lcom: LcomConfig::enabled(),
+            churn: ChurnConfig::default(),
+            hotspot: HotspotConfig::default(),
+            change_coupling: ChangeCouplingConfig::default(),
+            duplication: DuplicationConfig::default(),
+            ccn: CcnConfig::default(),
+            cognitive: CognitiveConfig::default(),
+            lcom: LcomConfig::default(),
         }
     }
 }
 
+/// Code metrics that `metrics.disabled` may name. `loc` is excluded
+/// on purpose — disabling it would break every observer that depends
+/// on language detection, so the validator rejects it explicitly.
+pub const DISABLEABLE_METRICS: &[&str] = &[
+    "churn",
+    "hotspot",
+    "change_coupling",
+    "duplication",
+    "ccn",
+    "cognitive",
+    "lcom",
+];
+
 impl MetricsConfig {
+    /// True iff the named metric is **not** in `disabled`. Pass the
+    /// `snake_case` `Finding.metric` name (`churn`, `change_coupling`,
+    /// `lcom`, ...). Unknown names always read enabled — validation
+    /// rejects them at config-load time, so the runtime path stays
+    /// branch-free.
+    #[must_use]
+    pub fn is_enabled(&self, metric: &str) -> bool {
+        !self.disabled.iter().any(|m| m == metric)
+    }
+
     /// Resolve the effective `top_n` for a given metric: per-metric override
     /// wins, otherwise fall back to the global `metrics.top_n`.
     #[must_use]
@@ -588,18 +595,9 @@ fn default_top_n() -> usize {
     5
 }
 
-trait Toggle {
-    fn enabled() -> Self;
-}
-
-fn default_enabled<T: Toggle>() -> T {
-    T::enabled()
-}
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CognitiveConfig {
-    pub enabled: bool,
     /// Calibration override — see `core::calibration::FLOOR_COGNITIVE`
     /// for the v0.2 default (50, `SonarQube` Critical baseline).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -613,38 +611,17 @@ pub struct CognitiveConfig {
 
 impl Eq for CognitiveConfig {}
 
-impl Toggle for CognitiveConfig {
-    fn enabled() -> Self {
-        Self {
-            enabled: true,
-            floor_critical: None,
-            floor_ok: None,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ChurnConfig {
-    pub enabled: bool,
     /// Per-metric override for `metrics.top_n` — most-churned files list.
     #[serde(default)]
     pub top_n: Option<usize>,
 }
 
-impl Toggle for ChurnConfig {
-    fn enabled() -> Self {
-        Self {
-            enabled: true,
-            top_n: None,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HotspotConfig {
-    pub enabled: bool,
     #[serde(default = "default_weight")]
     pub weight_churn: f64,
     #[serde(default = "default_weight")]
@@ -666,20 +643,10 @@ impl Eq for HotspotConfig {}
 impl Default for HotspotConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
             weight_churn: default_weight(),
             weight_complexity: default_weight(),
             top_n: None,
             floor_ok: None,
-        }
-    }
-}
-
-impl Toggle for HotspotConfig {
-    fn enabled() -> Self {
-        Self {
-            enabled: true,
-            ..Self::default()
         }
     }
 }
@@ -691,7 +658,6 @@ fn default_weight() -> f64 {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ChangeCouplingConfig {
-    pub enabled: bool,
     #[serde(default = "default_min_coupling")]
     pub min_coupling: u32,
     /// Lift threshold for filtering coincidental pairs. Lift =
@@ -741,21 +707,6 @@ impl Eq for ChangeCouplingConfig {}
 impl Default for ChangeCouplingConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
-            min_coupling: default_min_coupling(),
-            min_lift: default_min_lift(),
-            symmetric_threshold: default_symmetric_threshold(),
-            top_n: None,
-            floor_critical: None,
-            cross_workspace: CrossWorkspacePolicy::default(),
-        }
-    }
-}
-
-impl Toggle for ChangeCouplingConfig {
-    fn enabled() -> Self {
-        Self {
-            enabled: true,
             min_coupling: default_min_coupling(),
             min_lift: default_min_lift(),
             symmetric_threshold: default_symmetric_threshold(),
@@ -781,7 +732,6 @@ fn default_symmetric_threshold() -> f64 {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LcomConfig {
-    pub enabled: bool,
     /// Extraction backend. v0.2 ships only `tree-sitter-approx`; a
     /// typed `lsp` variant lands in v0.5+. Typo-resistant by virtue
     /// of being an enum.
@@ -817,19 +767,6 @@ impl Eq for LcomConfig {}
 impl Default for LcomConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
-            backend: LcomBackend::default(),
-            min_cluster_count: default_min_cluster_count(),
-            top_n: None,
-            floor_critical: None,
-        }
-    }
-}
-
-impl Toggle for LcomConfig {
-    fn enabled() -> Self {
-        Self {
-            enabled: true,
             backend: LcomBackend::default(),
             min_cluster_count: default_min_cluster_count(),
             top_n: None,
@@ -845,7 +782,6 @@ fn default_min_cluster_count() -> u32 {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct DuplicationConfig {
-    pub enabled: bool,
     #[serde(default = "default_min_tokens")]
     pub min_tokens: u32,
     /// Window size in tokens applied to **Markdown / RST docs** when
@@ -868,19 +804,6 @@ impl Eq for DuplicationConfig {}
 impl Default for DuplicationConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
-            min_tokens: default_min_tokens(),
-            docs_min_tokens: default_docs_min_tokens(),
-            top_n: None,
-            floor_critical: None,
-        }
-    }
-}
-
-impl Toggle for DuplicationConfig {
-    fn enabled() -> Self {
-        Self {
-            enabled: true,
             min_tokens: default_min_tokens(),
             docs_min_tokens: default_docs_min_tokens(),
             top_n: None,
@@ -900,7 +823,6 @@ fn default_docs_min_tokens() -> u32 {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CcnConfig {
-    pub enabled: bool,
     /// Per-metric override for `metrics.top_n` — covers both CCN and
     /// Cognitive listings since they share the "complexity:" section in
     /// `heal metrics`.
@@ -918,17 +840,6 @@ pub struct CcnConfig {
 }
 
 impl Eq for CcnConfig {}
-
-impl Toggle for CcnConfig {
-    fn enabled() -> Self {
-        Self {
-            enabled: true,
-            top_n: None,
-            floor_critical: None,
-            floor_ok: None,
-        }
-    }
-}
 
 /// Top-level `[policy]` block. Currently holds the `drain` queue
 /// policy. The autonomous-action machinery (`heal run`) is a v0.4+
@@ -1216,17 +1127,24 @@ impl Config {
         toml::from_str(s)
     }
 
-    /// Cross-field invariants. Currently checks `[[project.workspaces]]`:
-    /// paths are non-empty, slash-separated, repo-root-relative, no
-    /// duplicates, no nesting; and that every entry in
-    /// `git.exclude_paths`, `metrics.loc.exclude_paths`, and each
-    /// workspace's `exclude_paths` parses as `.gitignore` syntax.
+    /// Cross-field invariants. Currently checks `[[project.workspaces]]`
+    /// paths (non-empty, slash-separated, repo-root-relative, no
+    /// duplicates, no nesting), every `exclude_paths` entry as
+    /// `.gitignore` syntax, and that every name in `metrics.disabled`
+    /// is a known disable-able metric (`loc` is foundational and is
+    /// rejected here).
     pub fn validate(&self, path: &Path) -> Result<()> {
         validate_workspaces(&self.project.workspaces).map_err(|message| Error::ConfigInvalid {
             path: path.to_path_buf(),
             message: message.clone(),
         })?;
         validate_gitignore_lines(&self.exclude_lines()).map_err(|message| {
+            Error::ConfigInvalid {
+                path: path.to_path_buf(),
+                message,
+            }
+        })?;
+        validate_disabled_metrics(&self.metrics.disabled).map_err(|message| {
             Error::ConfigInvalid {
                 path: path.to_path_buf(),
                 message,
@@ -1313,6 +1231,33 @@ impl Config {
         }
         lines
     }
+}
+
+/// Verify every name in `metrics.disabled` is a known disable-able
+/// code metric. `loc` is foundational and gets a dedicated error
+/// message because users will reach for it; everything else falls
+/// back to "unknown metric — pick one of …". Returning `Result<(),
+/// String>` keeps the caller (`Config::validate`) free to attach
+/// the source path it has handy.
+fn validate_disabled_metrics(disabled: &[String]) -> std::result::Result<(), String> {
+    for name in disabled {
+        if name == "loc" {
+            return Err(
+                "metrics.disabled cannot contain `loc` — LOC is a foundational \
+                metric required by hotspot, churn weighting, and primary-language \
+                detection"
+                    .to_owned(),
+            );
+        }
+        if !DISABLEABLE_METRICS.contains(&name.as_str()) {
+            return Err(format!(
+                "metrics.disabled contains unknown metric `{name}` — \
+                expected one of: {}",
+                DISABLEABLE_METRICS.join(", "),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Verify each line parses as `.gitignore` syntax. Builds a throwaway

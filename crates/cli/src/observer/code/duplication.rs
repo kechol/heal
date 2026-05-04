@@ -85,7 +85,7 @@ impl DuplicationObserver {
     #[must_use]
     pub fn from_config(cfg: &Config) -> Self {
         Self {
-            enabled: cfg.metrics.duplication.enabled,
+            enabled: cfg.metrics.is_enabled("duplication"),
             excluded: cfg.exclude_lines(),
             min_tokens: cfg.metrics.duplication.min_tokens,
             workspace: None,
@@ -650,7 +650,7 @@ impl Feature for DuplicationFeature {
         }
     }
     fn enabled(&self, cfg: &Config) -> bool {
-        cfg.metrics.duplication.enabled
+        cfg.metrics.is_enabled("duplication")
     }
     fn lower(
         &self,

@@ -99,7 +99,7 @@ impl ChangeCouplingObserver {
     #[must_use]
     pub fn from_config(cfg: &Config) -> Self {
         Self {
-            enabled: cfg.metrics.change_coupling.enabled,
+            enabled: cfg.metrics.is_enabled("change_coupling"),
             excluded: cfg.exclude_lines(),
             since_days: cfg.git.since_days,
             min_coupling: cfg.metrics.change_coupling.min_coupling,
@@ -619,7 +619,7 @@ impl Feature for ChangeCouplingFeature {
         }
     }
     fn enabled(&self, cfg: &Config) -> bool {
-        cfg.metrics.change_coupling.enabled
+        cfg.metrics.is_enabled("change_coupling")
     }
     fn lower(
         &self,
@@ -898,7 +898,6 @@ mod pair_class_tests {
 
         fn cfg(workspaces: Vec<&str>, policy: CrossWorkspacePolicy) -> Config {
             let mut c = Config::default();
-            c.metrics.change_coupling.enabled = true;
             c.metrics.change_coupling.cross_workspace = policy;
             c.project.workspaces = workspaces
                 .into_iter()
@@ -1021,8 +1020,7 @@ mod pair_class_tests {
         fn no_workspaces_declared_means_no_cross_workspace_tag() {
             let pairs = vec![pair("a/x.ts", "b/y.ts", 5)];
             let r = reports_with(pairs);
-            let mut c = Config::default();
-            c.metrics.change_coupling.enabled = true;
+            let c = Config::default();
             let f = ChangeCouplingFeature.lower(
                 &r,
                 &c,

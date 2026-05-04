@@ -8,15 +8,84 @@ use std::path::{Path, PathBuf};
 #[test]
 fn empty_toml_yields_recommended_metric_defaults() {
     let cfg: Config = Config::from_toml_str("").unwrap();
-    assert!(cfg.metrics.churn.enabled);
-    assert!(cfg.metrics.hotspot.enabled);
-    assert!(cfg.metrics.duplication.enabled);
-    assert!(cfg.metrics.ccn.enabled);
-    assert!(cfg.metrics.cognitive.enabled);
+    // `metrics.disabled` is empty by default — every code metric is on.
+    assert!(cfg.metrics.disabled.is_empty());
+    assert!(cfg.metrics.is_enabled("churn"));
+    assert!(cfg.metrics.is_enabled("hotspot"));
+    assert!(cfg.metrics.is_enabled("duplication"));
+    assert!(cfg.metrics.is_enabled("ccn"));
+    assert!(cfg.metrics.is_enabled("cognitive"));
+    assert!(cfg.metrics.is_enabled("change_coupling"));
+    assert!(cfg.metrics.is_enabled("lcom"));
     assert!(cfg.metrics.loc.inherit_git_excludes);
     assert!(cfg.metrics.loc.exclude_paths.is_empty());
     assert_eq!(cfg.metrics.top_n, 5);
     assert_eq!(cfg.git.since_days, 90);
+}
+
+#[test]
+fn metrics_disabled_list_round_trips() {
+    let cfg = r#"
+        [metrics]
+        disabled = ["lcom", "duplication"]
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    assert_eq!(parsed.metrics.disabled, vec!["lcom", "duplication"]);
+    assert!(!parsed.metrics.is_enabled("lcom"));
+    assert!(!parsed.metrics.is_enabled("duplication"));
+    // Other metrics stay enabled.
+    assert!(parsed.metrics.is_enabled("ccn"));
+    assert!(parsed.metrics.is_enabled("cognitive"));
+}
+
+#[test]
+fn metrics_disabled_rejects_unknown_metric() {
+    let cfg = r#"
+        [metrics]
+        disabled = ["bogus"]
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    let err = parsed
+        .validate(std::path::Path::new("/tmp/cfg.toml"))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("bogus"),
+        "validator must surface the offending name, got: {err}",
+    );
+}
+
+#[test]
+fn metrics_disabled_rejects_loc() {
+    let cfg = r#"
+        [metrics]
+        disabled = ["loc"]
+    "#;
+    let parsed = Config::from_toml_str(cfg).unwrap();
+    let err = parsed
+        .validate(std::path::Path::new("/tmp/cfg.toml"))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("loc"),
+        "validator must reject `loc` explicitly, got: {err}",
+    );
+}
+
+#[test]
+fn legacy_per_metric_enabled_field_is_rejected() {
+    // Pre-rename configs with `[metrics.<m>] enabled = true/false`
+    // surface as `deny_unknown_fields` schema errors so the user
+    // gets a clear migration nudge.
+    let cfg = r"
+        [metrics.lcom]
+        enabled = false
+    ";
+    let err = Config::from_toml_str(cfg).unwrap_err().to_string();
+    assert!(
+        err.contains("enabled") || err.contains("unknown"),
+        "expected schema error pointing at the legacy key, got: {err}",
+    );
 }
 
 #[test]
@@ -36,11 +105,9 @@ fn per_metric_top_n_overrides_global() {
         top_n = 5
 
         [metrics.churn]
-        enabled = true
         top_n = 20
 
         [metrics.hotspot]
-        enabled = true
         top_n = 8
     ";
     let parsed = Config::from_toml_str(cfg).unwrap();
@@ -91,7 +158,7 @@ fn programmatic_default_matches_serde_default() {
 fn deny_unknown_fields_in_metrics() {
     let bad = r#"
         [metrics.churn]
-        enabled = true
+        top_n = 5
         unknown_key = "oops"
     "#;
     let err = Config::from_toml_str(bad).unwrap_err().to_string();
@@ -313,7 +380,6 @@ fn cross_workspace_default_is_surface() {
 fn cross_workspace_hide_round_trips() {
     let cfg = r#"
         [metrics.change_coupling]
-        enabled = true
         cross_workspace = "hide"
     "#;
     let parsed = Config::from_toml_str(cfg).unwrap();
@@ -514,7 +580,6 @@ fn workspaces_validate_allows_sibling_prefixes() {
 fn hotspot_floor_ok_override_round_trips() {
     let cfg = r"
         [metrics.hotspot]
-        enabled = true
         floor_ok = 50.0
     ";
     let parsed = Config::from_toml_str(cfg).unwrap();

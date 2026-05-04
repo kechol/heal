@@ -67,7 +67,7 @@ impl LcomObserver {
     #[must_use]
     pub fn from_config(cfg: &Config) -> Self {
         Self {
-            enabled: cfg.metrics.lcom.enabled,
+            enabled: cfg.metrics.is_enabled("lcom"),
             excluded: cfg.exclude_lines(),
             min_cluster_count: cfg.metrics.lcom.min_cluster_count,
             workspace: None,
@@ -606,7 +606,7 @@ impl Feature for LcomFeature {
         }
     }
     fn enabled(&self, cfg: &Config) -> bool {
-        cfg.metrics.lcom.enabled
+        cfg.metrics.is_enabled("lcom")
     }
     fn lower(
         &self,
