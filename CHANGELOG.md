@@ -24,6 +24,22 @@
 
 ### ⚠ BREAKING
 
+- **`heal status` / `heal metrics` honor `[features.<f>].enabled`
+  per family.** Disabled families are now silent rather than
+  showing an empty `═══ Test ═══ → (no findings)` banner — the
+  renderer skips them entirely. When `--feature test` /
+  `--feature docs` is requested but the matching `[features.<f>]`
+  master switch is off, both commands exit 1 with a stderr
+  message naming the disabled switch (and recommending
+  `/heal-setup`). The bundled `/heal-test-patch`,
+  `/heal-test-review`, `/heal-doc-patch`, `/heal-doc-review`
+  pre-flights probe with `heal status --feature <family> --json`
+  and bail on the non-zero exit so the skill stops cleanly
+  before walking an empty cache slice.
+  **Migration:** none for users — the rendered output is just
+  cleaner. Scripts that relied on the empty-banner output should
+  switch to checking the exit code.
+
 - **Patch / review skills are scoped to their own family.** Each
   pair of bundled skills now drives `heal status --feature
   <family>` to read only the cache slice they're responsible for:

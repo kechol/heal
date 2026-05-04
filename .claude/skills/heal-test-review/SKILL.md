@@ -87,10 +87,14 @@ The shapes a `[features.test]` cache typically reveals:
 
 ## Pre-flight
 
-1. **Findings exist.** `heal status --feature test --json` (or the cached
-   `latest.json`) must contain at least one finding with a metric
-   in `{coverage_pct, change_coupling.drift, skip_ratio}`. If the
-   feature isn't enabled or no `lcov.info` is reachable, recommend
+1. **Findings exist.** Run `heal status --feature test --json`. The
+   command exits 1 with a stderr message when
+   `[features.test].enabled = false` — bail and tell the user to
+   enable the family (via `/heal-setup` or hand-edit
+   `.heal/config.toml`) before retrying. On success the payload (or
+   the cached `latest.json`) must contain at least one finding with
+   a metric in `{coverage_pct, change_coupling.drift, skip_ratio,
+   test_hotspot}`. If no `lcov.info` is reachable, recommend
    `/heal-test-reporter-setup` and stop.
 2. **Capture the test config.** Open `.heal/config.toml` and read
    `[features.test]`. The `test_paths` globs decide which files

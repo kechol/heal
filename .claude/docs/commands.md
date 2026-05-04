@@ -142,8 +142,12 @@ swallowed → exit 0.
 3. Per-family blocks (`═══ Code ═══`, `═══ Test ═══`, `═══ Docs ═══`)
    — each family runs its own (Severity, hotspot) cascade and ends
    with a `Next: claude /heal-{code,test,doc}-patch` hint. Empty
-   families show `(no findings)` so the absence is visible. With
-   `--feature <FAMILY>`, sibling banners are suppressed entirely.
+   enabled families show `(no findings)` so the absence is visible.
+   Disabled families (`[features.test/docs].enabled = false`) are
+   skipped silently — no banner, no `(no findings)` line. With
+   `--feature <FAMILY>`, sibling banners are suppressed entirely;
+   when the requested family itself is disabled, `run()` exits 1
+   before reaching the renderer.
 4. Cross-family `Hidden: N findings across families` footer (when
    not `--all` and lower-severity rows were dropped).
 5. Accepted section (only with `--all`).
@@ -158,7 +162,11 @@ swallowed → exit 0.
   `orphan-pages`, `todo-density`, `doc-hotspot`).
 - `--feature <code|test|docs>` — narrow to one metric family.
   `code` covers always-on observers; `test` covers `[features.test]`
-  metrics; `docs` covers `[features.docs]` metrics.
+  metrics; `docs` covers `[features.docs]` metrics. **Exit 1** with
+  a stderr message when the requested family's master switch is
+  off (`[features.test].enabled = false` or
+  `[features.docs].enabled = false`) — the early-exit contract
+  the per-family patch / review skills depend on.
 - `--path <PREFIX>` — file path prefix (e.g. `src/payments`).
   Renamed from `--feature` in v0.4 — that flag now selects family.
 - `--workspace <PATH>` — single declared workspace.
@@ -204,6 +212,8 @@ Per-section trait (`MetricSection`) registered in `all_sections()`:
 - `--feature <code|test|docs>` — render every metric in one
   family. Combine with `--metric` for sub-narrowing. The JSON
   payload's per-metric keys are filtered to the requested family.
+  **Exit 1** with a stderr message when the requested family's
+  master switch is off (mirrors `heal status --feature` behavior).
 
 **Output:**
 

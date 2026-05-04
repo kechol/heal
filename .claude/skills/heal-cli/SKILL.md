@@ -86,7 +86,12 @@ findings; pass `--refresh` to rescan first. Useful args:
   restrict to one metric (`complexity` = ccn+cognitive).
 - `--feature {code|test|docs}` — restrict to one metric family.
   `code` covers always-on observers; `test` covers `[features.test]`
-  metrics; `docs` covers `[features.docs]` metrics.
+  metrics; `docs` covers `[features.docs]` metrics. **Early-exit
+  contract:** when `--feature test` / `--feature docs` is used and
+  the matching `[features.<f>].enabled = false`, `heal status` /
+  `heal metrics` exits 1 with a stderr message naming the disabled
+  switch. Skills shelling out should check the exit code and bail
+  before parsing stdout.
 - `--path <PATH-PREFIX>` — restrict to findings under a path
   (renamed from `--feature` in v0.4 — that flag now selects family).
 - `--top <N>` — cap each Severity bucket.

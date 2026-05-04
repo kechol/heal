@@ -63,6 +63,34 @@ pub enum Family {
     Docs,
 }
 
+impl Family {
+    /// Stable lower-case name used in error messages and JSON
+    /// payloads. Matches the `--feature` flag value enum.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Code => "code",
+            Self::Test => "test",
+            Self::Docs => "docs",
+        }
+    }
+
+    /// Is this family active for the project? Code is always on
+    /// (the always-on observer set is foundational); Test and Docs
+    /// follow their respective `[features.<f>]` master switches. The
+    /// renderer skips disabled families silently; the `heal status`
+    /// / `heal metrics` entry points exit non-zero when an explicit
+    /// `--feature <disabled>` would otherwise produce empty output.
+    #[must_use]
+    pub fn is_enabled(self, cfg: &Config) -> bool {
+        match self {
+            Self::Code => true,
+            Self::Test => cfg.features.test.enabled,
+            Self::Docs => cfg.features.docs.enabled,
+        }
+    }
+}
+
 /// Per-file hotspot decoration index. Built once per `lower_all` pass
 /// and threaded into each Feature so individual Findings can flip
 /// `hotspot = true` without re-loading the hotspot report.

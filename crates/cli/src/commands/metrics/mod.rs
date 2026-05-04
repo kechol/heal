@@ -43,6 +43,21 @@ pub fn run(
     } else {
         None
     };
+
+    // Early-exit when `--feature <disabled>` would otherwise produce
+    // an empty payload. Mirrors `heal status`'s contract — skills
+    // shell out and read the exit code to decide whether to bail.
+    if let (Some(family), Some(cfg_ref)) = (feature, cfg.as_ref()) {
+        if !family.is_enabled(cfg_ref) {
+            eprintln!(
+                "heal metrics: --feature {0} requested but `[features.{0}].enabled = false`. \
+                 Edit `.heal/config.toml` (or run `/heal-setup`) to enable the family before re-running.",
+                family.name(),
+            );
+            std::process::exit(1);
+        }
+    }
+
     let reports = cfg.as_ref().map(|c| run_all(project, c, metric, workspace));
 
     let sections = all_sections();

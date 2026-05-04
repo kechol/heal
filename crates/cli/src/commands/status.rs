@@ -77,10 +77,12 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     let must_scan = cached.is_none();
 
     // Load config only when it's actually needed: a fresh scan needs
-    // it for `build_record`, and the textual renderer needs it for
-    // `policy.drain` + override notes. The JSON path with a cache hit
-    // pays neither cost.
-    let need_cfg = must_scan || !args.json;
+    // it for `build_record`, the textual renderer needs it for
+    // `policy.drain` + override notes, and `--feature` needs it to
+    // gate against the relevant `[features.<f>].enabled` switch. The
+    // JSON path with a cache hit and no `--feature` filter pays
+    // none of these costs.
+    let need_cfg = must_scan || !args.json || args.feature.is_some();
     let cfg = if need_cfg {
         Some(load_from_project(project).with_context(|| {
             format!(
@@ -91,6 +93,25 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     } else {
         None
     };
+
+    // Early-exit when `--feature <disabled>` would otherwise produce
+    // empty output. Skills (`/heal-test-patch`, `/heal-doc-patch`,
+    // …) shell out with `--feature <family>` and read the exit code:
+    // a non-zero exit here is the contract for "this family is off
+    // in `.heal/config.toml`, stop now".
+    if let Some(family) = filters.family {
+        let cfg_ref = cfg
+            .as_ref()
+            .expect("cfg loaded above when --feature is set");
+        if !family.is_enabled(cfg_ref) {
+            eprintln!(
+                "heal status: --feature {0} requested but `[features.{0}].enabled = false`. \
+                 Edit `.heal/config.toml` (or run `/heal-setup`) to enable the family before re-running.",
+                family.name(),
+            );
+            std::process::exit(1);
+        }
+    }
 
     let (mut record, regressed) = if must_scan {
         let cfg = cfg.as_ref().expect("cfg loaded above when must_scan");
@@ -332,12 +353,21 @@ pub(super) fn render(
     ];
 
     for (family, banner, patch_skill) in family_order {
+        // Skip families whose feature is disabled so the user never
+        // sees an empty banner for an opt-in family they haven't
+        // enabled. Code is always on; Test / Docs follow their
+        // master switches. The explicit `--feature <disabled>` case
+        // exits earlier in `run()` so this branch only matters for
+        // the unfiltered render.
+        if !family.is_enabled(cfg) {
+            continue;
+        }
         // `--feature X` narrows to one family — suppress the sibling
         // banners entirely even when they have findings (they were
         // already filtered out by `Filters::passes`). Without a
-        // family filter, every family prints its banner + Next hint
-        // so the user always sees the path forward, even when a
-        // family is empty.
+        // family filter, every enabled family prints its banner +
+        // Next hint so the user always sees the path forward, even
+        // when a family is empty.
         if filters.family.is_some_and(|f| f != family) {
             continue;
         }

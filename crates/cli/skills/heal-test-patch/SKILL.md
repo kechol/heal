@@ -40,8 +40,13 @@ test family different.
 
 1. **Clean worktree.** `git status --porcelain` must be empty. Stop
    otherwise.
-2. **`[features.test]` enabled.** If the test feature is off, no
-   test findings exist — nothing to drain. Tell the user.
+2. **`[features.test]` enabled.** Probe with
+   `heal status --feature test --json`. When the test family is
+   disabled in `.heal/config.toml`, this command exits 1 with a
+   stderr message naming the missing config switch — that's the
+   early-exit contract. Bail and tell the user to run
+   `/heal-setup` (or hand-edit `.heal/config.toml`) to enable the
+   feature before retrying.
 3. **Coverage data reachable.** When `lcov.info` is missing for
    `coverage_pct` findings, recommend `/heal-test-reporter-setup`
    first. Drift / skip findings can still drain without it.

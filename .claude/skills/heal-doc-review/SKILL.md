@@ -47,9 +47,13 @@ doc's purpose.
 
 ## Pre-flight
 
-1. **Findings exist.** `heal status --feature docs --json` (or the cached
-   `latest.json`) must contain at least one finding with a `doc_*`
-   metric. If `doc_pairs.json` is missing, recommend
+1. **Findings exist.** Run `heal status --feature docs --json`. The
+   command exits 1 with a stderr message when
+   `[features.docs].enabled = false` — bail and tell the user to
+   enable the family (via `/heal-setup` or hand-edit
+   `.heal/config.toml`) before retrying. On success the payload (or
+   the cached `latest.json`) must contain at least one finding with
+   a `doc_*` metric. If `doc_pairs.json` is missing, recommend
    `/heal-doc-pair-setup` and stop — there's nothing to review.
 2. **Read the SSoT.** Open `.heal/doc_pairs.json`. The pair list
    tells you which docs claim to describe which srcs; the metric

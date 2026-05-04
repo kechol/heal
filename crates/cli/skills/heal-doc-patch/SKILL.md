@@ -32,8 +32,13 @@ different judgment surface.
 
 1. **Clean worktree.** `git status --porcelain` must be empty. Stop
    otherwise.
-2. **`[features.docs]` enabled.** If the docs feature is off, no
-   doc findings exist — nothing to drain. Tell the user.
+2. **`[features.docs]` enabled.** Probe with
+   `heal status --feature docs --json`. When the docs family is
+   disabled in `.heal/config.toml`, this command exits 1 with a
+   stderr message naming the missing config switch — that's the
+   early-exit contract. Bail and tell the user to run
+   `/heal-setup` (or hand-edit `.heal/config.toml`) to enable the
+   feature before retrying.
 3. **`.heal/doc_pairs.json` present.** When missing, recommend
    `/heal-doc-pair-setup` first. The doc observers wouldn't have
    produced findings in any case.
