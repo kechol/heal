@@ -246,8 +246,8 @@ language with a comment naming each.
 Tell the user to run:
 
 ```sh
-<reporter command>            # produces lcov.info
-heal status --refresh --json  # HEAL re-scans and picks up coverage
+<reporter command>                       # produces lcov.info
+heal status --refresh --feature test --json  # re-scan, narrow to test family
 ```
 
 After that, `heal status` should emit `coverage_pct` findings. If
@@ -326,7 +326,7 @@ Detected: Rust workspace (Cargo.toml at root + 3 member crates)
 
 3. Run locally:
    cargo llvm-cov --workspace --lcov --output-path lcov.info
-   heal status --refresh --json
+   heal status --refresh --feature test --json
 
 4. Wire into CI (.github/workflows/ci.yml):
    - name: Generate coverage

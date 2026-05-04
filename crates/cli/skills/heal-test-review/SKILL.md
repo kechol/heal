@@ -1,6 +1,6 @@
 ---
 name: heal-test-review
-description: Read every finding from the `[features.test]` observer family produced by `heal status --json`, deeply investigate the user's tests and codebase through the test-pyramid lens, and return one architectural reading plus a prioritized test-fix TODO list. Read-only — proposes only. The write counterpart is `/heal-test-patch`. Trigger on "review the test health", "what does heal say about my tests", "where should we add tests", "which tests should we unskip", "/heal-test-review".
+description: Read every finding from the `[features.test]` observer family produced by `heal status --feature test --json`, deeply investigate the user's tests and codebase through the test-pyramid lens, and return one architectural reading plus a prioritized test-fix TODO list. Read-only — proposes only. The write counterpart is `/heal-test-patch`. Trigger on "review the test health", "what does heal say about my tests", "where should we add tests", "which tests should we unskip", "/heal-test-review".
 ---
 
 # heal-test-review
@@ -17,7 +17,7 @@ holds — lives in `/heal-test-patch`. Don't apply changes here.
 
 ## Mental model
 
-`heal status --json` (with `[features.test] enabled = true`) returns
+`heal status --feature test --json` (with `[features.test] enabled = true`) returns
 findings whose `Finding.metric` is one of `coverage_pct`,
 `change_coupling.drift`, or `skip_ratio`. Each metric measures a
 different axis of test-quality decay; the right remediation depends
@@ -84,7 +84,7 @@ The shapes a `[features.test]` cache typically reveals:
 
 ## Pre-flight
 
-1. **Findings exist.** `heal status --json` (or the cached
+1. **Findings exist.** `heal status --feature test --json` (or the cached
    `latest.json`) must contain at least one finding with a metric
    in `{coverage_pct, change_coupling.drift, skip_ratio}`. If the
    feature isn't enabled or no `lcov.info` is reachable, recommend

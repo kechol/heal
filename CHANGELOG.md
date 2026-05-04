@@ -24,6 +24,28 @@
 
 ### ⚠ BREAKING
 
+- **Patch / review skills are scoped to their own family.** Each
+  pair of bundled skills now drives `heal status --feature
+  <family>` to read only the cache slice they're responsible for:
+  - `/heal-code-review` and `/heal-code-patch` use `--feature
+    code` — drains the `ccn` / `cognitive` / `change_coupling` /
+    `duplication` / `hotspot` / `lcom` slice only.
+  - `/heal-test-review` and `/heal-test-patch` use `--feature
+    test` — drains `coverage_pct` / `skip_ratio` / `test_hotspot`.
+  - `/heal-doc-review` and `/heal-doc-patch` use `--feature docs`
+    — drains the seven `doc_*` metrics.
+  Skills no longer pick up findings from sibling families even
+  when the same files appear there. The `heal status --json`
+  payload that each skill ingests is filtered server-side, so
+  prompts stay smaller and there's no client-side family
+  separation logic to maintain. The setup helpers
+  (`/heal-doc-pair-setup`, `/heal-test-reporter-setup`) also
+  scope their post-write validation to the family they're
+  configuring.
+  **Migration:** none for users — the skills keep their existing
+  trigger phrases and slash-command shapes. Re-extract bundled
+  skills after upgrading: `heal skills update --force`.
+
 - **`heal status --feature` repurposed as a family filter; old
   path-prefix usage moves to `--path`.** Pre-v0.4, `--feature
   <PREFIX>` narrowed findings to those under a path (e.g.

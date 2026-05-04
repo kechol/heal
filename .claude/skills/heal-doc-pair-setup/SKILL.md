@@ -164,10 +164,11 @@ Write the merged result atomically:
 2. **Write atomically.** Render the JSON with 2-space indent and a
    trailing newline. Use a temp file + rename pattern (the same one
    `Config::save` uses).
-3. **Validate by re-reading.** Run `heal status --refresh --json`
-   once. The integrity-check warnings on stderr should match what
-   Phase 2 already surfaced; if anything new shows up, the merge
-   has a bug — back the file out.
+3. **Validate by re-reading.** Run
+   `heal status --refresh --feature docs --json` once. The
+   integrity-check warnings on stderr should match what Phase 2
+   already surfaced; if anything new shows up, the merge has a
+   bug — back the file out.
 
 ## Output format
 

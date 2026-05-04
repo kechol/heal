@@ -15,12 +15,16 @@ empty (or the user stops). This is the **write** counterpart to
 
 ## Mental model
 
-`heal status --json` writes a `FindingsRecord` to
-`.heal/findings/latest.json`. Findings produced by the
-`[features.docs]` observer family carry `Finding.metric` strings
-beginning with `doc_`. Each id is deterministic — the same broken
-link keeps the same id across runs, so a finding that disappears
-from the cache after a commit is genuinely fixed.
+`heal status --feature docs --json` writes a `FindingsRecord` to
+`.heal/findings/latest.json` and emits the docs-family slice on
+stdout. The seven docs metric strings are: `doc_freshness`,
+`doc_drift`, `doc_coverage`, `doc_link_health`, `orphan_pages`,
+`todo_density`, plus the per-family decoration carrier
+`doc_hotspot` (always `Severity::Ok`; flips `hotspot=true` on the
+other six when the pair's churn × debt is in the project's top
+decile). Each id is deterministic — the same broken link keeps
+the same id across runs, so a finding that disappears from the
+cache after a commit is genuinely fixed.
 
 `/heal-doc-patch` mirrors `/heal-code-patch`'s loop verbatim — same
 pre-flight, same per-commit `heal mark fix`, same constraints — but
@@ -36,10 +40,10 @@ different judgment surface.
 3. **`.heal/doc_pairs.json` present.** When missing, recommend
    `/heal-doc-pair-setup` first. The doc observers wouldn't have
    produced findings in any case.
-4. **Cache exists.** `heal status --json` returns at least one
-   `doc_*` finding. If only `severity: "ok"` doc findings exist,
-   say so — the calibration thresholds are loose enough that
-   nothing is actionable.
+4. **Cache exists.** `heal status --feature docs --json` returns
+   at least one `doc_*` finding. If only `severity: "ok"` doc
+   findings exist, say so — the calibration thresholds are loose
+   enough that nothing is actionable.
 
 ## The loop
 
@@ -53,7 +57,7 @@ while there are non-Ok doc_* findings in the cache:
         run any verification (link recheck, syntax)
         git commit -m "<conventional doc message>"
         heal mark fix --finding-id <id> --commit-sha <sha>
-        heal status --refresh --json
+        heal status --refresh --feature docs --json
     if escalate-list:
         end the session; surface remaining findings; recommend /heal-doc-review
 ```
@@ -249,7 +253,7 @@ heal mark fix \
   --finding-id "<finding_id>" \
   --commit-sha "$(git rev-parse HEAD)"
 
-heal status --refresh --json
+heal status --refresh --feature docs --json
 ```
 
 Same pattern as `/heal-code-patch`.

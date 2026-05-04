@@ -119,10 +119,19 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     record.apply_accepted(&accepted_map);
 
     if args.json {
-        match filters.workspace.as_deref() {
-            None => super::emit_json(&record),
-            Some(ws) => super::emit_json(&record.project_to_workspace(ws)),
+        let mut emit = match filters.workspace.as_deref() {
+            None => record.clone(),
+            Some(ws) => record.project_to_workspace(ws),
+        };
+        // Apply `--feature` / `--metric` / `--path` / `--severity` to
+        // the JSON payload too, not just the rendered text. Skills
+        // pipe `heal status --feature <X> --json` straight into their
+        // input — the narrowed shape avoids per-skill client-side
+        // re-filtering.
+        if filters.is_narrowing() {
+            emit.findings.retain(|f| filters.passes(f));
         }
+        super::emit_json(&emit);
         return Ok(());
     }
     let cfg = cfg.expect("cfg loaded above when not args.json");
@@ -154,6 +163,16 @@ impl Filters {
             all: args.all,
             top: args.top,
         }
+    }
+
+    /// True when at least one finding-level filter is set. Lets the
+    /// JSON emit path skip the `retain` clone allocation on the
+    /// unfiltered fast path.
+    fn is_narrowing(&self) -> bool {
+        self.metric.is_some()
+            || self.family.is_some()
+            || self.path.is_some()
+            || self.severity.is_some()
     }
 
     fn passes(&self, finding: &Finding) -> bool {

@@ -1,6 +1,6 @@
 ---
 name: heal-doc-review
-description: Read every finding from the `[features.docs]` observer family produced by `heal status --json`, deeply investigate the user's docs and codebase through a Diátaxis lens, and return one architectural reading plus a prioritized doc-fix TODO list. Read-only — proposes only. The write counterpart is `/heal-doc-patch`. Trigger on "review the docs health", "what does heal say about my docs", "where should we fix documentation", "/heal-doc-review".
+description: Read every finding from the `[features.docs]` observer family produced by `heal status --feature docs --json`, deeply investigate the user's docs and codebase through a Diátaxis lens, and return one architectural reading plus a prioritized doc-fix TODO list. Read-only — proposes only. The write counterpart is `/heal-doc-patch`. Trigger on "review the docs health", "what does heal say about my docs", "where should we fix documentation", "/heal-doc-review".
 ---
 
 # heal-doc-review
@@ -16,7 +16,7 @@ counterpart — broken-link fixes, dangling-identifier deletions, etc.
 
 ## Mental model
 
-`heal status --json` (with `[features.docs] enabled = true`) returns
+`heal status --feature docs --json` (with `[features.docs] enabled = true`) returns
 findings with `Finding.metric` strings prefixed with `doc_`. Each
 metric measures a different axis of doc decay; the right
 remediation depends on which axis fired and why. The reading layer
@@ -44,7 +44,7 @@ doc's purpose.
 
 ## Pre-flight
 
-1. **Findings exist.** `heal status --json` (or the cached
+1. **Findings exist.** `heal status --feature docs --json` (or the cached
    `latest.json`) must contain at least one finding with a `doc_*`
    metric. If `doc_pairs.json` is missing, recommend
    `/heal-doc-pair-setup` and stop — there's nothing to review.

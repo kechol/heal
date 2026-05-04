@@ -1,6 +1,6 @@
 ---
 name: heal-code-review
-description: Read every finding produced by `heal status --all --json`, deeply investigate the user's codebase, and return one architectural reading plus a prioritized refactor TODO list — grounded in the metric literature and module-depth / layering / DDD vocabulary. Works on any language and shape of project; respects the codebase's existing design. Read-only — proposes only. The write counterpart is `/heal-code-patch`. Trigger on "what does heal say?", "review the codebase health", "where should we refactor?", "/heal-code-review".
+description: Read every finding produced by `heal status --all --feature code --json`, deeply investigate the user's codebase, and return one architectural reading plus a prioritized refactor TODO list — grounded in the metric literature and module-depth / layering / DDD vocabulary. Works on any language and shape of project; respects the codebase's existing design. Read-only — proposes only. The write counterpart is `/heal-code-patch`. Trigger on "what does heal say?", "review the codebase health", "where should we refactor?", "/heal-code-review".
 ---
 
 # heal-code-review
@@ -54,7 +54,7 @@ main prompt so it stays terse.
 
 ## Mental model
 
-`heal status --all --json` emits a `FindingsRecord` containing every
+`heal status --all --feature code --json` emits a `FindingsRecord` containing every
 classified `Finding`:
 
 ```jsonc
@@ -105,7 +105,7 @@ proposal must pass.
 
 Stop and ask before proceeding if any of these are off:
 
-1. **Cache exists.** Run `heal status --all --json`. If the cache is
+1. **Cache exists.** Run `heal status --all --feature code --json`. If the cache is
    missing or stale, the same invocation refreshes it. Capture the
    full payload.
 2. **Calibrated.** If every finding has `severity: "ok"`, the
@@ -296,7 +296,7 @@ granularities:
 When you classify a finding as Intrinsic / Cohesive procedural,
 print the exact `heal mark accept` invocation for the user to copy
 and approve. Don't run it yourself — the user is in the loop. The
-finding's id is already in `heal status --all --json` output.
+finding's id is already in `heal status --all --feature code --json` output.
 
 ```sh
 heal mark accept \
@@ -385,7 +385,7 @@ reading. The reading leads with intent; numbers support it.
 
 - **Read freely; do not edit.** The skill is read-only at the file
   level; you may open any flagged file to ground your explanation.
-- **One contract — `heal status --all --json`.** Don't shell out to
+- **One contract — `heal status --all --feature code --json`.** Don't shell out to
   other observers, don't reimplement a metric. The cache is the
   source of truth.
 - **Keep `finding-id:` lines exact.** `/heal-code-patch` reads them

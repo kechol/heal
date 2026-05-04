@@ -12,10 +12,10 @@ counterpart to `/heal-test-review`.
 
 ## Mental model
 
-`heal status --json` writes a `FindingsRecord` to
-`.heal/findings/latest.json`. Findings produced by the
-`[features.test]` observer family carry one of these `Finding.metric`
-strings:
+`heal status --feature test --json` writes a `FindingsRecord` to
+`.heal/findings/latest.json` and emits the test-family slice on
+stdout. Findings produced by the `[features.test]` observer
+family carry one of these `Finding.metric` strings:
 
 - `coverage_pct` — uncovered source file (severity from
   `[calibration.coverage_pct]`).
@@ -23,6 +23,9 @@ strings:
   co-evolving with its source (Severity::Medium).
 - `skip_ratio` — per-test-file skip percentage (`> 1% / > 5% / > 20%`
   bands).
+- `test_hotspot` — per-src-file `commits × uncov_pct` decoration
+  carrier; `Severity::Ok` itself, but flips `hotspot=true` on
+  `coverage_pct` findings sitting on the same src.
 
 Each id is deterministic — the same coverage gap on
 `src/foo.rs::bar` keeps the same id across runs, so a finding that
@@ -42,10 +45,10 @@ test family different.
 3. **Coverage data reachable.** When `lcov.info` is missing for
    `coverage_pct` findings, recommend `/heal-test-reporter-setup`
    first. Drift / skip findings can still drain without it.
-4. **Cache exists.** `heal status --json` returns at least one
-   `[features.test]` finding. If only `severity: "ok"` test
-   findings exist, say so — the calibration thresholds are loose
-   enough that nothing is actionable.
+4. **Cache exists.** `heal status --feature test --json` returns at
+   least one `[features.test]` finding. If only `severity: "ok"`
+   test findings exist, say so — the calibration thresholds are
+   loose enough that nothing is actionable.
 5. **Test runner detected.** Verify the project has a runnable test
    suite (`cargo test`, `pytest`, `npm test`, `go test`,
    `sbt test`). Without one, the verification step below can't
@@ -63,7 +66,7 @@ while there are non-Ok [features.test] findings in the cache:
         run the project's test runner — must be green
         git commit -m "<conventional test message>"
         heal mark fix --finding-id <id> --commit-sha <sha>
-        heal status --refresh --json
+        heal status --refresh --feature test --json
     if escalate-list:
         end the session; surface remaining findings; recommend /heal-test-review
 ```
@@ -280,7 +283,7 @@ heal mark fix \
   --finding-id "<finding_id>" \
   --commit-sha "$(git rev-parse HEAD)"
 
-heal status --refresh --json
+heal status --refresh --feature test --json
 ```
 
 Same pattern as `/heal-code-patch` and `/heal-doc-patch`.

@@ -18,6 +18,15 @@ the same problem keeps the same id across runs, so a finding that
 disappears from the cache after a commit is genuinely fixed (not
 re-numbered).
 
+This skill drains the **code family only** (`ccn`, `cognitive`,
+`change_coupling`, `duplication`, `hotspot`, `lcom`). Pass
+`--feature code` to every `heal status` invocation in this loop so
+the JSON payload (and the rendered text the user sees in
+parallel) is narrowed to the code drain queue. Test- and Docs-
+family findings are drained by `/heal-test-patch` and
+`/heal-doc-patch` respectively — never by this skill, even when
+they happen to sit on the same files.
+
 `.heal/findings/fixed.json` is the audit trail of "skill committed a
 fix" (a `BTreeMap<finding_id, FixedFinding>`). The **next** `heal
 status` reconciles it: if the same `finding_id` shows up again, the
@@ -55,10 +64,12 @@ patterns, end the session with a summary and recommend the user run
    commit-per-finding flow assumes a clean baseline. The cache also
    carries `worktree_clean=false` in this case — `heal status --json`
    will show it.
-2. **Cache exists.** Run `heal status --json` and capture the
-   `FindingsRecord`. The default flow reads `.heal/findings/latest.json`
-   directly; a missing cache is auto-populated by the same invocation.
-3. **Calibration exists.** If `heal status --json` shows every finding
+2. **Cache exists.** Run `heal status --feature code --json` and
+   capture the narrowed `FindingsRecord`. The default flow reads
+   `.heal/findings/latest.json` directly; a missing cache is auto-
+   populated by the same invocation.
+3. **Calibration exists.** If `heal status --feature code --json`
+   shows every finding
    as `severity: "ok"`, the project hasn't been calibrated yet — say so
    and suggest `heal init` or `heal calibrate --force`. Don't try to
    fix Ok findings; they're not actionable until thresholds are set.
@@ -77,7 +88,7 @@ while there are non-Ok findings in the cache:
     run tests / type-check / linter (best effort, see "Verification")
     git add -p / git add <file>; git commit -m "<conventional message>"
     heal mark fix --finding-id <id> --commit-sha <new SHA>
-    heal status --refresh --json   # re-scan and overwrite latest.json
+    heal status --refresh --feature code --json   # re-scan code family only
     if the finding is back (regressed warning):
         leave it for now; record in session notes; continue with next finding
     else:
@@ -259,10 +270,11 @@ heal mark fix \
   --commit-sha "$(git rev-parse HEAD)"
 ```
 
-Then run `heal status --refresh --json` to re-scan (default `heal status`
-just re-reads the now-stale cache). The new cache will either confirm
-the finding is gone, or `heal status` itself will print a regressed
-warning and move the entry to `regressed.jsonl` automatically.
+Then run `heal status --refresh --feature code --json` to re-scan
+(default `heal status` just re-reads the now-stale cache). The new
+cache will either confirm the finding is gone, or `heal status`
+itself will print a regressed warning and move the entry to
+`regressed.jsonl` automatically.
 
 ## Output format
 
