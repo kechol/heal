@@ -4,6 +4,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::commands;
+use crate::core::finding::Finding;
 
 #[derive(Debug, Parser)]
 #[command(name = "heal", version, about = "Code health hook-driven harness", long_about = None)]
@@ -164,6 +165,9 @@ pub enum MetricKind {
     OrphanPages,
     /// `[features.docs]` — TODO/FIXME/XXX marker density per doc.
     TodoDensity,
+    /// `[features.test.coverage]` — line coverage per source file,
+    /// ingested from an externally-generated lcov.info file.
+    CoveragePct,
 }
 
 impl MetricKind {
@@ -186,6 +190,7 @@ impl MetricKind {
             Self::DocLinkHealth => "doc_link_health",
             Self::OrphanPages => "orphan_pages",
             Self::TodoDensity => "todo_density",
+            Self::CoveragePct => "coverage_pct",
         }
     }
 }
@@ -217,6 +222,8 @@ pub enum FindingMetric {
     OrphanPages,
     /// `[features.docs]` — TODO marker density per doc.
     TodoDensity,
+    /// `[features.test.coverage]` — line coverage per source file.
+    CoveragePct,
 }
 
 impl FindingMetric {
@@ -229,7 +236,12 @@ impl FindingMetric {
             Self::Cognitive => metric == "cognitive",
             Self::Complexity => matches!(metric, "ccn" | "cognitive"),
             Self::Duplication => metric == "duplication",
-            Self::Coupling => matches!(metric, "change_coupling" | "change_coupling.symmetric"),
+            Self::Coupling => matches!(
+                metric,
+                Finding::METRIC_CHANGE_COUPLING
+                    | Finding::METRIC_CHANGE_COUPLING_SYMMETRIC
+                    | Finding::METRIC_CHANGE_COUPLING_DRIFT
+            ),
             Self::Hotspot => metric == "hotspot",
             Self::Lcom => metric == "lcom",
             Self::DocFreshness => metric == "doc_freshness",
@@ -238,6 +250,7 @@ impl FindingMetric {
             Self::DocLinkHealth => metric == "doc_link_health",
             Self::OrphanPages => metric == "orphan_pages",
             Self::TodoDensity => metric == "todo_density",
+            Self::CoveragePct => metric == "coverage_pct",
         }
     }
 }

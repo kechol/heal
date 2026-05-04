@@ -381,6 +381,52 @@ External link checking and example-execution verification are out
 of scope (HEAL is local-only — `lychee` / `linkchecker` cover the
 HTTP side in CI).
 
+## `[features.test]` (default disabled)
+
+Optional observer family for test quality. The headline signal is
+**line coverage**, ingested from an externally-generated lcov.info
+file (HEAL never executes tests). Off by default — turn it on
+once your project produces an lcov.info via `cargo llvm-cov`,
+`pytest --cov`, `nyc`, or `scoverage`.
+
+```toml
+[features.test]
+enabled = true
+# test_paths defaults cover Rust / TS / JS / Python / Go / Scala
+# conventions; override only if your project uses an unusual layout.
+
+[features.test.coverage]
+enabled = true
+# lcov_paths is probed in order; first existing file wins.
+# Defaults: lcov.info, coverage/lcov.info, target/llvm-cov/lcov.info,
+#           coverage/lcov-report/lcov.info
+```
+
+Enabling the feature gives you:
+
+| Metric | What it catches |
+|---|---|
+| `coverage_pct` | Per-source-file line coverage parsed from lcov.info. |
+| `change_coupling.drift` | A test paired with a source that recently moved without it (joint count below the project's `change_coupling.p50`). |
+
+…plus a new `is_test_file` flag on every Finding so skills can
+read test- and production-side severities independently. Files
+matched by `test_paths` (gitignore-syntax globs) are tagged
+`is_test_file=true`.
+
+When `[features.test.coverage]` is on, `hotspot::compose` also
+applies a multiplicative boost to the score of uncovered files —
+files that change a lot AND are uncovered AND are complex bubble
+to the top of the drain queue. The boost shares the existing
+1.5× cap with the docs-drift boost so multi-axis-bad files don't
+outrank single-axis-bad files just by accumulating signal.
+
+Generation of the lcov.info file is your responsibility — wire
+up your reporter in CI (or locally via `cargo llvm-cov` etc.) and
+HEAL reads what it produces. Flakiness, runtime trends, isolation,
+mutation score, and any "must run the test" signal are forever
+out of scope; CI is the right home for those.
+
 ## `[diff]`
 
 Tunes `heal diff`'s worktree-backed mode (used when the requested

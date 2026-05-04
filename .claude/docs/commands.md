@@ -129,8 +129,10 @@ swallowed → exit 0.
 **Filters:**
 
 - `--metric <FindingMetric>` — `ccn`, `cognitive`, `complexity`
-  (CCN+Cognitive), `duplication`, `coupling` (symmetric pairs only),
-  `hotspot`, `lcom`.
+  (CCN+Cognitive), `duplication`, `coupling` (symmetric pairs +
+  `change_coupling.drift`), `hotspot`, `lcom`, `coverage-pct`,
+  plus the docs-family filters (`doc-freshness`, `doc-drift`,
+  `doc-coverage`, `doc-link-health`, `orphan-pages`, `todo-density`).
 - `--feature <PREFIX>` — file path prefix (e.g. `src/payments`).
 - `--workspace <PATH>` — single declared workspace.
 - `--severity <Critical|High|Medium|Ok>` — floor.
@@ -156,8 +158,9 @@ Per-section trait (`MetricSection`) registered in `all_sections()`:
 `Loc`, `Complexity`, `Churn`, `ChangeCoupling`, `Duplication`,
 `Hotspot`, `Lcom`, plus the docs-only sections (active when
 `[features.docs] enabled = true`): `DocFreshness`, `DocDrift`,
-`DocCoverage`, `DocLinkHealth`, `OrphanPages`, `TodoDensity`. Each
-section provides:
+`DocCoverage`, `DocLinkHealth`, `OrphanPages`, `TodoDensity`, plus
+the test-only sections (active when `[features.test.coverage]
+enabled = true`): `CoveragePct`. Each section provides:
 
 - `render_text(&report) → String` with `top_n` cutoff.
 - `raw_json(&report) → serde_json::Value` (full typed report; omitted

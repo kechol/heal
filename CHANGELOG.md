@@ -4,12 +4,18 @@
 
 ### ⚠ BREAKING
 
-- **`FINDINGS_RECORD_VERSION` bumped to 3.** Caches written by older
+- **`FINDINGS_RECORD_VERSION` bumped to 4.** Caches written by older
   HEAL versions silently invalidate on read; the next `heal status`
-  rewrites `.heal/findings/latest.json` under the new schema. Six
-  new `Finding.metric` strings (`doc_freshness`, `doc_drift`,
-  `doc_coverage`, `doc_link_health`, `orphan_pages`, `todo_density`)
-  are now part of the JSON contract.
+  rewrites `.heal/findings/latest.json` under the new schema. v3
+  added the docs family (`doc_freshness`, `doc_drift`,
+  `doc_coverage`, `doc_link_health`, `orphan_pages`, `todo_density`).
+  v4 adds the test family (`coverage_pct`, `change_coupling.drift`)
+  and a new `Finding.is_test_file: bool` field on every Finding
+  (`skip_serializing_if`-defaulted, so projects that don't enable
+  `[features.test]` see byte-identical JSON to v3 once the next
+  scan rewrites). Skills that consume `Finding.metric` should add
+  `coverage_pct` and `change_coupling.drift` to their dispatch
+  tables.
 
 ### Features
 
@@ -39,6 +45,51 @@
   optionally consumes a `DocFreshnessReport`; files whose paired
   doc is stale receive a multiplicative score boost (capped at
   1.5×) so reader-misleading hotspots rank above clean ones.
+- **`[features.test]` (default disabled): test-quality as a
+  first-class observer family.** Opt-in feature flag in
+  `.heal/config.toml` adds line-coverage ingestion and the
+  `is_test_file` post-classify pass:
+  - **`coverage_pct` observer** reads the first existing lcov
+    file from the configured `[features.test.coverage].lcov_paths`
+    (defaults: `lcov.info`, `coverage/lcov.info`,
+    `target/llvm-cov/lcov.info`, `coverage/lcov-report/lcov.info`).
+    The lcov reader handles `cargo llvm-cov`, `pytest --cov`, `nyc`,
+    and `scoverage` dialects (permissive on unknown record types,
+    recovers `LF`/`LH` from `DA` lines when summary records are
+    omitted, and merges duplicate `SF` records by max-of). HEAL
+    never executes tests — flakiness, runtime trends, isolation,
+    mutation score, etc. stay out of scope (`scope.md` R5).
+  - **Inverted-percentile calibration.** `[calibration.coverage_pct]`
+    stores `100 - coverage_pct` so the existing `value >= p95 →
+    Critical` cascade in `MetricCalibration::classify` continues
+    to mean "worst → Critical" without bespoke logic. A hard-coded
+    fallback cascade (anchored at literature defaults: ≤ 5 %
+    coverage Critical, > 75 % Ok) classifies until `heal calibrate`
+    populates the table.
+  - **Hotspot ↔ coverage integration.** `hotspot::compose` now
+    optionally consumes a `CoverageReport`; uncovered files
+    receive a multiplicative score boost. Combined with the
+    docs-drift boost it shares the existing `1.5×` cap so
+    multi-axis-bad files don't outrank single-axis-bad files
+    just by accumulating signal.
+  - **`change_coupling.drift` submetric.** With the test feature
+    on, a `TestSrc` pair whose joint count sits below the
+    project's `change_coupling.p50` is retagged from
+    `change_coupling.expected` (Advisory) to
+    `change_coupling.drift` (Severity::Medium, real Finding) —
+    "the test exists but isn't keeping up with its source".
+    DocSrc pairs never promote to drift (drift is a test-quality
+    signal).
+  - **`Finding.is_test_file: bool`** is tagged in a post-classify
+    pass against `[features.test].test_paths` (gitignore syntax).
+    Skills filter on this flag to read test- and production-side
+    severities independently. Defaults to a built-in glob set
+    covering `tests/`, `*_test.{rs,go,py}`, `*.test.{ts,tsx,js}`,
+    `*.spec.{ts,tsx,js}`, `__tests__/`, `*Test.scala`,
+    `*Spec.scala`, `test_*.py`.
+  - **Post-commit nudge** adds a second line counting "uncovered
+    hotspot" findings (High+/Critical `coverage_pct` findings
+    with `hotspot=true`) when `[features.test.coverage]` is on.
 
 ## v0.3.2 — 2026-05-04
 

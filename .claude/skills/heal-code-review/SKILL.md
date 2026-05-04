@@ -2,7 +2,7 @@
 name: heal-code-review
 description: Read every finding produced by `heal status --all --json`, deeply investigate the user's codebase, and return one architectural reading plus a prioritized refactor TODO list — grounded in the metric literature and module-depth / layering / DDD vocabulary. Works on any language and shape of project; respects the codebase's existing design. Read-only — proposes only. The write counterpart is `/heal-code-patch`. Trigger on "what does heal say?", "review the codebase health", "where should we refactor?", "/heal-code-review".
 metadata:
-  heal-version: 0.2.1
+  heal-version: 0.3.2
   heal-source: bundled
 ---
 
@@ -274,12 +274,43 @@ in one of three buckets before proposing.
 | Category | Trigger examples | Verdict |
 |---|---|---|
 | **Symptomatic** | duplicated logic across N sites; mixed-responsibility class; `change_coupling` between layers | **Fix.** Pick a pattern from `references/architecture.md` §5. |
-| **Intrinsic** | graph traversal; statistical aggregation; exhaustive `match` over a closed enum; data-shaped `??` / `&&` chains | **Skip.** Refactor relocates or destroys meaning. Propose `metrics.exclude_paths`. |
-| **Cohesive procedural** | event handler with sequential phases; emit pipeline; orchestrator with N coherent steps | **Accept score.** Extract Function relocates here. Surface as a deferred question if the user insists. |
+| **Intrinsic** | graph traversal; statistical aggregation; exhaustive `match` over a closed enum; data-shaped `??` / `&&` chains | **Skip & accept.** Refactor relocates or destroys meaning. Propose `heal mark accept` (per-finding) or `metrics.exclude_paths` (per-file/tree) — see "Proposing accept" below. |
+| **Cohesive procedural** | event handler with sequential phases; emit pipeline; orchestrator with N coherent steps | **Accept the score; propose `heal mark accept`.** Extract Function relocates here. Surface as a deferred question if the user insists on splitting. |
 
 Diagnostic for misclassification: after Extract Function on what you took
 to be Symptomatic, the new helper itself appears Critical / High in the
 next cache. The original was Intrinsic or Cohesive — stop splitting.
+
+### Proposing `heal mark accept` vs `metrics.exclude_paths`
+
+Both suppress findings from the drain queue, but at different
+granularities:
+
+- **`heal mark accept`** = one specific Finding (this function /
+  this pair / this duplication block) is intrinsic, but the rest
+  of the file is in scope. Surfaced under `📌 Accepted` in
+  `heal status --all` so the audit trail is auditable; persists
+  across re-detections.
+- **`metrics.exclude_paths`** = the whole file or path tree is
+  structurally not refactorable code (generated parser tables,
+  vendored deps, golden fixtures). Removes findings from the cache
+  entirely; HEAL stops scanning the path.
+
+When you classify a finding as Intrinsic / Cohesive procedural,
+print the exact `heal mark accept` invocation for the user to copy
+and approve. Don't run it yourself — the user is in the loop. The
+finding's id is already in `heal status --all --json` output.
+
+```sh
+heal mark accept \
+  --finding-id "<full id from cache JSON>" \
+  --reason "<one-sentence why this is intrinsic / cohesive>"
+```
+
+The reason should be short, concrete, and durable across refactors
+(e.g. "exhaustive match over closed Severity enum; splitting loses
+exhaustiveness"). Reviewers re-reading `accepted.json` six months
+later need it to make sense without the surrounding chat context.
 
 When ranking Symptomatic candidates against each other, follow the
 leverage hierarchy in `architecture.md` §5: duplication-driven patterns

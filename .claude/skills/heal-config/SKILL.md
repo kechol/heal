@@ -2,7 +2,7 @@
 name: heal-config
 description: Calibrate the codebase, survey its shape, and write or update `.heal/config.toml` with thresholds tuned to a strictness level the user picks (Strict / Default / Lenient). Read-only on the codebase; writes only `.heal/config.toml`. Trigger on "set up heal config", "tune heal thresholds", "make heal stricter / more lenient", "/heal-config".
 metadata:
-  heal-version: 0.2.1
+  heal-version: 0.3.2
   heal-source: bundled
 ---
 

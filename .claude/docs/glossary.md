@@ -69,6 +69,7 @@ key form matches `MetricsConfig` field names.
 | `change_coupling` | `ChangeCoupling` | `change-coupling` | One-way pair. |
 | `change_coupling.symmetric` | (under `ChangeCoupling`) | (under `change-coupling`) | Both directions strong. |
 | `change_coupling.expected` | (Advisory tier) | — | TestSrc / DocSrc demoted to Advisory at `Severity::Medium`. |
+| `change_coupling.drift` | (under `ChangeCoupling`) | — | `[features.test]` only. TestSrc pair whose joint count sits below the project's `change_coupling.p50`; the test isn't keeping up with its source. Severity::Medium, real Finding (not Advisory). DocSrc pairs never promote to drift. |
 | `change_coupling.cross_workspace` | (Advisory tier) | — | Cross-workspace pair surfaced as Advisory. |
 | `duplication` | `Duplication` | `duplication` | Type-1 (token-exact) clones over code; `[features.docs]` adds a parallel Markdown / RST pass with its own `docs_min_tokens` window. |
 | `hotspot` | `Hotspot` | `hotspot` | Composite of churn × complexity. **Is** an emitted metric (file-level Finding) but its severity is always `Ok` — the importance is signaled via `hotspot=true` flag on **other** Findings. When `[features.docs]` is on, `compose` multiplies the score by up to 1.5× when the file's paired doc is stale. |
@@ -79,6 +80,7 @@ key form matches `MetricsConfig` field names.
 | `doc_link_health` | `DocLinkHealth` | `doc-link-health` | `[features.docs]` only. Internal relative-path / anchor link breakage. Layer A + B. **External HTTP is out of scope** (`scope.md` R5). |
 | `orphan_pages` | `OrphanPages` | `orphan-pages` | `[features.docs]` only. Layer B docs not linked from anywhere; `README.md` / `index.md` exempt as conventional entry points. |
 | `todo_density` | `TodoDensity` | `todo-density` | `[features.docs]` only. Per-doc count of `TODO` / `FIXME` / `XXX` / `TBD` / `[要確認]` / `[要修正]`. Layer A + B. |
+| `coverage_pct` | `Coverage` (`CoverageFeature` / `FeatureKind::CoverageReader`) | `coverage-pct` | `[features.test.coverage]` only. Per-source-file line coverage from an externally-generated lcov.info. Calibration stores **inverted** values (`100 - coverage_pct`) so the existing `value >= p95 → Critical` cascade applies; observer applies the inversion before classification. Findings emitted only for `< 100 %` files. |
 
 Don't invent new submetric strings without bumping `FINDINGS_RECORD_VERSION`
 (see `.claude/rules/data-model.md`).
@@ -136,6 +138,8 @@ below). Constants live in `core::calibration` (`FLOOR_CCN`,
 | Accepted map | `AcceptedMap` = `BTreeMap<String, AcceptedFinding>` | `Suppressed*`, `Ignored*`, `Allowed*` |
 | Per-finding suppression | `Accepted` (state) / `accept` (verb) | `suppress`, `ignore`, `acknowledge`, `allow`, `mute` |
 | Idempotency tuple | `(head_sha, config_hash, worktree_clean)` | "freshness key" — OK as prose, not as a code identifier |
+| Test-file flag | `Finding.is_test_file: bool` | `is_test`, `test`, `test_path`, `under_tests` |
+| Test feature config | `[features.test]`, `[features.test.coverage]` | `[features.tests]` (plural; the symmetry break with `[features.docs]` is deliberate — see CLAUDE.md). |
 
 **Removed concepts** — never reintroduce these names. The retired list
 lives in `architecture.md` ("What does **not** exist") and as a hard

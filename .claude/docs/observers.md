@@ -474,16 +474,23 @@ them.
 
 ### Hotspot integration
 
-`hotspot::compose` accepts an `Option<&DocFreshnessReport>`.
-When supplied, files whose paired doc has drifted receive a
-multiplicative score boost: `boost = 1.0 + min(0.5,
-src_commits_since_doc / 20)`, capped at `1.5×`. The cap exists
-so an extremely stale doc on a moderately-active file can't
-push it past hot files with fresher docs.
+`hotspot::compose` accepts both an `Option<&DocFreshnessReport>`
+and (since v0.4) an `Option<&CoverageReport>`. When either is
+supplied, files matched by it receive a multiplicative score
+boost — `1.0 + min(0.5, src_commits_since_doc / 20)` for stale
+docs, `1.0 + min(0.5, 1 - coverage_ratio)` for uncovered files
+— and the two boosts are combined multiplicatively but **share
+the cap** at `1.5×` so a doubly-bad file doesn't outrank
+single-axis-bad files just for accumulating signals. The cap
+exists so an extremely stale doc / fully-uncovered file on a
+moderately-active source can't push it past hotter files with
+fresh docs and good coverage.
 
 The pre-pass that computes `DocFreshness` for the boost is
 reused as `reports.doc_freshness` whenever the user also asked
-for the metric — no double-scan.
+for the metric — no double-scan. `CoverageReport` is built once
+when `[features.test.coverage]` is on and reused for both the
+hotspot boost and the `coverage_pct` Findings.
 
 ### Markdown duplication
 
@@ -495,6 +502,81 @@ hash of lowercased bytes (so prose tokens can't collide with
 code-leaf tokens). Window size = `cfg.metrics.duplication.docs_min_tokens`
 (default 100). Both passes' blocks merge into the single
 `DuplicationReport`.
+
+---
+
+## `[features.test]` family (v0.4+)
+
+Test-quality observers gated on `cfg.features.test.enabled =
+true`. HEAL never executes tests — flakiness, runtime trends,
+order dependency, mutation score, and any other "must run the
+test" signal is permanently out of scope (`scope.md` R5).
+External reporter output (lcov.info) is the user's contract;
+the binary is a read-only consumer.
+
+### `observer/test/lcov.rs` (reader)
+
+Permissive lcov.info parser. Reads `SF` / `DA` / `LH` / `LF` /
+`BRDA` / `BRH` / `BRF` records, tolerates `TN:` and other
+unknown record types, recovers `LF` / `LH` from the per-line
+`DA` aggregate when reporters omit the summary records. Handles
+duplicate `SF` records (some reporters emit one per test
+entry-point) by taking the maximum hit count rather than
+summing — additive sums double-count overlapping coverage.
+
+### `observer/test/coverage.rs` (`coverage_pct`)
+
+**What:** per-source-file line coverage percentage, from the
+first existing `lcov.info` in `[features.test.coverage].lcov_paths`.
+**Default probe order:** `lcov.info`, `coverage/lcov.info`,
+`target/llvm-cov/lcov.info`, `coverage/lcov-report/lcov.info`.
+**Severity:** classified against `[calibration.coverage_pct]`
+which stores **inverted values** (`100 - coverage_pct`) so the
+existing `value >= p95 → Critical` cascade in
+`MetricCalibration::classify` continues to mean "worst →
+Critical" without bespoke logic. The observer applies the
+inversion at classification time; users see calibrated breaks
+for both raw coverage and the inverted form.
+
+When `[calibration.coverage_pct]` hasn't been populated yet
+(fresh project, or `heal calibrate` not re-run since enabling
+the feature), the Feature falls back to a hard-coded cascade
+anchored at literature defaults (≤ 5 % coverage Critical,
+> 75 % Ok). Users who want absolute thresholds tune via
+`heal calibrate --force` after editing the lcov.info workflow.
+
+Findings are emitted only for files with `< 100 %` coverage.
+Files at full coverage are still consulted by the hotspot
+boost (via `CoverageReport::ratio_for`) but don't produce
+noise findings.
+
+### `change_coupling.drift` (post-pass on `[features.test]`)
+
+A `TestSrc` pair whose joint count sits below the project's
+`change_coupling.p50` is retagged from `change_coupling.expected`
+(Advisory) to `change_coupling.drift` (Severity::Medium, real
+Finding). Signal: the test exists but isn't keeping up with
+its source — every co-change of the source happens without the
+test moving in lockstep. Disabled when `[features.test]` is
+off; pairs above `p50` keep the existing `expected` demotion;
+DocSrc pairs never promote to drift (drift is a test-quality
+signal).
+
+### `is_test_file` post-classify pass
+
+When `[features.test]` is enabled, `FeatureRegistry::lower_all`
+runs a post-pass that consults a gitignore-style matcher built
+from `[features.test].test_paths` and flips
+`Finding.is_test_file = true` on every finding whose primary
+`location.file` matches. Empty `test_paths` falls back to the
+convention-based `is_test_path` heuristic from
+`observer/shared/file_role.rs`. Skills filter on this flag to
+read test- and production-side severities independently.
+
+The flag is `skip_serializing_if = is_false`, so projects that
+don't opt into the test family see byte-identical
+`latest.json` to their pre-v4 cache once a single rewrite has
+landed.
 
 ---
 

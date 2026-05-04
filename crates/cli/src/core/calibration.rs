@@ -203,6 +203,15 @@ pub struct MetricCalibrations {
     pub hotspot: Option<HotspotCalibration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lcom: Option<MetricCalibration>,
+    /// Calibration for `[features.test].coverage` line-coverage
+    /// readings. Stored as inverted values (`100 - coverage_pct`) so
+    /// the existing "value >= p95 → Critical" cascade in
+    /// [`MetricCalibration::classify`] continues to mean "worst →
+    /// Critical" without bespoke logic. The observer applies the same
+    /// inversion before calling `classify`. `None` until the user
+    /// runs `heal calibrate` with `[features.test.coverage]` enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coverage_pct: Option<MetricCalibration>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

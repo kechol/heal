@@ -64,10 +64,11 @@ pub(super) trait MetricSection {
 }
 
 /// All sections in canonical ordering — code-feature first, then
-/// docs-feature. The text renderer prints in this order; JSON
-/// consumers see an unordered map.
+/// docs-feature, then test-feature. The text renderer prints in this
+/// order; JSON consumers see an unordered map.
 pub(super) fn all_sections() -> Vec<Box<dyn MetricSection>> {
     let mut sections = super::code::sections();
     sections.extend(super::docs::sections());
+    sections.extend(super::test::sections());
     sections
 }

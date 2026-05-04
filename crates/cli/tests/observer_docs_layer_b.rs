@@ -23,6 +23,7 @@ fn cfg_with_docs() -> Config {
                 enabled: true,
                 ..DocsConfig::default()
             },
+            ..FeaturesConfig::default()
         },
         ..Config::default()
     }

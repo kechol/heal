@@ -26,6 +26,7 @@ use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 use crate::observer::code::churn::{ChurnObserver, ChurnReport, FileChurn};
 use crate::observer::code::complexity::{ComplexityObserver, ComplexityReport, FileComplexity};
 use crate::observer::docs::freshness::DocFreshnessReport;
+use crate::observer::test::coverage::CoverageReport;
 use crate::observer::{ObservationMeta, Observer};
 use crate::observers::ObserverReports;
 
@@ -76,32 +77,39 @@ impl HotspotObserver {
         }
         let churn = self.churn.scan(root);
         let complexity = self.complexity.scan(root);
-        compose(&churn, &complexity, None, self.weights)
+        compose(&churn, &complexity, None, None, self.weights)
     }
 }
 
-/// Per-file boost cap when `[features.docs]` surfaces drift. The
-/// boost itself is `1.0 + (src_commits_since_doc / critical_commits)`,
-/// clamped at this constant so a doc that's been stale for years
-/// can't push a moderately-active file's hotspot score arbitrarily
-/// high.
+/// Per-file boost cap. The base boost is `1.0 + raw_factor`, where
+/// `raw_factor` is the doc-drift contribution (commits since paired
+/// doc) plus the coverage gap (`1 - coverage_ratio`). The combined
+/// boost is clamped here so a doubly-bad file (stale doc AND zero
+/// coverage) caps at the same multiplier as a singly-bad one — the
+/// signal is "this file is rough", not "this file is two kinds of
+/// rough", and we don't want hotspot ordering to degenerate into
+/// ranking-by-feature-count.
 const DOC_DRIFT_BOOST_MAX: f64 = 1.5;
 
 /// Pure composer: zip a `ChurnReport` and `ComplexityReport` by file path
 /// and emit a per-file score. Files appearing in only one of the two
 /// inputs get a score of 0 and are filtered out.
 ///
-/// `doc_freshness` is optional; when supplied, files whose paired doc
-/// is stale receive a multiplicative score boost capped at
-/// `DOC_DRIFT_BOOST_MAX`. The reasoning follows
-/// `documentation-quality-reference.md` §2.3: a hotspot whose doc
-/// no longer describes the code is doubly costly to a reader, so it
-/// belongs higher in the drain queue than a hotspot with fresh docs.
+/// `doc_freshness` and `coverage` are optional decorators. When
+/// supplied, files whose paired doc is stale or whose line coverage
+/// gaps the literature anchor receive a multiplicative score boost
+/// shared at the cap [`DOC_DRIFT_BOOST_MAX`]. The reasoning follows
+/// `documentation-quality-reference.md` §2.3 and
+/// `test-quality-reference.md` §2.3: a hotspot whose doc no longer
+/// describes the code, or whose tests don't exercise it, is doubly
+/// costly to a reader, so it belongs higher in the drain queue than
+/// a hotspot with fresh docs and full coverage.
 #[must_use]
 pub fn compose(
     churn: &ChurnReport,
     complexity: &ComplexityReport,
     doc_freshness: Option<&DocFreshnessReport>,
+    coverage: Option<&CoverageReport>,
     weights: HotspotWeights,
 ) -> HotspotReport {
     let mut churn_by_path: BTreeMap<PathBuf, &FileChurn> = BTreeMap::new();
@@ -137,6 +145,21 @@ pub fn compose(
         }
     }
 
+    // Per-src-file uncovered boost. Same shape as the doc-drift
+    // boost: `1.0 + (1 - coverage_ratio)`, capped so the combined
+    // doc + coverage boost stays at `DOC_DRIFT_BOOST_MAX`.
+    let mut uncovered_boost: BTreeMap<PathBuf, f64> = BTreeMap::new();
+    if let Some(cov) = coverage {
+        for entry in &cov.entries {
+            let ratio = entry.line_coverage_pct / 100.0;
+            if ratio >= 1.0 {
+                continue;
+            }
+            let boost = 1.0 + (1.0 - ratio).min(DOC_DRIFT_BOOST_MAX - 1.0);
+            uncovered_boost.insert(entry.path.clone(), boost);
+        }
+    }
+
     let mut entries: Vec<HotspotEntry> = Vec::new();
     for (path, complexity_file) in &complexity_by_path {
         let Some(churn_file) = churn_by_path.get(path) else {
@@ -148,8 +171,14 @@ pub fn compose(
             continue;
         }
         let base = weighted_score(commits, ccn_sum, weights);
-        let boost = drift_boost.get(path).copied().unwrap_or(1.0);
-        let score = base * boost;
+        let doc_b = drift_boost.get(path).copied().unwrap_or(1.0);
+        let cov_b = uncovered_boost.get(path).copied().unwrap_or(1.0);
+        // Compose multiplicatively but share the cap: a file that's
+        // both stale-docs and uncovered tops out at the same
+        // multiplier as a singly-bad one. The signal is "rough", not
+        // "rough on N axes".
+        let combined = (doc_b * cov_b).min(DOC_DRIFT_BOOST_MAX);
+        let score = base * combined;
         entries.push(HotspotEntry {
             path: path.clone(),
             ccn_sum,

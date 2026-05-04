@@ -153,6 +153,7 @@ impl FeatureRegistry {
         use crate::observer::docs::link_health::DocLinkHealthFeature;
         use crate::observer::docs::orphan_pages::OrphanPagesFeature;
         use crate::observer::docs::todo_density::TodoDensityFeature;
+        use crate::observer::test::coverage::CoverageFeature;
 
         Self {
             features: vec![
@@ -167,6 +168,7 @@ impl FeatureRegistry {
                 Box::new(DocLinkHealthFeature),
                 Box::new(OrphanPagesFeature),
                 Box::new(TodoDensityFeature),
+                Box::new(CoverageFeature),
             ],
         }
     }
@@ -195,7 +197,38 @@ impl FeatureRegistry {
         for feature in self.enabled(cfg) {
             findings.extend(feature.lower(reports, cfg, cal, &hotspot));
         }
+        // When `[features.test]` is disabled, every finding keeps the
+        // default `is_test_file = false` and the post-pass is skipped.
+        if cfg.features.test.enabled {
+            tag_test_findings(&mut findings, cfg);
+        }
         findings
+    }
+}
+
+/// Set [`Finding::is_test_file`] on every finding whose primary
+/// `location.file` matches `cfg.features.test.test_paths` (gitignore
+/// DSL). Glob compile errors fall back to the convention-based
+/// [`crate::observer::shared::file_role::is_test_path`] heuristic so
+/// a malformed user pattern doesn't suppress the flag entirely.
+fn tag_test_findings(findings: &mut [Finding], cfg: &Config) {
+    use crate::observer::shared::file_role::is_test_path;
+    use crate::observer::shared::walk::ExcludeMatcher;
+
+    let glob = if cfg.features.test.test_paths.is_empty() {
+        None
+    } else {
+        ExcludeMatcher::compile(Path::new(""), &cfg.features.test.test_paths).ok()
+    };
+    for f in findings.iter_mut() {
+        let path = &f.location.file;
+        let hit = match glob.as_ref() {
+            Some(m) => m.is_excluded(path, false),
+            None => is_test_path(path),
+        };
+        if hit {
+            f.is_test_file = true;
+        }
     }
 }
 
@@ -230,6 +263,7 @@ mod tests {
                 "doc_link_health",
                 "orphan_pages",
                 "todo_density",
+                "coverage_pct",
             ],
         );
     }
@@ -237,13 +271,15 @@ mod tests {
     #[test]
     fn every_code_feature_is_observer_kind() {
         // Code Features (the v0.2 set) are FeatureKind::Observer; docs
-        // Features carry FeatureKind::DocsScanner. The check is per-
-        // family rather than per-Feature so adding a new code observer
-        // continues to require Observer kind.
+        // Features carry FeatureKind::DocsScanner; coverage_pct carries
+        // FeatureKind::CoverageReader. The check is per-family rather
+        // than per-Feature so adding a new code observer continues to
+        // require Observer kind.
         for f in FeatureRegistry::builtin().iter() {
             let want_kind = match f.meta().name {
                 "doc_freshness" | "doc_drift" | "doc_coverage" | "doc_link_health"
                 | "orphan_pages" | "todo_density" => FeatureKind::DocsScanner,
+                "coverage_pct" => FeatureKind::CoverageReader,
                 _ => FeatureKind::Observer,
             };
             assert_eq!(

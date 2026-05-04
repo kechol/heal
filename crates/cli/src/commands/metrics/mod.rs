@@ -9,6 +9,7 @@
 mod code;
 mod docs;
 mod section;
+mod test;
 
 use std::io::{self, Write};
 use std::path::Path;

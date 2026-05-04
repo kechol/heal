@@ -46,6 +46,7 @@ use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
+use crate::observer::shared::file_role::{file_role, FileRole};
 use crate::observer::shared::walk::{since_cutoff, ExcludeMatcher};
 use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
@@ -585,133 +586,6 @@ fn classify_pair(a: &Path, b: &Path, primary_lang: Option<&str>) -> PairClass {
     PairClass::Genuine
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FileRole {
-    Source,
-    Test,
-    Doc,
-    Lockfile,
-    Generated,
-}
-
-fn file_role(path: &Path, primary_lang: Option<&str>) -> FileRole {
-    let path_str = path.to_string_lossy();
-    let basename = path
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or_default();
-
-    if is_lockfile(basename, primary_lang) {
-        return FileRole::Lockfile;
-    }
-    if is_generated(&path_str, basename, primary_lang) {
-        return FileRole::Generated;
-    }
-    if is_test(&path_str, basename) {
-        return FileRole::Test;
-    }
-    if is_doc(&path_str, basename) {
-        return FileRole::Doc;
-    }
-    FileRole::Source
-}
-
-// Lockfile / generated / test / doc filenames are convention, always
-// lowercase in practice. The lint about case-sensitive extension
-// comparison would force `eq_ignore_ascii_case` rituals that add no
-// signal.
-#[allow(clippy::case_sensitive_file_extension_comparisons)]
-fn is_lockfile(basename: &str, _primary_lang: Option<&str>) -> bool {
-    // Generic suffixes (`*.lock`, `*.lockb`, `go.sum`) catch most
-    // ecosystems. Well-known basenames are matched unconditionally
-    // because monorepos commonly mix languages — a Rust workspace's
-    // `docs/` may still carry a `package-lock.json`, and the primary
-    // language detection is project-wide.
-    if basename.ends_with(".lock") || basename.ends_with(".lockb") || basename == "go.sum" {
-        return true;
-    }
-    matches!(
-        basename,
-        "package-lock.json"
-            | "yarn.lock"
-            | "pnpm-lock.yaml"
-            | "bun.lock"
-            | "bun.lockb"
-            | "poetry.lock"
-            | "Pipfile.lock"
-            | "uv.lock"
-            | "composer.lock"
-            | "Gemfile.lock"
-    )
-}
-
-#[allow(clippy::case_sensitive_file_extension_comparisons)]
-fn is_generated(path_str: &str, basename: &str, primary_lang: Option<&str>) -> bool {
-    // Cross-language directory markers — covers most tooling output.
-    // Match both "<root>/dir/" (sub-path) and "dir/" at the start of the
-    // path (no leading slash).
-    const COMMON_DIRS: &[&str] = &[
-        "dist/",
-        "build/",
-        "__generated__/",
-        "generated/",
-        "__pycache__/",
-        "node_modules/",
-        "vendor/",
-    ];
-    if dir_marker_matches(path_str, COMMON_DIRS) {
-        return true;
-    }
-    // Generated artifacts that ship next to source instead of in dist/.
-    if basename.ends_with(".min.js")
-        || basename.ends_with(".min.css")
-        || basename.contains(".bundle.")
-        || basename.ends_with(".snap")
-    {
-        return true;
-    }
-    match primary_lang {
-        // `target/` is a Cargo / sbt build dir. Gated by primary
-        // language because some non-Rust / non-Scala projects use
-        // `target/` for unrelated meaning (e.g. front-end build
-        // pipelines targeting a `target/` output).
-        Some("rust" | "scala") => dir_marker_matches(path_str, &["target/"]),
-        Some("python") => path_str.contains(".egg-info/"),
-        _ => false,
-    }
-}
-
-/// True iff any of `dirs` (each a `name/` form, no leading slash)
-/// appears as a path component — either at the start of the string or
-/// preceded by `/`.
-fn dir_marker_matches(path_str: &str, dirs: &[&str]) -> bool {
-    dirs.iter()
-        .any(|d| path_str.starts_with(d) || path_str.contains(&format!("/{d}")))
-}
-
-#[allow(clippy::case_sensitive_file_extension_comparisons)]
-fn is_test(path_str: &str, basename: &str) -> bool {
-    // Suffix-based: `foo.test.ts`, `foo_test.go`, `test_foo.py`, `foo.spec.ts`.
-    if basename.contains(".test.")
-        || basename.contains(".spec.")
-        || basename.starts_with("test_")
-        || basename.ends_with("_test.go")
-        || basename.ends_with("_test.rs")
-        || basename.ends_with("_test.py")
-    {
-        return true;
-    }
-    dir_marker_matches(path_str, &["tests/", "__tests__/", "spec/", "test/"])
-}
-
-#[allow(clippy::case_sensitive_file_extension_comparisons)]
-fn is_doc(path_str: &str, basename: &str) -> bool {
-    if basename.ends_with(".md") || basename.ends_with(".mdx") || basename.ends_with(".rst") {
-        return true;
-    }
-    dir_marker_matches(path_str, &["docs/"])
-}
-
 /// True iff the pair is a module manifest paired with a sibling — the
 /// vertical "re-export" coupling that's a structural artifact, not a
 /// design problem. Both files must share the same parent directory.
@@ -766,11 +640,30 @@ impl Feature for ChangeCouplingFeature {
             // retag them as `change_coupling.expected` and force
             // Severity::Medium so they land in the Advisory tier — the
             // user can see what was demoted under `heal status --all`
-            // without the pair ever entering the drain queue. The
-            // pre-classify `into_findings` already produced the
-            // canonical id; re-derive it under the new metric tag.
+            // without the pair ever entering the drain queue.
+            //
+            // **Drift hand-off (`[features.test]`)**: when the test
+            // feature is on AND a TestSrc pair's joint count sits
+            // below the project's `change_coupling.p50` (i.e. the
+            // pair survived `min_coupling` but barely co-changes
+            // relative to typical pairs), retag as
+            // `change_coupling.drift` and surface as a real Medium
+            // finding instead of demoting to Advisory. Signal: the
+            // test exists but isn't keeping up with its source.
             if matches!(pair.class, Some(PairClass::TestSrc | PairClass::DocSrc)) {
-                finding.metric = Finding::METRIC_CHANGE_COUPLING_EXPECTED.into();
+                let is_test_pair = matches!(pair.class, Some(PairClass::TestSrc));
+                let drift_threshold = if is_test_pair && cfg.features.test.enabled {
+                    cal.calibration.change_coupling.as_ref().map(|c| c.p50)
+                } else {
+                    None
+                };
+                let metric = match drift_threshold {
+                    Some(p50) if p50.is_finite() && f64::from(pair.count) < p50 => {
+                        Finding::METRIC_CHANGE_COUPLING_DRIFT
+                    }
+                    _ => Finding::METRIC_CHANGE_COUPLING_EXPECTED,
+                };
+                finding.metric = metric.into();
                 finding.id = Finding::make_id(
                     &finding.metric,
                     &finding.location,
@@ -1037,6 +930,7 @@ mod pair_class_tests {
                 doc_link_health: None,
                 orphan_pages: None,
                 todo_density: None,
+                coverage: None,
             }
         }
 

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub mod code;
 pub mod docs;
 pub mod shared;
+pub mod test;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ObservationMeta {

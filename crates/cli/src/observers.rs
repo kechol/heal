@@ -32,6 +32,7 @@ use crate::observer::docs::link_health::{
 use crate::observer::docs::orphan_pages::{OrphanPagesObserver, OrphanPagesReport};
 use crate::observer::docs::todo_density::{TodoDensityObserver, TodoDensityReport};
 use crate::observer::docs::walk::walk_standalone_docs;
+use crate::observer::test::coverage::{CoverageObserver, CoverageReport};
 
 use crate::cli::MetricKind;
 
@@ -66,6 +67,12 @@ pub struct ObserverReports {
     pub orphan_pages: Option<OrphanPagesReport>,
     /// Per-doc TODO/FIXME/XXX/TBD/[要確認] marker counts.
     pub todo_density: Option<TodoDensityReport>,
+    /// Per-source-file line coverage parsed from an externally-generated
+    /// lcov.info file. `None` whenever `[features.test.coverage]` is
+    /// disabled or the configured `lcov_paths` resolve to nothing on
+    /// disk. Hotspot composition consumes this to apply the
+    /// uncovered-files multiplicative boost.
+    pub coverage: Option<CoverageReport>,
 }
 
 /// Run the observers needed for the requested metric. `only = None`
@@ -195,6 +202,12 @@ pub(crate) fn run_all(
         } else {
             None
         };
+    // Coverage pre-pass: same rationale as `hotspot_doc_freshness` —
+    // build it whenever the test-coverage sub-feature is on so hotspot
+    // composition can apply the uncovered-files boost without relying
+    // on the user explicitly asking for the metric.
+    let coverage = (cfg.features.test.enabled && cfg.features.test.coverage.enabled)
+        .then(|| CoverageObserver::from_config(cfg).scan(project));
     let hotspot = match (
         want(MetricKind::Hotspot) && cfg.metrics.hotspot.enabled,
         churn.as_ref(),
@@ -203,6 +216,7 @@ pub(crate) fn run_all(
             ch,
             &complexity,
             hotspot_doc_freshness.as_ref(),
+            coverage.as_ref(),
             HotspotWeights {
                 churn: cfg.metrics.hotspot.weight_churn,
                 complexity: cfg.metrics.hotspot.weight_complexity,
@@ -266,6 +280,7 @@ pub(crate) fn run_all(
         doc_link_health,
         orphan_pages,
         todo_density,
+        coverage,
     }
 }
 
@@ -464,6 +479,28 @@ fn build_metric_calibrations(
             .then(|| MetricCalibration::from_distribution(&values, MetricFloors::default()))
     });
 
+    // Coverage stores **inverted** values (`100 - coverage_pct`) so the
+    // existing `value >= p95 → Critical` cascade in
+    // `MetricCalibration::classify` continues to mean "worst →
+    // Critical". The anchored floors (≤ 5 % coverage Critical, > 75 %
+    // Ok) ride alongside the percentiles so calibrated projects keep
+    // the literature minimum even when their codebase distribution is
+    // uniformly bad.
+    let coverage_pct_floors = MetricFloors {
+        critical: Some(95.0),
+        ok: Some(25.0),
+    };
+    let coverage_pct = reports.coverage.as_ref().and_then(|c| {
+        let values: Vec<f64> = c
+            .entries
+            .iter()
+            .filter(|e| file_filter(&e.path))
+            .map(|e| 100.0 - e.line_coverage_pct)
+            .collect();
+        non_empty(&values)
+            .then(|| MetricCalibration::from_distribution(&values, coverage_pct_floors))
+    });
+
     MetricCalibrations {
         ccn,
         cognitive,
@@ -471,6 +508,7 @@ fn build_metric_calibrations(
         change_coupling,
         hotspot,
         lcom,
+        coverage_pct,
     }
 }
 
@@ -481,6 +519,7 @@ fn has_any_table(m: &MetricCalibrations) -> bool {
         || m.change_coupling.is_some()
         || m.hotspot.is_some()
         || m.lcom.is_some()
+        || m.coverage_pct.is_some()
 }
 
 /// Compose every enabled Feature's lowered Findings into one Vec,
@@ -689,6 +728,7 @@ mod tests {
             doc_link_health: None,
             orphan_pages: None,
             todo_density: None,
+            coverage: None,
         };
 
         let cal = Calibration {
@@ -739,6 +779,7 @@ mod tests {
                     floor_ok: Some(crate::core::calibration::FLOOR_OK_HOTSPOT),
                 }),
                 lcom: None,
+                coverage_pct: None,
             },
             workspaces: BTreeMap::new(),
         };

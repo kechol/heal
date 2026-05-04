@@ -66,7 +66,13 @@ fn run_commit(project: &Path, paths: &HealPaths) -> Result<()> {
         decorate_findings(&mut findings, &accepted_map);
     }
     // Best-effort nudge — don't fail the hook on rendering issues.
-    write_nudge(calibration.as_ref(), &findings, &mut std::io::stdout()).ok();
+    write_nudge(
+        calibration.as_ref(),
+        &cfg,
+        &findings,
+        &mut std::io::stdout(),
+    )
+    .ok();
     Ok(())
 }
 
@@ -89,9 +95,13 @@ pub(crate) fn classify_with_calibration(
     (calibration, findings)
 }
 
-/// Emit the one-line post-commit summary.
+/// Emit the one-line post-commit summary. When
+/// `[features.test.coverage]` is enabled and any High/Critical
+/// `coverage_pct` finding sits on a hotspot file, a second line names
+/// the count so the user knows where the next test should go.
 fn write_nudge(
     calibration: Option<&Calibration>,
+    cfg: &Config,
     findings: &[Finding],
     out: &mut impl Write,
 ) -> Result<()> {
@@ -134,6 +144,28 @@ fn write_nudge(
         counts.join(", "),
         ansi_wrap(ANSI_CYAN, "heal status", colorize),
     )?;
+    if cfg.features.test.enabled && cfg.features.test.coverage.enabled {
+        let uncovered_hotspots = findings
+            .iter()
+            .filter(|f| {
+                !f.accepted
+                    && f.metric == Finding::METRIC_COVERAGE_PCT
+                    && f.hotspot
+                    && matches!(f.severity, Severity::High | Severity::Critical)
+            })
+            .count();
+        if uncovered_hotspots > 0 {
+            writeln!(
+                out,
+                "         · {}",
+                ansi_wrap(
+                    ANSI_YELLOW,
+                    &format!("{uncovered_hotspots} uncovered hotspot"),
+                    colorize,
+                ),
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -196,7 +228,7 @@ mod tests {
         let (calibration, findings) = classify_with_calibration(&paths, &cfg, &reports);
 
         let mut buf: Vec<u8> = Vec::new();
-        write_nudge(calibration.as_ref(), &findings, &mut buf).unwrap();
+        write_nudge(calibration.as_ref(), &cfg, &findings, &mut buf).unwrap();
         assert!(
             buf.is_empty(),
             "no calibration → no nudge, got: {}",
@@ -228,7 +260,7 @@ mod tests {
         let (calibration, findings) = classify_with_calibration(&paths, &cfg, &reports);
 
         let mut buf: Vec<u8> = Vec::new();
-        write_nudge(calibration.as_ref(), &findings, &mut buf).unwrap();
+        write_nudge(calibration.as_ref(), &cfg, &findings, &mut buf).unwrap();
         let out = String::from_utf8(buf).unwrap();
         assert_eq!(
             out.lines().count(),
@@ -263,7 +295,7 @@ mod tests {
         let (calibration, findings) = classify_with_calibration(&paths, &cfg, &reports);
 
         let mut buf: Vec<u8> = Vec::new();
-        write_nudge(calibration.as_ref(), &findings, &mut buf).unwrap();
+        write_nudge(calibration.as_ref(), &cfg, &findings, &mut buf).unwrap();
         let out = String::from_utf8(buf).unwrap();
         assert_eq!(out.trim_end(), "heal: recorded · clean");
     }

@@ -2,7 +2,7 @@
 name: heal-cli
 description: Concise, complete reference for the `heal` CLI — every subcommand, flag, and JSON contract an AI coding agent needs to drive HEAL programmatically. Load this when you're about to shell out to `heal` and want the exact command shape, the JSON schema it returns, and the `.heal/` files it reads or writes. Trigger on "how do I run heal …?", "what does `heal metrics --json` return?", "is there a heal command for …?", "/heal-cli".
 metadata:
-  heal-version: 0.2.1
+  heal-version: 0.3.2
   heal-source: bundled
 ---
 
@@ -31,7 +31,8 @@ Conventions used below:
 heal init                       # one-time: write .heal/, install hook, calibrate
 heal status                      # render the TODO list (cached)
 heal status --refresh --json     # rescan + emit machine-readable findings
-heal mark-fixed --finding-id … --commit-sha …  # agent-only: after committing a fix
+heal mark fix --finding-id … --commit-sha …    # agent-only: after committing a fix
+heal mark accept --finding-id … --reason …     # agent-only: record an intrinsic finding
 heal calibrate --force          # re-baseline thresholds when codebase shifted
 ```
 
@@ -152,7 +153,7 @@ Unchanged. JSON shape:
 }
 ```
 
-### `heal mark-fixed --finding-id <ID> --commit-sha <SHA> [--json]`
+### `heal mark fix --finding-id <ID> --commit-sha <SHA> [--json]`
 
 **Agent-only.** Hidden from the top-level `--help`. Upserts a
 `FixedFinding` entry into the `BTreeMap` at `.heal/findings/fixed.json`
@@ -166,6 +167,44 @@ JSON:
   "commit_sha": "deadbeef…",
   "fixed_at": "2026-04-28T09:00:00Z",
   "path": ".heal/findings/fixed.json"
+}
+```
+
+`heal mark-fixed --finding-id … --commit-sha …` is the deprecated
+v0.2 alias. It still works but prints a stderr deprecation warning;
+prefer `heal mark fix`.
+
+### `heal mark accept --finding-id <ID> --reason <TEXT> [--json]`
+
+**Agent-only.** Hidden from the top-level `--help`. Records the
+team's "won't fix / acknowledged intrinsic" decision into
+`.heal/findings/accepted.json`. Distinct from `mark fix` — accepted
+entries persist across re-detections by design (the whole point is
+that the finding stays put and stops cluttering the drain queue).
+
+The `--reason` flag is optional (defaults to empty string) since
+the AI agent driving `/heal-code-review` is expected to fill it.
+The finding must be present in `latest.json`; run
+`heal status --refresh` first if the id was lifted from a stale
+output. The CLI snapshots severity, hotspot, `metric_value`, and
+summary into the `AcceptedFinding` so later auditors can see what
+the decision was made against.
+
+JSON:
+
+```jsonc
+{
+  "finding_id": "ccn:src/a.rs:foo:abc",
+  "reason":      "intrinsic dispatcher; splitting loses exhaustiveness",
+  "file":        "src/a.rs",
+  "metric":      "ccn",
+  "severity":    "critical",
+  "hotspot":     true,
+  "metric_value": 28.0,
+  "summary":     "CCN=28 foo (rust)",
+  "accepted_at": "2026-05-03T12:00:00Z",
+  "accepted_by": "Alice <alice@example.com>",
+  "path":        ".heal/findings/accepted.json"
 }
 ```
 
@@ -278,7 +317,7 @@ spec (default: Critical-with-`hotspot=true`), pick one, fix it, then:
 
 ```sh
 git commit -m "fix: …"
-heal mark-fixed --finding-id "<id>" --commit-sha "$(git rev-parse HEAD)"
+heal mark fix --finding-id "<id>" --commit-sha "$(git rev-parse HEAD)"
 heal status --refresh --json    # re-scan; the finding either disappears or surfaces in regressed.jsonl
 ```
 

@@ -356,6 +356,52 @@ prose ドキュメント) で観測対象が異なる。Layer A は
 アクセスをしない方針 — HTTP リンクは CI 側の `lychee` / `linkchecker`
 に委譲)。
 
+## `[features.test]` (デフォルト無効)
+
+テスト品質を観測するオプションの observer ファミリ。中心となる
+シグナルは **行カバレッジ** で、外部生成された lcov.info を読み込む
+（HEAL 自身はテストを走らせない）。デフォルトでは無効。`cargo
+llvm-cov`・`pytest --cov`・`nyc`・`scoverage` などで lcov.info を
+出力するようになったら有効化する。
+
+```toml
+[features.test]
+enabled = true
+# test_paths のデフォルトは Rust / TS / JS / Python / Go / Scala の
+# 慣習をカバー。プロジェクトが特殊な配置のときだけ上書きする。
+
+[features.test.coverage]
+enabled = true
+# lcov_paths は順に試して最初に存在したファイルを採用。
+# デフォルト: lcov.info, coverage/lcov.info,
+#   target/llvm-cov/lcov.info, coverage/lcov-report/lcov.info
+```
+
+有効化すると次の指標が surface される。
+
+| Metric | 検出するもの |
+|---|---|
+| `coverage_pct` | lcov.info から読み取ったソース毎の行カバレッジ率。 |
+| `change_coupling.drift` | テストとペアになっているソースが先に動き、テストが追従していないペア（共起カウントが project の `change_coupling.p50` を下回る場合）。 |
+
+…加えて、すべての Finding に `is_test_file` フラグが付与される。
+`test_paths`（gitignore 構文の glob）に一致するファイルが
+`is_test_file=true` でタグ付けされ、skill 側でテスト側と
+プロダクション側の Severity を別々に読めるようになる。
+
+`[features.test.coverage]` を有効にすると、`hotspot::compose` は
+カバレッジ率に応じた multiplicative boost も適用する。よく動く・
+複雑・かつ未カバーなファイルが drain queue の上位に浮上する。
+boost は docs ドリフト boost と上限 1.5× を共有しているので、
+複数軸で問題を抱えているファイルが「シグナルの数」だけで
+単一軸の悪いファイルを抜くことはない。
+
+lcov.info の生成はユーザの責務。CI に reporter を仕込むか、ローカル
+で `cargo llvm-cov` 等を回した結果を HEAL が読み取る。flakiness や
+ランタイムトレンド、isolation、mutation score など「テストを実際に
+走らせないと取れない」指標は永続的に scope 外 — それらは CI 側で
+扱うのが正しい。
+
 ## `[diff]`
 
 `heal diff` の worktree モード（要求された git ref が

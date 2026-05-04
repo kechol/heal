@@ -88,6 +88,15 @@ pub struct Finding {
     /// render.
     #[serde(default, skip_serializing_if = "is_false")]
     pub accepted: bool,
+    /// Tagged post-classify by `Feature::lower` when `[features.test]`
+    /// is enabled and `location.file` matches `[features.test].test_paths`.
+    /// Skills filter on this to read test- vs production-side severities
+    /// independently. Persisted in `latest.json` so consumers can split
+    /// without re-deriving the matcher. Defaults to `false`; absent
+    /// from JSON when false (`skip_serializing_if`) so non-test
+    /// projects' caches stay byte-identical to v3.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub is_test_file: bool,
 }
 
 #[inline]
@@ -116,6 +125,7 @@ impl Finding {
             summary,
             fix_hint: None,
             accepted: false,
+            is_test_file: false,
         }
     }
 
@@ -137,6 +147,19 @@ impl Finding {
     /// drain queue, but get surfaced in the Advisory tier under
     /// `heal status --all` so users can see what was demoted.
     pub const METRIC_CHANGE_COUPLING_EXPECTED: &str = "change_coupling.expected";
+    /// "Drifted" coupling — a `TestSrc` pair where the source side has
+    /// recent commits but the paired test file is stale. Signals a test
+    /// that no longer co-evolves with its subject. Surfaced as a real
+    /// Finding (not demoted to Advisory) so it enters the drain queue.
+    pub const METRIC_CHANGE_COUPLING_DRIFT: &str = "change_coupling.drift";
+
+    /// Per-source-file line coverage percentage, ingested from an
+    /// externally-generated lcov.info file. The metric is inverted in
+    /// the calibration pipeline (`100 - coverage_pct` is fed to
+    /// `MetricCalibration::classify`) so high coverage maps to
+    /// `Severity::Ok` and low coverage to `Severity::Critical`. HEAL
+    /// never runs tests itself; the lcov file is the user's contract.
+    pub const METRIC_COVERAGE_PCT: &str = "coverage_pct";
 
     /// Compact "metric=N" tag used by `heal status` rows and the
     /// post-commit nudge. The numeric tail is recovered from
@@ -156,6 +179,9 @@ impl Finding {
             Self::METRIC_CHANGE_COUPLING_SYMMETRIC => "coupled (sym)".to_owned(),
             Self::METRIC_CHANGE_COUPLING_CROSS_WORKSPACE => "coupled (cross-ws)".to_owned(),
             Self::METRIC_CHANGE_COUPLING_EXPECTED => "coupled (expected)".to_owned(),
+            Self::METRIC_CHANGE_COUPLING_DRIFT => "coupled (drift)".to_owned(),
+            Self::METRIC_COVERAGE_PCT => extract_leading_number(&self.summary, "Coverage=")
+                .map_or_else(|| "Coverage".to_owned(), |v| format!("Coverage={v}%")),
             "hotspot" => "hotspot".to_owned(),
             "lcom" => extract_leading_number(&self.summary, "LCOM=")
                 .map_or_else(|| "LCOM".to_owned(), |v| format!("LCOM={v}")),
@@ -173,6 +199,7 @@ impl Finding {
             "ccn" => "CCN=",
             "cognitive" => "Cognitive=",
             "lcom" => "LCOM=",
+            Self::METRIC_COVERAGE_PCT => "Coverage=",
             _ => return None,
         };
         extract_leading_number(&self.summary, prefix)?.parse().ok()
@@ -329,11 +356,13 @@ mod tests {
             summary: "hi".into(),
             fix_hint: None,
             accepted: false,
+            is_test_file: false,
         };
         let json = serde_json::to_string(&f).unwrap();
         assert!(!json.contains("locations"));
         assert!(!json.contains("fix_hint"));
         assert!(!json.contains("workspace"));
         assert!(!json.contains("accepted"));
+        assert!(!json.contains("is_test_file"));
     }
 }

@@ -69,6 +69,8 @@ impl Default for DiffConfig {
 pub struct FeaturesConfig {
     #[serde(default)]
     pub docs: DocsConfig,
+    #[serde(default)]
+    pub test: TestConfig,
 }
 
 /// `[features.docs]` — optional doc-quality observers that compare
@@ -208,6 +210,134 @@ impl Default for DocFreshnessConfig {
         Self {
             high_commits: Self::default_high_commits(),
             critical_commits: Self::default_critical_commits(),
+        }
+    }
+}
+
+/// `[features.test]` — optional test-quality observers. Layer 1 ingests
+/// externally-generated lcov coverage (`cargo llvm-cov`, `pytest-cov`,
+/// `nyc`, `scoverage`) and surfaces low-coverage hotspots; Layer 2 tags
+/// every Finding's [`crate::core::finding::Finding::is_test_file`]
+/// against [`Self::test_paths`] so test/non-test severities can be read
+/// and filtered separately by skills. HEAL never runs tests itself —
+/// flakiness, runtime trends, isolation, etc. are forever out of scope
+/// (`scope.md` R5). Defaults to disabled.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TestConfig {
+    /// Master enable switch. While false, every test observer is a no-op
+    /// and `is_test_file` stays `false` on every Finding.
+    pub enabled: bool,
+    /// Gitignore-syntax globs marking which source files are tests. The
+    /// matcher is consulted by `Feature::lower` to set
+    /// `Finding.is_test_file`; the heuristic in
+    /// `crate::observer::shared::file_role::is_test_path` is the
+    /// fallback when this list is empty.
+    #[serde(default = "TestConfig::default_test_paths")]
+    pub test_paths: Vec<String>,
+    /// `[features.test.coverage]` — lcov ingestion settings. Coverage is
+    /// the only test-quality signal HEAL knows; everything else (skip
+    /// rate, flakiness, mutation score) is deferred or out of scope.
+    #[serde(default)]
+    pub coverage: TestCoverageConfig,
+}
+
+impl TestConfig {
+    fn default_test_paths() -> Vec<String> {
+        vec![
+            // Rust convention.
+            "tests/**".to_owned(),
+            "**/*_test.rs".to_owned(),
+            // JS / TS convention — both `.test.*` and `.spec.*` ship
+            // widely; `__tests__/` is the React / Jest sibling form.
+            "**/*.test.ts".to_owned(),
+            "**/*.test.tsx".to_owned(),
+            "**/*.test.js".to_owned(),
+            "**/*.test.jsx".to_owned(),
+            "**/*.spec.ts".to_owned(),
+            "**/*.spec.tsx".to_owned(),
+            "**/*.spec.js".to_owned(),
+            "**/*.spec.jsx".to_owned(),
+            "**/__tests__/**".to_owned(),
+            // Go convention — same-directory `*_test.go` is the only
+            // form `go test` recognises.
+            "**/*_test.go".to_owned(),
+            // Python convention — both pytest patterns ship widely.
+            "**/test_*.py".to_owned(),
+            "**/*_test.py".to_owned(),
+            // Scala / sbt convention — `Test`/`Spec` suffix on the class
+            // file name is the ScalaTest / Specs2 idiom.
+            "**/*Test.scala".to_owned(),
+            "**/*Spec.scala".to_owned(),
+        ]
+    }
+}
+
+impl Default for TestConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            test_paths: Self::default_test_paths(),
+            coverage: TestCoverageConfig::default(),
+        }
+    }
+}
+
+impl Toggle for TestConfig {
+    fn enabled() -> Self {
+        Self {
+            enabled: true,
+            ..Self::default()
+        }
+    }
+}
+
+/// `[features.test.coverage]` — lcov.info ingestion. Generation is
+/// outsourced to the user's CI / local toolchain (`cargo llvm-cov`,
+/// `pytest --cov`, `nyc`, `scoverage`); HEAL only reads the file. The
+/// `lcov_paths` list is tried in order; the first existing file wins.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TestCoverageConfig {
+    /// Sub-feature switch. `enabled = false` keeps the lcov reader idle
+    /// even when `[features.test].enabled = true`. Defaults to false so
+    /// projects that opt into `is_test_file` tagging don't get a noisy
+    /// "lcov not found" warning before they've wired up a reporter.
+    pub enabled: bool,
+    /// Project-relative paths the reader probes for an lcov.info file.
+    /// First existing match wins; missing files are silent. The
+    /// defaults cover the common reporter conventions: bare
+    /// `lcov.info`, the `nyc` / `pytest-cov` `coverage/` dir, and
+    /// `cargo llvm-cov`'s `target/llvm-cov/lcov.info`.
+    #[serde(default = "TestCoverageConfig::default_lcov_paths")]
+    pub lcov_paths: Vec<String>,
+}
+
+impl TestCoverageConfig {
+    fn default_lcov_paths() -> Vec<String> {
+        vec![
+            "lcov.info".to_owned(),
+            "coverage/lcov.info".to_owned(),
+            "target/llvm-cov/lcov.info".to_owned(),
+            "coverage/lcov-report/lcov.info".to_owned(),
+        ]
+    }
+}
+
+impl Default for TestCoverageConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            lcov_paths: Self::default_lcov_paths(),
+        }
+    }
+}
+
+impl Toggle for TestCoverageConfig {
+    fn enabled() -> Self {
+        Self {
+            enabled: true,
+            ..Self::default()
         }
     }
 }

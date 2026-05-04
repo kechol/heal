@@ -2,7 +2,7 @@
 name: heal-code-patch
 description: Drain the cache produced by `heal status`, fixing one finding per commit in Severity order, until the cache is empty or the user stops. Writes code, runs tests, and commits — does NOT push or open PRs. Refuses to start on a dirty worktree. Trigger on "fix the heal findings", "drain the cache", "work through the TODO list heal produced", "/heal-code-patch".
 metadata:
-  heal-version: 0.2.1
+  heal-version: 0.3.2
   heal-source: bundled
 ---
 
@@ -71,11 +71,15 @@ patterns, end the session with a summary and recommend the user run
 ```
 while there are non-Ok findings in the cache:
     pick the next one (Severity order: Critical🔥 → Critical → High🔥 → High → Medium)
+        # skip findings where `accepted == true` — the team has already
+        # decided these are intrinsic; refactoring them is out of scope
+        # for this skill. They show up under `📌 Accepted` in
+        # `heal status --all`, not in the drain queue.
     read the file(s); plan the smallest fix that addresses the metric
     apply the change
     run tests / type-check / linter (best effort, see "Verification")
     git add -p / git add <file>; git commit -m "<conventional message>"
-    heal mark-fixed --finding-id <id> --commit-sha <new SHA>
+    heal mark fix --finding-id <id> --commit-sha <new SHA>
     heal status --refresh --json   # re-scan and overwrite latest.json
     if the finding is back (regressed warning):
         leave it for now; record in session notes; continue with next finding
@@ -253,7 +257,7 @@ movement. Trailer: `Refs: F#<finding_id>` (the full id from cache JSON).
 After the commit succeeds:
 
 ```
-heal mark-fixed \
+heal mark fix \
   --finding-id "<finding_id from cache JSON>" \
   --commit-sha "$(git rev-parse HEAD)"
 ```

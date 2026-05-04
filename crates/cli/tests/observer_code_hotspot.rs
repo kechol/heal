@@ -91,7 +91,7 @@ fn compose_multiplies_churn_and_ccn_sum() {
     // a: commits=10, ccn_sum=10 → score 100
     // b: commits=2,  ccn_sum=20 → score 40
 
-    let report = compose(&churn, &complexity, None, HotspotWeights::default());
+    let report = compose(&churn, &complexity, None, None, HotspotWeights::default());
     assert_eq!(report.entries.len(), 2);
     assert_eq!(report.entries[0].path.to_string_lossy(), "src/a.rs");
     assert!((report.entries[0].score - 100.0).abs() < f64::EPSILON);
@@ -109,7 +109,7 @@ fn compose_applies_weights() {
         churn: 2.0,
         complexity: 3.0,
     };
-    let report = compose(&churn, &complexity, None, weights);
+    let report = compose(&churn, &complexity, None, None, weights);
     // (2*4) * (3*5) = 8 * 15 = 120
     assert_eq!(report.entries.len(), 1);
     assert!((report.entries[0].score - 120.0).abs() < f64::EPSILON);
@@ -119,7 +119,7 @@ fn compose_applies_weights() {
 fn compose_drops_files_missing_one_signal() {
     let churn = churn_report(&[("only_churn.rs", 5), ("both.rs", 3)]);
     let complexity = complexity_report(&[("both.rs", &[4]), ("only_complex.rs", &[10])]);
-    let report = compose(&churn, &complexity, None, HotspotWeights::default());
+    let report = compose(&churn, &complexity, None, None, HotspotWeights::default());
     assert_eq!(report.entries.len(), 1);
     assert_eq!(report.entries[0].path.to_string_lossy(), "both.rs");
 }
@@ -128,7 +128,7 @@ fn compose_drops_files_missing_one_signal() {
 fn compose_skips_zero_ccn_or_zero_commits() {
     let churn = churn_report(&[("a.rs", 0), ("b.rs", 1)]);
     let complexity = complexity_report(&[("a.rs", &[5]), ("b.rs", &[])]);
-    let report = compose(&churn, &complexity, None, HotspotWeights::default());
+    let report = compose(&churn, &complexity, None, None, HotspotWeights::default());
     assert!(report.entries.is_empty());
 }
 
@@ -158,6 +158,7 @@ fn compose_boosts_score_when_doc_drifts() {
         &churn,
         &complexity,
         Some(&freshness),
+        None,
         HotspotWeights::default(),
     );
     let a_score = report
