@@ -9,7 +9,10 @@ use crate::core::finding::Finding;
 #[derive(Debug, Parser)]
 #[command(name = "heal", version, about = "Code health hook-driven harness", long_about = None)]
 pub struct Cli {
-    /// Project root (defaults to the current directory).
+    /// Project root. Defaults to the nearest ancestor of the current
+    /// directory containing a `.heal/config.toml`, falling back to the
+    /// current directory when none qualifies (so `heal init` on a
+    /// fresh project still creates `.heal/` in place).
     #[arg(long, global = true)]
     pub project: Option<PathBuf>,
 
@@ -456,9 +459,10 @@ pub enum SkillsAction {
 
 impl Cli {
     pub fn run(self) -> Result<()> {
-        let project = self
-            .project
-            .unwrap_or_else(|| std::env::current_dir().expect("cwd"));
+        let project = self.project.unwrap_or_else(|| {
+            let cwd = std::env::current_dir().expect("cwd");
+            crate::core::paths::find_project_root(&cwd)
+        });
         match self.command {
             Command::Init {
                 force,

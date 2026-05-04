@@ -7,7 +7,15 @@ CLI entrypoint: `main.rs:5` → `Cli::parse().run()` → `commands::*`.
 All handlers return `anyhow::Result<()>`. `?` bridges
 `core::Error → anyhow::Error`.
 
-Global flag: `--project <PATH>` (default: current working directory).
+Global flag: `--project <PATH>` (default: nearest ancestor of the
+current working directory that contains a `.heal/config.toml`; falls
+back to the current working directory when none qualifies, so
+`heal init` on a fresh project still materialises `.heal/` in place).
+The marker is the config file rather than the `.heal/` directory
+itself because `heal status`'s `paths.ensure()` runs before the
+config load; bare `.heal/` directories left behind by aborted
+invocations would otherwise short-circuit the walk-up. Resolution
+lives in `core::paths::find_project_root`.
 
 ---
 

@@ -120,6 +120,23 @@
   binary via `include_dir!` and install with `heal init` /
   `heal skills install`.
 
+### Fixes
+
+- **`heal status` / `heal diff` / `heal metrics` now resolve the
+  project root from any subdirectory of an initialized repo.**
+  Previously these commands looked for `.heal/config.toml` directly
+  under the current working directory and errored with
+  `loading <cwd>/.heal/config.toml (run \`heal init\` first?)` when
+  invoked from a subfolder. The default for `--project` now walks up
+  the ancestor chain looking for a `.heal/config.toml` marker,
+  falling back to the current directory when none qualifies (so
+  `heal init` on a fresh project still materialises `.heal/` in
+  place). The marker is the config file rather than the `.heal/`
+  directory itself because `heal status`'s `paths.ensure()` runs
+  before the config load; bare `.heal/` directories left behind by
+  aborted pre-fix invocations would otherwise short-circuit the
+  walk-up. Resolution lives in `core::paths::find_project_root`.
+
 ## v0.3.2 — 2026-05-04
 
 ### Features

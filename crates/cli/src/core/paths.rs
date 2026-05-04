@@ -1,5 +1,27 @@
 use std::path::{Path, PathBuf};
 
+/// Walk up from `start` looking for an ancestor containing a
+/// `.heal/config.toml` and return that ancestor as the project root.
+/// Falls back to `start` when no ancestor qualifies, which preserves
+/// the "current directory" default for `heal init` on a fresh project
+/// while letting `heal status` / `heal diff` work from any
+/// subdirectory of an already-initialized repo.
+///
+/// The marker is `.heal/config.toml` rather than `.heal/` itself
+/// because `heal status` calls `HealPaths::ensure()` before any
+/// config load — every error-path invocation from a subdirectory
+/// would otherwise leave behind an empty `.heal/` that the next
+/// walk-up would mistakenly stop at.
+#[must_use]
+pub fn find_project_root(start: &Path) -> PathBuf {
+    for ancestor in start.ancestors() {
+        if ancestor.join(".heal").join("config.toml").is_file() {
+            return ancestor.to_path_buf();
+        }
+    }
+    start.to_path_buf()
+}
+
 /// Standard layout under `<project_root>/.heal/`.
 ///
 /// All paths are resolved eagerly from a project root so that callers can pass
