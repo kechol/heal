@@ -81,6 +81,7 @@ key form matches `MetricsConfig` field names.
 | `orphan_pages` | `OrphanPages` | `orphan-pages` | `[features.docs]` only. Layer B docs not linked from anywhere; `README.md` / `index.md` exempt as conventional entry points. |
 | `todo_density` | `TodoDensity` | `todo-density` | `[features.docs]` only. Per-doc count of `TODO` / `FIXME` / `XXX` / `TBD` / `[要確認]` / `[要修正]`. Layer A + B. |
 | `coverage_pct` | `Coverage` (`CoverageFeature` / `FeatureKind::CoverageReader`) | `coverage-pct` | `[features.test.coverage]` only. Per-source-file line coverage from an externally-generated lcov.info. Calibration stores **inverted** values (`100 - coverage_pct`) so the existing `value >= p95 → Critical` cascade applies; observer applies the inversion before classification. Findings emitted only for `< 100 %` files. |
+| `skip_ratio` | `SkipRatio` (`SkipRatioFeature` / `FeatureKind::Observer`) | `skip-ratio` | `[features.test]` only. Per-test-file ratio of skipped tests to total tests, expressed as a percentage. Detected via tree-sitter walks of language-specific markers (Rust `#[ignore]`, Python `@pytest.mark.skip` / `@unittest.skipIf`, JS/TS `it.skip` / `xit`, Go `t.Skip()` deduped per enclosing `Test*` function, ScalaTest `ignore` / `pending`). Calibrated against `[calibration.skip_ratio]`; literature anchors > 1 % Medium / > 5 % High / > 20 % Critical via the fallback cascade. Findings emitted only for files with at least one skipped test. |
 
 Don't invent new submetric strings without bumping `FINDINGS_RECORD_VERSION`
 (see `.claude/rules/data-model.md`).

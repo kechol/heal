@@ -383,6 +383,7 @@ enabled = true
 |---|---|
 | `coverage_pct` | lcov.info から読み取ったソース毎の行カバレッジ率。 |
 | `change_coupling.drift` | テストとペアになっているソースが先に動き、テストが追従していないペア（共起カウントが project の `change_coupling.p50` を下回る場合）。 |
+| `skip_ratio` | テストファイルごとの「スキップ済テスト ÷ 総テスト数」。Rust の `#[ignore]`、Python の `@pytest.mark.skip` / `@unittest.skipIf`、JS / TS の `it.skip` / `xit`、Go の `t.Skip()`、ScalaTest の `ignore` を tree-sitter の構造解析で検出する。> 1 % で Medium、> 5 % で High、> 20 % で Critical を anchor として持つ。 |
 
 …加えて、すべての Finding に `is_test_file` フラグが付与される。
 `test_paths`（gitignore 構文の glob）に一致するファイルが

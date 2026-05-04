@@ -9,3 +9,4 @@
 
 pub mod coverage;
 pub mod lcov;
+pub mod skip_ratio;

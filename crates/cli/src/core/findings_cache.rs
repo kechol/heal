@@ -55,13 +55,15 @@ use crate::core::severity::SeverityCounts;
 /// `regressed_check_id` → `regressed_in_record_id`. v3 added the docs
 /// observer family (`doc_freshness`, `doc_drift`, `doc_coverage`,
 /// `doc_link_health`, `orphan_pages`, `todo_density`) — old caches
-/// silently invalidate so the next run rewrites under the new schema.
-/// v4 added the test family (`coverage_pct`, `change_coupling.drift`)
-/// and the [`crate::core::finding::Finding::is_test_file`] flag —
-/// both are `skip_serializing_if`-defaulted, so projects that don't
-/// opt into `[features.test]` see byte-identical caches once the next
-/// run rewrites at the new version stamp.
-pub const FINDINGS_RECORD_VERSION: u32 = 4;
+/// silently invalidate so the next run rewrites at the new schema.
+/// v3 also added the test family (`coverage_pct`,
+/// `change_coupling.drift`, `skip_ratio`) and the
+/// [`crate::core::finding::Finding::is_test_file`] flag — every
+/// addition is `skip_serializing_if`-defaulted, so projects that
+/// don't enable `[features.docs]` / `[features.test]` see byte-
+/// identical caches once the next run rewrites at the new version
+/// stamp.
+pub const FINDINGS_RECORD_VERSION: u32 = 3;
 
 /// One execution of `heal status`. The unit of read in the cache:
 /// `latest.json` holds the single most-recent record. `heal diff` reads

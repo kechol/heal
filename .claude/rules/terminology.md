@@ -82,12 +82,17 @@ with the v3 schema. Renaming any of them or introducing a
 submetric (e.g. `doc_drift.signature_mismatch`) is also a
 `FINDINGS_RECORD_VERSION` bump.
 
-The `[features.test]` family added `coverage_pct` (top-level)
-and `change_coupling.drift` (submetric of `change_coupling`)
-with the v4 schema. CLI flag form is the kebab-case
-`coverage-pct` (`--metric coverage-pct`); JSON / `Finding.metric`
-form is snake_case `coverage_pct`. Same dual-form convention as
-the rest of the metric set.
+The `[features.test]` family added three top-level metric
+strings — `coverage_pct`, `skip_ratio`, and the
+`change_coupling.drift` submetric of `change_coupling` — alongside
+the v3 schema bump (Unreleased v0.4 bundles them with the docs
+family into one bump). CLI flag forms are kebab-case
+(`--metric coverage-pct`, `--metric skip-ratio`); JSON /
+`Finding.metric` forms are snake_case (`coverage_pct`,
+`skip_ratio`). Same dual-form convention as the rest of the
+metric set. Renaming any of them or introducing a submetric
+(e.g. `skip_ratio.attributed`) is a `FINDINGS_RECORD_VERSION`
+bump.
 
 ## R6. Hotspot is a decoration, not a target
 

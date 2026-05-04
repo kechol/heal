@@ -38,7 +38,8 @@ pub struct Location {
 
 - `metric`: e.g. `ccn`, `cognitive`, `duplication`, `change_coupling`,
   `change_coupling.symmetric`, `change_coupling.drift`, `hotspot`,
-  `lcom`, `coverage_pct`, plus the `[features.docs]` family.
+  `lcom`, `coverage_pct`, `skip_ratio`, plus the `[features.docs]`
+  family.
 - `file`: project-relative, forward-slash separated.
 - `symbol`: function/class/path-of-pair-partner; literal `*` if absent.
 - The 16-hex digest is FNV-1a 64-bit over `[metric, file, symbol,
@@ -74,10 +75,10 @@ The full result of one `heal status` run. Written to
 see identical drain queues without re-scanning.
 
 ```rust
-pub const FINDINGS_RECORD_VERSION: u32 = 4;
+pub const FINDINGS_RECORD_VERSION: u32 = 3;
 
 pub struct FindingsRecord {
-    pub version: u32,                // currently 4
+    pub version: u32,                // currently 3
     pub id: String,                  // FNV-1a hex of (head_sha, config_hash, worktree_clean)
     pub head_sha: Option<String>,    // None outside git or HEAD unborn
     pub worktree_clean: bool,
@@ -101,15 +102,17 @@ byte-identical content, keeping `git status` clean.
 
 ### Schema versioning
 
-`FINDINGS_RECORD_VERSION` is currently **4**. v1 → v2 renamed
+`FINDINGS_RECORD_VERSION` is currently **3**. v1 → v2 renamed
 `check_id → id` and `regressed_check_id → regressed_in_record_id`.
-v2 → v3 added the `[features.docs]` family of metric strings
+v2 → v3 (Unreleased v0.4 cycle) bundles every new addition since
+v0.3.2: the `[features.docs]` family of metric strings
 (`doc_freshness`, `doc_drift`, `doc_coverage`, `doc_link_health`,
-`orphan_pages`, `todo_density`). v3 → v4 added the `[features.test]`
-family — the new `Finding.is_test_file: bool` flag (default
-`false`, `skip_serializing_if`-defaulted), the `coverage_pct` and
-`change_coupling.drift` metric strings, and the lcov-driven
-Coverage observer.
+`orphan_pages`, `todo_density`), the `[features.test]` family
+(`coverage_pct`, `change_coupling.drift`, `skip_ratio`), and the
+new `Finding.is_test_file: bool` flag (default `false`,
+`skip_serializing_if`-defaulted). The cycle never shipped an
+intermediate v4 / v5 stamp — every addition rolls into the same
+v3.
 
 `read_latest` peeks at the version field first and returns `Ok(None)`
 on **any mismatch** — the next run silently rewrites under the new

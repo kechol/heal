@@ -131,8 +131,9 @@ swallowed → exit 0.
 - `--metric <FindingMetric>` — `ccn`, `cognitive`, `complexity`
   (CCN+Cognitive), `duplication`, `coupling` (symmetric pairs +
   `change_coupling.drift`), `hotspot`, `lcom`, `coverage-pct`,
-  plus the docs-family filters (`doc-freshness`, `doc-drift`,
-  `doc-coverage`, `doc-link-health`, `orphan-pages`, `todo-density`).
+  `skip-ratio`, plus the docs-family filters (`doc-freshness`,
+  `doc-drift`, `doc-coverage`, `doc-link-health`, `orphan-pages`,
+  `todo-density`).
 - `--feature <PREFIX>` — file path prefix (e.g. `src/payments`).
 - `--workspace <PATH>` — single declared workspace.
 - `--severity <Critical|High|Medium|Ok>` — floor.
@@ -159,7 +160,8 @@ Per-section trait (`MetricSection`) registered in `all_sections()`:
 `Hotspot`, `Lcom`, plus the docs-only sections (active when
 `[features.docs] enabled = true`): `DocFreshness`, `DocDrift`,
 `DocCoverage`, `DocLinkHealth`, `OrphanPages`, `TodoDensity`, plus
-the test-only sections (active when `[features.test.coverage]
+the test-only sections (active when `[features.test] enabled =
+true`): `SkipRatio`, plus (active when `[features.test.coverage]
 enabled = true`): `CoveragePct`. Each section provides:
 
 - `render_text(&report) → String` with `top_n` cutoff.

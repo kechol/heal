@@ -154,6 +154,7 @@ impl FeatureRegistry {
         use crate::observer::docs::orphan_pages::OrphanPagesFeature;
         use crate::observer::docs::todo_density::TodoDensityFeature;
         use crate::observer::test::coverage::CoverageFeature;
+        use crate::observer::test::skip_ratio::SkipRatioFeature;
 
         Self {
             features: vec![
@@ -169,6 +170,7 @@ impl FeatureRegistry {
                 Box::new(OrphanPagesFeature),
                 Box::new(TodoDensityFeature),
                 Box::new(CoverageFeature),
+                Box::new(SkipRatioFeature),
             ],
         }
     }
@@ -264,6 +266,7 @@ mod tests {
                 "orphan_pages",
                 "todo_density",
                 "coverage_pct",
+                "skip_ratio",
             ],
         );
     }

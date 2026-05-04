@@ -408,6 +408,7 @@ Enabling the feature gives you:
 |---|---|
 | `coverage_pct` | Per-source-file line coverage parsed from lcov.info. |
 | `change_coupling.drift` | A test paired with a source that recently moved without it (joint count below the project's `change_coupling.p50`). |
+| `skip_ratio` | Per-test-file ratio of skipped tests to total tests. Detected via tree-sitter walks for `#[ignore]` (Rust), `@pytest.mark.skip` / `@unittest.skipIf` (Python), `it.skip` / `xit` (JS / TS), `t.Skip()` (Go), and ScalaTest `ignore`. Anchored at > 1 % Medium / > 5 % High / > 20 % Critical. |
 
 …plus a new `is_test_file` flag on every Finding so skills can
 read test- and production-side severities independently. Files

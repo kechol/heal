@@ -168,6 +168,11 @@ pub enum MetricKind {
     /// `[features.test.coverage]` — line coverage per source file,
     /// ingested from an externally-generated lcov.info file.
     CoveragePct,
+    /// `[features.test]` — skipped-test ratio per test file. Detected
+    /// via tree-sitter walking of language-specific markers
+    /// (`#[ignore]`, `it.skip`, `t.Skip()`, `@pytest.mark.skip`,
+    /// `ScalaTest` `ignore`).
+    SkipRatio,
 }
 
 impl MetricKind {
@@ -191,6 +196,7 @@ impl MetricKind {
             Self::OrphanPages => "orphan_pages",
             Self::TodoDensity => "todo_density",
             Self::CoveragePct => "coverage_pct",
+            Self::SkipRatio => Finding::METRIC_SKIP_RATIO,
         }
     }
 }
@@ -224,6 +230,8 @@ pub enum FindingMetric {
     TodoDensity,
     /// `[features.test.coverage]` — line coverage per source file.
     CoveragePct,
+    /// `[features.test]` — skipped-test ratio per test file.
+    SkipRatio,
 }
 
 impl FindingMetric {
@@ -251,6 +259,7 @@ impl FindingMetric {
             Self::OrphanPages => metric == "orphan_pages",
             Self::TodoDensity => metric == "todo_density",
             Self::CoveragePct => metric == "coverage_pct",
+            Self::SkipRatio => metric == Finding::METRIC_SKIP_RATIO,
         }
     }
 }

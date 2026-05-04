@@ -33,6 +33,7 @@ use crate::observer::docs::orphan_pages::{OrphanPagesObserver, OrphanPagesReport
 use crate::observer::docs::todo_density::{TodoDensityObserver, TodoDensityReport};
 use crate::observer::docs::walk::walk_standalone_docs;
 use crate::observer::test::coverage::{CoverageObserver, CoverageReport};
+use crate::observer::test::skip_ratio::{SkipRatioObserver, SkipRatioReport};
 
 use crate::cli::MetricKind;
 
@@ -73,6 +74,9 @@ pub struct ObserverReports {
     /// disk. Hotspot composition consumes this to apply the
     /// uncovered-files multiplicative boost.
     pub coverage: Option<CoverageReport>,
+    /// Per-test-file skipped-test ratio. `None` whenever
+    /// `[features.test]` is disabled or no `test_paths` are configured.
+    pub skip_ratio: Option<SkipRatioReport>,
 }
 
 /// Run the observers needed for the requested metric. `only = None`
@@ -208,6 +212,8 @@ pub(crate) fn run_all(
     // on the user explicitly asking for the metric.
     let coverage = (cfg.features.test.enabled && cfg.features.test.coverage.enabled)
         .then(|| CoverageObserver::from_config(cfg).scan(project));
+    let skip_ratio = (want(MetricKind::SkipRatio) && cfg.features.test.enabled)
+        .then(|| SkipRatioObserver::from_config(cfg).scan(project));
     let hotspot = match (
         want(MetricKind::Hotspot) && cfg.metrics.hotspot.enabled,
         churn.as_ref(),
@@ -281,6 +287,7 @@ pub(crate) fn run_all(
         orphan_pages,
         todo_density,
         coverage,
+        skip_ratio,
     }
 }
 
@@ -387,6 +394,7 @@ pub(crate) fn build_calibration(
 /// values whose owning file passes `file_filter`. The same logic backs
 /// both the global cohort and each per-workspace cohort — only the
 /// filter changes.
+#[allow(clippy::too_many_lines)] // each metric is one cheap branch; flat reads better than splitting
 fn build_metric_calibrations(
     reports: &ObserverReports,
     config: &Config,
@@ -501,6 +509,23 @@ fn build_metric_calibrations(
             .then(|| MetricCalibration::from_distribution(&values, coverage_pct_floors))
     });
 
+    // skip_ratio: a percentage with literature anchors > 1% Medium /
+    // > 5% High / > 20% Critical (TODO §[features.test]). The codebase
+    // distribution refines the percentile breaks above the floor.
+    let skip_ratio_floors = MetricFloors {
+        critical: Some(20.0),
+        ok: Some(0.5),
+    };
+    let skip_ratio = reports.skip_ratio.as_ref().and_then(|s| {
+        let values: Vec<f64> = s
+            .entries
+            .iter()
+            .filter(|e| file_filter(&e.path) && e.skipped_tests > 0)
+            .map(|e| e.skip_pct)
+            .collect();
+        non_empty(&values).then(|| MetricCalibration::from_distribution(&values, skip_ratio_floors))
+    });
+
     MetricCalibrations {
         ccn,
         cognitive,
@@ -509,6 +534,7 @@ fn build_metric_calibrations(
         hotspot,
         lcom,
         coverage_pct,
+        skip_ratio,
     }
 }
 
@@ -520,6 +546,7 @@ fn has_any_table(m: &MetricCalibrations) -> bool {
         || m.hotspot.is_some()
         || m.lcom.is_some()
         || m.coverage_pct.is_some()
+        || m.skip_ratio.is_some()
 }
 
 /// Compose every enabled Feature's lowered Findings into one Vec,
@@ -729,6 +756,7 @@ mod tests {
             orphan_pages: None,
             todo_density: None,
             coverage: None,
+            skip_ratio: None,
         };
 
         let cal = Calibration {
@@ -780,6 +808,7 @@ mod tests {
                 }),
                 lcom: None,
                 coverage_pct: None,
+                skip_ratio: None,
             },
             workspaces: BTreeMap::new(),
         };

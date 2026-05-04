@@ -212,6 +212,13 @@ pub struct MetricCalibrations {
     /// runs `heal calibrate` with `[features.test.coverage]` enabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coverage_pct: Option<MetricCalibration>,
+    /// Calibration for `[features.test]` skip-marker ratio (skipped
+    /// tests over total tests, expressed as a percentage). Stored
+    /// uninverted; the percentile cascade and floor anchors work
+    /// directly because higher skip rate is worse. `None` until the
+    /// user runs `heal calibrate` with `[features.test]` enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skip_ratio: Option<MetricCalibration>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

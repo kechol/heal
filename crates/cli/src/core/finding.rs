@@ -161,6 +161,14 @@ impl Finding {
     /// never runs tests itself; the lcov file is the user's contract.
     pub const METRIC_COVERAGE_PCT: &str = "coverage_pct";
 
+    /// Per-test-file ratio of skipped tests to total tests, expressed as
+    /// a percentage. Detected via tree-sitter walking of language-
+    /// specific markers (`#[ignore]`, `it.skip`, `t.Skip()`,
+    /// `@pytest.mark.skip`, `ScalaTest` `ignore`). Calibrated against
+    /// `[calibration.skip_ratio]` with literature anchors > 1% Medium /
+    /// > 5% High / > 20% Critical.
+    pub const METRIC_SKIP_RATIO: &str = "skip_ratio";
+
     /// Compact "metric=N" tag used by `heal status` rows and the
     /// post-commit nudge. The numeric tail is recovered from
     /// `summary` so observers don't have to expose a second value
@@ -182,6 +190,8 @@ impl Finding {
             Self::METRIC_CHANGE_COUPLING_DRIFT => "coupled (drift)".to_owned(),
             Self::METRIC_COVERAGE_PCT => extract_leading_number(&self.summary, "Coverage=")
                 .map_or_else(|| "Coverage".to_owned(), |v| format!("Coverage={v}%")),
+            Self::METRIC_SKIP_RATIO => extract_leading_number(&self.summary, "Skip=")
+                .map_or_else(|| "Skip".to_owned(), |v| format!("Skip={v}%")),
             "hotspot" => "hotspot".to_owned(),
             "lcom" => extract_leading_number(&self.summary, "LCOM=")
                 .map_or_else(|| "LCOM".to_owned(), |v| format!("LCOM={v}")),
@@ -200,6 +210,7 @@ impl Finding {
             "cognitive" => "Cognitive=",
             "lcom" => "LCOM=",
             Self::METRIC_COVERAGE_PCT => "Coverage=",
+            Self::METRIC_SKIP_RATIO => "Skip=",
             _ => return None,
         };
         extract_leading_number(&self.summary, prefix)?.parse().ok()

@@ -550,6 +550,50 @@ Files at full coverage are still consulted by the hotspot
 boost (via `CoverageReport::ratio_for`) but don't produce
 noise findings.
 
+### `observer/test/skip_ratio.rs` (`skip_ratio`)
+
+**What:** per-test-file ratio of skipped tests to total tests,
+expressed as a percentage. Walks every supported file under the
+gitignore-style matcher built from `[features.test].test_paths`
+and, for each, parses with tree-sitter and counts language-
+specific skip markers.
+
+**Per-language detection:**
+
+- **Rust** — counts `#[test]` and `#[ignore]` attribute identifiers.
+  `#[ignore]` only ever decorates a `#[test]` function in real-
+  world Rust, so `skipped <= total` holds without sibling-walking
+  the `function_item`.
+- **Python** — `def test_*` for total; the function's parent
+  `decorated_definition` is scanned for `.skip`, `.skipIf`,
+  `.skipUnless`, `.expectedFailure` decorators (covers both
+  `pytest.mark.*` and `unittest.*` flavours).
+- **JS/TS** — `it`/`test`/`describe`/`context`/`fit`/`fdescribe`
+  identifier-callee `call_expression` for total; `xit`/`xtest`/
+  `xdescribe` and `<it|describe>.skip` member-callee for skipped.
+  `.only` / `.todo` count as tests but not skips.
+- **Go** — `function_declaration` with name starting `Test` for
+  total; `*.Skip` / `*.SkipNow` / `*.Skipf` `selector_expression`
+  for skipped, deduped on the enclosing function declaration so
+  multiple `Skip` calls in one test count as one skip.
+- **Scala** — ScalaTest's `test` / `it` / `they` / `scenario`
+  bare-identifier `call_expression` for total; `ignore` /
+  `pending` for skipped.
+
+**Severity:** classified against `[calibration.skip_ratio]`. The
+calibration's percentile breaks layer on top of the literature-
+anchored floors (`floor_critical = 20.0`, `floor_ok = 0.5`).
+Until `heal calibrate` populates the table, the Feature falls
+back to a hard-coded cascade (`p50=0`, `p75=1`, `p90=5`,
+`p95=10`) so > 1 % skip rate maps to Medium, > 5 % to High,
+> 10 % to Critical via the percentile cascade, and > 20 %
+to Critical via the floor.
+
+Findings are emitted only for files with at least one skipped
+test. Detection is purely structural — comments and string
+literals can't trigger false positives, since tree-sitter only
+exposes node-kind / identifier-text on real AST shapes.
+
 ### `change_coupling.drift` (post-pass on `[features.test]`)
 
 A `TestSrc` pair whose joint count sits below the project's

@@ -4,18 +4,20 @@
 
 ### ⚠ BREAKING
 
-- **`FINDINGS_RECORD_VERSION` bumped to 4.** Caches written by older
+- **`FINDINGS_RECORD_VERSION` bumped to 3.** Caches written by older
   HEAL versions silently invalidate on read; the next `heal status`
   rewrites `.heal/findings/latest.json` under the new schema. v3
-  added the docs family (`doc_freshness`, `doc_drift`,
-  `doc_coverage`, `doc_link_health`, `orphan_pages`, `todo_density`).
-  v4 adds the test family (`coverage_pct`, `change_coupling.drift`)
-  and a new `Finding.is_test_file: bool` field on every Finding
+  bundles every Unreleased addition since v0.3.2: the docs family
+  (`doc_freshness`, `doc_drift`, `doc_coverage`, `doc_link_health`,
+  `orphan_pages`, `todo_density`), the test family (`coverage_pct`,
+  `change_coupling.drift`, `skip_ratio`), and a new
+  `Finding.is_test_file: bool` field on every Finding
   (`skip_serializing_if`-defaulted, so projects that don't enable
-  `[features.test]` see byte-identical JSON to v3 once the next
-  scan rewrites). Skills that consume `Finding.metric` should add
-  `coverage_pct` and `change_coupling.drift` to their dispatch
-  tables.
+  `[features.docs]` / `[features.test]` see byte-identical JSON to
+  v2 once the next scan rewrites). Skills that consume
+  `Finding.metric` should add `coverage_pct`,
+  `change_coupling.drift`, `skip_ratio`, and the docs-family
+  metric strings to their dispatch tables.
 
 ### Features
 
@@ -90,6 +92,33 @@
   - **Post-commit nudge** adds a second line counting "uncovered
     hotspot" findings (High+/Critical `coverage_pct` findings
     with `hotspot=true`) when `[features.test.coverage]` is on.
+  - **`skip_ratio` observer.** Walks files under
+    `[features.test].test_paths` and, for each, counts skipped
+    tests (Rust `#[ignore]`, Python `@pytest.mark.skip` /
+    `@unittest.skipIf`, JS/TS `it.skip` / `xit` / `xdescribe`,
+    Go `t.Skip()` / `t.SkipNow()` / `t.Skipf()` deduped per
+    enclosing `Test*` function, ScalaTest `ignore` /
+    `pending`) over total tests. Emits one Finding per file
+    with `skip_ratio.skip_pct` calibrated against the new
+    `[calibration.skip_ratio]` table; literature anchors land
+    > 1 % Medium / > 5 % High / > 20 % Critical via a hard-coded
+    fallback cascade until `heal calibrate` populates the table.
+    Detection is purely structural (tree-sitter walks with
+    per-language node-kind + identifier-text discrimination), so
+    skip markers inside comments or string literals never produce
+    false positives.
+- **Three new bundled skills for the test family.**
+  `/heal-test-review` (read-only) interprets `[features.test]`
+  findings through a test-pyramid + test-quality lens and returns
+  a prioritized TODO. `/heal-test-patch` (write) drains the
+  test slice of the cache one finding per commit, with strict
+  refusals on assertion-weakening, skip-the-flake, and
+  scaffold-without-running anti-patterns. `/heal-test-reporter-setup`
+  detects the project's stack (Rust / Python / JS-TS / Go / Scala
+  / polyglot) and proposes lcov reporter configuration so
+  `[features.test.coverage]` lights up. All three ship in the
+  binary via `include_dir!` and install with `heal init` /
+  `heal skills install`.
 
 ## v0.3.2 — 2026-05-04
 

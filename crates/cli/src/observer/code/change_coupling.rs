@@ -931,6 +931,7 @@ mod pair_class_tests {
                 orphan_pages: None,
                 todo_density: None,
                 coverage: None,
+                skip_ratio: None,
             }
         }
 
