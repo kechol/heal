@@ -62,7 +62,7 @@ After `heal init`:
     ├── heal-cli/
     ├── heal-code-patch/
     ├── heal-code-review/
-    └── heal-config/
+    └── heal-setup/
     # heal-doc-* / heal-test-* are also extracted when their feature is on.
 ```
 

@@ -169,7 +169,7 @@ pub struct CalibrationMeta {
     pub codebase_files: u32,
     pub strategy: String,
     /// HEAD sha at the moment `heal calibrate --force` (or `heal init`)
-    /// produced this calibration. The heal-config skill compares it
+    /// produced this calibration. The heal-setup skill compares it
     /// against the current `git rev-parse HEAD` to decide whether the
     /// codebase has drifted enough to suggest a recalibration. Optional
     /// so calibrations created outside a git worktree still load.

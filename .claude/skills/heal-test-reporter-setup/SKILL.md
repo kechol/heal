@@ -352,7 +352,7 @@ mechanically, run /heal-test-patch.
   changes.
 - **Don't auto-edit `.heal/config.toml`.** Surface the proposed
   edits as a copy-pasteable block; let the user apply them
-  themselves. Only `/heal-config` writes that file.
+  themselves. Only `/heal-setup` writes that file.
 - **Don't auto-edit CI configs.** Same reason — pasting into a CI
   workflow is a deploy decision.
 - **Match the default `lcov_paths` when possible.** If the

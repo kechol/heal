@@ -37,7 +37,7 @@ pub enum Command {
         no_skills: bool,
         /// Emit a machine-readable JSON summary of the init outcome
         /// instead of the human-readable text. Stable contract for
-        /// scripts and the `heal-config` skill.
+        /// scripts and the `heal-setup` skill.
         #[arg(long)]
         json: bool,
         /// Write every config key — including the defaults the
@@ -131,7 +131,7 @@ pub enum Command {
     /// behavior:
     ///   * `calibration.toml` missing → run a fresh scan and write it.
     ///   * `calibration.toml` present → print the freshness summary and
-    ///     surface `--force` as the way to refresh. The `heal-config`
+    ///     surface `--force` as the way to refresh. The `heal-setup`
     ///     skill is responsible for deciding when to suggest a
     ///     recalibration; HEAL itself never auto-fires.
     Calibrate {
@@ -140,7 +140,7 @@ pub enum Command {
         #[arg(long)]
         force: bool,
         /// Emit a JSON summary instead of the human-readable text.
-        /// Stable contract for the `heal-config` skill and CI scripts.
+        /// Stable contract for the `heal-setup` skill and CI scripts.
         #[arg(long)]
         json: bool,
     },

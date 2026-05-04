@@ -248,7 +248,7 @@ event log to compare against.
 ### `heal skills install [--force] [--json]` / `update [--force] [--json]` / `status [--json]` / `uninstall [--json]`
 
 Manage the bundled skill set under `<project>/.claude/skills/`. Each
-top-level child of the embedded tree (`heal-cli`, `heal-config`,
+top-level child of the embedded tree (`heal-cli`, `heal-setup`,
 `heal-code-review`, `heal-code-patch`) extracts to a sibling directory
 under `.claude/skills/`. HEAL no longer registers any Claude Code
 hooks; install/uninstall sweep stale `heal hook edit` / `heal hook
@@ -290,7 +290,7 @@ against the bundled raw bytes.
 `uninstall --json`:
 
 ```jsonc
-{ "action": "removed", "dest": ".claude/skills", "skills_removed": ["heal-cli", "heal-code-patch", "heal-code-review", "heal-config"] }
+{ "action": "removed", "dest": ".claude/skills", "skills_removed": ["heal-cli", "heal-code-patch", "heal-code-review", "heal-setup"] }
 // or { "action": "noop", … } when nothing was installed
 ```
 
@@ -335,7 +335,7 @@ caller's job (parse `--json`).
 
 ## Where to look next
 
-- `/heal-config` — calibrate + survey the codebase, then write or update
+- `/heal-setup` — calibrate + survey the codebase, then write or update
   `.heal/config.toml` with thresholds tuned to a chosen strictness.
 - `/heal-code-review` — read the cache as a system; produce an
   architectural reading + prioritized TODO.

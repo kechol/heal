@@ -433,7 +433,7 @@ pub struct MonorepoSignal { manifest: String, kind: String }
 
 `detect(project_root) → Vec<MonorepoSignal>`. Presence-only — no
 enumeration of workspace members. The list of detected manifests is
-fixed (see glossary). Used by `heal init` and by `heal-config` skill.
+fixed (see glossary). Used by `heal init` and by `heal-setup` skill.
 
 ---
 

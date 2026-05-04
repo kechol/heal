@@ -61,4 +61,4 @@ heal はコードヘルスを 3 つのファミリで観測します。**Code** 
 - [CLI](/heal/ja/cli/) — 全コマンド
 - [Code › メトリクス](/heal/ja/code/metrics/) — Code 系メトリクスの中身と Severity の付け方
 - [Code › 設定](/heal/ja/code/configuration/) — `.heal/config.toml` のリファレンス
-- [Code › スキル](/heal/ja/code/skills/) — `/heal-code-review`、`/heal-code-patch`、`/heal-cli`、`/heal-config`
+- [Code › スキル](/heal/ja/code/skills/) — `/heal-code-review`、`/heal-code-patch`、`/heal-cli`、`/heal-setup`

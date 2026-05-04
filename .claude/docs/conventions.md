@@ -86,7 +86,7 @@ When touching:
 |---|---|
 | user-visible CLI flag or output | `docs/cli.md`, `docs/quick-start.mdx`, `README.md` |
 | metric definition | `docs/metrics.md`, `crates/cli/skills/heal-code-review/references/metrics.md` |
-| `.heal/config.toml` schema | `docs/configuration.md`, `crates/cli/skills/heal-config/references/config.md` |
+| `.heal/config.toml` schema | `docs/configuration.md`, `crates/cli/skills/heal-setup/references/config.md` |
 | `FindingsRecord` JSON | bump `FINDINGS_RECORD_VERSION`, update `data-model.md`, add `CHANGELOG.md` "Unreleased" entry |
 | canonical term in `glossary.md` | sweep across source, tests, skill bodies, Starlight (en + ja), `README.md`, `CLAUDE.md` |
 

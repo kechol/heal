@@ -1,6 +1,6 @@
 ---
 title: Code · スキル
-description: 常時オンの Code ファミリ向け Claude Code スキル 4 種 — /heal-cli、/heal-config、/heal-code-review、/heal-code-patch。
+description: 常時オンの Code ファミリ向け Claude Code スキル 4 種 — /heal-cli、/heal-setup、/heal-code-review、/heal-code-patch。
 ---
 
 heal は Claude Code 向けスキルセットを同梱しているので、収集したメトリクスは Claude セッションへ自動的に流れます。リポジトリごとに 1 回だけインストールします:
@@ -16,7 +16,7 @@ heal skills install
 ├── heal-cli/
 ├── heal-code-patch/
 ├── heal-code-review/
-└── heal-config/
+└── heal-setup/
 ```
 
 スキルセットは `heal` バイナリに同梱されているので、インストールされるバージョンは常にバイナリと一致します。`heal` をアップグレードしたら `heal skills update` で更新します。
@@ -72,19 +72,20 @@ heal skills install
 
 `heal` CLI の簡潔で完全なリファレンスです。各サブコマンド、各 `--json` の形、各コマンドが読み書きする `.heal/` ファイルを網羅しています。Claude が他のスキルから `heal` をシェル実行する前にこれを読み込むので、CLI 表面は `--help` テキストから推論する対象ではなく、安定した契約として扱われます。
 
-## `/heal-config` — キャリブレーションと config 調整
+## `/heal-setup` — セットアップウィザード
 
-プロジェクトをキャリブレーションし、コードベースを見渡し、ユーザに strictness レベル(Strict / Default / Lenient)を選んでもらい、それに応じて `.heal/config.toml` を書く / 更新します。
+ワンショットのセットアップウィザードです。プロジェクトをキャリブレーションし、コードベースを見渡し、strictness レベル(Strict / Default / Lenient)を選んでもらって `.heal/config.toml` を書く/更新したあと、各オプション機能ファミリ(`[features.docs]`、`[features.test]`)を有効化するかを順に確認し、有効化する場合は対応するセットアップスキルを呼び出します。
 
 使うタイミング:
 
 - heal を初めてセットアップするとき。
 - コードベースの構造変更(新しい vendored ツリー、レイヤ書き直しなど)の後。
 - すべての閾値を覚えていなくても品質バーを動かしたいとき。
+- `[features.*]` ブロックを手で書かずに docs / coverage の観測を有効化したいとき。
 
-`/heal-config` はキャリブレーションのベースラインがドリフトして無視できなくなったときに `heal calibrate --force` も推奨します(ファイル数が大きく動いた、プロジェクトの速度に対してキャリブレーションが古い、Critical を持続的に drain し終えた、など)。
+`[features.docs]` を有効化した場合、`/heal-setup` はプロジェクトの実際のドキュメント配置から `[features.docs.standalone]` の include / exclude グロブを埋め、続けて `/heal-doc-pair-setup` を呼び出して `.heal/doc_pairs.json` を生成します。`[features.test]` を有効化した場合は、検出した言語スタックから `test_paths` と `lcov_paths` を埋め、続けて `/heal-test-reporter-setup` を呼び出して言語別の lcov レポータ設定を行います。
 
-`[features.docs]` や `[features.test]` を有効にしている場合は、対応する `[calibration.*]` 表も拾い、ファミリ固有の調整値のオプトインデフォルトを提案します。
+`/heal-setup` はキャリブレーションのベースラインがドリフトして無視できなくなったときに `heal calibrate --force` も推奨します(ファイル数が大きく動いた、プロジェクトの速度に対してキャリブレーションが古い、Critical を持続的に drain し終えた、など)。
 
 ## 更新
 

@@ -16,7 +16,7 @@ plugin wrapper.
 
 Skills group along the three feature families:
 
-- **Code** (always-on observer family): `heal-cli`, `heal-config`,
+- **Code** (always-on observer family): `heal-cli`, `heal-setup`,
   `heal-code-review`, `heal-code-patch`.
 - **`[features.docs]`** (opt-in): `heal-doc-pair-setup`,
   `heal-doc-review`, `heal-doc-patch`.
@@ -38,7 +38,7 @@ Source: `crates/cli/skills/`. The path is **inside the crate dir** so
 ```
 crates/cli/skills/
 ├── heal-cli/                       # CLI reference (read-only)
-├── heal-config/                    # one-shot calibrate + write config
+├── heal-setup/                    # one-shot calibrate + write config
 ├── heal-code-review/               # read-only architectural review
 ├── heal-code-patch/                # mechanical drain, one finding/commit
 ├── heal-doc-pair-setup/            # write .heal/doc_pairs.json (SSoT)
@@ -50,7 +50,7 @@ crates/cli/skills/
 ```
 
 Each skill has at least a `SKILL.md`; some carry `references/` files
-loaded on demand (`heal-config/references/config.md`,
+loaded on demand (`heal-setup/references/config.md`,
 `heal-code-review/references/{architecture,metrics,readability}.md`,
 `heal-doc-pair-setup/references/doc-pairs-schema.md`, etc.).
 
@@ -59,7 +59,7 @@ loaded on demand (`heal-config/references/config.md`,
 | Skill | Family | Role | Pair |
 |---|---|---|---|
 | `heal-cli` | Code | CLI contract reference; load before shelling out to `heal`. | — |
-| `heal-config` | Code | One-shot: calibrate + write `.heal/config.toml` tuned to a strictness level (Strict / Default / Lenient) chosen via `AskUserQuestion`. Read-only on the codebase. | — |
+| `heal-setup` | Code | One-shot setup wizard: calibrate + write `.heal/config.toml` tuned to a strictness level (Strict / Default / Lenient) chosen via `AskUserQuestion`, then gate `[features.docs]` and `[features.test]` with two follow-up `AskUserQuestion`s; on opt-in, populate `[features.docs.standalone]` paths / `test_paths` / `lcov_paths` from a codebase survey and chain to the companion setup skill. Read-only on the codebase. | chains to `heal-doc-pair-setup` / `heal-test-reporter-setup` |
 | `heal-code-review` | Code | Read every `heal status --all --json` finding, deeply investigate, return one architectural reading + prioritized refactor TODO list. Read-only — proposes only. | write counterpart `heal-code-patch` |
 | `heal-code-patch` | Code | Drain the cache fixing one finding per commit in Severity order. Refuses dirty worktree. Calls `heal mark fix` after each commit. **Does not push or open PRs.** | write counterpart of `heal-code-review` |
 | `heal-doc-pair-setup` | `[features.docs]` | One-shot: detect doc ⇔ src pairs (mention regex + directory mirror + optional LLM) and write `.heal/doc_pairs.json`. Read-only on source; only writes the SSoT. Manual entries are preserved across regenerations. | — |

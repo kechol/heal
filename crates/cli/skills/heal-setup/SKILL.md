@@ -1,18 +1,18 @@
 ---
-name: heal-config
-description: Calibrate the codebase, survey its shape, and write or update `.heal/config.toml` with thresholds tuned to a strictness level the user picks (Strict / Default / Lenient). Read-only on the codebase; writes only `.heal/config.toml`. Trigger on "set up heal config", "tune heal thresholds", "make heal stricter / more lenient", "/heal-config".
-metadata:
-  heal-version: 0.3.2
-  heal-source: bundled
+name: heal-setup
+description: One-shot setup wizard. Calibrates the codebase, surveys its shape, writes `.heal/config.toml` at a strictness level the user picks (Strict / Default / Lenient), and asks whether to enable the optional `[features.docs]` and `[features.test]` families — chaining to `/heal-doc-pair-setup` and `/heal-test-reporter-setup` when the user opts in. Read-only on the codebase; writes only `.heal/config.toml`. Trigger on "set up heal", "configure heal", "tune heal thresholds", "make heal stricter / more lenient", "enable heal docs", "enable heal coverage", "/heal-setup".
 ---
 
-# heal-config
+# heal-setup
 
 One-shot skill that produces (or updates) a project's
-`.heal/config.toml`. It works in three phases: **calibrate** so the
-percentile breaks match this codebase, **survey** so excludes / metric
-toggles match this codebase's shape, and **write** the config tuned to
-a strictness level the user chose.
+`.heal/config.toml` and offers to wire up the optional feature
+families. It works in five phases: **calibrate** so the percentile
+breaks match this codebase, **survey** so excludes / metric toggles
+match this codebase's shape, **choose** a strictness level, **write**
+the tuned config, then **gate** the optional `[features.docs]` and
+`[features.test]` families with `AskUserQuestion` (chaining to the
+companion setup skills when the user opts in).
 
 The skill is **language-agnostic** — it consults `heal metrics --json`
 to see which observers fired and what the per-language LOC mix is, then
@@ -65,7 +65,7 @@ Before changing anything:
    state. Tell the user once if `worktree_clean: false` shows up in
    the status JSON; don't refuse.
 
-## Procedure (Calibrate → Survey → Choose → Write)
+## Procedure (Calibrate → Survey → Choose → Write → Feature gates)
 
 ### Phase 1 — Calibrate
 
@@ -335,9 +335,171 @@ Build the config in memory, then write it:
    - Whether any previously-flagged findings now classify as Ok (a
      loosening) or Critical (a tightening).
 
+### Phase 5 — Feature gates (`[features.docs]`, `[features.test]`)
+
+Both feature families ship disabled by default. After the core config
+is written, ask the user whether to enable each one — separately, in
+two `AskUserQuestion` rounds — and then chain to the companion setup
+skill when they opt in.
+
+Skip the prompt for a feature whose `[features.<name>] enabled = true`
+already (the user enabled it earlier; re-prompting is busy-work).
+Surface that fact in the post-write summary instead.
+
+#### Step 1 — `[features.docs]` gate
+
+The docs family runs the doc ⇔ src drift / freshness / link / orphan
+/ todo / coverage observers. It needs `.heal/doc_pairs.json` (Layer A)
+and the `[features.docs.standalone]` glob set (Layer B) to do anything
+useful. Generation of `doc_pairs.json` is the responsibility of
+`/heal-doc-pair-setup`; this skill writes the toggle and the
+standalone globs.
+
+1. **Survey first** so the question is informed:
+
+   - List directories that look like prose docs:
+     `docs/`, `documentation/`, `doc/`, `book/`, `wiki/`, `guide/`,
+     `handbook/`. Glob for `**/*.md` and `**/*.rst` at the repo
+     root and report the count.
+   - Note governance files that should be excluded
+     (`CHANGELOG*`, `CONTRIBUTING*`, `CODE_OF_CONDUCT*`,
+     `SECURITY*`, `**/adr/**`) and build artefacts (`target/`,
+     `dist/`, `node_modules/`).
+   - If the project is **doc-light** (≤ 5 Markdown / RST files,
+     or no top-level `docs/` tree, or pure README + a couple of
+     ADRs), say so in the question — `[features.docs]` won't
+     surface much signal. Don't refuse, just inform.
+
+2. **Ask once** with `AskUserQuestion`:
+
+   ```
+   Question: "Enable [features.docs]? It surfaces doc-side findings
+              (drift vs source, stale freshness, broken links, orphans,
+              TODO density, coverage of public symbols)."
+   Options:
+     - "Enable": flip [features.docs].enabled = true, populate
+                 [features.docs.standalone] with this codebase's doc
+                 layout, then chain to /heal-doc-pair-setup.
+     - "Skip":   leave [features.docs] disabled. Re-runnable by
+                 invoking /heal-setup again later.
+   ```
+
+   Prefix the question with the survey result one-liner — e.g. *"42
+   Markdown files under `docs/`, 7 RST files under `book/`."*
+
+3. **On Enable** — write the standalone block from the survey, not
+   the shipped defaults. The shipped defaults (`include = ["**/*.md",
+   "**/*.rst"]`) work, but a tighter `include` keeps `heal status`
+   faster on monorepos where Markdown is also embedded in
+   `node_modules/` and lockfile generators. Build the entries:
+
+   - `include`:
+     - Always: `**/*.md`, `**/*.rst`.
+     - When the project has a single dedicated docs tree
+       (`docs/` only), prefer the narrower `docs/**/*.md` / `**/*.rst`
+       to keep the universe tight. Otherwise leave the broad globs.
+   - `exclude`: layer the project's own ignored dirs on top of the
+     shipped baseline:
+     - Always include the shipped defaults
+       (`CHANGELOG*`, `CONTRIBUTING*`, `CODE_OF_CONDUCT*`,
+       `SECURITY*`, `**/adr/**`, `target/**`, `dist/**`,
+       `node_modules/**`).
+     - Add any project-specific generated doc trees the survey
+       found (e.g. `docs/api/generated/**` for cargo-doc / sphinx
+       html, `site/**` for Jekyll / Hugo build output).
+     - Add language-specific build dirs the survey found that the
+       shipped defaults miss (e.g. `_build/**` for sphinx,
+       `public/**` for Hugo, `.next/**` for Next.js, `vendor/**`
+       for Rails).
+
+   Write the resulting block as `[features.docs]` + a nested
+   `[features.docs.standalone]` if (and only if) `include` /
+   `exclude` differ from defaults. Skip the section entirely when
+   the user's set matches the shipped defaults — the strict
+   serializer drops it.
+
+4. **Chain to `/heal-doc-pair-setup`.** After the config write
+   succeeds, instruct the agent to invoke the companion skill in
+   the same session so `.heal/doc_pairs.json` lands before the
+   next `heal status` run. Don't run the chained skill silently —
+   announce the hand-off so the user can stop the chain if they
+   want to edit the standalone globs first.
+
+#### Step 2 — `[features.test]` gate
+
+The test family runs the `coverage_pct` and `skip_ratio` observers
+plus tags every Finding's `is_test_file` flag against
+`test_paths`. The lcov reporter is a separate, language-specific
+setup that lives in `/heal-test-reporter-setup`; this skill writes
+the toggle, `test_paths`, and `lcov_paths`.
+
+1. **Survey first**:
+
+   - Detect language stacks present in the repo root:
+     `Cargo.toml`, `pyproject.toml` / `setup.py` / `requirements.txt`,
+     `package.json`, `go.mod`, `build.sbt`. Note each ecosystem
+     present.
+   - Find existing test directories / files: `tests/`, `test/`,
+     `__tests__/`, `**/*_test.go`, `**/*.test.ts`,
+     `**/*.spec.ts`, `**/test_*.py`, `**/*_test.py`,
+     `**/*Test.scala`, `**/*Spec.scala`. Report what exists.
+   - Probe for an existing lcov file at the four shipped defaults
+     (`lcov.info`, `coverage/lcov.info`,
+     `target/llvm-cov/lcov.info`,
+     `coverage/lcov-report/lcov.info`). Note which (if any) exist
+     and whether they're recent.
+   - If the project has **no test files at all**, say so in the
+     question — coverage will be 0% across the board and skip-ratio
+     has nothing to count. Don't refuse, just inform.
+
+2. **Ask once** with `AskUserQuestion`:
+
+   ```
+   Question: "Enable [features.test]? It tags every Finding with
+              is_test_file, and (when [features.test.coverage] is on)
+              ingests lcov.info to surface low-coverage hotspots and
+              skip-ratio drift."
+   Options:
+     - "Enable": flip [features.test].enabled = true, populate
+                 test_paths and lcov_paths from the survey, then chain
+                 to /heal-test-reporter-setup.
+     - "Skip":   leave [features.test] disabled. Re-runnable by
+                 invoking /heal-setup again later.
+   ```
+
+   Prefix with the survey one-liner — e.g. *"Rust + TypeScript
+   stack; tests under `tests/` and `**/*.test.ts`; no `lcov.info`
+   present yet."*
+
+3. **On Enable** — write the toggle block from the survey, not the
+   shipped defaults. The shipped defaults cover the broad
+   per-ecosystem conventions; a tighter list keeps `is_test_file`
+   tagging precise on a single-language repo.
+
+   - `test_paths`: keep only the patterns whose ecosystem markers
+     showed up in the survey. A pure-Rust repo doesn't need the JS
+     `**/*.test.ts` family or the Scala `*Test.scala` family —
+     those globs are dead weight on every classification call.
+     For polyglot repos, keep every matching ecosystem's set.
+   - `lcov_paths`: keep the shipped defaults unless the survey
+     found an existing lcov in a non-default location (e.g.
+     `target/scala-2.13/scoverage-report/lcov.info` for sbt with
+     scoverage). When extending, append — don't replace.
+
+   Write the resulting block as `[features.test]` + a nested
+   `[features.test.coverage]` if (and only if)
+   `lcov_paths` / `coverage.enabled` differ from defaults.
+
+4. **Chain to `/heal-test-reporter-setup`.** After the config
+   write, hand off so the language-specific reporter wiring
+   (cargo-llvm-cov, pytest-cov, vitest / jest, gcov2lcov,
+   scoverage) lands. Same hand-off etiquette as the docs family:
+   announce the chain, let the user opt out of running it
+   immediately.
+
 ## Output format
 
-End with three short blocks:
+End with four short blocks:
 
 ```
 Calibration:
@@ -353,6 +515,10 @@ Config changes:
   - metrics.change_coupling.min_lift: 2.0 → 1.5  # strict mode
   - policy.drain.must = ["critical:hotspot", "high:hotspot"]   # strict mode
   - metrics.disabled += ["lcom"]                 # no classes detected
+
+Feature gates:
+  - [features.docs]: enabled  → chained /heal-doc-pair-setup
+  - [features.test]: skipped (user declined; re-run /heal-setup to revisit)
 
 Effect:
   before: critical=3 high=11 medium=22 ok=0
@@ -396,7 +562,10 @@ say on whether to run `heal calibrate --force`.
 ## Constraints
 
 - **Write `.heal/config.toml` only.** Never edit `calibration.toml`
-  directly — recalibrating is `heal calibrate --force`.
+  directly — recalibrating is `heal calibrate --force`. Never write
+  `.heal/doc_pairs.json` directly — that's `/heal-doc-pair-setup`'s
+  job. Never write CI files or reporter configs — that's
+  `/heal-test-reporter-setup`.
 - **Do not overwrite user customisations the recipe doesn't touch.**
   Merge, don't replace.
 - **Recommend, don't require.** If the user later edits the file by
@@ -405,6 +574,11 @@ say on whether to run `heal calibrate --force`.
 - **`deny_unknown_fields` is on.** Typos break the loader. After
   writing, run `heal status --refresh --json` once to confirm the file
   parses; if it fails, surface the error and revert.
+- **Feature gates default to skip on no answer.** If the user
+  declines or doesn't reply to a `[features.docs]` /
+  `[features.test]` question, leave the section omitted (= disabled
+  by default). Never auto-enable a feature whose chained setup the
+  user hasn't acknowledged.
 - **English output by default.** The user can ask for translation if
   they prefer another language. The `[project].response_language`
   setting controls heal's *own* output language, not the skill's.

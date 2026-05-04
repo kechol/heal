@@ -146,7 +146,7 @@ Reasoning:
 
 If you're tempted to add suppression "to reduce noise", first ask
 whether the noise is actually a calibration problem
-(`heal-config` skill should warn about flood) or a
+(`heal-setup` skill should warn about flood) or a
 classifier-demotion problem (`scope.md` R9 PairClass).
 
 ---

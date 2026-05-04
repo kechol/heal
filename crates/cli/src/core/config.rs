@@ -1187,17 +1187,17 @@ impl Config {
         let body = self
             .to_minimal_toml()
             .expect("serialization is infallible for owned data");
-        atomic_write(path, body.as_bytes())
+        atomic_write(path, with_config_header(&body).as_bytes())
     }
 
     /// Persist every field — defaults included — atomically. Drives
     /// `heal init --explicit` so a freshly-initialized project can
-    /// show every knob `heal-config` might want to tune.
+    /// show every knob `heal-setup` might want to tune.
     pub fn save_explicit(&self, path: &Path) -> Result<()> {
         let body = self
             .to_explicit_toml()
             .expect("serialization is infallible for owned data");
-        atomic_write(path, body.as_bytes())
+        atomic_write(path, with_config_header(&body).as_bytes())
     }
 
     /// Gitignore lines every observer should honor, in source-order
@@ -1374,6 +1374,27 @@ fn validate_workspaces(workspaces: &[WorkspaceOverlay]) -> std::result::Result<(
         }
     }
     Ok(())
+}
+
+/// Header prepended to every `.heal/config.toml` heal writes. Two
+/// short lines: identify the file (so an empty body isn't a mystery)
+/// and point at the `/heal-setup` skill that knows how to fill it in.
+const CONFIG_HEADER: &str = "\
+# .heal/config.toml — heal's per-project config. Omitted keys fall back to defaults; run `heal init --explicit` to write the full default body.
+# Run `claude /heal-setup` to calibrate the codebase and tune thresholds.
+";
+
+/// Prepend [`CONFIG_HEADER`] to `body`, separating with a blank line
+/// when the body has its own content. Keeps the empty-default case
+/// header-only (no trailing blank line that round-trip parsing would
+/// have to tolerate).
+fn with_config_header(body: &str) -> String {
+    let trimmed = body.trim_start_matches('\n');
+    if trimmed.is_empty() {
+        CONFIG_HEADER.to_owned()
+    } else {
+        format!("{CONFIG_HEADER}\n{trimmed}")
+    }
 }
 
 /// Walk an `actual` config TOML tree alongside the `default` tree

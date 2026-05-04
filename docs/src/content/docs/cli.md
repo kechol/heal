@@ -30,12 +30,12 @@ to warrant attention. Hidden from `--help`.
 | `heal mark fix`    | `/heal-code-patch` skill  | Record that a commit fixed a finding so the next `heal status` reconciles it. |
 | `heal mark accept` | `/heal-code-review` skill | Record an intrinsic finding the team has decided not to refactor.             |
 | `heal metrics`     | `/heal-code-review` skill | Per-metric summary recomputed on every invocation.                            |
-| `heal calibrate`   | `/heal-config` skill      | Reset Severity thresholds to today's codebase distribution.                   |
+| `heal calibrate`   | `/heal-setup` skill      | Reset Severity thresholds to today's codebase distribution.                   |
 
 `heal metrics` and `heal calibrate` are listed here because the
 bundled skills decide _when_ to run them — `/heal-code-review` reads
 the per-metric summary while orchestrating an audit, and
-`/heal-config` watches for calibration drift and recommends a
+`/heal-setup` watches for calibration drift and recommends a
 recalibration when the codebase has moved enough. Run them by hand
 only when you need the raw output without going through Claude.
 
@@ -110,9 +110,13 @@ The bundled set ships ten skills, grouped by feature family:
 - `/heal-code-patch` (write) drains the TODO list one finding per
   commit (Severity order; `Critical 🔥` first).
 - `/heal-cli` is a concise reference for the `heal` CLI surface.
-- `/heal-config` calibrates the project, asks for a strictness level,
-  and writes `config.toml` accordingly. Also detects calibration
-  drift and recommends `heal calibrate --force` when warranted.
+- `/heal-setup` is the setup wizard. It calibrates the project,
+  asks for a strictness level, writes `config.toml`, then asks
+  whether to enable the optional `[features.docs]` and
+  `[features.test]` families — chaining to `/heal-doc-pair-setup`
+  and `/heal-test-reporter-setup` when you opt in. Also detects
+  calibration drift and recommends `heal calibrate --force` when
+  warranted.
 
 **`[features.docs]`** (opt-in):
 
@@ -261,7 +265,7 @@ improves the codebase shouldn't silently move the goalposts. Run
 `--force` when:
 
 - A large structural change has shifted the distribution (the
-  `/heal-config` skill watches for this and recommends).
+  `/heal-setup` skill watches for this and recommends).
 - You've changed `floor_critical` / `floor_ok` overrides in
   `config.toml` and want the percentile ladder rebuilt against them.
 

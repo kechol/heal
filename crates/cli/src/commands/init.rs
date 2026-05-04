@@ -10,7 +10,7 @@
 //!   5. Run an initial scan and derive `.heal/calibration.toml` from
 //!      the resulting distribution. The fresh calibration captures
 //!      `meta.calibrated_at_sha` / `meta.codebase_files` so the
-//!      `heal-config` skill can later judge drift without consulting any
+//!      `heal-setup` skill can later judge drift without consulting any
 //!      event log.
 //!   6. Optionally extract the bundled skills to `.claude/skills/` and
 //!      register HEAL's hook commands in `.claude/settings.json`
@@ -140,7 +140,7 @@ pub fn run(
 
 /// Stable JSON contract for `heal init --json`. Mirrors the lines the
 /// human renderer emits but in a typed shape so scripts and the
-/// `heal-config` skill can act on it without parsing free-form text.
+/// `heal-setup` skill can act on it without parsing free-form text.
 #[derive(Debug, Serialize)]
 struct InitReport<'a> {
     project: String,
@@ -154,7 +154,7 @@ struct InitReport<'a> {
     /// Manifests detected in the project root that suggest a monorepo
     /// layout the user may want to declare via `[[project.workspaces]]`.
     /// Empty when no signals fire OR when workspaces are already
-    /// declared — the `heal-config` skill keys off this to decide
+    /// declared — the `heal-setup` skill keys off this to decide
     /// whether to run its workspace-declaration phase.
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     monorepo_signals: &'a [MonorepoSignal],
@@ -271,7 +271,7 @@ fn print_summary(
         }
         println!(
             "  → declare workspaces in `[[project.workspaces]]` so calibration\n    \
-             scopes per package — run `claude /heal-config` to set this up.",
+             scopes per package — run `claude /heal-setup` to set this up.",
         );
     }
 
@@ -284,7 +284,7 @@ fn print_summary(
         SkillsAction::Installed { .. } => {
             println!();
             println!("Claude skills (from this project):");
-            println!("  claude /heal-config       # tune thresholds / declare workspaces");
+            println!("  claude /heal-setup        # tune thresholds, enable optional features");
             println!("  claude /heal-code-review  # architectural reading + refactor TODO");
             println!("  claude /heal-code-patch   # drain the cache, one fix per commit");
         }
@@ -476,7 +476,7 @@ fn claude_on_path() -> bool {
 
 fn confirm_skills_install() -> Result<bool> {
     print!(
-        "Install the bundled Claude skills (/heal-cli, /heal-config, /heal-code-review, /heal-code-patch)? [Y/n] ",
+        "Install the bundled Claude skills (/heal-cli, /heal-setup, /heal-code-review, /heal-code-patch)? [Y/n] ",
     );
     std::io::stdout()
         .flush()

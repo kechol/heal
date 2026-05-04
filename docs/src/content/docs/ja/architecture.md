@@ -56,7 +56,7 @@ heal status  ──►  calibration.toml で Finding を分類
     ├── heal-cli/
     ├── heal-code-patch/
     ├── heal-code-review/
-    └── heal-config/
+    └── heal-setup/
     # [features.docs] / [features.test] を有効化していれば
     # heal-doc-* / heal-test-* も展開される
 ```

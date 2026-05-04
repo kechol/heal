@@ -117,7 +117,7 @@ dir** so `cargo publish` includes it. Don't move it out —
 ## R10. Trigger-rich descriptions
 
 Skill `description` fields are long, list trigger phrases, and end
-with the slash-command form (`/heal-config`). This pattern is what
+with the slash-command form (`/heal-setup`). This pattern is what
 Claude Code's skill matcher keys on.
 
 When adding a new skill, follow the existing `description` shape;

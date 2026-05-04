@@ -1,5 +1,5 @@
 //! Detect signals that a project declares workspaces. Used by `heal
-//! init` to print a hint and by the `heal-config` skill (via
+//! init` to print a hint and by the `heal-setup` skill (via
 //! `heal init --json`) to know when to run its workspace-declaration
 //! phase.
 //!

@@ -2,7 +2,7 @@
 //! Claude skill set under `<project>/.claude/skills/`.
 //!
 //! Each top-level directory under the embedded tree (`heal-cli`,
-//! `heal-config`, `heal-code-review`, `heal-code-patch`) is extracted
+//! `heal-setup`, `heal-code-review`, `heal-code-patch`) is extracted
 //! to a sibling under `.claude/skills/`. The install pass also reaches
 //! into `.claude/settings.json` to sweep legacy `heal hook edit` /
 //! `heal hook stop` registrations left over from earlier versions.

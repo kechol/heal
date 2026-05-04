@@ -3,7 +3,7 @@
 //! that surrounds it.
 //!
 //! The embedded tree's children are individual skill directories
-//! (`heal-cli/`, `heal-config/`, `heal-code-review/`, `heal-code-patch/`)
+//! (`heal-cli/`, `heal-setup/`, `heal-code-review/`, `heal-code-patch/`)
 //! that get extracted directly into `<project>/.claude/skills/<name>/`.
 //! No marketplace, no plugin wrapper — Claude Code natively discovers
 //! project-scope skills under `.claude/skills/`.
@@ -554,7 +554,7 @@ mod tests {
     fn bundled_skill_names_lists_top_level_dirs() {
         let names = bundled_skill_names();
         assert!(names.iter().any(|n| n == "heal-cli"));
-        assert!(names.iter().any(|n| n == "heal-config"));
+        assert!(names.iter().any(|n| n == "heal-setup"));
         assert!(names.iter().any(|n| n == "heal-code-review"));
         assert!(names.iter().any(|n| n == "heal-code-patch"));
     }

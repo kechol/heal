@@ -61,7 +61,7 @@ Topical pages on the docs site:
 - [Metrics](https://kechol.github.io/heal/metrics/) — what each metric measures, how Severity is assigned
 - [CLI](https://kechol.github.io/heal/cli/) — every subcommand
 - [Configuration](https://kechol.github.io/heal/configuration/) — thresholds, toggles, calibration
-- [Claude skills](https://kechol.github.io/heal/claude-skills/) — `/heal-code-review`, `/heal-code-patch`, `/heal-cli`, `/heal-config`
+- [Claude skills](https://kechol.github.io/heal/claude-skills/) — `/heal-code-review`, `/heal-code-patch`, `/heal-cli`, `/heal-setup`
 - [Architecture](https://kechol.github.io/heal/architecture/) — internals
 
 ## Development

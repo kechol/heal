@@ -124,4 +124,4 @@ its own dedicated review ↔ patch skill pair. See
 - [Code › Configuration](/heal/code/configuration/) — `.heal/config.toml`
   reference for the always-on family
 - [Code › Skills](/heal/code/skills/) — `/heal-code-review`,
-  `/heal-code-patch`, `/heal-cli`, and `/heal-config`
+  `/heal-code-patch`, `/heal-cli`, and `/heal-setup`

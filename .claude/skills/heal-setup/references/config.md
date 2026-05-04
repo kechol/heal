@@ -1,7 +1,7 @@
 # `.heal/config.toml` — complete reference
 
 Authoritative reference for every key in `.heal/config.toml`. Loaded by
-the `heal-config` skill when it needs to justify a setting, and by
+the `heal-setup` skill when it needs to justify a setting, and by
 `heal-code-review` when a finding's "fix" is to relax a threshold.
 
 The file lives at `<project>/.heal/config.toml`. It is parsed by
@@ -246,7 +246,7 @@ floors.
 
 ## Strictness recipes
 
-The `heal-config` skill picks per-strictness values from this table.
+The `heal-setup` skill picks per-strictness values from this table.
 Every key not listed stays at its shipped default.
 
 | Key                                       | Strict                                  | Default                                            | Lenient                  |
@@ -293,7 +293,7 @@ for CCN, `floor_ok=8` for Cognitive) sit comfortably above most
 calibration p95 values, so the cascade has a meaningful Medium /
 High zone before Critical fires.
 
-The `heal-config` skill checks for this fit before offering Strict
+The `heal-setup` skill checks for this fit before offering Strict
 and surfaces a warning in the strictness question — see SKILL.md
 Phase 2.7. The check is purely advisory; the user can still pick
 Strict if they want the "flag every function above CCN=8" behavior
@@ -311,6 +311,6 @@ file:
 - Treat `.heal/calibration.toml` as machine-owned. Override floors via
   `config.toml` (the per-metric sections) so a recalibration doesn't
   clobber them.
-- Re-run `heal-config` after large structural changes (a new
+- Re-run `heal-setup` after large structural changes (a new
   `vendor/` or `generated/` tree, a layer rewrite). Survey the
   codebase first; the previous excludes may no longer be enough.

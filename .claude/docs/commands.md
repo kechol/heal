@@ -325,7 +325,7 @@ heal calibrate [--force] [--json]
    `calibrated_at_sha`, `codebase_files` metadata.
 
 **Auto-recalibration is forbidden.** HEAL never triggers `heal calibrate`
-on its own — `heal-config` skill or the user decides. The header comment
+on its own — `heal-setup` skill or the user decides. The header comment
 written into `calibration.toml` reflects this.
 
 **Output (text):** path, `codebase_files`, percentile breaks (CCN/Cog

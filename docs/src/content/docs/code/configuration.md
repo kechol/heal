@@ -364,7 +364,7 @@ p95 = 145.0
 `heal calibrate` (no flags) only creates the file when missing — if
 it already exists, the command reports its presence without
 rewriting anything. Pass `--force` to actually rescan. The
-`/heal-config` skill watches for drift and recommends
+`/heal-setup` skill watches for drift and recommends
 `heal calibrate --force` when the codebase has moved enough.
 
 ## Strict by design

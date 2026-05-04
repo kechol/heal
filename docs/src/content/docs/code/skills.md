@@ -1,6 +1,6 @@
 ---
 title: Code · Skills
-description: The four bundled Claude Code skills for the always-on Code family — /heal-cli, /heal-config, /heal-code-review, /heal-code-patch.
+description: The four bundled Claude Code skills for the always-on Code family — /heal-cli, /heal-setup, /heal-code-review, /heal-code-patch.
 ---
 
 heal ships a bundled set of Claude Code skills so the metrics it
@@ -22,7 +22,7 @@ The four code-family skills:
 ├── heal-cli/
 ├── heal-code-patch/
 ├── heal-code-review/
-└── heal-config/
+└── heal-setup/
 ```
 
 The skill set is shipped inside the `heal` binary, so the version
@@ -106,11 +106,13 @@ reads or writes. Claude loads it before shelling out to `heal` from
 any other skill so the CLI surface is treated as a stable contract,
 not inferred from `--help` text.
 
-## `/heal-config` — calibration + config tuning
+## `/heal-setup` — setup wizard
 
-Calibrates the project, surveys the codebase, asks the user to
-pick a strictness level (Strict / Default / Lenient), and writes
-or updates `.heal/config.toml` accordingly.
+One-shot setup wizard. It calibrates the project, surveys the
+codebase, asks for a strictness level (Strict / Default / Lenient),
+writes or updates `.heal/config.toml`, then asks whether to enable
+each optional feature family (`[features.docs]`, `[features.test]`)
+and chains to the companion setup skill if you opt in.
 
 Use it when:
 
@@ -119,15 +121,21 @@ Use it when:
   a layer rewrite).
 - When you want to shift the quality bar without remembering every
   threshold.
+- When you want to turn on docs or coverage observers without
+  hand-editing `[features.*]` blocks.
 
-`/heal-config` also recommends `heal calibrate --force` when the
+If you accept `[features.docs]`, `/heal-setup` populates the
+`[features.docs.standalone]` include / exclude globs from the
+project's actual doc layout and chains to `/heal-doc-pair-setup`
+to generate `.heal/doc_pairs.json`. If you accept `[features.test]`,
+it populates `test_paths` and `lcov_paths` from the detected
+language stack and chains to `/heal-test-reporter-setup` for the
+language-specific lcov reporter wiring.
+
+`/heal-setup` also recommends `heal calibrate --force` when the
 calibration baseline has drifted enough to matter — file count
 moved significantly, the calibration is old relative to project
 velocity, or every Critical has been drained for a sustained run.
-
-When `[features.docs]` or `[features.test]` is enabled,
-`/heal-config` also picks up the relevant `[calibration.*]` tables
-and suggests opt-in defaults for the family-specific knobs.
 
 ## Updating
 

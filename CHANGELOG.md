@@ -24,6 +24,25 @@
 
 ### ⚠ BREAKING
 
+- **`/heal-config` skill renamed to `/heal-setup`, with feature gates
+  for `[features.docs]` and `[features.test]`.** The skill is now a
+  one-shot setup wizard rather than a config-only tuner: after
+  writing `.heal/config.toml` at the chosen strictness level, it
+  asks (via `AskUserQuestion`) whether to enable each optional
+  feature family and, on opt-in, populates
+  `[features.docs.standalone]` paths or `test_paths` / `lcov_paths`
+  from a codebase survey before chaining to the companion setup
+  skill (`/heal-doc-pair-setup`, `/heal-test-reporter-setup`). The
+  rename and the new responsibilities are user-visible — every
+  trigger phrase, the slash-command form, and the bundled-skill
+  directory shipped under the binary all change.
+  **Migration:** replace `/heal-config` with `/heal-setup` in any
+  prompts, scripts, or docs you've written. The bundled skill on
+  disk migrates on `heal skills update --force`; the source dir
+  is now `crates/cli/skills/heal-setup/`. References to the old
+  name in existing CHANGELOG entries are kept verbatim as
+  historical record.
+
 - **Per-metric `enabled` toggle replaced by `[metrics] disabled = [...]`.**
   Each `[metrics.<m>]` section had its own `enabled = true/false`
   field along with a `Toggle`-trait pattern that ensured every

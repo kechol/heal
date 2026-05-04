@@ -191,7 +191,7 @@ prefixed `heal-`. Trigger forms in skill bodies are slash-commands.
 | Canonical skill name | Slash-command form | Role |
 |---|---|---|
 | `heal-cli` | `/heal-cli` | CLI reference (read-only). |
-| `heal-config` | `/heal-config` | Calibrate + write `.heal/config.toml`. |
+| `heal-setup` | `/heal-setup` | Calibrate + write `.heal/config.toml`; gate `[features.docs]` / `[features.test]` (chains to `/heal-doc-pair-setup` / `/heal-test-reporter-setup`). **Was** `heal-config`. |
 | `heal-code-review` | `/heal-code-review` | Read-only architectural analysis. **Was** `heal-code-check`. |
 | `heal-code-patch` | `/heal-code-patch` | Drain cache, one finding per commit. **Was** `heal-code-fix`. |
 | `heal-doc-pair-setup` | `/heal-doc-pair-setup` | `[features.docs]` only. Detect doc ⇔ src pairs and write `.heal/doc_pairs.json`. SSoT writer. |
