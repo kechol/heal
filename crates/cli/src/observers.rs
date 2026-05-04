@@ -173,14 +173,30 @@ pub(crate) fn run_all(
         );
         report
     });
-    // Load the docs SSoT and Layer B walk once and reuse the results
-    // for every downstream docs observer.
-    let doc_pairs = if cfg.features.docs.enabled {
+    // Docs prep is gated on whether any consumer was actually
+    // requested — `heal metrics --metric ccn` shouldn't pay
+    // ~300 `stat()` calls + the doc-body I/O when nothing
+    // downstream will read the result. Pre-PR1 the boost path
+    // forced this prep on every `heal status`; once boosts went
+    // away the gate became user-driven.
+    let want_doc_pairs_consumer = cfg.features.docs.enabled
+        && (want(MetricKind::DocFreshness)
+            || want(MetricKind::DocDrift)
+            || want(MetricKind::DocCoverage)
+            || want(MetricKind::OrphanPages)
+            || want(MetricKind::DocHotspot));
+    let want_doc_corpus_consumer = cfg.features.docs.enabled
+        && (want(MetricKind::Duplication)
+            || want(MetricKind::DocLinkHealth)
+            || want(MetricKind::OrphanPages)
+            || want(MetricKind::TodoDensity));
+    let want_docs_prep = want_doc_pairs_consumer || want_doc_corpus_consumer;
+    let doc_pairs = if want_docs_prep {
         load_doc_pairs(project, cfg)
     } else {
         None
     };
-    let standalone_docs: Vec<std::path::PathBuf> = if cfg.features.docs.enabled {
+    let standalone_docs: Vec<std::path::PathBuf> = if want_doc_corpus_consumer {
         walk_standalone_docs(project, cfg)
     } else {
         Vec::new()
@@ -196,7 +212,7 @@ pub(crate) fn run_all(
             all_doc_paths.push(p.clone());
         }
     }
-    let doc_corpus: Vec<crate::observer::docs::corpus::DocBody> = if cfg.features.docs.enabled {
+    let doc_corpus: Vec<crate::observer::docs::corpus::DocBody> = if want_doc_corpus_consumer {
         crate::observer::docs::corpus::read_doc_bodies(project, &all_doc_paths)
     } else {
         Vec::new()
@@ -220,8 +236,11 @@ pub(crate) fn run_all(
     // observer. `live_pairs` does an existence check per doc + per src,
     // so calling it three times (freshness, drift, coverage) burned
     // ~300 stat() calls on a 50-pair project.
-    let live_pairs: Vec<_> =
-        crate::observer::docs::freshness::live_pairs(doc_pairs.as_ref(), project);
+    let live_pairs: Vec<_> = if want_doc_pairs_consumer {
+        crate::observer::docs::freshness::live_pairs(doc_pairs.as_ref(), project)
+    } else {
+        Vec::new()
+    };
     let coverage = (want(MetricKind::CoveragePct)
         && cfg.features.test.enabled
         && cfg.features.test.coverage.enabled)
