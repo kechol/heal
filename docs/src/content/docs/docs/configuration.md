@@ -1,6 +1,6 @@
 ---
 title: Docs · Configuration
-description: How to enable [features.docs], pick which standalone docs to scan, tune the freshness floors, and understand the .heal/doc_pairs.json file.
+description: How to enable [features.docs], pick which standalone docs to scan, tune the freshness floors, configure the scaffold root, and understand the .heal/doc_pairs.json file.
 ---
 
 The **Docs** family is opt-in. Off by default — turn it on when
@@ -28,8 +28,9 @@ below.
 
 ```toml
 [features.docs]
-enabled    = false                           # master switch
-pairs_path = ".heal/doc_pairs.json"          # SSoT location
+enabled       = false                        # master switch
+pairs_path    = ".heal/doc_pairs.json"       # SSoT location
+scaffold_root = ".heal/docs"                 # /heal-doc-scaffold output root
 ```
 
 - `enabled` (default `false`) — master switch. While false, every
@@ -38,6 +39,16 @@ pairs_path = ".heal/doc_pairs.json"          # SSoT location
 - `pairs_path` (default `.heal/doc_pairs.json`) — project-relative
   path to the pair file. heal only reads it; generation is the
   `/heal-doc-pair-setup` skill's job.
+- `scaffold_root` (default `.heal/docs`) — project-relative root
+  the `/heal-doc-scaffold` skill writes Markdown skeletons into.
+  heal itself never reads or writes this tree — the field is
+  consumer metadata so teammates regenerating the scaffold land
+  in the same place. The default keeps output under the `.heal/`
+  umbrella so it doesn't collide with any existing `docs/`
+  directory the project owns. Once you've reviewed the
+  skeletons, promote them with `git mv .heal/docs docs` and set
+  `scaffold_root = "docs"` so the next regeneration writes
+  directly into the published location.
 
 ## `[features.docs.standalone]`
 

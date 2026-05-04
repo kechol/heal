@@ -19,7 +19,7 @@ Skills group along the three feature families:
 - **Code** (always-on observer family): `heal-cli`, `heal-setup`,
   `heal-code-review`, `heal-code-patch`.
 - **`[features.docs]`** (opt-in): `heal-doc-pair-setup`,
-  `heal-doc-review`, `heal-doc-patch`.
+  `heal-doc-scaffold`, `heal-doc-review`, `heal-doc-patch`.
 - **`[features.test]`** (opt-in): `heal-test-reporter-setup`,
   `heal-test-review`, `heal-test-patch`.
 
@@ -42,6 +42,7 @@ crates/cli/skills/
 ├── heal-code-review/               # read-only architectural review
 ├── heal-code-patch/                # mechanical drain, one finding/commit
 ├── heal-doc-pair-setup/            # write .heal/doc_pairs.json (SSoT)
+├── heal-doc-scaffold/              # stand up the wiki tree from scratch
 ├── heal-doc-review/                # read-only Diátaxis-grounded doc review
 ├── heal-doc-patch/                 # mechanical drain of doc findings
 ├── heal-test-reporter-setup/       # propose lcov reporter + CI config
@@ -63,6 +64,7 @@ loaded on demand (`heal-setup/references/config.md`,
 | `heal-code-review` | Code | Read every `heal status --all --json` finding, deeply investigate, return one architectural reading + prioritized refactor TODO list. Read-only — proposes only. | write counterpart `heal-code-patch` |
 | `heal-code-patch` | Code | Drain the cache fixing one finding per commit in Severity order. Refuses dirty worktree. Calls `heal mark fix` after each commit. **Does not push or open PRs.** | write counterpart of `heal-code-review` |
 | `heal-doc-pair-setup` | `[features.docs]` | One-shot: detect doc ⇔ src pairs (mention regex + directory mirror + optional LLM) and write `.heal/doc_pairs.json`. Read-only on source; only writes the SSoT. Manual entries are preserved across regenerations. | — |
+| `heal-doc-scaffold` | `[features.docs]` | Stand up the project's wiki from nothing, autonomously, and re-runnable safely. Five-phase pipeline (Detect codebase → Survey existing tree → Reconcile → Emit → Report): re-invocation flows fresh codebase signal into auto-managed sections without disturbing hand-edits. Strict emit gate — a page lands only when the codebase can fill it with meaningful content. Tier 1 always emits; Tier 2-3 conditional pages emit when their detection trigger fires AND auto-fill is mostly real content. Skeleton-only pages are **not emitted on first run** (Quality Goals, Bounded Context Map, Roadmap, Risks, Service Overview, SLOs, Runbooks, Postmortems, On-call Onboarding, Security) — the user authors them when they have the input. `TODO(human):` markers ship inside exactly **one** file: the ADR template (`decisions/0000-template.md`). No `AskUserQuestion` calls; detection signals alone drive the emit plan. Three flags govern existing-tree behaviour: default = reconcile (per-section refresh + preserve hand-edits); `--missing-only` = additive bootstrap; `--force` = regenerate emit-set pages from scratch. Files outside the emit set are sacred in every mode. Frontmatter is one field (`title:`); state recoverable from `git log` or body content was dropped. Output under `[features.docs] scaffold_root` (default `.heal/docs/`). | precedes `heal-doc-pair-setup` for new projects |
 | `heal-doc-review` | `[features.docs]` | Read every doc-family finding from `heal status --json`, frame through Diátaxis (Tutorial / How-to / Reference / Explanation), and return one architectural reading + prioritized doc-fix TODO. Read-only. | write counterpart `heal-doc-patch` |
 | `heal-doc-patch` | `[features.docs]` | Drain doc findings one finding per commit (broken internal links, dangling identifier removal, orphan registration, resolvable TODOs). Allow-list / escalate-list is doc-specific. Refuses dirty worktree. | write counterpart of `heal-doc-review` |
 | `heal-test-reporter-setup` | `[features.test]` | Detect language stack (Rust / Python / JS-TS / Go / Scala / mixed) and propose lcov reporter + CI config so `lcov.info` lands at one of HEAL's default `lcov_paths`. Read-only — proposes commands without running them. | — |

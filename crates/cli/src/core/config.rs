@@ -90,6 +90,18 @@ pub struct DocsConfig {
     /// skill's responsibility. Defaults to `.heal/doc_pairs.json`.
     #[serde(default = "DocsConfig::default_pairs_path")]
     pub pairs_path: String,
+    /// Project-relative root the `/heal-doc-scaffold` skill writes
+    /// page skeletons into. The HEAL binary never reads or writes
+    /// this tree itself; it is consumer metadata for the skill so
+    /// teammates re-running the scaffold land in the same place.
+    /// Defaults to `.heal/docs` — same `.heal/` umbrella as
+    /// `pairs_path`, `calibration.toml`, and `findings/`. The
+    /// default keeps scaffold output out of any pre-existing
+    /// `docs/` tree the project already owns (Starlight, mdBook,
+    /// mkdocs); promote to a published location with
+    /// `scaffold_root = "docs"` once the skeletons are reviewed.
+    #[serde(default = "DocsConfig::default_scaffold_root")]
+    pub scaffold_root: String,
     /// Layer B — standalone prose docs (README, concept guides) that
     /// need link / orphan / todo / duplication checks but no pair
     /// matching.
@@ -115,9 +127,14 @@ impl Eq for DocsConfig {}
 
 impl DocsConfig {
     pub(crate) const DEFAULT_PAIRS_PATH: &'static str = ".heal/doc_pairs.json";
+    pub(crate) const DEFAULT_SCAFFOLD_ROOT: &'static str = ".heal/docs";
 
     fn default_pairs_path() -> String {
         Self::DEFAULT_PAIRS_PATH.to_owned()
+    }
+
+    fn default_scaffold_root() -> String {
+        Self::DEFAULT_SCAFFOLD_ROOT.to_owned()
     }
 }
 
@@ -126,6 +143,7 @@ impl Default for DocsConfig {
         Self {
             enabled: false,
             pairs_path: Self::default_pairs_path(),
+            scaffold_root: Self::default_scaffold_root(),
             standalone: StandaloneDocsConfig::default(),
             doc_freshness: DocFreshnessConfig::default(),
             hotspot: DocHotspotConfig::default(),

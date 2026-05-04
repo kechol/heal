@@ -798,6 +798,7 @@ fn features_docs_default_disabled() {
     let cfg: Config = Config::from_toml_str("").unwrap();
     assert!(!cfg.features.docs.enabled);
     assert_eq!(cfg.features.docs.pairs_path, ".heal/doc_pairs.json");
+    assert_eq!(cfg.features.docs.scaffold_root, ".heal/docs");
     assert_eq!(cfg.features.docs.doc_freshness.high_commits, 5);
     assert_eq!(cfg.features.docs.doc_freshness.critical_commits, 20);
     // Standalone defaults pre-populate sensible Markdown / RST globs.
@@ -824,6 +825,7 @@ fn features_docs_enable_round_trips() {
         [features.docs]
         enabled = true
         pairs_path = ".heal/custom_pairs.json"
+        scaffold_root = "wiki"
 
         [features.docs.doc_freshness]
         high_commits = 3
@@ -836,6 +838,7 @@ fn features_docs_enable_round_trips() {
     let parsed = Config::from_toml_str(cfg).unwrap();
     assert!(parsed.features.docs.enabled);
     assert_eq!(parsed.features.docs.pairs_path, ".heal/custom_pairs.json");
+    assert_eq!(parsed.features.docs.scaffold_root, "wiki");
     assert_eq!(parsed.features.docs.doc_freshness.high_commits, 3);
     assert_eq!(parsed.features.docs.doc_freshness.critical_commits, 12);
     assert_eq!(

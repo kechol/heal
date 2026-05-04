@@ -4,6 +4,62 @@
 
 ### Features
 
+- **New skill: `/heal-doc-scaffold` — stand up the project's
+  documentation tree from scratch, autonomously, and safely
+  re-runnable.** Five-phase pipeline (Detect codebase → Survey
+  existing scaffold tree → Reconcile → Emit → Report) means
+  re-invocation is a first-class operation: re-runs flow fresh
+  codebase signal into auto-managed sections without disturbing
+  hand-edits. Per-section reconcile classifies each existing
+  section as auto-managed (refresh allowed), hand-authored
+  (preserve), or user-added (preserve verbatim). Files outside
+  the emit set are sacred in every mode, including `--force`.
+  The emit gate is **strict**: a page lands only when the
+  codebase can fill it with meaningful content. Tier 1 (README,
+  Wiki Index, System Context, Architecture Overview, Glossary,
+  Getting Started) always emits because every project has the
+  signal. Tier 2-3 pages (Module Map, Feature Catalog, ADR
+  Index + Template, Contributing, Runtime Views, API Reference,
+  Data Model, Deployment View, Crosscutting Concepts, Test
+  Strategy) emit when their detection trigger fires AND the
+  resulting page is mostly auto-fill. **Skeleton-only pages are
+  not emitted** — Quality Goals, Bounded Context Map, Roadmap,
+  Risk Register, Service Overview, SLO Doc, Runbooks,
+  Postmortems, On-call Onboarding, and Security Posture are
+  skipped on first run because their content is organisational
+  / forward-looking / incident-reactive; the user authors them
+  when they have the input. `TODO(human):` markers ship inside
+  exactly **one** file — the ADR template
+  (`decisions/0000-template.md`) — where the markers cue the
+  writer when copying the template to file the next ADR. No
+  `AskUserQuestion` calls; detection signals alone drive the
+  emit plan. Three flags govern existing-tree behaviour:
+  default = reconcile (per-section refresh + preserve);
+  `--missing-only` = additive bootstrap (only new files);
+  `--force` = regenerate emit-set pages from scratch (overrides
+  hand-edits — explicit user choice). Frontmatter on every
+  emitted page is one field (`title:`); earlier-draft
+  classification / state fields were dropped because each was
+  either recoverable from `git log` or duplicating body
+  content. Output lands under
+  `[features.docs] scaffold_root` (new field, default
+  `.heal/docs`). The skill is the bootstrap counterpart to
+  `/heal-doc-pair-setup` (mapping) / `/heal-doc-review` (audit)
+  / `/heal-doc-patch` (drain). New config field
+  `[features.docs] scaffold_root` is the only schema change —
+  consumer metadata for the skill (the HEAL binary never reads
+  or writes the scaffold tree itself), defaults to
+  `.heal/docs` so the first run doesn't collide with a
+  pre-existing `docs/`, and is intended to be promoted to
+  `"docs"` once the user reviews the output
+  (`git mv .heal/docs docs`). References:
+  `crates/cli/skills/heal-doc-scaffold/SKILL.md` plus
+  `references/{page-catalog,page-templates,wiki-organization}.md`;
+  the literature lineage (Diátaxis, DeepWiki, arc42, C4, DDD,
+  ADR, SRE) and the autonomy / minimal-frontmatter / no-
+  skeleton-pages / idempotent-reconcile rationale live in
+  `.claude/docs/doc-scaffold-design.md`.
+
 - **`heal init` writes `config.toml` in minimal form by default.**
   Previously every fresh `.heal/config.toml` restated 80+ lines of
   default values (`since_days = 90`, `enabled = true`, the full

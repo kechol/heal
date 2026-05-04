@@ -15,6 +15,7 @@ or `README.md`.
 | [skills-and-hooks.md](./skills-and-hooks.md) | You touch `crates/cli/skills/`, `claude_settings.rs`, `skill_assets.rs`, or the post-commit hook. |
 | [conventions.md](./conventions.md) | Error handling, atomic writes, FNV-1a, `deny_unknown_fields`, tests, lints. |
 | [prior-art.md](./prior-art.md) | You are about to add an observer or refactoring pattern. Lineage, what was rejected, what is out-of-scope. |
+| [doc-scaffold-design.md](./doc-scaffold-design.md) | You touch the `/heal-doc-scaffold` skill, its references, or the page catalog. Lineage (Diátaxis × DeepWiki × arc42 × C4 × DDD × ADR × SRE), reader-question matrix, AI-generation tradeoffs, anti-patterns the catalog refuses. |
 
 For **rules** ("things you must / must not do, derived from past sessions"),
 see `.claude/rules/`. The split is deliberate:

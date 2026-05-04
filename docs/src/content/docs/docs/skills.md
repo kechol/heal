@@ -1,12 +1,14 @@
 ---
 title: Docs · Skills
-description: The three bundled Claude Code skills for [features.docs] — /heal-doc-pair-setup, /heal-doc-review, /heal-doc-patch.
+description: The four bundled Claude Code skills for [features.docs] — /heal-doc-pair-setup, /heal-doc-scaffold, /heal-doc-review, /heal-doc-patch.
 ---
 
-The opt-in **Docs** family ships three Claude skills, extracted
+The opt-in **Docs** family ships four Claude skills, extracted
 alongside the Code-family skills on `heal skills install` /
 `heal init`. They only act on findings produced by the docs
-observers.
+observers, with one exception: `/heal-doc-scaffold` works even
+on projects that don't enable `[features.docs]` — its output
+just becomes observable once the family is turned on.
 
 For installation and the drift-aware update model, see
 [Code › Skills](/heal/code/skills/) — the mechanism is shared.
@@ -51,6 +53,74 @@ read it back the next time they run.
 
 Trigger phrases: "set up doc pairs", "generate doc_pairs.json",
 "initialize heal docs", "/heal-doc-pair-setup".
+
+## `/heal-doc-scaffold` — stand up the wiki from nothing
+
+Bootstrap skill, safe to invoke any number of times. Five
+phases — Detect codebase → Survey existing tree → Reconcile →
+Emit → Report — flow current codebase signal into the
+documentation tree without disturbing hand-edits. Output lands
+as Markdown under `[features.docs] scaffold_root`
+(default `.heal/docs/`).
+
+The skill's contract:
+
+- **Detection-driven, not interactive.** Detection signals alone
+  decide what emits — no `AskUserQuestion`, no per-page menus.
+  The user reviews the emitted tree and removes pages they
+  don't want; one review action, not many prompts.
+- **Strict emit gate — no skeleton-only pages.** A page lands
+  only when the codebase can fill it with meaningful content.
+  Tier 1 (README, Wiki Index, System Context, Architecture
+  Overview, Glossary, Getting Started) always emits. Tier 2-3
+  conditional pages (Module Map, Feature Catalog, ADR
+  Index + Template, Contributing, Runtime Views, API
+  Reference, Data Model, Deployment View, Crosscutting
+  Concepts, Test Strategy) emit when their trigger fires AND
+  auto-fill is mostly real content. Pages whose value is
+  organisational / forward-looking / incident-reactive
+  (Quality Goals, Bounded Context Map, Roadmap, Risks
+  Register, Service Overview, SLOs, Runbooks, Postmortems,
+  On-call Onboarding, Security Posture) are **not emitted on
+  first run** — the user authors them when they have the
+  input.
+- **Auto-fills aggressively.** Container lists from manifests,
+  module responsibilities from doc comments, glossary seeds
+  from exported symbols, contributing rules from CI configs,
+  ER tables from migrations, runtime diagrams from detected
+  entry points. Cells the skill can't fill confidently are
+  **not emitted at all** — invented owner names, made-up SLO
+  numbers, hand-waved security policy are forbidden.
+- **`TODO(human):` lives in one file.** The ADR template
+  (`decisions/0000-template.md`) is the only emitted file
+  carrying `TODO(human):` markers — they cue the writer when
+  they copy the template to file the next ADR.
+- **Idempotent — safe to re-run.** Default mode reconciles
+  per-section: auto-managed sections refresh from current
+  codebase signal, hand-authored sections are preserved
+  verbatim, user-added sections are passed through. Flags:
+  `--missing-only` (additive bootstrap; only new files);
+  `--force` (regenerate emit-set pages from scratch — overrides
+  hand-edits, explicit user choice). Files outside the emit
+  set are sacred in every mode.
+- **Minimal frontmatter.** One field per page — `title:`. No
+  `diataxis` / `audience` / `freshness_owner` /
+  `last_review` / `review_cycle` / `related_*` arrays:
+  recoverable from `git log` or already in the body.
+- **Caps at ≈ 28 page types.** Six-category top-level layout
+  (Quick Start / Architecture / Reference / Operations /
+  Decisions / Contributing) keeps navigation flat.
+
+The page catalog merges Diátaxis (purpose), arc42 (architecture
+sections), C4 model (zoom levels), strategic DDD (Bounded
+Contexts), ADR (decision records), SRE (operational pages),
+and DeepWiki (empirical AI-Wiki regularities). For the lineage,
+see the skill's `references/page-catalog.md` and
+`references/wiki-organization.md`.
+
+Trigger phrases: "scaffold the docs tree", "generate the wiki
+skeleton", "build the documentation from scratch",
+"/heal-doc-scaffold".
 
 ## `/heal-doc-review` — the audit skill
 

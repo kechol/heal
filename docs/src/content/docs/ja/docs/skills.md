@@ -1,9 +1,9 @@
 ---
 title: Docs · スキル
-description: "[features.docs] 向け同梱 Claude Code スキル 3 種 — /heal-doc-pair-setup、/heal-doc-review、/heal-doc-patch。"
+description: "[features.docs] 向け同梱 Claude Code スキル 4 種 — /heal-doc-pair-setup、/heal-doc-scaffold、/heal-doc-review、/heal-doc-patch。"
 ---
 
-オプトインの **Docs** ファミリは Claude スキルを 3 種同梱しています。`heal skills install` / `heal init` で Code ファミリスキルと並んで展開されますが、docs オブザーバが生む findings にしか作用しません。
+オプトインの **Docs** ファミリは Claude スキルを 4 種同梱しています。`heal skills install` / `heal init` で Code ファミリスキルと並んで展開され、原則として docs オブザーバが生む findings にしか作用しません。例外は `/heal-doc-scaffold` で、`[features.docs]` を有効化していないプロジェクトでも動きます — その出力はファミリを有効化した時点で観測対象に入ります。
 
 インストール手順とドリフト認識付きの更新の仕組みは [Code › スキル](/heal/ja/code/skills/) を参照(共通の仕組みです)。
 
@@ -34,6 +34,24 @@ heal はこのファイルの決定論的な **消費者** で、検出ロジッ
 `.heal/doc_pairs.json` のみ。ソースファイルに対しては読み取り専用です。`[features.docs]` のオブザーバが次に走るときに、`heal status` と `heal metrics` がこれを読み返します。
 
 トリガーフレーズ: 「set up doc pairs」、「generate doc_pairs.json」、「initialize heal docs」、「/heal-doc-pair-setup」。
+
+## `/heal-doc-scaffold` — Wiki をゼロから組む
+
+ブートストラップスキル。何度呼び出しても安全に動作します。5 フェーズ(コードベース検出 → 既存ツリー走査 → 再構成 → 出力 → レポート)を経て、現在のコードベースシグナルを既存のドキュメントツリーに流し込みます — 手書き編集を破壊せずに。出力先は `[features.docs] scaffold_root`(デフォルト `.heal/docs/`)配下の Markdown ツリーです。
+
+スキルの契約:
+
+- **検出ベースで自動判定、対話なし。** 何を emit するかは検出シグナルだけが決めます — `AskUserQuestion` もページ単位のメニューもなし。ユーザーは生成ツリーをレビューして不要ページを削除する — 複数のメニュー応答よりレビュー 1 回の方が早いという設計判断。
+- **厳格な emit ゲート — skeleton-only ページを生成しません。** ページが落ちるのはコードベースから意味のあるコンテンツで埋められる時だけ。Tier 1(README、Wiki Index、System Context、Architecture Overview、Glossary、Getting Started)は常に出力。Tier 2-3 の条件付きページ(Module Map、Feature Catalog、ADR Index + Template、Contributing、Runtime Views、API Reference、Data Model、Deployment View、Crosscutting Concepts、Test Strategy)はトリガーが立ち、かつ auto-fill が大半を占める時に出力。組織判断・将来計画・インシデント反応的なページ(Quality Goals、Bounded Context Map、Roadmap、Risks Register、Service Overview、SLO、Runbook、Postmortem、On-call Onboarding、Security Posture)は **初回実行では出力されません** — ユーザーが入力を持ってから自分で書きます。
+- **積極的に auto-fill。** マニフェストからコンテナ一覧、doc コメントからモジュール責務、エクスポートシンボルから glossary シード、CI 設定から contributing ルール、migrations から ER テーブル、検出されたエントリポイントから runtime シーケンス図 — 検出可能なものはすべて埋めます。確実に埋められないセルは **そのページ自体を出力しません**。オーナー名・ダッシュボード URL・SLO 数値などのでっち上げは禁止。
+- **`TODO(human):` は 1 ファイルにだけ。** ADR テンプレート(`decisions/0000-template.md`)が `TODO(human):` を持つ唯一の出力ファイルです — 次回 ADR を書くときにテンプレートをコピーする際の cue になります。
+- **冪等 — 何度実行しても安全。** デフォルトはセクション単位の reconcile: auto-managed セクションは現在のコードベースシグナルから refresh、hand-authored セクションはそのまま保持、ユーザー追加セクションはバイト単位で素通し。フラグ: `--missing-only`(追加のみ・既存に手を出さない)、`--force`(emit セット内ページをまるごと再生成 — 手書き編集を上書きする明示的選択)。emit セット外のファイルはどのモードでも不可侵。
+- **frontmatter は最小。** 1 ページ 1 フィールド(`title:`)のみ。`diataxis` / `audience` / `freshness_owner` / `last_review` / `review_cycle` / `related_*` 配列は廃止 — `git log` で取り戻せる状態や本体に既にある情報を重複保持する分が、状態管理ドリフトの温床だったため。
+- **概ね 28 ページタイプで頭打ち。** トップレベル 6 カテゴリ固定(Quick Start / Architecture / Reference / Operations / Decisions / Contributing)でナビゲーションをフラットに保ちます。
+
+ページカタログは Diátaxis(目的)、arc42(アーキテクチャセクション)、C4 model(ズーム階層)、戦略的 DDD(Bounded Context)、ADR(意思決定記録)、SRE(運用ページ)、DeepWiki(AI Wiki の経験則)を統合しています。系譜の詳細はスキルの `references/page-catalog.md` と `references/wiki-organization.md` を参照。
+
+トリガーフレーズ: 「scaffold the docs tree」、「generate the wiki skeleton」、「build the documentation from scratch」、「/heal-doc-scaffold」。
 
 ## `/heal-doc-review` — 監査スキル
 

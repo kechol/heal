@@ -267,6 +267,7 @@ Config { project, git, metrics, policy, diff, features }
   └── FeaturesConfig { docs, test }
         ├── DocsConfig { enabled = false,
         │                 pairs_path = ".heal/doc_pairs.json",
+        │                 scaffold_root = ".heal/docs",
         │                 standalone, doc_freshness }
         │     ├── StandaloneDocsConfig { include, exclude }
         │     └── DocFreshnessConfig { high_commits = 5,
@@ -332,6 +333,7 @@ applies. `TestCoverageConfig.lcov_paths` defaults to `lcov.info`,
 | `[metrics.duplication]` | `docs_min_tokens` | `100` | Markdown / RST window — only used when `[features.docs]` is on. |
 | `[features.docs]` | `enabled` | `false` | Master switch for the docs family. |
 | `[features.docs]` | `pairs_path` | `".heal/doc_pairs.json"` | SSoT path consumed by Layer A observers. |
+| `[features.docs]` | `scaffold_root` | `".heal/docs"` | Where `/heal-doc-scaffold` writes page skeletons. HEAL itself never reads or writes this tree — consumer metadata only. |
 | `[features.docs.doc_freshness]` | `high_commits` | `5` | src commits past doc → High. |
 | `[features.docs.doc_freshness]` | `critical_commits` | `20` | src commits past doc → Critical. |
 | `[features.docs.standalone]` | `include` | `["**/*.md", "**/*.rst"]` | Layer B globs. |

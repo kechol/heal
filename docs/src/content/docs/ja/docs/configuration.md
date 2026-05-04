@@ -1,6 +1,6 @@
 ---
 title: Docs · 設定
-description: "[features.docs] の有効化、standalone ドキュメントの選択、freshness フロアの調整、.heal/doc_pairs.json の理解。"
+description: "[features.docs] の有効化、standalone ドキュメントの選択、freshness フロアの調整、scaffold ルートの設定、.heal/doc_pairs.json の理解。"
 ---
 
 **Docs** ファミリはオプトインです。デフォルトでオフ。コードメトリクスと並べて古いドキュメントを表面化したくなったら有効化してください。外部 HTTP リンクのチェックやサンプルコードの実行はスコープ外です(heal はローカル限定で動きます。HTTP 側は CI で `lychee` などを使ってください)。
@@ -20,12 +20,14 @@ enabled = true
 
 ```toml
 [features.docs]
-enabled    = false                           # マスタースイッチ
-pairs_path = ".heal/doc_pairs.json"          # ペアファイルの位置
+enabled       = false                        # マスタースイッチ
+pairs_path    = ".heal/doc_pairs.json"       # ペアファイルの位置
+scaffold_root = ".heal/docs"                 # /heal-doc-scaffold の出力先
 ```
 
 - `enabled`(デフォルト `false`) — マスタースイッチ。false の間は全 docs オブザーバが no-op になり、`.heal/doc_pairs.json` も参照されません。
 - `pairs_path`(デフォルト `.heal/doc_pairs.json`) — ペアファイルへのプロジェクト相対パス。heal は読むだけで、生成は `/heal-doc-pair-setup` の役割です。
+- `scaffold_root`(デフォルト `.heal/docs`) — `/heal-doc-scaffold` が Markdown skeleton を書き出すプロジェクト相対のルート。heal 本体はこのツリーを読み書きしません — チームメンバーが scaffold を再生成しても同じ場所に揃うようにするための消費者向けメタデータです。デフォルトを `.heal/docs` にしているのは、プロジェクトが既に持つ `docs/`(Starlight / mdBook / mkdocs)と衝突させないため。skeleton を確認したら `git mv .heal/docs docs` で公開ロケーションに昇格させ、`scaffold_root = "docs"` に書き換えると次回以降は直接そこに生成されます。
 
 ## `[features.docs.standalone]`
 
