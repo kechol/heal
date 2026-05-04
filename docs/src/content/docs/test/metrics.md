@@ -111,6 +111,35 @@ the source is happening without it".
 Doc ↔ source pairs never promote to drift — drift is a test-quality
 signal.
 
+## `test_hotspot` — where unverified change is piling up
+
+`test_hotspot` is the test-family analogue of code Hotspot. It
+ranks src files by `commits × uncov_pct`: high score = the file
+keeps changing **and** large slices of it stay untested. The
+literature anchor for "unverified change" is more direct than CCN
+for the test question — a low-CCN config loader with 0% coverage
+and 30 commits is a real test target that code Hotspot would
+miss.
+
+```
+score = commits_in_90d × (100 - line_coverage_pct)
+```
+
+Files that lcov never mentioned but git churn touched count as
+100% gap (= untested) — the case the metric exists to surface.
+Files at 100% coverage drop to score 0.
+
+`test_hotspot` is itself always `Severity::Ok`; the score's job
+is to flip `hotspot=true` on `coverage_pct` Findings on the same
+file. Drain target stays "Critical AND `hotspot=true`", just
+scoped to the test family now.
+
+Default graduation gate is `[features.test.hotspot] floor_ok = 25`
+(roughly "1 commit × 25% gap" — the literature anchor for
+"75% coverage = decent" gives the gap floor). Override if the
+project's `test_hotspot` distribution makes the default too
+strict / too loose.
+
 ## Post-commit nudge: "uncovered hotspot"
 
 ```

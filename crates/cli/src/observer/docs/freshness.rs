@@ -23,7 +23,7 @@ use crate::core::config::Config;
 use crate::core::doc_pairs::{DocPair, DocPairsFile};
 use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
-use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
+use crate::feature::{decorate, Family, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
 /// Stateless observer; constructing one is cheap. The pairs come from
 /// the `SSoT` loaded by `observers::run_all` — the observer never reads
@@ -323,6 +323,9 @@ impl Feature for DocFreshnessFeature {
     }
     fn enabled(&self, cfg: &Config) -> bool {
         cfg.features.docs.enabled
+    }
+    fn family(&self) -> Family {
+        Family::Docs
     }
     fn lower(
         &self,

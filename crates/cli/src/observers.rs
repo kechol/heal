@@ -9,7 +9,7 @@ use std::path::Path;
 use crate::core::calibration::{
     Calibration, CalibrationMeta, HotspotCalibration, MetricCalibration, MetricCalibrations,
     MetricFloors, FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_DUPLICATION_PCT, FLOOR_OK_CCN,
-    FLOOR_OK_COGNITIVE, STRATEGY_PERCENTILE,
+    FLOOR_OK_COGNITIVE, FLOOR_OK_DOC_HOTSPOT, FLOOR_OK_TEST_HOTSPOT, STRATEGY_PERCENTILE,
 };
 use crate::core::config::Config;
 use crate::core::doc_pairs::DocPairsFile;
@@ -26,6 +26,7 @@ use crate::observer::code::loc::{LocObserver, LocReport};
 use crate::observer::docs::coverage::{DocCoverageObserver, DocCoverageReport};
 use crate::observer::docs::drift::{DocDriftObserver, DocDriftReport};
 use crate::observer::docs::freshness::{DocFreshnessObserver, DocFreshnessReport};
+use crate::observer::docs::hotspot::{compose as compose_doc_hotspot, DocHotspotReport};
 use crate::observer::docs::link_health::{
     paired_doc_paths, DocLinkHealthObserver, DocLinkHealthReport,
 };
@@ -33,6 +34,7 @@ use crate::observer::docs::orphan_pages::{OrphanPagesObserver, OrphanPagesReport
 use crate::observer::docs::todo_density::{TodoDensityObserver, TodoDensityReport};
 use crate::observer::docs::walk::walk_standalone_docs;
 use crate::observer::test::coverage::{CoverageObserver, CoverageReport};
+use crate::observer::test::hotspot::{compose as compose_test_hotspot, TestHotspotReport};
 use crate::observer::test::skip_ratio::{SkipRatioObserver, SkipRatioReport};
 
 use crate::cli::MetricKind;
@@ -77,6 +79,13 @@ pub struct ObserverReports {
     /// Per-test-file skipped-test ratio. `None` whenever
     /// `[features.test]` is disabled or no `test_paths` are configured.
     pub skip_ratio: Option<SkipRatioReport>,
+    /// Per-src-file `commits × uncov_pct` composite. `None` unless
+    /// the user asked for the metric or `[features.test.coverage]` is
+    /// enabled (the per-family hotspot decoration uses this index).
+    pub test_hotspot: Option<TestHotspotReport>,
+    /// Per-pair `paired_src_churn × debt` composite. `None` unless
+    /// the user asked for the metric or `[features.docs]` is enabled.
+    pub doc_hotspot: Option<DocHotspotReport>,
 }
 
 /// Run the observers needed for the requested metric. `only = None`
@@ -102,6 +111,24 @@ pub(crate) fn run_all(
         None => true,
         Some(o) if o == m => true,
         Some(MetricKind::Hotspot) if matches!(m, MetricKind::Churn | MetricKind::Complexity) => {
+            true
+        }
+        // test_hotspot is `commits × uncov_pct` — needs both Churn and
+        // CoveragePct as inputs, so a `--metric test-hotspot` run pulls
+        // them in even when neither was named.
+        Some(MetricKind::TestHotspot)
+            if matches!(m, MetricKind::Churn | MetricKind::CoveragePct) =>
+        {
+            true
+        }
+        // doc_hotspot needs Churn (paired-src volatility) plus
+        // DocFreshness (staleness) plus DocDrift (dangling idents).
+        Some(MetricKind::DocHotspot)
+            if matches!(
+                m,
+                MetricKind::Churn | MetricKind::DocFreshness | MetricKind::DocDrift
+            ) =>
+        {
             true
         }
         // doc_freshness reads `.heal/doc_pairs.json` — independent of
@@ -246,6 +273,33 @@ pub(crate) fn run_all(
         // corpus already holds the union; pass it through directly.
         TodoDensityObserver::from_inputs(cfg, doc_corpus.clone()).scan()
     });
+    let test_hotspot = (want(MetricKind::TestHotspot)
+        && cfg.features.test.enabled
+        && cfg.features.test.coverage.enabled)
+        .then(|| {
+            // Universe-completion is load-bearing here — files that
+            // the lcov reporter dropped are the most important hot
+            // candidates, and they only enter the universe via
+            // ChurnReport. The `want()` extension ensures churn ran.
+            let ch = churn.as_ref();
+            let cov = coverage.as_ref();
+            ch.map(|ch| compose_test_hotspot(ch, cov))
+        })
+        .flatten();
+    let doc_hotspot =
+        (want(MetricKind::DocHotspot) && cfg.features.docs.enabled && doc_pairs.is_some())
+            .then(|| {
+                let ch = churn.as_ref()?;
+                let fr = doc_freshness.as_ref()?;
+                let dr = doc_drift.as_ref();
+                Some(compose_doc_hotspot(
+                    ch,
+                    fr,
+                    dr,
+                    cfg.features.docs.hotspot.weight_drift,
+                ))
+            })
+            .flatten();
     ObserverReports {
         loc,
         complexity,
@@ -264,6 +318,8 @@ pub(crate) fn run_all(
         todo_density,
         coverage,
         skip_ratio,
+        test_hotspot,
+        doc_hotspot,
     }
 }
 
@@ -502,6 +558,38 @@ fn build_metric_calibrations(
         non_empty(&values).then(|| MetricCalibration::from_distribution(&values, skip_ratio_floors))
     });
 
+    // Per-family hotspots: same `HotspotCalibration` shape as code
+    // hotspot, anchored on `FLOOR_OK_TEST_HOTSPOT` /
+    // `FLOOR_OK_DOC_HOTSPOT`. The floor is intentionally low — high
+    // floors silently block legitimate hot files from drain queues,
+    // whereas low floors only over-decorate in tiny projects, which
+    // calibration percentiles still gate.
+    let test_hotspot = reports.test_hotspot.as_ref().and_then(|h| {
+        let scores: Vec<f64> = h
+            .entries
+            .iter()
+            .filter(|e| file_filter(&e.path))
+            .map(|e| e.score)
+            .collect();
+        non_empty(&scores).then(|| {
+            HotspotCalibration::from_distribution_with_floor(&scores, Some(FLOOR_OK_TEST_HOTSPOT))
+        })
+    });
+    let doc_hotspot = reports.doc_hotspot.as_ref().and_then(|h| {
+        // Pair entries are filtered by *doc-side* path so cross-cohort
+        // pairs (workspace boundary spans) follow the doc into the
+        // workspace it belongs to.
+        let scores: Vec<f64> = h
+            .entries
+            .iter()
+            .filter(|e| file_filter(&e.doc_path))
+            .map(|e| e.score)
+            .collect();
+        non_empty(&scores).then(|| {
+            HotspotCalibration::from_distribution_with_floor(&scores, Some(FLOOR_OK_DOC_HOTSPOT))
+        })
+    });
+
     MetricCalibrations {
         ccn,
         cognitive,
@@ -511,6 +599,8 @@ fn build_metric_calibrations(
         lcom,
         coverage_pct,
         skip_ratio,
+        test_hotspot,
+        doc_hotspot,
     }
 }
 
@@ -523,6 +613,8 @@ fn has_any_table(m: &MetricCalibrations) -> bool {
         || m.lcom.is_some()
         || m.coverage_pct.is_some()
         || m.skip_ratio.is_some()
+        || m.test_hotspot.is_some()
+        || m.doc_hotspot.is_some()
 }
 
 /// Compose every enabled Feature's lowered Findings into one Vec,
@@ -733,6 +825,8 @@ mod tests {
             todo_density: None,
             coverage: None,
             skip_ratio: None,
+            test_hotspot: None,
+            doc_hotspot: None,
         };
 
         let cal = Calibration {
@@ -785,6 +879,8 @@ mod tests {
                 lcom: None,
                 coverage_pct: None,
                 skip_ratio: None,
+                test_hotspot: None,
+                doc_hotspot: None,
             },
             workspaces: BTreeMap::new(),
         };

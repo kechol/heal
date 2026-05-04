@@ -184,6 +184,12 @@ pub enum MetricKind {
     /// (`#[ignore]`, `it.skip`, `t.Skip()`, `@pytest.mark.skip`,
     /// `ScalaTest` `ignore`).
     SkipRatio,
+    /// `[features.test]` — per-src-file `commits × uncov_pct`
+    /// composite. Test-family analogue of code Hotspot.
+    TestHotspot,
+    /// `[features.docs]` — per-pair `paired_src_churn × debt`
+    /// composite. Docs-family analogue of code Hotspot.
+    DocHotspot,
 }
 
 impl MetricKind {
@@ -208,6 +214,8 @@ impl MetricKind {
             Self::TodoDensity => "todo_density",
             Self::CoveragePct => "coverage_pct",
             Self::SkipRatio => Finding::METRIC_SKIP_RATIO,
+            Self::TestHotspot => Finding::METRIC_TEST_HOTSPOT,
+            Self::DocHotspot => Finding::METRIC_DOC_HOTSPOT,
         }
     }
 }
@@ -243,6 +251,12 @@ pub enum FindingMetric {
     CoveragePct,
     /// `[features.test]` — skipped-test ratio per test file.
     SkipRatio,
+    /// `[features.test]` — per-src-file `commits × uncov_pct`
+    /// composite. Test-family analogue of code Hotspot.
+    TestHotspot,
+    /// `[features.docs]` — per-pair `paired_src_churn × debt`
+    /// composite. Docs-family analogue of code Hotspot.
+    DocHotspot,
 }
 
 impl FindingMetric {
@@ -271,6 +285,8 @@ impl FindingMetric {
             Self::TodoDensity => metric == "todo_density",
             Self::CoveragePct => metric == "coverage_pct",
             Self::SkipRatio => metric == Finding::METRIC_SKIP_RATIO,
+            Self::TestHotspot => metric == Finding::METRIC_TEST_HOTSPOT,
+            Self::DocHotspot => metric == Finding::METRIC_DOC_HOTSPOT,
         }
     }
 }

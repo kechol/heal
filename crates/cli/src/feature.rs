@@ -22,6 +22,8 @@ use crate::core::config::Config;
 use crate::core::finding::{Finding, Location};
 use crate::core::severity::Severity;
 use crate::observer::code::hotspot::HotspotReport;
+use crate::observer::docs::hotspot::DocHotspotReport;
+use crate::observer::test::hotspot::TestHotspotReport;
 
 /// Cheap, copyable metadata. Identifies the Feature in the registry
 /// listing and tags the records the runtime writes.
@@ -44,6 +46,19 @@ pub enum FeatureKind {
     CoverageReader,
 }
 
+/// Feature family. Drives per-family `HotspotIndex` dispatch in
+/// [`FeatureRegistry::lower_all`] so a `coverage_pct` Finding picks
+/// up `hotspot=true` from the [`Family::Test`] index, a `doc_drift`
+/// Finding from the [`Family::Docs`] index, and a `ccn` Finding from
+/// the [`Family::Code`] index. Also surfaced to user-facing
+/// `--feature` filters in the v0.4 status / metrics flow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Family {
+    Code,
+    Test,
+    Docs,
+}
+
 /// Per-file hotspot decoration index. Built once per `lower_all` pass
 /// and threaded into each Feature so individual Findings can flip
 /// `hotspot = true` without re-loading the hotspot report.
@@ -54,6 +69,8 @@ pub struct HotspotIndex {
 }
 
 impl HotspotIndex {
+    /// Code-family Hotspot index (`commits × CCN_sum` per src file),
+    /// calibrated against `cal.calibration.hotspot`.
     #[must_use]
     pub fn new(report: Option<&HotspotReport>, cal: &Calibration) -> Self {
         let by_path = report
@@ -67,6 +84,61 @@ impl HotspotIndex {
         Self {
             by_path,
             calibration: cal.calibration.hotspot.clone(),
+        }
+    }
+
+    /// Test-family Hotspot index (`commits × uncov_pct` per src file),
+    /// calibrated against `cal.calibration.test_hotspot`.
+    #[must_use]
+    pub fn for_test(report: Option<&TestHotspotReport>, cal: &Calibration) -> Self {
+        let by_path = report
+            .map(|h| {
+                h.entries
+                    .iter()
+                    .map(|e| (e.path.clone(), e.score))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self {
+            by_path,
+            calibration: cal.calibration.test_hotspot.clone(),
+        }
+    }
+
+    /// Docs-family Hotspot index (`paired_src_churn × debt` per pair).
+    /// The same score is registered under both the doc path and every
+    /// paired src path so a `doc_freshness` Finding (primary = doc)
+    /// and a `doc_drift` Finding whose `locations[]` touches a paired
+    /// src both pick up the decoration. Calibrated against
+    /// `cal.calibration.doc_hotspot`.
+    #[must_use]
+    pub fn for_doc(report: Option<&DocHotspotReport>, cal: &Calibration) -> Self {
+        let mut by_path: std::collections::HashMap<PathBuf, f64> = std::collections::HashMap::new();
+        if let Some(h) = report {
+            for entry in &h.entries {
+                let _ = by_path
+                    .entry(entry.doc_path.clone())
+                    .and_modify(|v| {
+                        if entry.score > *v {
+                            *v = entry.score;
+                        }
+                    })
+                    .or_insert(entry.score);
+                for src in &entry.src_paths {
+                    let _ = by_path
+                        .entry(src.clone())
+                        .and_modify(|v| {
+                            if entry.score > *v {
+                                *v = entry.score;
+                            }
+                        })
+                        .or_insert(entry.score);
+                }
+            }
+        }
+        Self {
+            by_path,
+            calibration: cal.calibration.doc_hotspot.clone(),
         }
     }
 
@@ -117,6 +189,14 @@ pub fn decorate(mut f: Finding, severity: Severity, hotspot: &HotspotIndex) -> F
 pub trait Feature: Send + Sync {
     fn meta(&self) -> FeatureMeta;
     fn enabled(&self, cfg: &Config) -> bool;
+    /// Family this Feature belongs to. Drives per-family
+    /// `HotspotIndex` dispatch in [`FeatureRegistry::lower_all`].
+    /// Defaults to [`Family::Code`] so existing code-side Features
+    /// keep working without a per-impl override; Test- and
+    /// Docs-family Features override this method.
+    fn family(&self) -> Family {
+        Family::Code
+    }
     /// Lower this Feature's slice of `reports` into Findings.
     /// Returns an empty Vec when the underlying observer didn't run
     /// (e.g. the Feature is enabled but its observer report is missing).
@@ -150,10 +230,12 @@ impl FeatureRegistry {
         use crate::observer::docs::coverage::DocCoverageFeature;
         use crate::observer::docs::drift::DocDriftFeature;
         use crate::observer::docs::freshness::DocFreshnessFeature;
+        use crate::observer::docs::hotspot::DocHotspotFeature;
         use crate::observer::docs::link_health::DocLinkHealthFeature;
         use crate::observer::docs::orphan_pages::OrphanPagesFeature;
         use crate::observer::docs::todo_density::TodoDensityFeature;
         use crate::observer::test::coverage::CoverageFeature;
+        use crate::observer::test::hotspot::TestHotspotFeature;
         use crate::observer::test::skip_ratio::SkipRatioFeature;
 
         Self {
@@ -169,8 +251,10 @@ impl FeatureRegistry {
                 Box::new(DocLinkHealthFeature),
                 Box::new(OrphanPagesFeature),
                 Box::new(TodoDensityFeature),
+                Box::new(DocHotspotFeature),
                 Box::new(CoverageFeature),
                 Box::new(SkipRatioFeature),
+                Box::new(TestHotspotFeature),
             ],
         }
     }
@@ -194,10 +278,17 @@ impl FeatureRegistry {
         cfg: &Config,
         cal: &Calibration,
     ) -> Vec<Finding> {
-        let hotspot = HotspotIndex::new(reports.hotspot.as_ref(), cal);
+        let code_hotspot = HotspotIndex::new(reports.hotspot.as_ref(), cal);
+        let test_hotspot = HotspotIndex::for_test(reports.test_hotspot.as_ref(), cal);
+        let doc_hotspot = HotspotIndex::for_doc(reports.doc_hotspot.as_ref(), cal);
         let mut findings = Vec::new();
         for feature in self.enabled(cfg) {
-            findings.extend(feature.lower(reports, cfg, cal, &hotspot));
+            let idx = match feature.family() {
+                Family::Code => &code_hotspot,
+                Family::Test => &test_hotspot,
+                Family::Docs => &doc_hotspot,
+            };
+            findings.extend(feature.lower(reports, cfg, cal, idx));
         }
         // When `[features.test]` is disabled, every finding keeps the
         // default `is_test_file = false` and the post-pass is skipped.
@@ -249,8 +340,10 @@ mod tests {
         let r = FeatureRegistry::builtin();
         let names: Vec<&str> = r.iter().map(|f| f.meta().name).collect();
         // Order is the public emission contract — tests / renderer rely
-        // on it for stable Finding ordering. Docs Features sit at the
-        // end so the v0.2 emission order for code metrics is preserved.
+        // on it for stable Finding ordering. Docs Features sit between
+        // code and test so the v0.2 emission order for code metrics is
+        // preserved; per-family hotspots (`doc_hotspot`, `test_hotspot`)
+        // sit at the end of their own family blocks.
         assert_eq!(
             names,
             vec![
@@ -265,8 +358,10 @@ mod tests {
                 "doc_link_health",
                 "orphan_pages",
                 "todo_density",
+                "doc_hotspot",
                 "coverage_pct",
                 "skip_ratio",
+                "test_hotspot",
             ],
         );
     }
@@ -281,7 +376,7 @@ mod tests {
         for f in FeatureRegistry::builtin().iter() {
             let want_kind = match f.meta().name {
                 "doc_freshness" | "doc_drift" | "doc_coverage" | "doc_link_health"
-                | "orphan_pages" | "todo_density" => FeatureKind::DocsScanner,
+                | "orphan_pages" | "todo_density" | "doc_hotspot" => FeatureKind::DocsScanner,
                 "coverage_pct" => FeatureKind::CoverageReader,
                 _ => FeatureKind::Observer,
             };
@@ -289,6 +384,24 @@ mod tests {
                 f.meta().kind,
                 want_kind,
                 "unexpected kind for {}",
+                f.meta().name,
+            );
+        }
+    }
+
+    #[test]
+    fn family_assignment_per_feature_name() {
+        for f in FeatureRegistry::builtin().iter() {
+            let want_family = match f.meta().name {
+                "doc_freshness" | "doc_drift" | "doc_coverage" | "doc_link_health"
+                | "orphan_pages" | "todo_density" | "doc_hotspot" => Family::Docs,
+                "coverage_pct" | "skip_ratio" | "test_hotspot" => Family::Test,
+                _ => Family::Code,
+            };
+            assert_eq!(
+                f.family(),
+                want_family,
+                "unexpected family for {}",
                 f.meta().name,
             );
         }

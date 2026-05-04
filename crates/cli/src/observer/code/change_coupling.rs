@@ -931,6 +931,8 @@ mod pair_class_tests {
                 todo_density: None,
                 coverage: None,
                 skip_ratio: None,
+                test_hotspot: None,
+                doc_hotspot: None,
             }
         }
 

@@ -9,6 +9,7 @@ pub mod corpus;
 pub mod coverage;
 pub mod drift;
 pub mod freshness;
+pub mod hotspot;
 pub mod link_health;
 pub(crate) mod markdown;
 pub mod orphan_pages;

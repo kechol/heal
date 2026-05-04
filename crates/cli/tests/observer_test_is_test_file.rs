@@ -129,6 +129,8 @@ fn observer_reports_with_pairs(pairs: Vec<FilePair>) -> ObserverReports {
         todo_density: None,
         coverage: None,
         skip_ratio: None,
+        test_hotspot: None,
+        doc_hotspot: None,
     }
 }
 

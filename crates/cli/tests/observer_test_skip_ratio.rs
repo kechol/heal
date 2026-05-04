@@ -45,6 +45,8 @@ fn empty_reports() -> ObserverReports {
         todo_density: None,
         coverage: None,
         skip_ratio: None,
+        test_hotspot: None,
+        doc_hotspot: None,
     }
 }
 

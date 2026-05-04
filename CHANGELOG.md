@@ -24,6 +24,40 @@
 
 ### ⚠ BREAKING
 
+- **`test_hotspot` and `doc_hotspot` — per-family Hotspot composites.**
+  Hotspot's "where to fix first" axis used to be code-only, with
+  Test- and Docs-quality signals folded in as boosts on the same
+  score. The boost path is gone (previous Unreleased entry); this
+  one adds the principled replacement: two new metrics that rank
+  Test/Docs work the same way code Hotspot ranks code work.
+  - `test_hotspot` = `commits × uncov_pct` per src file. Universe is
+    `ChurnReport.files ∪ CoverageReport.entries` filtered to src
+    extensions HEAL recognises — files absent from lcov but present
+    in git churn count as 100% gap, since lcov reporters routinely
+    omit zero-coverage files and "edited a lot, never tested" is the
+    metric's most important target. Calibration: `HotspotCalibration`
+    shape with `floor_ok = FLOOR_OK_TEST_HOTSPOT = 25` (one commit
+    × 25% gap = noise gate). Configurable via
+    `[features.test.hotspot] floor_ok = N`.
+  - `doc_hotspot` = `paired_src_churn × debt` per pair, where
+    `debt = src_commits_since_doc + weight_drift × dangling_idents`
+    (default `weight_drift = 1.0`). Domain: paired pairs from
+    `doc_pairs.json` only — standalone docs stay covered by
+    `orphan_pages` / `todo_density`. `floor_ok = FLOOR_OK_DOC_HOTSPOT
+    = 5`. Configurable via `[features.docs.hotspot]`.
+  - `Finding.hotspot = true` is now per-family: a `coverage_pct`
+    Finding picks up the flag from the `test_hotspot` index, a
+    `doc_drift` Finding from the `doc_hotspot` index, a `ccn` Finding
+    from the code `hotspot` index. The JSON shape is unchanged
+    (still a single `bool`), but the meaning is family-scoped.
+  - `FINDINGS_RECORD_VERSION` bumped to v4 — old caches silently
+    invalidate so the next run rewrites at the new schema.
+  - **Migration:** none for users — the new metrics surface only
+    when the corresponding `[features.test.coverage]` /
+    `[features.docs]` family is on. Once enabled, run
+    `heal calibrate --force` to populate
+    `[calibration.test_hotspot]` / `[calibration.doc_hotspot]`.
+
 - **Hotspot is single-axis again — multiplicative boosts removed.**
   Earlier `[features.docs]` / `[features.test.coverage]` enablement
   re-weighted the code Hotspot score by up to `1.5×` based on

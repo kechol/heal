@@ -112,6 +112,22 @@ Heading の slug は GitHub 互換の slugify 規約(lowercase + non-alnum → `
 
 ウィンドウ長は `[metrics.duplication].docs_min_tokens`(デフォルト 100)です。詳しくは [Docs › 設定](/heal/ja/docs/configuration/#markdown--rst-重複ウィンドウ)。
 
+## `doc_hotspot` — どの paired doc を次に直すべきか
+
+`doc_hotspot` は code Hotspot の docs ファミリ版です。**paired** な doc ↔ src エントリを `paired_src_churn × debt` でランクします:
+
+```
+debt = src_commits_since_doc + weight_drift × dangling_idents
+```
+
+ペアスコアが高い = ペアになっている src が高頻度で変わっており、**かつ** doc が追いついていない(commits-since-doc、dangling identifier、またはその両方)。「全 doc のうち次に更新する価値があるのはどれか」を表します。
+
+スコア対象は `doc_pairs.json` の paired エントリのみです。standalone な散文(README、コンセプトガイド)はスコープ外で、`orphan_pages` と `todo_density` がそれぞれのシグナルでカバーします。
+
+`doc_hotspot` 自体は常に `Severity::Ok` です。docs ファミリの Finding(`doc_freshness`、`doc_drift`、`doc_coverage`、`doc_link_health`、`todo_density`)を doc 側にも paired src 側にも装飾するので、`docs/api.md` に立った `doc_drift` Finding と同じペアの `doc_freshness` Finding が同時に `hotspot=true` を拾います。
+
+デフォルトの卒業ゲートは `[features.docs.hotspot] floor_ok = 5`(おおむね「2 commits × 2 debt 単位」)。`weight_drift` のデフォルトは `1.0` で、factually wrong な doc(dangling identifier)を merely stale なものより優先したい場合は値を上げてください(例: `5.0`)。
+
 ## `/heal-doc-review` と `/heal-doc-patch` がこれらをどう使うか
 
 `/heal-doc-review` は `heal status --json` を読み、docs ファミリにフィルタリングし、findings を **Diátaxis** のレンズ(Tutorial / How-to / Reference / Explanation)でフレーム化します:

@@ -40,7 +40,7 @@ use crate::core::config::Config;
 use crate::core::doc_pairs::DocPair;
 use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
-use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
+use crate::feature::{decorate, Family, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 use crate::observer::code::complexity::parse;
 use crate::observer::shared::lang::Language;
 
@@ -320,6 +320,9 @@ impl Feature for DocDriftFeature {
     }
     fn enabled(&self, cfg: &Config) -> bool {
         cfg.features.docs.enabled
+    }
+    fn family(&self) -> Family {
+        Family::Docs
     }
     fn lower(
         &self,

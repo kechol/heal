@@ -474,17 +474,37 @@ blocks are excluded (those are illustrative).
 hard-coded in v0.4; consider a config knob in v0.5 if users tune
 them.
 
-### Hotspot is single-axis
+### Per-family hotspots
 
 `hotspot::compose` is a pure `commits × CCN_sum` composite over
-src files. Earlier versions folded `DocFreshnessReport` and
-`CoverageReport` into the score as multiplicative boosts capped
-at `1.5×`; that post-hoc fusion is gone. The motivation: the
-cap was patching a "rank by feature count" failure mode, and
-mixing test/docs signals into a code-keyed score made
-"Critical AND `hotspot=true`" mean different things in
-different families. Per-family hotspots are the planned
-replacement.
+src files (the **code** family). Earlier versions folded
+`DocFreshnessReport` and `CoverageReport` into the score as
+multiplicative boosts capped at `1.5×`; that post-hoc fusion is
+gone. Test- and Docs-family Findings get their own composites:
+
+- `test_hotspot` (`observer/test/hotspot.rs`):
+  `commits × uncov_pct` per src file. Universe is
+  `ChurnReport.files ∪ CoverageReport.entries` filtered to
+  recognised src extensions (`Language::from_path`); files
+  absent from lcov but present in churn count as 100% gap. Same
+  `HotspotCalibration` shape as code Hotspot, anchored on
+  `FLOOR_OK_TEST_HOTSPOT`. Decorates `coverage_pct` Findings
+  via `Family::Test` `HotspotIndex`.
+- `doc_hotspot` (`observer/docs/hotspot.rs`):
+  `paired_src_churn × debt` per pair, where
+  `debt = src_commits_since_doc + weight_drift × dangling_idents`.
+  Universe is paired pairs only (standalone docs go through
+  `orphan_pages` / `todo_density`). The score is registered
+  under both the doc path and every paired src in the
+  `Family::Docs` `HotspotIndex` so Findings primary on either
+  side of the pair pick up `hotspot=true`. Anchored on
+  `FLOOR_OK_DOC_HOTSPOT`.
+
+`HotspotIndex` exposes three constructors: `new` (code,
+default), `for_test`, `for_doc`. `FeatureRegistry::lower_all`
+builds all three once per pass and dispatches via
+`Feature::family()` so each Feature decorates against the right
+index without knowing about the other families.
 
 ### Markdown duplication
 

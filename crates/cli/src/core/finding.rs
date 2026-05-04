@@ -169,6 +169,20 @@ impl Finding {
     /// > 5% High / > 20% Critical.
     pub const METRIC_SKIP_RATIO: &str = "skip_ratio";
 
+    /// Per-src-file `commits × uncov_pct` composite. The test-family
+    /// analogue of code Hotspot: ranks the src files where unverified
+    /// change is piling up most. Always `Severity::Ok`; the importance
+    /// is signaled via `hotspot=true` decoration on other test-family
+    /// Findings (`coverage_pct`).
+    pub const METRIC_TEST_HOTSPOT: &str = "test_hotspot";
+
+    /// Per-pair `paired_src_churn × debt` composite. The docs-family
+    /// analogue of code Hotspot: ranks the pairs whose paired src is
+    /// churning fastest while the doc has fallen behind (or references
+    /// names the src no longer defines). Always `Severity::Ok`;
+    /// decorates docs-family Findings via `hotspot=true`.
+    pub const METRIC_DOC_HOTSPOT: &str = "doc_hotspot";
+
     /// Compact "metric=N" tag used by `heal status` rows and the
     /// post-commit nudge. The numeric tail is recovered from
     /// `summary` so observers don't have to expose a second value

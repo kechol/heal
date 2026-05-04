@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::config::Config;
 use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
-use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
+use crate::feature::{decorate, Family, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 use crate::observer::docs::corpus::{read_doc_bodies, DocBody};
 
 /// Markers we count. Single-pass over each line so adding a new marker
@@ -171,6 +171,9 @@ impl Feature for TodoDensityFeature {
     }
     fn enabled(&self, cfg: &Config) -> bool {
         cfg.features.docs.enabled
+    }
+    fn family(&self) -> Family {
+        Family::Docs
     }
     fn lower(
         &self,

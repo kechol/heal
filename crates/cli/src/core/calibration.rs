@@ -76,6 +76,25 @@ pub const FLOOR_OK_CCN: f64 = 11.0;
 pub const FLOOR_OK_COGNITIVE: f64 = 8.0;
 pub const FLOOR_OK_HOTSPOT: f64 = 22.0;
 
+/// `[calibration.test_hotspot]` graduation gate for the per-src-file
+/// `commits × uncov_pct` composite. Derived as
+/// `25% gap × 1 commit = 25` — the literature anchor of "75% line
+/// coverage = decent" gives the gap floor, and any file touched at
+/// least once in the churn window is considered active. Below this
+/// product the file is either dormant or already nearly-fully tested,
+/// so the percentile classifier shouldn't promote it to hot.
+/// Erring low is safe (calibration percentiles still gate the upper
+/// end); erring high silently drops legitimate test-debt hotspots
+/// from the drain queue.
+pub const FLOOR_OK_TEST_HOTSPOT: f64 = 25.0;
+
+/// `[calibration.doc_hotspot]` graduation gate for the per-pair
+/// `paired_src_churn × debt` composite. Derived as
+/// `2 commits × 2 debt = 4`, rounded to 5 — the lower end of "the
+/// paired src is non-dormant AND the doc is at least mildly stale".
+/// Same low-bias rationale as [`FLOOR_OK_TEST_HOTSPOT`].
+pub const FLOOR_OK_DOC_HOTSPOT: f64 = 5.0;
+
 /// Bundles the absolute floors a metric carries. `critical` is the
 /// "structurally indefensible" Critical escape hatch; `ok` is the
 /// graduation gate (values strictly below classify as Ok). Pass to
@@ -219,6 +238,21 @@ pub struct MetricCalibrations {
     /// user runs `heal calibrate` with `[features.test]` enabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skip_ratio: Option<MetricCalibration>,
+    /// Calibration for `[features.test]` per-src-file
+    /// `commits × uncov_pct` composite. Same shape as the code
+    /// `hotspot` calibration: percentiles plus a `floor_ok` gate
+    /// (default [`FLOOR_OK_TEST_HOTSPOT`]). `None` until the user runs
+    /// `heal calibrate` with `[features.test.coverage]` enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_hotspot: Option<HotspotCalibration>,
+    /// Calibration for `[features.docs]` per-pair
+    /// `paired_src_churn × debt` composite. Same shape as the code
+    /// `hotspot` calibration: percentiles plus a `floor_ok` gate
+    /// (default [`FLOOR_OK_DOC_HOTSPOT`]). `None` until the user runs
+    /// `heal calibrate` with `[features.docs]` enabled and at least
+    /// one paired entry has non-zero score.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc_hotspot: Option<HotspotCalibration>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -543,6 +577,16 @@ fn apply_metric_overrides(table: &mut MetricCalibrations, config: &Config) {
     }
     if let Some(c) = table.hotspot.as_mut() {
         if let Some(f) = config.metrics.hotspot.floor_ok {
+            c.floor_ok = Some(f);
+        }
+    }
+    if let Some(c) = table.test_hotspot.as_mut() {
+        if let Some(f) = config.features.test.hotspot.floor_ok {
+            c.floor_ok = Some(f);
+        }
+    }
+    if let Some(c) = table.doc_hotspot.as_mut() {
+        if let Some(f) = config.features.docs.hotspot.floor_ok {
             c.floor_ok = Some(f);
         }
     }

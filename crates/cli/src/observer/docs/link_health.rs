@@ -15,7 +15,7 @@ use crate::core::config::Config;
 use crate::core::doc_pairs::DocPairsFile;
 use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
-use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
+use crate::feature::{decorate, Family, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 use crate::observer::docs::corpus::{read_doc_bodies, DocBody};
 use crate::observer::docs::markdown::{
     extract_links, is_external, iter_prose_lines, resolve_relative, split_link_target,
@@ -242,6 +242,9 @@ impl Feature for DocLinkHealthFeature {
     }
     fn enabled(&self, cfg: &Config) -> bool {
         cfg.features.docs.enabled
+    }
+    fn family(&self) -> Family {
+        Family::Docs
     }
     fn lower(
         &self,

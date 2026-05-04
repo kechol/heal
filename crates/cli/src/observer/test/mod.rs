@@ -8,5 +8,6 @@
 //! user's contract — the binary is a read-only consumer.
 
 pub mod coverage;
+pub mod hotspot;
 pub mod lcov;
 pub mod skip_ratio;

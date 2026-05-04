@@ -26,7 +26,7 @@ use crate::core::config::Config;
 use crate::core::doc_pairs::DocPair;
 use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
-use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
+use crate::feature::{decorate, Family, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
 #[derive(Debug, Clone, Default)]
 pub struct DocCoverageObserver {
@@ -132,6 +132,9 @@ impl Feature for DocCoverageFeature {
     }
     fn enabled(&self, cfg: &Config) -> bool {
         cfg.features.docs.enabled
+    }
+    fn family(&self) -> Family {
+        Family::Docs
     }
     fn lower(
         &self,

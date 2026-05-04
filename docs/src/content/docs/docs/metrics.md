@@ -162,6 +162,39 @@ usually a "see also" link plus a single canonical source.
 Window length is `[metrics.duplication].docs_min_tokens` (default
 100). See [Docs › Configuration](/heal/docs/configuration/#markdown--rst-duplication-window).
 
+## `doc_hotspot` — which paired doc is most worth updating
+
+`doc_hotspot` is the docs-family analogue of code Hotspot. It
+ranks **paired** doc ↔ src entries by
+`paired_src_churn × debt`, where:
+
+```
+debt = src_commits_since_doc + weight_drift × dangling_idents
+```
+
+A pair scores high when the paired source is changing fast
+**and** the doc has fallen behind (commits-since-doc, dangling
+identifiers, or both). High score = "of all your docs, this is
+the next one worth updating".
+
+Only paired entries from `doc_pairs.json` are scored. Standalone
+prose docs (READMEs, concept guides) are out of scope here —
+`orphan_pages` and `todo_density` cover them with their own
+signals.
+
+`doc_hotspot` itself always carries `Severity::Ok`; it decorates
+the docs-family Findings (`doc_freshness`, `doc_drift`,
+`doc_coverage`, `doc_link_health`, `todo_density`) on the doc
+side and on every paired src so a `doc_drift` Finding flagged on
+`docs/api.md` and a `doc_freshness` Finding flagged on the same
+pair both pick up `hotspot=true` together.
+
+Default graduation gate is `[features.docs.hotspot] floor_ok = 5`
+(roughly "2 commits × 2 debt units"). `weight_drift` defaults to
+`1.0` — raise it (e.g. to `5.0`) if factually-wrong docs
+(dangling identifiers) should outrank merely-stale ones in the
+same project.
+
 ## How `/heal-doc-review` and `/heal-doc-patch` use these
 
 `/heal-doc-review` reads `heal status --json`, filters to the docs

@@ -101,6 +101,14 @@ pub struct DocsConfig {
     /// percentile distribution.
     #[serde(default)]
     pub doc_freshness: DocFreshnessConfig,
+    /// `[features.docs.hotspot]` — per-pair
+    /// `paired_src_churn × debt` composite. Calibration-driven; the
+    /// section holds `floor_ok`, `top_n`, and the `weight_drift`
+    /// multiplier on the dangling-identifier component of the debt
+    /// score so users can dial drift up if they care more about
+    /// factually-wrong docs than about merely-stale ones.
+    #[serde(default)]
+    pub hotspot: DocHotspotConfig,
 }
 
 impl Eq for DocsConfig {}
@@ -120,6 +128,45 @@ impl Default for DocsConfig {
             pairs_path: Self::default_pairs_path(),
             standalone: StandaloneDocsConfig::default(),
             doc_freshness: DocFreshnessConfig::default(),
+            hotspot: DocHotspotConfig::default(),
+        }
+    }
+}
+
+/// `[features.docs.hotspot]` — per-pair `paired_src_churn × debt`
+/// composite. The composite reads from `ChurnReport`,
+/// `DocFreshnessReport`, and `DocDriftReport`; this config block
+/// carries the calibration `floor_ok` override (so it survives
+/// `heal calibrate --force`, per `invariants.md` R9), the per-metric
+/// `top_n`, and the `weight_drift` multiplier on the dangling-
+/// identifier debt component.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DocHotspotConfig {
+    /// Calibration override — `None` defers to
+    /// `core::calibration::FLOOR_OK_DOC_HOTSPOT`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor_ok: Option<f64>,
+    /// Per-metric override for `metrics.top_n` — top doc-hotspot pairs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_n: Option<usize>,
+    /// Multiplier on `dangling_idents` inside the debt score
+    /// (`debt = src_commits_since_doc + weight_drift × dangling_idents`).
+    /// Default `1.0` — equal weight per signal unit. Raise it if
+    /// factually-wrong docs (`doc_drift`) should outrank merely-stale
+    /// ones (`doc_freshness`) in the same pair.
+    #[serde(default = "default_weight")]
+    pub weight_drift: f64,
+}
+
+impl Eq for DocHotspotConfig {}
+
+impl Default for DocHotspotConfig {
+    fn default() -> Self {
+        Self {
+            floor_ok: None,
+            top_n: None,
+            weight_drift: default_weight(),
         }
     }
 }
@@ -231,6 +278,13 @@ pub struct TestConfig {
     /// rate, flakiness, mutation score) is deferred or out of scope.
     #[serde(default)]
     pub coverage: TestCoverageConfig,
+    /// `[features.test.hotspot]` — per-src-file
+    /// `commits × uncov_pct` composite. Calibration-driven; the
+    /// section holds only `floor_ok` (the literature-anchored
+    /// graduation gate) and `top_n` so floor overrides survive
+    /// `heal calibrate --force`.
+    #[serde(default)]
+    pub hotspot: TestHotspotConfig,
 }
 
 impl TestConfig {
@@ -270,9 +324,33 @@ impl Default for TestConfig {
             enabled: false,
             test_paths: Self::default_test_paths(),
             coverage: TestCoverageConfig::default(),
+            hotspot: TestHotspotConfig::default(),
         }
     }
 }
+
+/// `[features.test.hotspot]` — per-src-file `commits × uncov_pct`
+/// composite. The composite itself reads from `ChurnReport` and
+/// `CoverageReport`; this config block only carries the calibration
+/// `floor_ok` override (so it survives `heal calibrate --force`,
+/// per `invariants.md` R9) and the per-metric `top_n` for
+/// `heal metrics test_hotspot`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TestHotspotConfig {
+    /// Calibration override — `None` defers to
+    /// `core::calibration::FLOOR_OK_TEST_HOTSPOT`. Set to a number to
+    /// raise / lower the graduation gate (lower = stricter; the floor
+    /// blocks decoration even when a file sits in the top decile of
+    /// the project's `test_hotspot` distribution).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor_ok: Option<f64>,
+    /// Per-metric override for `metrics.top_n` — top test-hotspot files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_n: Option<usize>,
+}
+
+impl Eq for TestHotspotConfig {}
 
 /// `[features.test.coverage]` — lcov.info ingestion. Generation is
 /// outsourced to the user's CI / local toolchain (`cargo llvm-cov`,

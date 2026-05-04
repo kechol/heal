@@ -94,11 +94,27 @@ metric set. Renaming any of them or introducing a submetric
 (e.g. `skip_ratio.attributed`) is a `FINDINGS_RECORD_VERSION`
 bump.
 
+The Unreleased v0.4 cycle also added two **per-family hotspot**
+metric strings — `test_hotspot` (`Family::Test`) and
+`doc_hotspot` (`Family::Docs`) — alongside the v4 schema bump.
+Both follow the same dual-form convention
+(`--metric test-hotspot` ↔ `Finding.metric = "test_hotspot"`,
+likewise for docs). Each is the family-specific analogue of the
+code `hotspot` metric: same `HotspotCalibration` shape, same
+`Severity::Ok` decoration carrier role, separate `HotspotIndex`
+threaded into the matching family's Features by
+`FeatureRegistry::lower_all`. Renaming or submetric-tagging
+either of them (e.g. `test_hotspot.uncov`) is also a
+`FINDINGS_RECORD_VERSION` bump.
+
 ## R6. Hotspot is a decoration, not a target
 
 The drain target is **Critical AND `hotspot=true`** (T0 Must). The
-`hotspot` Finding itself always has `Severity::Ok` — it is a
-decoration carrier for findings on hotspot files.
+three Hotspot Findings (`hotspot`, `test_hotspot`, `doc_hotspot`)
+all carry `Severity::Ok` — they are decoration carriers, one per
+family. A `coverage_pct` Finding's `hotspot=true` flag comes from
+the `test_hotspot` index; a `doc_drift` Finding's flag from
+`doc_hotspot`; a `ccn` Finding's flag from the code `hotspot`.
 
 Don't write prose ("CCN is critical → fix CCN") that treats CCN as
 the target. CCN is a proxy for testability cost; the target is

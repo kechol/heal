@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::calibration::MetricCalibration;
 use crate::core::config::Config;
 use crate::core::finding::{Finding, IntoFindings, Location};
-use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
+use crate::feature::{decorate, Family, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 use crate::observer::test::lcov::{normalise_lcov_path, LcovReport};
 
 /// Fallback calibration when `[calibration.coverage_pct]` hasn't been
@@ -204,6 +204,9 @@ impl Feature for CoverageFeature {
     }
     fn enabled(&self, cfg: &Config) -> bool {
         cfg.features.test.enabled && cfg.features.test.coverage.enabled
+    }
+    fn family(&self) -> Family {
+        Family::Test
     }
     fn lower(
         &self,

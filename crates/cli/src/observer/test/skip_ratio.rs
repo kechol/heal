@@ -31,7 +31,7 @@ use tree_sitter::Node;
 use crate::core::calibration::MetricCalibration;
 use crate::core::config::Config;
 use crate::core::finding::{Finding, IntoFindings, Location};
-use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
+use crate::feature::{decorate, Family, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 use crate::observer::code::complexity::{parse, ParsedFile};
 use crate::observer::shared::lang::Language;
 use crate::observer::shared::walk::{walk_supported_files_under, ExcludeMatcher};
@@ -459,6 +459,9 @@ impl Feature for SkipRatioFeature {
     }
     fn enabled(&self, cfg: &Config) -> bool {
         cfg.features.test.enabled
+    }
+    fn family(&self) -> Family {
+        Family::Test
     }
     fn lower(
         &self,

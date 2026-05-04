@@ -62,8 +62,13 @@ use crate::core::severity::SeverityCounts;
 /// addition is `skip_serializing_if`-defaulted, so projects that
 /// don't enable `[features.docs]` / `[features.test]` see byte-
 /// identical caches once the next run rewrites at the new version
-/// stamp.
-pub const FINDINGS_RECORD_VERSION: u32 = 3;
+/// stamp. v4 added the per-family hotspots (`test_hotspot`,
+/// `doc_hotspot`) and re-targeted the `Finding.hotspot` flag to be
+/// per-family — a `coverage_pct` Finding now picks up `hotspot=true`
+/// from the test-family index rather than the code-family one. The
+/// JSON shape is unchanged (still a single `bool`); the meaning is
+/// not, hence the bump.
+pub const FINDINGS_RECORD_VERSION: u32 = 4;
 
 /// One execution of `heal status`. The unit of read in the cache:
 /// `latest.json` holds the single most-recent record. `heal diff` reads
