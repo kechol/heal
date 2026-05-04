@@ -19,8 +19,10 @@ use serde_json::json;
 
 use crate::cli::MetricKind;
 use crate::core::config::load_from_project;
+use crate::core::finding::family_of;
 use crate::core::term::write_through_pager;
 use crate::core::HealPaths;
+use crate::feature::Family;
 use crate::observers::run_all;
 
 use section::{all_sections, SectionCtx};
@@ -29,6 +31,7 @@ pub fn run(
     project: &Path,
     json_output: bool,
     metric: Option<MetricKind>,
+    feature: Option<Family>,
     workspace: Option<&Path>,
     no_pager: bool,
 ) -> Result<()> {
@@ -52,6 +55,7 @@ pub fn run(
                 cfg.as_ref(),
                 reports.as_ref(),
                 metric,
+                feature,
                 workspace,
                 &sections,
             ))?,
@@ -74,6 +78,9 @@ pub fn run(
         write_header(w, project, &paths, workspace)?;
         for s in &sections {
             if !matches_metric(metric, s.metric()) {
+                continue;
+            }
+            if !matches_family(feature, s.metric()) {
                 continue;
             }
             s.render_text(&ctx, w)?;
@@ -102,11 +109,20 @@ fn matches_metric(filter: Option<MetricKind>, section: MetricKind) -> bool {
     filter.is_none_or(|f| f == section)
 }
 
+/// `None` means "no family filter"; otherwise print only when the
+/// section's metric belongs to the requested family. Resolves via
+/// `family_of` so the section list and the `Finding.family()` map
+/// stay in lock-step.
+fn matches_family(filter: Option<Family>, section: MetricKind) -> bool {
+    filter.is_none_or(|f| family_of(section.json_key()) == f)
+}
+
 fn build_json(
     cfg_exists: bool,
     cfg: Option<&crate::core::config::Config>,
     reports: Option<&crate::observers::ObserverReports>,
     metric: Option<MetricKind>,
+    feature: Option<Family>,
     workspace: Option<&Path>,
     sections: &[Box<dyn section::MetricSection>],
 ) -> serde_json::Value {
@@ -114,6 +130,16 @@ fn build_json(
     payload.insert("initialized".into(), json!(cfg_exists));
     if let Some(m) = metric {
         payload.insert("metric".into(), json!(m.json_key()));
+    }
+    if let Some(f) = feature {
+        payload.insert(
+            "feature".into(),
+            json!(match f {
+                Family::Code => "code",
+                Family::Test => "test",
+                Family::Docs => "docs",
+            }),
+        );
     }
     if let Some(ws) = workspace {
         payload.insert("workspace".into(), json!(ws.display().to_string()));
@@ -127,9 +153,13 @@ fn build_json(
         // Raw reports balloon for large repos (the `worst` precomputation
         // already captures what filtered consumers need); only emit them
         // in the unfiltered path so `--metric X --json` stays lean for
-        // skill consumption.
+        // skill consumption. `--feature X` keeps the raw shape but
+        // narrows the included keys to that family's metrics.
         if metric.is_none() {
             for s in sections {
+                if !matches_family(feature, s.metric()) {
+                    continue;
+                }
                 payload.insert(s.metric().json_key().into(), s.raw_json(&ctx));
             }
         } else if let Some(m) = metric {

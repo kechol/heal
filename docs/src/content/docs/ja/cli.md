@@ -104,7 +104,10 @@ heal status --metric lcom                # LCOM の Finding のみ
 heal status --metric coverage-pct        # カバレッジ findings のみ（[features.test]）
 heal status --metric doc-drift           # doc-drift findings のみ（[features.docs]）
 heal status --severity critical          # Critical のみ（`--all` で以上を含む）
-heal status --feature src/payments       # 特定パスプレフィックスに絞る
+heal status --feature code               # code ファミリのみ表示(test / docs を抑制)
+heal status --feature test               # test ファミリのみ([features.test])
+heal status --feature docs               # docs ファミリのみ([features.docs])
+heal status --path src/payments          # パスプレフィックスで絞る(v0.4 以前は --feature)
 heal status --all                        # Medium / Ok と低 Severity の Hotspot セクションを表示
 heal status --top 5                      # 各 Severity バケットを 5 行で打ち切り
 heal status --no-pager                   # ページャを通さず stdout に直接書く

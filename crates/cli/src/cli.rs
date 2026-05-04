@@ -66,6 +66,13 @@ pub enum Command {
         /// narrowing focus.
         #[arg(long, value_enum)]
         metric: Option<MetricKind>,
+        /// Restrict output to one metric family (`code` / `test` /
+        /// `docs`). Used by `/heal-code-review`,
+        /// `/heal-test-review`, and `/heal-doc-review` to scope each
+        /// review to its own family without enumerating every metric
+        /// inside it. Combine with `--metric` to narrow further.
+        #[arg(long, value_enum)]
+        feature: Option<FamilyFilter>,
         /// Restrict every observer to files under `<path>` (relative
         /// to the project root). Matches the `[[project.workspaces]]`
         /// path of one declared workspace; segment-wise prefix so
@@ -315,6 +322,28 @@ impl SeverityFilter {
     }
 }
 
+/// CLI-side mirror of [`crate::feature::Family`]. clap renders these
+/// in kebab-case (`code` / `test` / `docs`) for `--feature`. Lives
+/// here rather than on `Family` itself so the lib stays clap-free.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum FamilyFilter {
+    Code,
+    Test,
+    Docs,
+}
+
+impl FamilyFilter {
+    #[must_use]
+    pub fn as_family(self) -> crate::feature::Family {
+        use crate::feature::Family;
+        match self {
+            Self::Code => Family::Code,
+            Self::Test => Family::Test,
+            Self::Docs => Family::Docs,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Subcommand)]
 pub enum HookEvent {
     /// Post-commit hook (git).
@@ -340,9 +369,20 @@ pub struct StatusArgs {
     #[arg(long, value_name = "PATH")]
     pub workspace: Option<String>,
     /// Restrict to findings under a path prefix (e.g.
-    /// `--feature src/payments`). Matched against `Finding.location.file`.
+    /// `--path src/payments`). Matched against `Finding.location.file`.
+    /// Renamed from `--feature` in v0.4 — that flag now selects a
+    /// metric family (`code` / `test` / `docs`).
     #[arg(long)]
-    pub feature: Option<String>,
+    pub path: Option<String>,
+    /// Restrict to findings in one metric family. `code` covers the
+    /// always-on observers (`ccn`, `cognitive`, `change_coupling`,
+    /// `duplication`, `hotspot`, `lcom`); `test` covers `[features.test]`
+    /// (`coverage_pct`, `skip_ratio`, `test_hotspot`); `docs` covers
+    /// `[features.docs]` (`doc_freshness`, `doc_drift`, `doc_coverage`,
+    /// `doc_link_health`, `orphan_pages`, `todo_density`,
+    /// `doc_hotspot`).
+    #[arg(long, value_enum)]
+    pub feature: Option<FamilyFilter>,
     /// Severity floor — show only this level. Combine with `--all` to
     /// also surface lower severities below it.
     #[arg(long, value_enum)]
@@ -499,9 +539,17 @@ impl Cli {
             Command::Metrics {
                 json,
                 metric,
+                feature,
                 workspace,
                 no_pager,
-            } => commands::metrics::run(&project, json, metric, workspace.as_deref(), no_pager),
+            } => commands::metrics::run(
+                &project,
+                json,
+                metric,
+                feature.map(FamilyFilter::as_family),
+                workspace.as_deref(),
+                no_pager,
+            ),
             Command::Status(args) => commands::status::run(&project, &args),
             Command::Diff(args) => commands::diff::run(
                 &project,

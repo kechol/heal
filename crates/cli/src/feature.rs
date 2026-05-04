@@ -52,7 +52,11 @@ pub enum FeatureKind {
 /// Finding from the [`Family::Docs`] index, and a `ccn` Finding from
 /// the [`Family::Code`] index. Also surfaced to user-facing
 /// `--feature` filters in the v0.4 status / metrics flow.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Variant order is the canonical render order (Code → Test → Docs)
+/// — `BTreeMap<Family, _>` iteration relies on the derived `Ord`
+/// matching that order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Family {
     Code,
     Test,

@@ -183,6 +183,16 @@ impl Finding {
     /// decorates docs-family Findings via `hotspot=true`.
     pub const METRIC_DOC_HOTSPOT: &str = "doc_hotspot";
 
+    /// Family this finding belongs to, derived from `metric`.
+    /// Mirrors `Feature::family()` — the dispatch surface for
+    /// per-family `HotspotIndex` decoration is the same string-to-
+    /// family map. Used by `heal status --feature <FAMILY>` and the
+    /// per-family renderer in v0.4+.
+    #[must_use]
+    pub fn family(&self) -> crate::feature::Family {
+        family_of(&self.metric)
+    }
+
     /// Compact "metric=N" tag used by `heal status` rows and the
     /// post-commit nudge. The numeric tail is recovered from
     /// `summary` so observers don't have to expose a second value
@@ -249,6 +259,29 @@ impl Finding {
             content_seed.as_bytes(),
         ]);
         format!("{metric}:{path}:{symbol}:{}", fnv1a_hex(h))
+    }
+}
+
+/// Map a `Finding.metric` string to its [`crate::feature::Family`].
+/// This is the canonical source of truth for the family contract:
+/// `Feature::family()` overrides on the impl side and this helper
+/// must agree, otherwise per-family `--feature` filtering and the
+/// renderer's family grouping diverge from the actual `HotspotIndex`
+/// dispatch. Unknown metric strings default to [`Family::Code`] —
+/// every observer registers a metric, so an unknown value is a bug
+/// and the conservative default keeps the finding visible under the
+/// always-on family rather than silently disappearing under a flag.
+#[must_use]
+pub fn family_of(metric: &str) -> crate::feature::Family {
+    use crate::feature::Family;
+    match metric {
+        // [features.docs] family.
+        "doc_freshness" | "doc_drift" | "doc_coverage" | "doc_link_health" | "orphan_pages"
+        | "todo_density" | "doc_hotspot" => Family::Docs,
+        // [features.test] family.
+        "coverage_pct" | "skip_ratio" | "test_hotspot" => Family::Test,
+        // Everything else — code observers and unknown metrics.
+        _ => Family::Code,
     }
 }
 

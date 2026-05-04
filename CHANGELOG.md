@@ -24,6 +24,34 @@
 
 ### ⚠ BREAKING
 
+- **`heal status --feature` repurposed as a family filter; old
+  path-prefix usage moves to `--path`.** Pre-v0.4, `--feature
+  <PREFIX>` narrowed findings to those under a path (e.g.
+  `--feature src/payments`). The flag was a misnomer — it filtered
+  files, not features. v0.4 reuses the name for the more obviously-
+  matching purpose: `--feature <code|test|docs>` narrows to one
+  metric family. The path-prefix filter is preserved as `--path
+  <PREFIX>`. **Migration:** rename every `heal status --feature
+  src/...` invocation to `heal status --path src/...`. The new
+  `--feature` is also accepted on `heal metrics`, scoping the
+  rendered sections (and JSON keys) to the requested family.
+
+- **`heal status` now renders findings family-first.** The output
+  block goes `═══ Code ═══ → ═══ Test ═══ → ═══ Docs ═══`, each
+  with its own (Severity, hotspot) cascade and a per-family
+  `Next: claude /heal-{code,test,doc}-patch` hint. Previously the
+  output was one global `(Severity, hotspot)` cascade with a single
+  trailing `/heal-code-patch` line. The new layout matches the
+  per-family patch skills and the per-family `HotspotIndex`
+  decoration: each family's drain queue ("Critical AND
+  `hotspot=true`") is independent, so mixing them obscured what to
+  fix next. Empty families show `(no findings)` so the absence is
+  visible. With `--feature <FAMILY>` only the requested family's
+  banner renders. **Migration:** none for users — the per-line
+  formatting inside each tier is unchanged. CI scripts that
+  string-match the trailing `Next:` line should now expect three
+  hints (one per family) rather than one.
+
 - **`test_hotspot` and `doc_hotspot` — per-family Hotspot composites.**
   Hotspot's "where to fix first" axis used to be code-only, with
   Test- and Docs-quality signals folded in as boosts on the same

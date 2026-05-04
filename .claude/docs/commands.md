@@ -108,9 +108,10 @@ ANSI colors when stdout is a TTY.
 ## `heal status`
 
 ```
-heal status [--metric <FindingMetric>] [--workspace <PATH>]
-            [--feature <PREFIX>] [--severity <SeverityFilter>]
-            [--all] [--json] [--refresh] [--top <N>] [--no-pager]
+heal status [--metric <FindingMetric>] [--feature <FamilyFilter>]
+            [--workspace <PATH>] [--path <PREFIX>]
+            [--severity <SeverityFilter>] [--all] [--json]
+            [--refresh] [--top <N>] [--no-pager]
 ```
 
 Pipeline (`commands/status.rs:44-112`):
@@ -138,19 +139,28 @@ swallowed → exit 0.
    - `Population: [critical] N [high] N [medium] N [ok] N` — the raw
      severity distribution, demoted to context.
 2. Regressed section (re-detected after `mark fix`).
-3. Drain tier sections (T0 Must 🎯, T1 Should 🟡, Advisory ℹ️).
-4. Ok section (only with `--all`).
-5. Footer with `/heal-code-patch` nudge.
+3. Per-family blocks (`═══ Code ═══`, `═══ Test ═══`, `═══ Docs ═══`)
+   — each family runs its own (Severity, hotspot) cascade and ends
+   with a `Next: claude /heal-{code,test,doc}-patch` hint. Empty
+   families show `(no findings)` so the absence is visible. With
+   `--feature <FAMILY>`, sibling banners are suppressed entirely.
+4. Cross-family `Hidden: N findings across families` footer (when
+   not `--all` and lower-severity rows were dropped).
+5. Accepted section (only with `--all`).
 
 **Filters:**
 
 - `--metric <FindingMetric>` — `ccn`, `cognitive`, `complexity`
   (CCN+Cognitive), `duplication`, `coupling` (symmetric pairs +
   `change_coupling.drift`), `hotspot`, `lcom`, `coverage-pct`,
-  `skip-ratio`, plus the docs-family filters (`doc-freshness`,
-  `doc-drift`, `doc-coverage`, `doc-link-health`, `orphan-pages`,
-  `todo-density`).
-- `--feature <PREFIX>` — file path prefix (e.g. `src/payments`).
+  `skip-ratio`, `test-hotspot`, plus the docs-family filters
+  (`doc-freshness`, `doc-drift`, `doc-coverage`, `doc-link-health`,
+  `orphan-pages`, `todo-density`, `doc-hotspot`).
+- `--feature <code|test|docs>` — narrow to one metric family.
+  `code` covers always-on observers; `test` covers `[features.test]`
+  metrics; `docs` covers `[features.docs]` metrics.
+- `--path <PREFIX>` — file path prefix (e.g. `src/payments`).
+  Renamed from `--feature` in v0.4 — that flag now selects family.
 - `--workspace <PATH>` — single declared workspace.
 - `--severity <Critical|High|Medium|Ok>` — floor.
 - `--all` — show Medium/Ok and low-Severity hotspots.
@@ -165,7 +175,8 @@ swallowed → exit 0.
 ## `heal metrics`
 
 ```
-heal metrics [--metric <MetricKind>] [--workspace <PATH>] [--json] [--no-pager]
+heal metrics [--metric <MetricKind>] [--feature <FamilyFilter>]
+             [--workspace <PATH>] [--json] [--no-pager]
 ```
 
 `commands/metrics/mod.rs`. Fresh recompute, **no cache reuse**. Designed
@@ -175,10 +186,11 @@ Per-section trait (`MetricSection`) registered in `all_sections()`:
 `Loc`, `Complexity`, `Churn`, `ChangeCoupling`, `Duplication`,
 `Hotspot`, `Lcom`, plus the docs-only sections (active when
 `[features.docs] enabled = true`): `DocFreshness`, `DocDrift`,
-`DocCoverage`, `DocLinkHealth`, `OrphanPages`, `TodoDensity`, plus
-the test-only sections (active when `[features.test] enabled =
-true`): `SkipRatio`, plus (active when `[features.test.coverage]
-enabled = true`): `CoveragePct`. Each section provides:
+`DocCoverage`, `DocLinkHealth`, `OrphanPages`, `TodoDensity`,
+`DocHotspot`, plus the test-only sections (active when
+`[features.test] enabled = true`): `SkipRatio`, plus (active when
+`[features.test.coverage] enabled = true`): `CoveragePct`,
+`TestHotspot`. Each section provides:
 
 - `render_text(&report) → String` with `top_n` cutoff.
 - `raw_json(&report) → serde_json::Value` (full typed report; omitted
@@ -186,10 +198,18 @@ enabled = true`): `CoveragePct`. Each section provides:
 - `worst_json(&report, top_n) → serde_json::Value` for `--metric X
   --json` (precomputed worst-N payload).
 
+**Filters:**
+
+- `--metric <MetricKind>` — render one metric's section only.
+- `--feature <code|test|docs>` — render every metric in one
+  family. Combine with `--metric` for sub-narrowing. The JSON
+  payload's per-metric keys are filtered to the requested family.
+
 **Output:**
 
 - `--metric X --json` → narrowed payload (worst-N for that metric).
-- `--json` (no `--metric`) → full map: `initialized` flag + per-section
+- `--feature X --json` → raw map narrowed to that family's metric keys.
+- `--json` (no filter) → full map: `initialized` flag + per-section
   raw payloads. Can be large.
 
 If config is missing → emits `{"initialized": false}` (text: "not

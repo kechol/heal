@@ -153,7 +153,10 @@ heal status --metric lcom                # only LCOM findings
 heal status --metric coverage-pct        # only coverage findings ([features.test])
 heal status --metric doc-drift           # only doc-drift findings ([features.docs])
 heal status --severity critical          # only Critical (and above with --all)
-heal status --feature src/payments       # restrict to one path prefix
+heal status --feature code               # only the code family (drop test / docs)
+heal status --feature test               # only the test family ([features.test])
+heal status --feature docs               # only the docs family ([features.docs])
+heal status --path src/payments          # restrict to one path prefix (was --feature pre-v0.4)
 heal status --all                        # show Medium / Ok plus the low-Severity hotspot section
 heal status --top 5                      # cap each Severity bucket at 5 rows
 heal status --no-pager                   # write straight to stdout (skip the pager)

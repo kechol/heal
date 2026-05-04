@@ -84,7 +84,11 @@ findings; pass `--refresh` to rescan first. Useful args:
 - `--severity {critical|high|medium|ok}` — restrict to one floor.
 - `--metric {ccn|cognitive|complexity|duplication|coupling|hotspot|lcom}` —
   restrict to one metric (`complexity` = ccn+cognitive).
-- `--feature <PATH-PREFIX>` — restrict to findings under a path.
+- `--feature {code|test|docs}` — restrict to one metric family.
+  `code` covers always-on observers; `test` covers `[features.test]`
+  metrics; `docs` covers `[features.docs]` metrics.
+- `--path <PATH-PREFIX>` — restrict to findings under a path
+  (renamed from `--feature` in v0.4 — that flag now selects family).
 - `--top <N>` — cap each Severity bucket.
 
 JSON shape: `FindingsRecord` — same shape as `.heal/findings/latest.json`.

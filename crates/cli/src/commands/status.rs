@@ -135,7 +135,8 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
 #[derive(Debug, Clone, Default)]
 pub(super) struct Filters {
     pub(super) metric: Option<FindingMetric>,
-    pub(super) feature: Option<String>,
+    pub(super) family: Option<crate::feature::Family>,
+    pub(super) path: Option<String>,
     pub(super) workspace: Option<String>,
     pub(super) severity: Option<Severity>,
     pub(super) all: bool,
@@ -146,7 +147,8 @@ impl Filters {
     fn from_args(args: &StatusArgs) -> Self {
         Self {
             metric: args.metric,
-            feature: args.feature.clone(),
+            family: args.feature.map(crate::cli::FamilyFilter::as_family),
+            path: args.path.clone(),
             workspace: args.workspace.clone(),
             severity: args.severity.map(SeverityFilter::into_severity),
             all: args.all,
@@ -160,12 +162,17 @@ impl Filters {
                 return false;
             }
         }
+        if let Some(f) = self.family {
+            if finding.family() != f {
+                return false;
+            }
+        }
         if let Some(ws) = self.workspace.as_deref() {
             if finding.workspace.as_deref() != Some(ws) {
                 return false;
             }
         }
-        if let Some(prefix) = self.feature.as_ref() {
+        if let Some(prefix) = self.path.as_ref() {
             if !finding
                 .location
                 .file
@@ -265,12 +272,13 @@ pub(super) fn render(
 
     let show_low = filters.all || matches!(filters.severity, Some(Severity::Medium | Severity::Ok));
 
-    // Bucket by (severity, hotspot). Sections are labelled by Severity so
-    // the header counts (`[critical] N`) line up with the visible content;
-    // the drain-tier (`[T0 Must drain]` etc.) is inferred from
-    // `[policy.drain]` and shown as a per-section suffix so the link to
-    // `/heal-code-patch` stays explicit without overriding the labels.
-    let mut buckets: BTreeMap<(Severity, bool), Vec<&Finding>> = BTreeMap::new();
+    // Partition by family first, then bucket each family's findings by
+    // (severity, hotspot). Per-family rendering is the v0.4 contract:
+    // each family's drain queue is independent (matching the per-family
+    // patch skills and the per-family `HotspotIndex` decoration), so a
+    // global Severity ordering would mix Test and Code Critical 🔥
+    // rows that the user actually wants to triage separately.
+    let mut by_family: BTreeMap<crate::feature::Family, Vec<&Finding>> = BTreeMap::new();
     let mut accepted_items: Vec<&Finding> = Vec::new();
     for f in record.findings.iter().filter(|f| filters.passes(f)) {
         if let Some(min) = filters.severity {
@@ -279,19 +287,93 @@ pub(super) fn render(
             }
         }
         if f.accepted {
-            // Accepted findings are out of the drain queue by design.
-            // Surfaced under `--all` in their own section so the
-            // audit trail stays visible without cluttering the
-            // default view.
             accepted_items.push(f);
             continue;
         }
-        buckets.entry((f.severity, f.hotspot)).or_default().push(f);
+        by_family.entry(f.family()).or_default().push(f);
     }
 
-    // Default-visible sections cover the drain queue + should-drain rows
-    // under the literature-anchored policy default. Everything below the
-    // Should line is gated behind `--all` (or an explicit low `--severity`).
+    let mut total_hidden = 0usize;
+    let family_order = [
+        (
+            crate::feature::Family::Code,
+            "═══ Code ═══",
+            "/heal-code-patch",
+        ),
+        (
+            crate::feature::Family::Test,
+            "═══ Test ═══",
+            "/heal-test-patch",
+        ),
+        (
+            crate::feature::Family::Docs,
+            "═══ Docs ═══",
+            "/heal-doc-patch",
+        ),
+    ];
+
+    for (family, banner, patch_skill) in family_order {
+        // `--feature X` narrows to one family — suppress the sibling
+        // banners entirely even when they have findings (they were
+        // already filtered out by `Filters::passes`). Without a
+        // family filter, every family prints its banner + Next hint
+        // so the user always sees the path forward, even when a
+        // family is empty.
+        if filters.family.is_some_and(|f| f != family) {
+            continue;
+        }
+        let items = by_family.get(&family);
+        writeln!(out, "{}", ansi_wrap(ANSI_CYAN, banner, colorize))?;
+        if let Some(items) = items {
+            let hidden = render_family(items, drain, show_low, filters.top, colorize, out)?;
+            total_hidden += hidden;
+        } else {
+            writeln!(out, "  (no findings)")?;
+        }
+        writeln!(
+            out,
+            "  Next: `claude {patch_skill}` drains this family's T0 queue one finding per commit",
+        )?;
+        writeln!(out)?;
+    }
+
+    if !show_low && total_hidden > 0 {
+        writeln!(
+            out,
+            "  Hidden: {total_hidden} findings across families  [pass --all to show]",
+        )?;
+    }
+
+    if filters.all && !accepted_items.is_empty() {
+        render_tier_section(
+            "📌 Accepted",
+            ANSI_CYAN,
+            &accepted_items,
+            filters.top,
+            colorize,
+            out,
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Render one family's findings as the per-`(Severity, hotspot)`
+/// bucket cascade. Returns the number of findings hidden behind the
+/// `--all` gate so the caller can roll a single "Hidden: N across
+/// families" footer instead of one per family.
+fn render_family(
+    items: &[&Finding],
+    drain: &PolicyDrainConfig,
+    show_low: bool,
+    top: Option<usize>,
+    colorize: bool,
+    out: &mut (impl Write + ?Sized),
+) -> Result<usize> {
+    let mut buckets: BTreeMap<(Severity, bool), Vec<&Finding>> = BTreeMap::new();
+    for f in items {
+        buckets.entry((f.severity, f.hotspot)).or_default().push(*f);
+    }
     let order: &[(Severity, bool, &str, &str, bool)] = &[
         (Severity::Critical, true, "🔴 Critical 🔥", ANSI_RED, true),
         (Severity::Critical, false, "🔴 Critical", ANSI_RED, true),
@@ -308,14 +390,13 @@ pub(super) fn render(
         (Severity::Ok, true, "✅ Ok 🔥", ANSI_CYAN, show_low),
         (Severity::Ok, false, "✅ Ok", ANSI_GREEN, show_low),
     ];
-
-    let mut hidden_count = 0usize;
+    let mut hidden = 0usize;
     for (sev, hot, label, color, visible) in order {
         let Some(items) = buckets.get(&(*sev, *hot)) else {
             continue;
         };
         if !*visible {
-            hidden_count += items.len();
+            hidden += items.len();
             continue;
         }
         let suffix = drain
@@ -330,33 +411,9 @@ pub(super) fn render(
             })
             .unwrap_or_default();
         let full_label = format!("{label}{suffix}");
-        render_tier_section(&full_label, color, items, filters.top, colorize, out)?;
+        render_tier_section(&full_label, color, items, top, colorize, out)?;
     }
-
-    if !show_low && hidden_count > 0 {
-        writeln!(
-            out,
-            "  Hidden: {hidden_count} findings  [pass --all to show]",
-        )?;
-    }
-
-    if filters.all && !accepted_items.is_empty() {
-        render_tier_section(
-            "📌 Accepted",
-            ANSI_CYAN,
-            &accepted_items,
-            filters.top,
-            colorize,
-            out,
-        )?;
-    }
-
-    writeln!(out)?;
-    writeln!(
-        out,
-        "  Next: `claude /heal-code-patch` drains the T0 queue one finding per commit",
-    )?;
-    Ok(())
+    Ok(hidden)
 }
 
 /// Render a drain-tier section with internal Severity 🔥 sort.
@@ -557,7 +614,8 @@ mod tests {
     fn default_filters() -> Filters {
         Filters {
             metric: None,
-            feature: None,
+            family: None,
+            path: None,
             workspace: None,
             severity: None,
             all: false,
@@ -648,16 +706,31 @@ mod tests {
     }
 
     #[test]
-    fn feature_filter_keeps_path_prefix_only() {
+    fn path_filter_keeps_path_prefix_only() {
         let rec = record(vec![
             finding("ccn", "src/payments/engine.ts", Severity::Critical, false),
             finding("ccn", "src/billing/cart.ts", Severity::Critical, false),
         ]);
         let mut filters = default_filters();
-        filters.feature = Some("src/payments".to_owned());
+        filters.path = Some("src/payments".to_owned());
         let out = render_to_string(&rec, &filters);
         assert!(out.contains("src/payments/engine.ts"));
         assert!(!out.contains("src/billing/cart.ts"));
+    }
+
+    #[test]
+    fn family_filter_drops_other_families() {
+        // CoveragePct is Family::Test; ccn is Family::Code. Filtering
+        // to `--feature code` should keep ccn and drop coverage_pct.
+        let rec = record(vec![
+            finding("ccn", "src/hot.rs", Severity::Critical, false),
+            finding("coverage_pct", "src/cold.rs", Severity::Critical, false),
+        ]);
+        let mut filters = default_filters();
+        filters.family = Some(crate::feature::Family::Code);
+        let out = render_to_string(&rec, &filters);
+        assert!(out.contains("src/hot.rs"));
+        assert!(!out.contains("src/cold.rs"));
     }
 
     #[test]
