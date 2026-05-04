@@ -45,8 +45,10 @@ CI runs five gates: `cargo build --workspace`, `cargo test --workspace`,
 
 - Unit tests in `#[cfg(test)] mod tests` next to the code.
 - Integration tests under `crates/cli/tests/`, one file per module
-  (`core_config.rs`, `observer_loc.rs`, `observer_complexity.rs`,
-  etc.).
+  (`core_config.rs`, `observer_code_loc.rs`,
+  `observer_code_complexity.rs`, `observer_docs_freshness.rs`, etc.).
+  The `observer_<feature>_<metric>.rs` prefix mirrors the
+  `observer/<feature>/<metric>.rs` source layout.
 - Shared helpers: `crates/cli/tests/common/mod.rs` and
   `crates/cli/src/test_support.rs`.
 - Tests that touch git **must** go through `test_support::git_bin()`
