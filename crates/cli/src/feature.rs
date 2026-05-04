@@ -21,7 +21,7 @@ use crate::core::calibration::{Calibration, HotspotCalibration};
 use crate::core::config::Config;
 use crate::core::finding::{Finding, Location};
 use crate::core::severity::Severity;
-use crate::observer::hotspot::HotspotReport;
+use crate::observer::code::hotspot::HotspotReport;
 
 /// Cheap, copyable metadata. Identifies the Feature in the registry
 /// listing and tags the records the runtime writes.
@@ -142,17 +142,17 @@ impl FeatureRegistry {
     /// at the end to keep that contract.
     #[must_use]
     pub fn builtin() -> Self {
-        use crate::observer::change_coupling::ChangeCouplingFeature;
-        use crate::observer::complexity::ComplexityFeature;
-        use crate::observer::doc_coverage::DocCoverageFeature;
-        use crate::observer::doc_drift::DocDriftFeature;
-        use crate::observer::doc_freshness::DocFreshnessFeature;
-        use crate::observer::doc_link_health::DocLinkHealthFeature;
-        use crate::observer::duplication::DuplicationFeature;
-        use crate::observer::hotspot::HotspotFeature;
-        use crate::observer::lcom::LcomFeature;
-        use crate::observer::orphan_pages::OrphanPagesFeature;
-        use crate::observer::todo_density::TodoDensityFeature;
+        use crate::observer::code::change_coupling::ChangeCouplingFeature;
+        use crate::observer::code::complexity::ComplexityFeature;
+        use crate::observer::code::duplication::DuplicationFeature;
+        use crate::observer::code::hotspot::HotspotFeature;
+        use crate::observer::code::lcom::LcomFeature;
+        use crate::observer::docs::coverage::DocCoverageFeature;
+        use crate::observer::docs::drift::DocDriftFeature;
+        use crate::observer::docs::freshness::DocFreshnessFeature;
+        use crate::observer::docs::link_health::DocLinkHealthFeature;
+        use crate::observer::docs::orphan_pages::OrphanPagesFeature;
+        use crate::observer::docs::todo_density::TodoDensityFeature;
 
         Self {
             features: vec![

@@ -46,7 +46,7 @@ use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
-use crate::observer::walk::{since_cutoff, ExcludeMatcher};
+use crate::observer::shared::walk::{since_cutoff, ExcludeMatcher};
 use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
 
@@ -135,8 +135,11 @@ impl ChangeCouplingObserver {
         // git2 yields paths relative to the repo root, so the workspace
         // target stays relative — no per-call `root.join` in the diff
         // loop.
-        let workspace_target =
-            crate::observer::walk::resolve_workspace_target(root, self.workspace.as_deref(), false);
+        let workspace_target = crate::observer::shared::walk::resolve_workspace_target(
+            root,
+            self.workspace.as_deref(),
+            false,
+        );
         let matcher = ExcludeMatcher::compile(root, &self.excluded)
             .expect("exclude patterns validated at config load");
 
@@ -215,7 +218,7 @@ impl ChangeCouplingObserver {
             }
             // Workspace check (single strip_prefix on already-resolved
             // target) first — cheaper than the gitignore matcher.
-            if !crate::observer::walk::path_under(path, workspace_target) {
+            if !crate::observer::shared::walk::path_under(path, workspace_target) {
                 continue;
             }
             if matcher.is_excluded(path, false) {
@@ -1018,9 +1021,10 @@ mod pair_class_tests {
 
         fn reports_with(pairs: Vec<FilePair>) -> ObserverReports {
             ObserverReports {
-                loc: crate::observer::loc::LocReport::default(),
-                complexity: crate::observer::complexity::ComplexityReport::default(),
-                complexity_observer: crate::observer::complexity::ComplexityObserver::default(),
+                loc: crate::observer::code::loc::LocReport::default(),
+                complexity: crate::observer::code::complexity::ComplexityReport::default(),
+                complexity_observer: crate::observer::code::complexity::ComplexityObserver::default(
+                ),
                 churn: None,
                 change_coupling: Some(report(pairs)),
                 duplication: None,

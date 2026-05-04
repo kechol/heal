@@ -34,7 +34,7 @@ use serde::Serialize;
 use crate::core::accepted::{snapshot, upsert_accepted, AcceptedFinding};
 use crate::core::findings_cache::{read_latest, upsert_fixed, FixedFinding};
 use crate::core::HealPaths;
-use crate::observer::git;
+use crate::observer::shared::git;
 
 /// `heal mark fix --finding-id <ID> --commit-sha <SHA>`. Upserts a
 /// `FixedFinding` into `.heal/findings/fixed.json` so the next

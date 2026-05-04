@@ -4,7 +4,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use heal_cli::observer::change_coupling::{ChangeCouplingObserver, PairDirection};
+use heal_cli::observer::code::change_coupling::{ChangeCouplingObserver, PairDirection};
 
 mod common;
 use common::{commit_files, init_repo};

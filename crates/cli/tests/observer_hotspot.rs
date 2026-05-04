@@ -4,11 +4,11 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use heal_cli::observer::churn::{ChurnObserver, ChurnReport, ChurnTotals, FileChurn};
-use heal_cli::observer::complexity::{
+use heal_cli::observer::code::churn::{ChurnObserver, ChurnReport, ChurnTotals, FileChurn};
+use heal_cli::observer::code::complexity::{
     ComplexityObserver, ComplexityReport, ComplexityTotals, FileComplexity, FunctionMetric,
 };
-use heal_cli::observer::hotspot::{compose, HotspotObserver, HotspotWeights};
+use heal_cli::observer::code::hotspot::{compose, HotspotObserver, HotspotWeights};
 
 mod common;
 #[allow(unused_imports)]
@@ -134,7 +134,7 @@ fn compose_skips_zero_ccn_or_zero_commits() {
 
 #[test]
 fn compose_boosts_score_when_doc_drifts() {
-    use heal_cli::observer::doc_freshness::{
+    use heal_cli::observer::docs::freshness::{
         DocFreshnessEntry, DocFreshnessReport, DocFreshnessTotals,
     };
 

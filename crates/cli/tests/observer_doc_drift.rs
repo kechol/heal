@@ -3,7 +3,7 @@
 
 use heal_cli::core::doc_pairs::{DocPair, PairSource};
 use heal_cli::core::finding::IntoFindings;
-use heal_cli::observer::doc_drift::DocDriftObserver;
+use heal_cli::observer::docs::drift::DocDriftObserver;
 
 mod common;
 use common::write;

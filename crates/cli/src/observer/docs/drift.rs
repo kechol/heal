@@ -41,8 +41,8 @@ use crate::core::doc_pairs::DocPair;
 use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
-use crate::observer::complexity::parse;
-use crate::observer::lang::Language;
+use crate::observer::code::complexity::parse;
+use crate::observer::shared::lang::Language;
 
 #[derive(Debug, Clone, Default)]
 pub struct DocDriftObserver {
@@ -178,7 +178,7 @@ struct InlineMention {
 /// whitespace or backticks.
 fn extract_inline_identifiers(text: &str) -> Vec<InlineMention> {
     let mut out = Vec::new();
-    for (line_no, line) in crate::observer::doc_markdown::iter_prose_lines(text) {
+    for (line_no, line) in crate::observer::docs::markdown::iter_prose_lines(text) {
         scan_line_for_inline(line, line_no, &mut out);
     }
     out

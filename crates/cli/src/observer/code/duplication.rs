@@ -13,6 +13,16 @@
 //! extended forward as far as every location agrees, yielding a single
 //! maximal block instead of N − `min_tokens` + 1 overlapping minimal blocks.
 //!
+//! # Ownership
+//!
+//! One observer owns `Finding.metric = "duplication"`. The optional
+//! `[features.docs]` Markdown / RST pass is a second tokenizer plugged
+//! into the same bucket-and-extend core via [`DocsDuplicationInputs`];
+//! the observer itself never reads from `observer::docs/`, so it stays
+//! a code observer with a docs-input port rather than shared
+//! infrastructure. If a third tokenization mode lands, extract the
+//! shared core into `observer::shared/` instead.
+//!
 //! Limitations explicitly out of v0.1 scope:
 //! - Type-2 clones (identifier-insensitive). Token hash includes text, so
 //!   `function foo` and `function bar` won't match.
@@ -30,9 +40,9 @@ use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
-use crate::observer::complexity::{parse, ParsedFile};
-use crate::observer::lang::Language;
-use crate::observer::walk::{walk_supported_files_under, ExcludeMatcher};
+use crate::observer::code::complexity::{parse, ParsedFile};
+use crate::observer::shared::lang::Language;
+use crate::observer::shared::walk::{walk_supported_files_under, ExcludeMatcher};
 use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
 
@@ -68,7 +78,7 @@ pub struct DocsDuplicationInputs {
     /// Pre-read Markdown / RST doc bodies. Sharing a [`Vec<DocBody>`]
     /// with the Layer B observers lets the duplication pass piggyback
     /// on the same I/O instead of re-reading every doc.
-    pub docs: Vec<crate::observer::doc_corpus::DocBody>,
+    pub docs: Vec<crate::observer::docs::corpus::DocBody>,
 }
 
 impl DuplicationObserver {
@@ -85,8 +95,8 @@ impl DuplicationObserver {
 
     /// Wire up the optional Markdown / RST duplicate-detection pass.
     /// `inputs.docs` are pre-read; typical resolver is
-    /// `observer::doc_corpus::read_doc_bodies` over the result of
-    /// `observer::doc_walk::walk_standalone_docs`.
+    /// `observer::docs::corpus::read_doc_bodies` over the result of
+    /// `observer::docs::walk::walk_standalone_docs`.
     #[must_use]
     pub fn with_docs(mut self, inputs: Option<DocsDuplicationInputs>) -> Self {
         self.docs = inputs;
@@ -424,7 +434,7 @@ struct InternalBlock {
 fn tokenize_markdown(body: &str) -> (Vec<u64>, Vec<u32>) {
     let mut hashes: Vec<u64> = Vec::new();
     let mut lines: Vec<u32> = Vec::new();
-    for (line_no, line) in crate::observer::doc_markdown::iter_prose_lines(body) {
+    for (line_no, line) in crate::observer::docs::markdown::iter_prose_lines(body) {
         for word in line
             .split(|c: char| !c.is_alphanumeric() && c != '_')
             .filter(|w| !w.is_empty())

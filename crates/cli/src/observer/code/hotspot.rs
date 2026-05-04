@@ -23,9 +23,9 @@ use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
-use crate::observer::churn::{ChurnObserver, ChurnReport, FileChurn};
-use crate::observer::complexity::{ComplexityObserver, ComplexityReport, FileComplexity};
-use crate::observer::doc_freshness::DocFreshnessReport;
+use crate::observer::code::churn::{ChurnObserver, ChurnReport, FileChurn};
+use crate::observer::code::complexity::{ComplexityObserver, ComplexityReport, FileComplexity};
+use crate::observer::docs::freshness::DocFreshnessReport;
 use crate::observer::{ObservationMeta, Observer};
 use crate::observers::ObserverReports;
 

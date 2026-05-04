@@ -8,7 +8,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use tree_sitter::{Node, Parser, QueryCursor, StreamingIterator, Tree};
 
-use crate::observer::lang::Language;
+use crate::observer::shared::lang::Language;
 
 mod ccn;
 mod cognitive;

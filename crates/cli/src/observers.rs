@@ -14,22 +14,24 @@ use crate::core::calibration::{
 use crate::core::config::Config;
 use crate::core::doc_pairs::DocPairsFile;
 use crate::core::finding::Finding;
-use crate::observer::change_coupling::{ChangeCouplingObserver, ChangeCouplingReport};
-use crate::observer::churn::{ChurnObserver, ChurnReport};
-use crate::observer::complexity::{ComplexityObserver, ComplexityReport};
-use crate::observer::doc_coverage::{DocCoverageObserver, DocCoverageReport};
-use crate::observer::doc_drift::{DocDriftObserver, DocDriftReport};
-use crate::observer::doc_freshness::{DocFreshnessObserver, DocFreshnessReport};
-use crate::observer::doc_link_health::{
+use crate::observer::code::change_coupling::{ChangeCouplingObserver, ChangeCouplingReport};
+use crate::observer::code::churn::{ChurnObserver, ChurnReport};
+use crate::observer::code::complexity::{ComplexityObserver, ComplexityReport};
+use crate::observer::code::duplication::{
+    DocsDuplicationInputs, DuplicationObserver, DuplicationReport,
+};
+use crate::observer::code::hotspot::{compose as compose_hotspot, HotspotReport, HotspotWeights};
+use crate::observer::code::lcom::{LcomObserver, LcomReport};
+use crate::observer::code::loc::{LocObserver, LocReport};
+use crate::observer::docs::coverage::{DocCoverageObserver, DocCoverageReport};
+use crate::observer::docs::drift::{DocDriftObserver, DocDriftReport};
+use crate::observer::docs::freshness::{DocFreshnessObserver, DocFreshnessReport};
+use crate::observer::docs::link_health::{
     paired_doc_paths, DocLinkHealthObserver, DocLinkHealthReport,
 };
-use crate::observer::doc_walk::walk_standalone_docs;
-use crate::observer::duplication::{DocsDuplicationInputs, DuplicationObserver, DuplicationReport};
-use crate::observer::hotspot::{compose as compose_hotspot, HotspotReport, HotspotWeights};
-use crate::observer::lcom::{LcomObserver, LcomReport};
-use crate::observer::loc::{LocObserver, LocReport};
-use crate::observer::orphan_pages::{OrphanPagesObserver, OrphanPagesReport};
-use crate::observer::todo_density::{TodoDensityObserver, TodoDensityReport};
+use crate::observer::docs::orphan_pages::{OrphanPagesObserver, OrphanPagesReport};
+use crate::observer::docs::todo_density::{TodoDensityObserver, TodoDensityReport};
+use crate::observer::docs::walk::walk_standalone_docs;
 
 use crate::cli::MetricKind;
 
@@ -126,7 +128,7 @@ pub(crate) fn run_all(
                 .scan(project)
         })
         .map(|mut report| {
-            crate::observer::change_coupling::classify_and_filter(
+            crate::observer::code::change_coupling::classify_and_filter(
                 &mut report,
                 loc.primary.as_deref(),
             );
@@ -156,8 +158,8 @@ pub(crate) fn run_all(
             all_doc_paths.push(p.clone());
         }
     }
-    let doc_corpus: Vec<crate::observer::doc_corpus::DocBody> = if cfg.features.docs.enabled {
-        crate::observer::doc_corpus::read_doc_bodies(project, &all_doc_paths)
+    let doc_corpus: Vec<crate::observer::docs::corpus::DocBody> = if cfg.features.docs.enabled {
+        crate::observer::docs::corpus::read_doc_bodies(project, &all_doc_paths)
     } else {
         Vec::new()
     };
@@ -166,7 +168,7 @@ pub(crate) fn run_all(
             let docs_inputs = if cfg.features.docs.enabled && !standalone_docs.is_empty() {
                 Some(DocsDuplicationInputs {
                     min_tokens: cfg.metrics.duplication.docs_min_tokens,
-                    docs: crate::observer::doc_corpus::select(&doc_corpus, &standalone_docs),
+                    docs: crate::observer::docs::corpus::select(&doc_corpus, &standalone_docs),
                 })
             } else {
                 None
@@ -181,7 +183,7 @@ pub(crate) fn run_all(
     // so calling it three times (freshness, drift, coverage) burned
     // ~300 stat() calls on a 50-pair project.
     let live_pairs: Vec<_> =
-        crate::observer::doc_freshness::live_pairs(doc_pairs.as_ref(), project);
+        crate::observer::docs::freshness::live_pairs(doc_pairs.as_ref(), project);
     // doc_freshness pre-pass for hotspot composition. Always built
     // when the docs feature is on and pairs loaded — the boost is
     // small enough that gating it on `want(DocFreshness)` would
@@ -239,7 +241,7 @@ pub(crate) fn run_all(
     let doc_link_health = (want(MetricKind::DocLinkHealth) && cfg.features.docs.enabled)
         .then(|| DocLinkHealthObserver::from_inputs(cfg, doc_corpus.clone()).scan(project));
     let orphan_pages = (want(MetricKind::OrphanPages) && cfg.features.docs.enabled).then(|| {
-        let standalone = crate::observer::doc_corpus::select(&doc_corpus, &standalone_docs);
+        let standalone = crate::observer::docs::corpus::select(&doc_corpus, &standalone_docs);
         OrphanPagesObserver::from_inputs(cfg, standalone, paired_doc_paths_owned.clone()).scan()
     });
     let todo_density = (want(MetricKind::TodoDensity) && cfg.features.docs.enabled).then(|| {
@@ -358,7 +360,7 @@ pub(crate) fn build_calibration(
             created_at: chrono::Utc::now(),
             codebase_files,
             strategy: STRATEGY_PERCENTILE.to_owned(),
-            calibrated_at_sha: crate::observer::git::head_sha(project),
+            calibrated_at_sha: crate::observer::shared::git::head_sha(project),
         },
         calibration: global_metrics,
         workspaces: workspace_metrics,
@@ -551,15 +553,15 @@ mod tests {
     use crate::core::finding::IntoFindings;
     use crate::core::severity::Severity;
     use crate::core::severity::SeverityCounts;
-    use crate::observer::change_coupling::{ChangeCouplingReport, CouplingTotals, FilePair};
-    use crate::observer::complexity::{
+    use crate::observer::code::change_coupling::{ChangeCouplingReport, CouplingTotals, FilePair};
+    use crate::observer::code::complexity::{
         ComplexityObserver, ComplexityReport, ComplexityTotals, FileComplexity, FunctionMetric,
     };
-    use crate::observer::duplication::{
+    use crate::observer::code::duplication::{
         DuplicateBlock, DuplicateLocation, DuplicationReport, DuplicationTotals, FileDuplication,
     };
-    use crate::observer::hotspot::{HotspotEntry, HotspotReport, HotspotTotals};
-    use crate::observer::loc::LocReport;
+    use crate::observer::code::hotspot::{HotspotEntry, HotspotReport, HotspotTotals};
+    use crate::observer::code::loc::LocReport;
     use std::collections::HashSet;
     use std::path::PathBuf;
 

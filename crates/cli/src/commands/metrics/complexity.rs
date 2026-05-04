@@ -6,7 +6,7 @@ use serde_json::json;
 
 use super::section::{write_section_header, MetricSection, SectionCtx};
 use crate::cli::MetricKind;
-use crate::observer::complexity::{ComplexityMetric, ComplexityReport};
+use crate::observer::code::complexity::{ComplexityMetric, ComplexityReport};
 
 pub(super) struct ComplexitySection;
 

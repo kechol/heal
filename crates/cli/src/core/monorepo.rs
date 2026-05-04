@@ -15,7 +15,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::core::config::Config;
-use crate::observer::loc::LocObserver;
+use crate::observer::code::loc::LocObserver;
 
 /// One detected workspace-declaration signal.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]

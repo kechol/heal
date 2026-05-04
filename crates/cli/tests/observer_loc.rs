@@ -1,5 +1,5 @@
 use heal_cli::core::config::{Config, LocConfig, MetricsConfig};
-use heal_cli::observer::loc::{LocObserver, LocReport};
+use heal_cli::observer::code::loc::{LocObserver, LocReport};
 use heal_cli::observer::Observer;
 
 mod common;

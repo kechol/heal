@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use heal_cli::core::doc_pairs::{DocPair, PairSource};
 use heal_cli::core::finding::IntoFindings;
 use heal_cli::core::severity::Severity;
-use heal_cli::observer::doc_freshness::DocFreshnessObserver;
+use heal_cli::observer::docs::freshness::DocFreshnessObserver;
 
 mod common;
 use common::{commit_files, init_repo};

@@ -3,7 +3,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use heal_cli::observer::churn::ChurnObserver;
+use heal_cli::observer::code::churn::ChurnObserver;
 
 mod common;
 use common::{commit_files, init_repo};

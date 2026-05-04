@@ -98,7 +98,7 @@ impl LocObserver {
             .map(String::as_str)
             .collect();
         languages.get_statistics(&paths, &tokei_substrings, &TokeiConfig::default());
-        let matcher = crate::observer::walk::ExcludeMatcher::compile(root, &self.excluded)
+        let matcher = crate::observer::shared::walk::ExcludeMatcher::compile(root, &self.excluded)
             .expect("exclude patterns validated at config load");
 
         let mut entries = Vec::with_capacity(languages.len());

@@ -18,7 +18,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::config::Config;
 
-use crate::observer::walk::{path_under, resolve_workspace_target, since_cutoff, ExcludeMatcher};
+use crate::observer::shared::walk::{
+    path_under, resolve_workspace_target, since_cutoff, ExcludeMatcher,
+};
 use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 
 impl_workspace_builder!(ChurnObserver);

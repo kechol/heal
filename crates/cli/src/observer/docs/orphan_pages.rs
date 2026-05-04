@@ -20,8 +20,8 @@ use crate::core::config::Config;
 use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
-use crate::observer::doc_corpus::{read_doc_bodies, DocBody};
-use crate::observer::doc_markdown::{
+use crate::observer::docs::corpus::{read_doc_bodies, DocBody};
+use crate::observer::docs::markdown::{
     extract_links, is_external, resolve_relative, split_link_target,
 };
 

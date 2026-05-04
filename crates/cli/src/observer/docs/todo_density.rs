@@ -20,7 +20,7 @@ use crate::core::config::Config;
 use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
-use crate::observer::doc_corpus::{read_doc_bodies, DocBody};
+use crate::observer::docs::corpus::{read_doc_bodies, DocBody};
 
 /// Markers we count. Single-pass over each line so adding a new marker
 /// is a one-element edit.
@@ -106,7 +106,7 @@ pub fn classify(marker_count: u32) -> Severity {
 /// `TODO` inside an example shouldn't count as a doc marker).
 fn count_markers(body: &str) -> u32 {
     let mut count: u32 = 0;
-    for (_, line) in crate::observer::doc_markdown::iter_prose_lines(body) {
+    for (_, line) in crate::observer::docs::markdown::iter_prose_lines(body) {
         for m in MARKERS {
             count = count.saturating_add(u32::try_from(line.matches(m).count()).unwrap_or(0));
         }

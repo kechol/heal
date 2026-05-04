@@ -3,8 +3,8 @@
 
 use heal_cli::core::config::Config;
 #[cfg(feature = "lang-rust")]
-use heal_cli::observer::complexity::ComplexityMetric;
-use heal_cli::observer::complexity::ComplexityObserver;
+use heal_cli::observer::code::complexity::ComplexityMetric;
+use heal_cli::observer::code::complexity::ComplexityObserver;
 
 mod common;
 #[allow(unused_imports)]

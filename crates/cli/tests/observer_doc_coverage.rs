@@ -3,7 +3,7 @@
 
 use heal_cli::core::doc_pairs::{DocPair, PairSource};
 use heal_cli::core::finding::IntoFindings;
-use heal_cli::observer::doc_coverage::DocCoverageObserver;
+use heal_cli::observer::docs::coverage::DocCoverageObserver;
 
 mod common;
 use common::write;

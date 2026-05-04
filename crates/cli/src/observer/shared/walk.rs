@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use ignore::WalkBuilder;
 
-use crate::observer::lang::Language;
+use crate::observer::shared::lang::Language;
 
 /// Compiled `.gitignore`-style exclusion matcher used by every observer.
 /// Patterns understand the full gitignore DSL: glob (`*`, `?`, `**`),

@@ -4,11 +4,11 @@
 //! interpret.
 
 #[cfg(feature = "lang-typescript")]
-use heal_cli::observer::complexity::extract_functions;
+use heal_cli::observer::code::complexity::extract_functions;
 #[cfg(any(feature = "lang-typescript", feature = "lang-rust"))]
-use heal_cli::observer::complexity::{analyze, parse, FunctionMetric};
+use heal_cli::observer::code::complexity::{analyze, parse, FunctionMetric};
 #[cfg(any(feature = "lang-typescript", feature = "lang-rust"))]
-use heal_cli::observer::lang::Language;
+use heal_cli::observer::shared::lang::Language;
 
 #[cfg(feature = "lang-typescript")]
 fn analyze_ts(source: &str) -> Vec<FunctionMetric> {

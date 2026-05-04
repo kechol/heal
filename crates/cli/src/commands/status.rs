@@ -42,7 +42,7 @@ use crate::core::term::{
     ansi_wrap, write_through_pager, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW,
 };
 use crate::core::HealPaths;
-use crate::observer::git;
+use crate::observer::shared::git;
 use crate::observers::build_record;
 
 pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {

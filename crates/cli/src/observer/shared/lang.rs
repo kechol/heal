@@ -33,58 +33,58 @@ compile_error!(
 );
 
 #[cfg(feature = "lang-typescript")]
-const TYPESCRIPT_FUNCTIONS_QUERY: &str = include_str!("../../queries/typescript/functions.scm");
+const TYPESCRIPT_FUNCTIONS_QUERY: &str = include_str!("../../../queries/typescript/functions.scm");
 #[cfg(feature = "lang-typescript")]
-const TYPESCRIPT_CCN_QUERY: &str = include_str!("../../queries/typescript/ccn.scm");
+const TYPESCRIPT_CCN_QUERY: &str = include_str!("../../../queries/typescript/ccn.scm");
 #[cfg(feature = "lang-typescript")]
-const TYPESCRIPT_COGNITIVE_QUERY: &str = include_str!("../../queries/typescript/cognitive.scm");
+const TYPESCRIPT_COGNITIVE_QUERY: &str = include_str!("../../../queries/typescript/cognitive.scm");
 #[cfg(feature = "lang-typescript")]
-const TYPESCRIPT_LCOM_QUERY: &str = include_str!("../../queries/typescript/lcom.scm");
+const TYPESCRIPT_LCOM_QUERY: &str = include_str!("../../../queries/typescript/lcom.scm");
 
 #[cfg(feature = "lang-javascript")]
-const JAVASCRIPT_FUNCTIONS_QUERY: &str = include_str!("../../queries/javascript/functions.scm");
+const JAVASCRIPT_FUNCTIONS_QUERY: &str = include_str!("../../../queries/javascript/functions.scm");
 #[cfg(feature = "lang-javascript")]
-const JAVASCRIPT_CCN_QUERY: &str = include_str!("../../queries/javascript/ccn.scm");
+const JAVASCRIPT_CCN_QUERY: &str = include_str!("../../../queries/javascript/ccn.scm");
 #[cfg(feature = "lang-javascript")]
-const JAVASCRIPT_COGNITIVE_QUERY: &str = include_str!("../../queries/javascript/cognitive.scm");
+const JAVASCRIPT_COGNITIVE_QUERY: &str = include_str!("../../../queries/javascript/cognitive.scm");
 #[cfg(feature = "lang-javascript")]
-const JAVASCRIPT_LCOM_QUERY: &str = include_str!("../../queries/javascript/lcom.scm");
+const JAVASCRIPT_LCOM_QUERY: &str = include_str!("../../../queries/javascript/lcom.scm");
 
 #[cfg(feature = "lang-python")]
-const PYTHON_FUNCTIONS_QUERY: &str = include_str!("../../queries/python/functions.scm");
+const PYTHON_FUNCTIONS_QUERY: &str = include_str!("../../../queries/python/functions.scm");
 #[cfg(feature = "lang-python")]
-const PYTHON_CCN_QUERY: &str = include_str!("../../queries/python/ccn.scm");
+const PYTHON_CCN_QUERY: &str = include_str!("../../../queries/python/ccn.scm");
 #[cfg(feature = "lang-python")]
-const PYTHON_COGNITIVE_QUERY: &str = include_str!("../../queries/python/cognitive.scm");
+const PYTHON_COGNITIVE_QUERY: &str = include_str!("../../../queries/python/cognitive.scm");
 #[cfg(feature = "lang-python")]
-const PYTHON_LCOM_QUERY: &str = include_str!("../../queries/python/lcom.scm");
+const PYTHON_LCOM_QUERY: &str = include_str!("../../../queries/python/lcom.scm");
 
 #[cfg(feature = "lang-go")]
-const GO_FUNCTIONS_QUERY: &str = include_str!("../../queries/go/functions.scm");
+const GO_FUNCTIONS_QUERY: &str = include_str!("../../../queries/go/functions.scm");
 #[cfg(feature = "lang-go")]
-const GO_CCN_QUERY: &str = include_str!("../../queries/go/ccn.scm");
+const GO_CCN_QUERY: &str = include_str!("../../../queries/go/ccn.scm");
 #[cfg(feature = "lang-go")]
-const GO_COGNITIVE_QUERY: &str = include_str!("../../queries/go/cognitive.scm");
+const GO_COGNITIVE_QUERY: &str = include_str!("../../../queries/go/cognitive.scm");
 #[cfg(feature = "lang-go")]
-const GO_LCOM_QUERY: &str = include_str!("../../queries/go/lcom.scm");
+const GO_LCOM_QUERY: &str = include_str!("../../../queries/go/lcom.scm");
 
 #[cfg(feature = "lang-scala")]
-const SCALA_FUNCTIONS_QUERY: &str = include_str!("../../queries/scala/functions.scm");
+const SCALA_FUNCTIONS_QUERY: &str = include_str!("../../../queries/scala/functions.scm");
 #[cfg(feature = "lang-scala")]
-const SCALA_CCN_QUERY: &str = include_str!("../../queries/scala/ccn.scm");
+const SCALA_CCN_QUERY: &str = include_str!("../../../queries/scala/ccn.scm");
 #[cfg(feature = "lang-scala")]
-const SCALA_COGNITIVE_QUERY: &str = include_str!("../../queries/scala/cognitive.scm");
+const SCALA_COGNITIVE_QUERY: &str = include_str!("../../../queries/scala/cognitive.scm");
 #[cfg(feature = "lang-scala")]
-const SCALA_LCOM_QUERY: &str = include_str!("../../queries/scala/lcom.scm");
+const SCALA_LCOM_QUERY: &str = include_str!("../../../queries/scala/lcom.scm");
 
 #[cfg(feature = "lang-rust")]
-const RUST_FUNCTIONS_QUERY: &str = include_str!("../../queries/rust/functions.scm");
+const RUST_FUNCTIONS_QUERY: &str = include_str!("../../../queries/rust/functions.scm");
 #[cfg(feature = "lang-rust")]
-const RUST_CCN_QUERY: &str = include_str!("../../queries/rust/ccn.scm");
+const RUST_CCN_QUERY: &str = include_str!("../../../queries/rust/ccn.scm");
 #[cfg(feature = "lang-rust")]
-const RUST_COGNITIVE_QUERY: &str = include_str!("../../queries/rust/cognitive.scm");
+const RUST_COGNITIVE_QUERY: &str = include_str!("../../../queries/rust/cognitive.scm");
 #[cfg(feature = "lang-rust")]
-const RUST_LCOM_QUERY: &str = include_str!("../../queries/rust/lcom.scm");
+const RUST_LCOM_QUERY: &str = include_str!("../../../queries/rust/lcom.scm");
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

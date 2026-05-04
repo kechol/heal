@@ -6,10 +6,12 @@ use std::path::PathBuf;
 
 use heal_cli::core::config::{Config, DocsConfig, FeaturesConfig};
 use heal_cli::core::severity::Severity;
-use heal_cli::observer::doc_link_health::{DocLinkHealthObserver, LinkBreakKind};
-use heal_cli::observer::doc_walk::walk_standalone_docs;
-use heal_cli::observer::orphan_pages::OrphanPagesObserver;
-use heal_cli::observer::todo_density::{classify as todo_density_classify, TodoDensityObserver};
+use heal_cli::observer::docs::link_health::{DocLinkHealthObserver, LinkBreakKind};
+use heal_cli::observer::docs::orphan_pages::OrphanPagesObserver;
+use heal_cli::observer::docs::todo_density::{
+    classify as todo_density_classify, TodoDensityObserver,
+};
+use heal_cli::observer::docs::walk::walk_standalone_docs;
 
 mod common;
 use common::write;

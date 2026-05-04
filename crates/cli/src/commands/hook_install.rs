@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use crate::observer::git;
+use crate::observer::shared::git;
 
 pub(crate) const HEAL_HOOK_MARKER: &str = "# heal post-commit hook";
 pub(crate) const POST_COMMIT_SCRIPT: &str = "\

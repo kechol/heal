@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 use tree_sitter::{Node, Query, QueryCursor, StreamingIterator};
 
 use super::{ParsedFile, LOGICAL_OPERATORS};
-use crate::observer::lang::CognitiveCaptures;
+use crate::observer::shared::lang::CognitiveCaptures;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Role {

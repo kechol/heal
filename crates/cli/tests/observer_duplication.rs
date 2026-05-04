@@ -3,8 +3,8 @@
 
 use std::path::PathBuf;
 
-use heal_cli::observer::doc_corpus::read_doc_bodies;
-use heal_cli::observer::duplication::{DocsDuplicationInputs, DuplicationObserver};
+use heal_cli::observer::code::duplication::{DocsDuplicationInputs, DuplicationObserver};
+use heal_cli::observer::docs::corpus::read_doc_bodies;
 
 mod common;
 use common::write;

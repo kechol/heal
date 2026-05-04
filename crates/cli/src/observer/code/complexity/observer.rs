@@ -11,9 +11,9 @@ use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
-use crate::observer::complexity::{analyze, parse, FunctionMetric};
-use crate::observer::lang::Language;
-use crate::observer::walk::{walk_supported_files_under, ExcludeMatcher};
+use crate::observer::code::complexity::{analyze, parse, FunctionMetric};
+use crate::observer::shared::lang::Language;
+use crate::observer::shared::walk::{walk_supported_files_under, ExcludeMatcher};
 use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
 

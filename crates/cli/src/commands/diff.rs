@@ -45,8 +45,8 @@ use crate::core::term::{
     ansi_wrap, write_through_pager, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW,
 };
 use crate::core::HealPaths;
-use crate::observer::git;
-use crate::observer::loc::LocObserver;
+use crate::observer::code::loc::LocObserver;
+use crate::observer::shared::git;
 use crate::observers::build_record;
 
 /// Exit status when `[diff].max_loc_threshold` is exceeded. Wraps the
