@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 #[must_use]
 pub fn find_project_root(start: &Path) -> PathBuf {
     for ancestor in start.ancestors() {
-        if ancestor.join(".heal").join("config.toml").is_file() {
+        if HealPaths::new(ancestor).config().is_file() {
             return ancestor.to_path_buf();
         }
     }
