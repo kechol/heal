@@ -36,8 +36,7 @@ dialects — including reporters that emit duplicate file records
 double-counted).
 
 Findings are emitted only for files with `< 100%` coverage. Fully
-covered files still feed the hotspot boost but don't produce noise
-findings.
+covered files don't produce noise findings.
 
 ### How severity is decided
 
@@ -110,27 +109,6 @@ project's median (`change_coupling.p50`) is re-tagged from
 the source is happening without it".
 
 Doc ↔ source pairs never promote to drift — drift is a test-quality
-signal.
-
-## Hotspot ↔ coverage boost
-
-When `[features.test.coverage]` is on, the hotspot score is
-multiplied by:
-
-```
-1.0 + min(0.5, 1.0 - coverage_ratio)
-```
-
-A file at 50% coverage gets a 1.5× boost (saturated); a file at
-80% gets a 1.2× boost; a fully-covered file gets no boost.
-
-### Combined cap
-
-Combined with the optional docs-drift boost, both factors **share a
-single 1.5× cap** — a file that's both stale-docs and uncovered
-tops out at the same multiplier as a singly-bad one. Hotspot is a
-"rough" signal, not "rough on N axes". Without the cap, every
-opt-in feature would push the same files higher just by adding
 signal.
 
 ## Post-commit nudge: "uncovered hotspot"

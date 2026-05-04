@@ -112,8 +112,7 @@ pub struct CoverageReport {
 
 impl CoverageReport {
     /// Look up coverage for `path`. `None` when the lcov file didn't
-    /// mention it. Used by the hotspot multiplicative-boost
-    /// composition.
+    /// mention it.
     #[must_use]
     pub fn ratio_for(&self, path: &Path) -> Option<f64> {
         self.entries
@@ -185,8 +184,8 @@ impl IntoFindings for CoverageReport {
         self.entries
             .iter()
             // Fully-covered files aren't signal — emitting them would
-            // dwarf the actual gaps. The hotspot integration still
-            // consults them via `ratio_for`.
+            // dwarf the actual gaps. `ratio_for` still surfaces them
+            // for downstream consumers that need the raw ratio.
             .filter(|e| e.line_coverage_pct < 100.0)
             .map(entry_finding)
             .collect()

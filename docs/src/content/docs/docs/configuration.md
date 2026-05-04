@@ -152,14 +152,6 @@ docs_min_tokens = 100        # Markdown / RST window
   the Markdown / RST pass. Tokenisation differs from the code
   path: word-split + lowercased, fenced code blocks stripped.
 
-## Hotspot interaction
-
-When `[features.docs]` is on, the hotspot score gains a
-multiplicative boost for files whose paired doc is stale.
-Combined with the optional coverage boost, both factors **share a
-single 1.5× cap**. See
-[Docs › Metrics](/heal/docs/metrics/#hotspot--doc-drift-boost).
-
 ## Strict by design
 
 Like every other section, `[features.docs]` and its children

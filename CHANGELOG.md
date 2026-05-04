@@ -24,6 +24,24 @@
 
 ### ⚠ BREAKING
 
+- **Hotspot is single-axis again — multiplicative boosts removed.**
+  Earlier `[features.docs]` / `[features.test.coverage]` enablement
+  re-weighted the code Hotspot score by up to `1.5×` based on
+  paired-doc staleness and uncovered-line ratio (`hotspot::compose`
+  accepted `Option<&DocFreshnessReport>` and `Option<&CoverageReport>`
+  precisely for this). The boost is gone. `hotspot::compose` is now
+  a pure `commits × CCN_sum` composite over src files, signature
+  `compose(churn, complexity, weights) -> HotspotReport` (down from
+  five args). Test- and Docs-quality signals will land as their own
+  per-family hotspots in a follow-up; mixing them into the code
+  Hotspot conflated "Critical AND `hotspot=true`" across families
+  and re-introduced the rank-by-feature-count failure the cap was
+  trying to patch. **Migration:** none for users — Findings emitted
+  and JSON shape are unchanged, but the code Hotspot ranking shifts
+  for projects with the docs / test-coverage features on (boosted
+  files drop back to their unweighted ranks). Calibration on next
+  `heal calibrate` re-anchors the percentile breaks.
+
 - **`/heal-config` skill renamed to `/heal-setup`, with feature gates
   for `[features.docs]` and `[features.test]`.** The skill is now a
   one-shot setup wizard rather than a config-only tuner: after

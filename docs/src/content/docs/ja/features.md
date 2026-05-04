@@ -69,7 +69,7 @@ enabled = true
 典型的な導入順は次のとおりです:
 
 1. **まず Code から。** `heal init` を実行し、`/heal-code-review` で監査し、`/heal-code-patch` で drain します。最初の意図的なリファクタの波で `Critical 🔥` をゼロまで持っていけば、ベースラインが整います。
-2. **次に Test を追加。** `lcov.info` がある(または用意できる)なら有効化します。Hotspot とカバレッジのブーストが組み合わさることで、「テストを追加しよう」が順序付きキューに変わります。
+2. **次に Test を追加。** `lcov.info` がある(または用意できる)なら有効化します。`coverage_pct` と `skip_ratio` の Finding によって、「テストを追加しよう」が順序付きキューに変わります。
 3. **最後に Docs を追加。** ドキュメントのドリフトが頻繁に起きるようになったら有効化します。Layer A のペアリングには `/heal-doc-pair-setup` を 1 回実行する必要がありますが、それ以降は `heal status` のたびに doc ファミリも走ります。
 
 オプトインのファミリは後から無効化できます。`enabled = false` にすれば、次の `heal status --refresh` でその findings はキャッシュから消えます。再度有効化すれば再キャリブレーションなしで戻ってきます。

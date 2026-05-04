@@ -113,10 +113,6 @@ floor_ok = 0.0          # skip されたテストはすべて表示
 
 (`coverage_pct` の上書きは反転形式に対して適用されます。`floor_critical = 90.0` は「≤ 10% 行カバレッジ」の意味で、「≤ 90%」ではありません。)
 
-## Hotspot との連携
-
-`[features.test.coverage]` を有効にすると、Hotspot のスコアにカバレッジ未達ファイル向けの乗数が加わります。任意の docs-drift ブーストと組み合わさったとき、両者は単一の **1.5× 上限** を共有するので、複数軸で悪いファイルがシグナル蓄積だけで単軸悪いファイルを上回ることはありません。詳しくは [Test › メトリクス](/heal/ja/test/metrics/#hotspot--カバレッジブースト)。
-
 ## post-commit ナッジ
 
 `[features.test.coverage]` を有効にすると、post-commit フックがナッジにインデント付き 2 行目を追加します:

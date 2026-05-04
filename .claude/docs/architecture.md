@@ -70,9 +70,7 @@ observers::run_all(project, cfg, only=None, workspace=None)
   │                              [features.docs] only)
   ├── DuplicationObserver       (cfg-gated; +Markdown pass on
   │                              [features.docs])
-  ├── HotspotObserver           (composes Churn + Complexity; optional
-  │                              doc-freshness / coverage boost,
-  │                              capped at 1.5×)
+  ├── HotspotObserver           (composes Churn + Complexity)
   ├── LcomObserver              (cfg-gated)
   ├── DocFreshness, DocDrift,   ([features.docs] only)
   │   DocCoverage, DocLinkHealth,
@@ -178,11 +176,8 @@ Order is fixed and meaningful:
    its own `docs_min_tokens` window (default 100).
 6. **Hotspot** — pure composition: zips Churn & Complexity by file,
    `(weight_complexity × ccn_sum) × (weight_churn × commits)`. Default
-   weights both 1.0. Optional multiplicative boost (capped at 1.5×)
-   when paired with `DocFreshnessReport` (stale doc) or
-   `CoverageReport` (uncovered file). Combined boost shares the cap so
-   a doubly-bad file doesn't outrank single-axis-bad files just for
-   accumulating signals.
+   weights both 1.0. Single-axis composite — Test/Docs signals get
+   their own per-family hotspots (planned), not a boost on this one.
 7. **Lcom** — tree-sitter class-scope walk + union-find on field/method
    accesses.
 

@@ -1,6 +1,6 @@
 ---
 title: Docs · メトリクス
-description: "[features.docs] ファミリが生む 6 つのドキュメント品質メトリクスと、Markdown 重複検出、Hotspot ↔ doc-drift ブースト。"
+description: "[features.docs] ファミリが生む 6 つのドキュメント品質メトリクスと、Markdown 重複検出。"
 ---
 
 オプトインの **Docs** ファミリは、常時オンの Code ファミリの上に 6 つのメトリクスを追加します。各メトリクスは、ドキュメントが説明している実装からずれていく特定のしかたを狙い撃ちします。
@@ -111,20 +111,6 @@ Heading の slug は GitHub 互換の slugify 規約(lowercase + non-alnum → `
 ユースケース: 言語ミラー(en + ja)間、モジュール固有の README 間、共有ボイラープレートを持つ API リファレンスページ間で、コピペされたドキュメントを発見すること。修正は通常、「see also」リンク + 単一の正規ソースです。
 
 ウィンドウ長は `[metrics.duplication].docs_min_tokens`(デフォルト 100)です。詳しくは [Docs › 設定](/heal/ja/docs/configuration/#markdown--rst-重複ウィンドウ)。
-
-## Hotspot ↔ doc-drift ブースト
-
-`[features.docs]` を有効にすると、Hotspot のスコアに次の乗数が掛かります:
-
-```
-1.0 + min(0.5, src_commits_since_doc / critical_commits)
-```
-
-ペアドキュメントが 20+ commits 遅れているソースは 1.5× ブースト(saturated)、10 commits 遅れているドキュメントは 1.25× ブースト、フレッシュなドキュメントはブーストなしです。
-
-### 統合上限
-
-任意のカバレッジブーストと組み合わさったとき、両ファクタは **単一の 1.5× 上限** を共有します。両軸で悪いファイルが、単軸で悪いファイルと同じ上限に達する形です。Hotspot は「rough」シグナルであって「rough on N axes」シグナルではありません。
 
 ## `/heal-doc-review` と `/heal-doc-patch` がこれらをどう使うか
 

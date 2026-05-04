@@ -146,15 +146,6 @@ floor_ok = 0.0          # any skipped test surfaces
 (`coverage_pct` overrides apply to the inverted form —
 `floor_critical = 90.0` means "≤ 10% line coverage", not "≤ 90%".)
 
-## Hotspot interaction
-
-When `[features.test.coverage]` is on, the hotspot score gets a
-multiplicative boost for uncovered files. Combined with the
-optional docs-drift boost it shares a single **1.5× cap**, so a
-file that's bad on multiple axes doesn't outrank single-axis-bad
-files just by accumulating signals. See
-[Test › Metrics](/heal/test/metrics/#hotspot--coverage-boost).
-
 ## Post-commit nudge
 
 When `[features.test.coverage]` is on, the post-commit hook adds an

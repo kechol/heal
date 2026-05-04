@@ -1,6 +1,6 @@
 ---
 title: Docs · Metrics
-description: The six documentation-quality metrics the [features.docs] family produces, plus Markdown duplication and the hotspot ↔ doc-drift boost.
+description: The six documentation-quality metrics the [features.docs] family produces, plus Markdown duplication.
 ---
 
 The opt-in **Docs** family adds six metrics on top of the always-on
@@ -161,25 +161,6 @@ usually a "see also" link plus a single canonical source.
 
 Window length is `[metrics.duplication].docs_min_tokens` (default
 100). See [Docs › Configuration](/heal/docs/configuration/#markdown--rst-duplication-window).
-
-## Hotspot ↔ doc-drift boost
-
-When `[features.docs]` is on, the hotspot score is multiplied by:
-
-```
-1.0 + min(0.5, src_commits_since_doc / critical_commits)
-```
-
-A source whose paired doc is 20+ commits behind gets a 1.5×
-boost (saturated); a doc 10 commits behind gets a 1.25× boost; a
-fresh doc gets no boost.
-
-### Combined cap
-
-Combined with the optional coverage boost, both factors **share a
-single 1.5× cap** — a file that's both stale-docs and uncovered
-tops out at the same multiplier as a singly-bad one. Hotspot is a
-"rough" signal, not "rough on N axes".
 
 ## How `/heal-doc-review` and `/heal-doc-patch` use these
 

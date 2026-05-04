@@ -281,12 +281,6 @@ weight_complexity = 1.0
 Hotspot doesn't have a `floor_critical`; it's a flag (top 10% of
 the score distribution), not a Severity tier.
 
-When `[features.docs]` or `[features.test.coverage]` is on, the
-hotspot score gets a small multiplier (capped at 1.5×) for files
-with stale docs or low coverage. See
-[Docs › Metrics](/heal/docs/metrics/#hotspot--doc-drift-boost) and
-[Test › Metrics](/heal/test/metrics/#hotspot--coverage-boost).
-
 ### `[metrics.lcom]`
 
 ```toml

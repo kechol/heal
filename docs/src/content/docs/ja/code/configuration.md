@@ -230,8 +230,6 @@ weight_complexity = 1.0
 
 Hotspot には `floor_critical` がありません。Severity ティアではなくフラグ(スコア分布の上位 10%)です。
 
-`[features.docs]` または `[features.test.coverage]` を有効にすると、Hotspot のスコアに小さな乗数が加わります(上限 1.5×)。詳しくは [Docs › Metrics](/heal/ja/docs/metrics/#hotspot--doc-drift-ブースト) と [Test › Metrics](/heal/ja/test/metrics/#hotspot--カバレッジブースト)。
-
 ### `[metrics.lcom]`
 
 ```toml

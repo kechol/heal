@@ -1,6 +1,6 @@
 //! Integration coverage for `[features.test.coverage]`: lcov ingestion
-//! against tempdir layouts, hotspot boost composition, and severity
-//! classification through `Feature::lower`.
+//! against tempdir layouts, `CoverageReport` lookup helpers, and
+//! severity classification through `Feature::lower`.
 
 use std::path::PathBuf;
 

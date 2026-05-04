@@ -70,9 +70,9 @@ pub struct ObserverReports {
     pub todo_density: Option<TodoDensityReport>,
     /// Per-source-file line coverage parsed from an externally-generated
     /// lcov.info file. `None` whenever `[features.test.coverage]` is
-    /// disabled or the configured `lcov_paths` resolve to nothing on
-    /// disk. Hotspot composition consumes this to apply the
-    /// uncovered-files multiplicative boost.
+    /// disabled, the user is running a single-metric scan that doesn't
+    /// need it, or the configured `lcov_paths` resolve to nothing on
+    /// disk.
     pub coverage: Option<CoverageReport>,
     /// Per-test-file skipped-test ratio. `None` whenever
     /// `[features.test]` is disabled or no `test_paths` are configured.
@@ -146,9 +146,8 @@ pub(crate) fn run_all(
         );
         report
     });
-    // Load the docs SSoT and Layer B walk once, before hotspot
-    // composition so the optional drift boost can run, then reuse the
-    // results for every downstream docs observer.
+    // Load the docs SSoT and Layer B walk once and reuse the results
+    // for every downstream docs observer.
     let doc_pairs = if cfg.features.docs.enabled {
         load_doc_pairs(project, cfg)
     } else {
@@ -196,23 +195,9 @@ pub(crate) fn run_all(
     // ~300 stat() calls on a 50-pair project.
     let live_pairs: Vec<_> =
         crate::observer::docs::freshness::live_pairs(doc_pairs.as_ref(), project);
-    // doc_freshness pre-pass for hotspot composition. Always built
-    // when the docs feature is on and pairs loaded — the boost is
-    // small enough that gating it on `want(DocFreshness)` would
-    // change `Hotspot`'s output based on a flag that doesn't pertain
-    // to it.
-    let hotspot_doc_freshness =
-        if cfg.features.docs.enabled && cfg.metrics.is_enabled("hotspot") && !live_pairs.is_empty()
-        {
-            Some(DocFreshnessObserver::from_config_and_pairs(cfg, live_pairs.clone()).scan(project))
-        } else {
-            None
-        };
-    // Coverage pre-pass: same rationale as `hotspot_doc_freshness` —
-    // build it whenever the test-coverage sub-feature is on so hotspot
-    // composition can apply the uncovered-files boost without relying
-    // on the user explicitly asking for the metric.
-    let coverage = (cfg.features.test.enabled && cfg.features.test.coverage.enabled)
+    let coverage = (want(MetricKind::CoveragePct)
+        && cfg.features.test.enabled
+        && cfg.features.test.coverage.enabled)
         .then(|| CoverageObserver::from_config(cfg).scan(project));
     let skip_ratio = (want(MetricKind::SkipRatio) && cfg.features.test.enabled)
         .then(|| SkipRatioObserver::from_config(cfg).scan(project));
@@ -223,8 +208,6 @@ pub(crate) fn run_all(
         (true, Some(ch)) => Some(compose_hotspot(
             ch,
             &complexity,
-            hotspot_doc_freshness.as_ref(),
-            coverage.as_ref(),
             HotspotWeights {
                 churn: cfg.metrics.hotspot.weight_churn,
                 complexity: cfg.metrics.hotspot.weight_complexity,
@@ -237,18 +220,9 @@ pub(crate) fn run_all(
             .with_workspace(ws_buf)
             .scan(project)
     });
-    // Reuse the freshness pre-pass when the user asked for the metric
-    // explicitly — same inputs, same output, just exposed as
-    // `reports.doc_freshness`.
-    let doc_freshness = if want(MetricKind::DocFreshness) && doc_pairs.is_some() {
-        if let Some(report) = hotspot_doc_freshness.clone() {
-            Some(report)
-        } else {
-            Some(DocFreshnessObserver::from_config_and_pairs(cfg, live_pairs.clone()).scan(project))
-        }
-    } else {
-        None
-    };
+    let doc_freshness = (want(MetricKind::DocFreshness) && doc_pairs.is_some()).then(|| {
+        DocFreshnessObserver::from_config_and_pairs(cfg, live_pairs.clone()).scan(project)
+    });
     let doc_drift = (want(MetricKind::DocDrift) && doc_pairs.is_some())
         .then(|| DocDriftObserver::from_config_and_pairs(cfg, live_pairs.clone()).scan(project));
     let doc_coverage = (want(MetricKind::DocCoverage) && doc_pairs.is_some()).then(|| {

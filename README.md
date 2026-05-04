@@ -23,8 +23,6 @@ Documentation: <https://kechol.github.io/heal/>
 
 Hotspot composes complexity with churn, so on a language without a
 tree-sitter grammar enabled it falls back to a churn-only signal.
-When `[features.docs]` is on, hotspot scores get an additional boost
-when the file's paired doc has fallen behind.
 
 > ⚠️ **Status: v0.2 in progress.** macOS / Linux only.
 

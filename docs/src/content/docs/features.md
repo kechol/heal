@@ -101,8 +101,8 @@ A typical adoption order:
    `/heal-code-review`, drain with `/heal-code-patch`. Once
    `Critical 🔥` is at zero, you have a baseline.
 2. **Add Test next** if you have (or can produce) an `lcov.info`.
-   The hotspot ↔ coverage boost turns "we should add tests"
-   into a ranked queue.
+   `coverage_pct` and `skip_ratio` Findings turn "we should add
+   tests" into a ranked queue.
 3. **Add Docs last** when documentation drift is a recurring
    surprise. Layer A pairing needs one upfront pass through
    `/heal-doc-pair-setup`; after that, the doc family runs on

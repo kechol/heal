@@ -122,10 +122,6 @@ docs_min_tokens = 100        # Markdown / RST のウィンドウ長
 
 - `docs_min_tokens`(デフォルト `100`) — Markdown / RST パスの最小ウィンドウ長。トークン化はコードパスとは異なります(word-split + lowercase 化、fenced コードブロックは剥がす)。
 
-## Hotspot との連携
-
-`[features.docs]` を有効にすると、Hotspot のスコアにペアになったドキュメントが古いファイル向けの乗数が加わります。任意のカバレッジブーストと組み合わさったとき、両者は **単一の 1.5× 上限** を共有します。詳しくは [Docs › メトリクス](/heal/ja/docs/metrics/#hotspot--doc-drift-ブースト)。
-
 ## 厳密設計
 
 `[features.docs]` とその子も、他のセクションと同じく未知のキーを拒否します:

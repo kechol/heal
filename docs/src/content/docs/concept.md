@@ -63,11 +63,6 @@ isn't twice as bad as a `Critical` finding — it's the one that
 actually pays back the time you spend fixing it. The `/heal-code-patch`
 skill drains the `🔥` queue first by default for the same reason.
 
-When `[features.docs]` or `[features.test.coverage]` is enabled,
-Hotspot's score also gains a multiplicative boost (capped at 1.5×)
-when a file's paired doc has drifted or its line coverage is
-incomplete — see [Features](/heal/features/).
-
 ## Read-only by default; write through skills
 
 The `heal` CLI itself never modifies source files. Repair flows

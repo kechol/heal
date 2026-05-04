@@ -237,18 +237,6 @@ The "Ok 🔥" subset — low Severity but heavily touched, "why are we
 still editing this?" candidates — appears in a dedicated section
 under `heal status --all`.
 
-### Optional boosts (Test / Docs families)
-
-When the docs or test family is enabled, Hotspot's score gains a
-small multiplier for files whose paired doc is stale or whose
-line coverage is incomplete. Both boosts share a single **1.5×
-cap**, so a file that's bad on multiple axes doesn't outrank
-single-axis-bad files just by accumulating signals.
-
-See [Docs › Metrics](/heal/docs/metrics/#hotspot--doc-drift-boost)
-and [Test › Metrics](/heal/test/metrics/#hotspot--coverage-boost)
-for the per-family details.
-
 ## Why CCN and Cognitive are _proxies_
 
 McCabe (1976) introduced CCN as a static estimate of the minimum

@@ -72,7 +72,7 @@ key form matches `MetricsConfig` field names.
 | `change_coupling.drift` | (under `ChangeCoupling`) | — | `[features.test]` only. TestSrc pair whose joint count sits below the project's `change_coupling.p50`; the test isn't keeping up with its source. Severity::Medium, real Finding (not Advisory). DocSrc pairs never promote to drift. |
 | `change_coupling.cross_workspace` | (Advisory tier) | — | Cross-workspace pair surfaced as Advisory. |
 | `duplication` | `Duplication` | `duplication` | Type-1 (token-exact) clones over code; `[features.docs]` adds a parallel Markdown / RST pass with its own `docs_min_tokens` window. |
-| `hotspot` | `Hotspot` | `hotspot` | Composite of churn × complexity. **Is** an emitted metric (file-level Finding) but its severity is always `Ok` — the importance is signaled via `hotspot=true` flag on **other** Findings. When `[features.docs]` is on, `compose` multiplies the score by up to 1.5× when the file's paired doc is stale. |
+| `hotspot` | `Hotspot` | `hotspot` | Composite of churn × complexity, src-file keyed. **Is** an emitted metric (file-level Finding) but its severity is always `Ok` — the importance is signaled via `hotspot=true` flag on **other** Findings. |
 | `lcom` | `Lcom` | `lcom` | Per-class cluster count. |
 | `doc_freshness` | `DocFreshness` | `doc-freshness` | `[features.docs]` only. Per-pair "src commits since paired doc last changed." Layer A. |
 | `doc_drift` | `DocDrift` | `doc-drift` | `[features.docs]` only. Type 1 dangling identifier — doc references a name no longer in the paired src AST. Layer A. |

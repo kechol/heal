@@ -474,25 +474,17 @@ blocks are excluded (those are illustrative).
 hard-coded in v0.4; consider a config knob in v0.5 if users tune
 them.
 
-### Hotspot integration
+### Hotspot is single-axis
 
-`hotspot::compose` accepts both an `Option<&DocFreshnessReport>`
-and (since v0.4) an `Option<&CoverageReport>`. When either is
-supplied, files matched by it receive a multiplicative score
-boost — `1.0 + min(0.5, src_commits_since_doc / 20)` for stale
-docs, `1.0 + min(0.5, 1 - coverage_ratio)` for uncovered files
-— and the two boosts are combined multiplicatively but **share
-the cap** at `1.5×` so a doubly-bad file doesn't outrank
-single-axis-bad files just for accumulating signals. The cap
-exists so an extremely stale doc / fully-uncovered file on a
-moderately-active source can't push it past hotter files with
-fresh docs and good coverage.
-
-The pre-pass that computes `DocFreshness` for the boost is
-reused as `reports.doc_freshness` whenever the user also asked
-for the metric — no double-scan. `CoverageReport` is built once
-when `[features.test.coverage]` is on and reused for both the
-hotspot boost and the `coverage_pct` Findings.
+`hotspot::compose` is a pure `commits × CCN_sum` composite over
+src files. Earlier versions folded `DocFreshnessReport` and
+`CoverageReport` into the score as multiplicative boosts capped
+at `1.5×`; that post-hoc fusion is gone. The motivation: the
+cap was patching a "rank by feature count" failure mode, and
+mixing test/docs signals into a code-keyed score made
+"Critical AND `hotspot=true`" mean different things in
+different families. Per-family hotspots are the planned
+replacement.
 
 ### Markdown duplication
 
@@ -548,9 +540,8 @@ anchored at literature defaults (≤ 5 % coverage Critical,
 `heal calibrate --force` after editing the lcov.info workflow.
 
 Findings are emitted only for files with `< 100 %` coverage.
-Files at full coverage are still consulted by the hotspot
-boost (via `CoverageReport::ratio_for`) but don't produce
-noise findings.
+Fully-covered files stay queryable via `CoverageReport::ratio_for`
+for downstream consumers but don't produce noise findings.
 
 ### `observer/test/skip_ratio.rs` (`skip_ratio`)
 
