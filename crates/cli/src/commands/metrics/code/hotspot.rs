@@ -4,8 +4,8 @@ use std::io::{self, Write};
 
 use serde_json::json;
 
-use super::section::{write_section_header, MetricSection, SectionCtx};
 use crate::cli::MetricKind;
+use crate::commands::metrics::section::{write_section_header, MetricSection, SectionCtx};
 
 pub(super) struct HotspotSection;
 

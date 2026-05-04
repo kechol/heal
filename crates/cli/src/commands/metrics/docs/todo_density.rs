@@ -1,54 +1,55 @@
-//! `doc_drift` section — dangling identifier mentions in paired docs.
+//! `todo_density` section — author-confessed incompleteness markers.
 
 use std::io::{self, Write};
 
 use serde_json::json;
 
-use super::section::{write_section_header, MetricSection, SectionCtx};
 use crate::cli::MetricKind;
+use crate::commands::metrics::section::{write_section_header, MetricSection, SectionCtx};
 
-pub(super) struct DocDriftSection;
+pub(super) struct TodoDensitySection;
 
-impl MetricSection for DocDriftSection {
+impl MetricSection for TodoDensitySection {
     fn metric(&self) -> MetricKind {
-        MetricKind::DocDrift
+        MetricKind::TodoDensity
     }
 
     fn render_text(&self, ctx: &SectionCtx<'_>, w: &mut dyn Write) -> io::Result<()> {
-        let Some(report) = ctx.reports.doc_drift.as_ref() else {
+        let Some(report) = ctx.reports.todo_density.as_ref() else {
             return Ok(());
         };
-        if report.entries.is_empty() {
+        if report.totals.scanned_docs == 0 {
             return Ok(());
         }
         let top_n = ctx.cfg.metrics.top_n;
-        write_section_header("Doc drift", ctx, w)?;
+        write_section_header("TODO density", ctx, w)?;
         writeln!(
             w,
-            "  {} dangling identifier mention(s) across paired docs",
-            report.totals.dangling_identifiers,
+            "  {} doc(s) scanned; {} carry markers ({} markers total)",
+            report.totals.scanned_docs,
+            report.totals.docs_with_markers,
+            report.totals.total_markers,
         )?;
         for entry in report.worst_n(top_n) {
             writeln!(
                 w,
-                "    - {}:{} `{}` (no longer in paired src)",
+                "    - {} ({} markers)",
                 entry.doc_path.display(),
-                entry.doc_line,
-                entry.identifier,
+                entry.marker_count,
             )?;
         }
         Ok(())
     }
 
     fn raw_json(&self, ctx: &SectionCtx<'_>) -> serde_json::Value {
-        json!(ctx.reports.doc_drift.as_ref())
+        json!(ctx.reports.todo_density.as_ref())
     }
 
     fn worst_json(&self, ctx: &SectionCtx<'_>) -> (usize, serde_json::Value) {
         let n = ctx.cfg.metrics.top_n;
         let entries = ctx
             .reports
-            .doc_drift
+            .todo_density
             .as_ref()
             .map(|r| r.worst_n(n))
             .unwrap_or_default();

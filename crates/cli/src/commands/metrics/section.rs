@@ -63,23 +63,11 @@ pub(super) trait MetricSection {
     fn worst_json(&self, ctx: &SectionCtx<'_>) -> (usize, serde_json::Value);
 }
 
-/// All sections in canonical ordering. The text renderer prints in this
-/// order; the JSON consumer doesn't see ordering since maps are
-/// unordered. Add new sections to the bottom.
+/// All sections in canonical ordering — code-feature first, then
+/// docs-feature. The text renderer prints in this order; JSON
+/// consumers see an unordered map.
 pub(super) fn all_sections() -> Vec<Box<dyn MetricSection>> {
-    vec![
-        Box::new(super::loc::LocSection),
-        Box::new(super::complexity::ComplexitySection),
-        Box::new(super::churn::ChurnSection),
-        Box::new(super::coupling::ChangeCouplingSection),
-        Box::new(super::duplication::DuplicationSection),
-        Box::new(super::hotspot::HotspotSection),
-        Box::new(super::lcom::LcomSection),
-        Box::new(super::doc_freshness::DocFreshnessSection),
-        Box::new(super::doc_drift::DocDriftSection),
-        Box::new(super::doc_coverage::DocCoverageSection),
-        Box::new(super::doc_link_health::DocLinkHealthSection),
-        Box::new(super::orphan_pages::OrphanPagesSection),
-        Box::new(super::todo_density::TodoDensitySection),
-    ]
+    let mut sections = super::code::sections();
+    sections.extend(super::docs::sections());
+    sections
 }

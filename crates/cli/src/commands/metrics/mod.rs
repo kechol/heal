@@ -2,26 +2,13 @@
 //! `--json` payload.
 //!
 //! Every invocation runs the observers fresh and renders directly —
-//! no `.heal/snapshots/` reads, no historical delta. Each metric is a
-//! [`section::MetricSection`] in its own file: [`loc`], [`complexity`],
-//! [`churn`], [`coupling`], [`duplication`], [`hotspot`], [`lcom`].
-//! The orchestrator below loads config, runs observers, and dispatches
-//! over the section registry — no metric-specific branching here.
+//! no `.heal/snapshots/` reads, no historical delta. The orchestrator
+//! dispatches over the section registry; no metric-specific branching
+//! here.
 
-mod churn;
-mod complexity;
-mod coupling;
-mod doc_coverage;
-mod doc_drift;
-mod doc_freshness;
-mod doc_link_health;
-mod duplication;
-mod hotspot;
-mod lcom;
-mod loc;
-mod orphan_pages;
+mod code;
+mod docs;
 mod section;
-mod todo_density;
 
 use std::io::{self, Write};
 use std::path::Path;
