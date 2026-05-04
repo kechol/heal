@@ -904,7 +904,7 @@ mod pair_class_tests {
                 .into_iter()
                 .map(|p| WorkspaceOverlay {
                     path: p.into(),
-                    primary_language: None,
+                    language: None,
                     exclude_paths: Vec::new(),
                     metrics: WorkspaceMetricsOverlay::default(),
                 })

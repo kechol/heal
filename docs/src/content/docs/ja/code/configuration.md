@@ -65,27 +65,27 @@ response_language = "Japanese"
 ```toml
 [[project.workspaces]]
 path = "packages/web"
-primary_language = "typescript"
+language = "typescript"
 
 [[project.workspaces]]
 path = "packages/api"
-primary_language = "typescript"
+language = "typescript"
 
 [[project.workspaces]]
 path = "services/worker"
-primary_language = "rust"
+language = "rust"
 ```
 
 各エントリで指定できる項目:
 
 - `path` — リポジトリルートからの相対ディレクトリ(スラッシュ区切り、先頭の `/` なし)。ワークスペースはネストできません。
-- `primary_language`(任意) — 自動検出された主言語を上書きします。LOC のヒューリスティックが想定と違う言語を選ぶとき(例: Rust ワークスペースに JavaScript のフィクスチャが大量にある場合)に使います。
+- `language`(任意) — 自動検出された主言語を上書きします。LOC のヒューリスティックが想定と違う言語を選ぶとき(例: Rust ワークスペースに JavaScript のフィクスチャが大量にある場合)に使います。
 - `exclude_paths`(任意) — ワークスペースルートからの相対で評価される gitignore 構文のパターン。`git.exclude_paths` の上に重ねて適用されます。
 
 ```toml
 [[project.workspaces]]
 path = "packages/api"
-primary_language = "typescript"
+language = "typescript"
 exclude_paths = ["vendor/", "src/generated/**"]
 ```
 
@@ -96,7 +96,7 @@ exclude_paths = ["vendor/", "src/generated/**"]
 ```toml
 [[project.workspaces]]
 path = "packages/legacy"
-primary_language = "typescript"
+language = "typescript"
 
 # 高複雑度のレガシーエリア。移行が完了するまで卒業ゲートを緩めておく。
 [project.workspaces.metrics.ccn]

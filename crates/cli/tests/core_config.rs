@@ -384,7 +384,7 @@ fn workspaces_round_trip() {
     let cfg = r#"
         [[project.workspaces]]
         path = "packages/web"
-        primary_language = "typescript"
+        language = "typescript"
         exclude_paths = ["dist/**"]
 
         [[project.workspaces]]
@@ -394,7 +394,7 @@ fn workspaces_round_trip() {
     assert_eq!(parsed.project.workspaces.len(), 2);
     assert_eq!(parsed.project.workspaces[0].path, "packages/web");
     assert_eq!(
-        parsed.project.workspaces[0].primary_language.as_deref(),
+        parsed.project.workspaces[0].language.as_deref(),
         Some("typescript")
     );
     assert_eq!(
@@ -402,7 +402,24 @@ fn workspaces_round_trip() {
         vec!["dist/**".to_string()]
     );
     assert_eq!(parsed.project.workspaces[1].path, "services/api");
-    assert!(parsed.project.workspaces[1].primary_language.is_none());
+    assert!(parsed.project.workspaces[1].language.is_none());
+}
+
+#[test]
+fn workspaces_legacy_primary_language_key_is_rejected() {
+    // The pre-rename key surfaces as a `deny_unknown_fields` error so
+    // the user gets a clear migration nudge — silent acceptance would
+    // mask configs that still rely on the old name.
+    let cfg = r#"
+        [[project.workspaces]]
+        path = "packages/web"
+        primary_language = "typescript"
+    "#;
+    let err = Config::from_toml_str(cfg).unwrap_err().to_string();
+    assert!(
+        err.contains("primary_language") || err.contains("unknown"),
+        "expected schema error pointing at the legacy key, got: {err}",
+    );
 }
 
 #[test]

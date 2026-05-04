@@ -353,8 +353,8 @@ pub struct ProjectConfig {
     pub response_language: Option<String>,
     /// Declared sub-projects inside a monorepo. Each overlay scopes a
     /// path prefix and (optionally) overrides the auto-detected
-    /// `primary_language` for that subtree. Empty (the v0.1+ default)
-    /// means the whole repo is one cohort, exactly matching pre-monorepo
+    /// `language` for that subtree. Empty (the v0.1+ default) means
+    /// the whole repo is one cohort, exactly matching pre-monorepo
     /// behavior. See `[[project.workspaces]]` in `references/config.md`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub workspaces: Vec<WorkspaceOverlay>,
@@ -371,9 +371,9 @@ pub struct WorkspaceOverlay {
     pub path: String,
     /// Override the auto-detected primary language for this workspace.
     /// Free-form, lowercased on write — same shape as the field
-    /// `LocReport::primary` produces.
+    /// `LocReport::primary` produces. Maps to the TOML key `language`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub primary_language: Option<String>,
+    pub language: Option<String>,
     /// Workspace-local extra excludes layered on top of
     /// `git.exclude_paths` and `metrics.loc.exclude_paths`. Each entry
     /// is a `.gitignore` line **relative to the workspace root**:

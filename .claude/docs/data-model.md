@@ -343,7 +343,7 @@ applies. `TestCoverageConfig.lcov_paths` defaults to `lcov.info`,
 ```toml
 [[project.workspaces]]
 path = "pkg/web"                        # project-relative, no leading /
-primary_language = "TypeScript"         # optional override
+language = "TypeScript"                 # optional override of LOC primary
 
 [project.workspaces.metrics.ccn]
 floor_critical = 40

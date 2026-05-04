@@ -169,14 +169,13 @@ Steps:
    every existing finding's severity (calibration shifts under the
    user). Make the consequence visible.
 
-3. **Pick `primary_language` per workspace.** Run
+3. **Pick `language` per workspace.** Run
    `heal metrics --json --workspace <path>` per declared workspace
    and read the LOC primary. If it differs from the repo-wide primary,
-   set `primary_language` on the workspace overlay so the change-
-   coupling pair-class noise filter (per-language lockfiles and
-   build-output dirs — `Cargo.lock` / `target/` for Rust, sbt's
-   `target/` for Scala, `.egg-info/` for Python, etc.) matches
-   reality.
+   set `language` on the workspace overlay so the change-coupling
+   pair-class noise filter (per-language lockfiles and build-output
+   dirs — `Cargo.lock` / `target/` for Rust, sbt's `target/` for
+   Scala, `.egg-info/` for Python, etc.) matches reality.
 
 4. **Tune per-workspace recipes** (skip when no override is needed):
    - **`exclude_paths`**: workspace-relative `.gitignore` lines layered

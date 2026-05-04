@@ -24,6 +24,20 @@
 
 ### ⚠ BREAKING
 
+- **`[[project.workspaces]].primary_language` renamed to `language`.**
+  The shorter key reads better in config.toml and matches how
+  teams actually talk about a workspace ("the Rust workspace",
+  "the TS app"). Internal terminology is unchanged: `LocReport`
+  still exposes `primary`, `MonorepoSignalMember.primary_language`
+  still names the manifest-detection field, and the
+  `heal init --json` JSON output still emits
+  `"primary_language": "..."` (a separate JSON contract).
+  **Migration:** rename every `primary_language = "..."` line
+  under `[[project.workspaces]]` to `language = "..."`. The
+  loader uses `deny_unknown_fields`, so the legacy key surfaces
+  as a schema error pointing at the exact key — there is no
+  silent acceptance period.
+
 - **`[policy.rules]` removed from `config.toml`.** The block was
   parse-only since v0.2 — reserved for the v0.4+ autonomous-action
   story (`heal run`) but never consumed by any code path. Per the

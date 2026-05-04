@@ -79,22 +79,22 @@ the 50kloc API next to it. Declare each workspace once:
 ```toml
 [[project.workspaces]]
 path = "packages/web"
-primary_language = "typescript"
+language = "typescript"
 
 [[project.workspaces]]
 path = "packages/api"
-primary_language = "typescript"
+language = "typescript"
 
 [[project.workspaces]]
 path = "services/worker"
-primary_language = "rust"
+language = "rust"
 ```
 
 Each entry takes:
 
 - `path` — repo-root-relative directory (slash-separated, no leading
   `/`). Workspaces cannot nest.
-- `primary_language` (optional) — override the auto-detected primary
+- `language` (optional) — override the auto-detected primary
   language. Useful when LOC's heuristic picks the wrong one (e.g.
   a Rust workspace with a heavy JavaScript fixture set under
   `tests/`).
@@ -105,7 +105,7 @@ Each entry takes:
 ```toml
 [[project.workspaces]]
 path = "packages/api"
-primary_language = "typescript"
+language = "typescript"
 exclude_paths = ["vendor/", "src/generated/**"]
 ```
 
@@ -117,7 +117,7 @@ touching the others:
 ```toml
 [[project.workspaces]]
 path = "packages/legacy"
-primary_language = "typescript"
+language = "typescript"
 
 # Known-high-complexity legacy area; relax the graduation gate
 # while it's being migrated out.
