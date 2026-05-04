@@ -140,19 +140,28 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     record.apply_accepted(&accepted_map);
 
     if args.json {
-        let mut emit = match filters.workspace.as_deref() {
-            None => record.clone(),
-            Some(ws) => record.project_to_workspace(ws),
-        };
-        // Apply `--feature` / `--metric` / `--path` / `--severity` to
-        // the JSON payload too, not just the rendered text. Skills
-        // pipe `heal status --feature <X> --json` straight into their
-        // input — the narrowed shape avoids per-skill client-side
-        // re-filtering.
-        if filters.is_narrowing() {
-            emit.findings.retain(|f| filters.passes(f));
+        // Workspace narrowing rebuilds the record (paths flipped
+        // project-relative → workspace-relative), so the clone is
+        // baked into `project_to_workspace`. The other filters
+        // (`--feature` / `--metric` / `--path` / `--severity`) only
+        // need to drop findings — borrow the record and clone only
+        // when an actual narrowing is in flight, so the unfiltered
+        // fast path serializes the original record directly.
+        match (filters.workspace.as_deref(), filters.is_narrowing()) {
+            (None, false) => super::emit_json(&record),
+            (None, true) => {
+                let mut emit = record.clone();
+                emit.findings.retain(|f| filters.passes(f));
+                super::emit_json(&emit);
+            }
+            (Some(ws), narrowing) => {
+                let mut emit = record.project_to_workspace(ws);
+                if narrowing {
+                    emit.findings.retain(|f| filters.passes(f));
+                }
+                super::emit_json(&emit);
+            }
         }
-        super::emit_json(&emit);
         return Ok(());
     }
     let cfg = cfg.expect("cfg loaded above when not args.json");
@@ -334,25 +343,18 @@ pub(super) fn render(
     }
 
     let mut total_hidden = 0usize;
+    // Render order = the canonical `Family` `Ord` order. Banner and
+    // patch-skill labels live as methods on `Family` so renaming a
+    // family in one place propagates everywhere.
     let family_order = [
-        (
-            crate::feature::Family::Code,
-            "═══ Code ═══",
-            "/heal-code-patch",
-        ),
-        (
-            crate::feature::Family::Test,
-            "═══ Test ═══",
-            "/heal-test-patch",
-        ),
-        (
-            crate::feature::Family::Docs,
-            "═══ Docs ═══",
-            "/heal-doc-patch",
-        ),
+        crate::feature::Family::Code,
+        crate::feature::Family::Test,
+        crate::feature::Family::Docs,
     ];
 
-    for (family, banner, patch_skill) in family_order {
+    for family in family_order {
+        let banner = family.banner();
+        let patch_skill = family.patch_skill();
         // Skip families whose feature is disabled so the user never
         // sees an empty banner for an opt-in family they haven't
         // enabled. Code is always on; Test / Docs follow their

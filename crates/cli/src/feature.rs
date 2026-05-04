@@ -75,6 +75,31 @@ impl Family {
         }
     }
 
+    /// `heal status` family banner shown above each per-family
+    /// section. Lives here so the renderer's `family_order` array
+    /// can't drift out of sync with `Family` variants on a rename.
+    #[must_use]
+    pub fn banner(self) -> &'static str {
+        match self {
+            Self::Code => "═══ Code ═══",
+            Self::Test => "═══ Test ═══",
+            Self::Docs => "═══ Docs ═══",
+        }
+    }
+
+    /// Slash-command name of the family-specific drain skill —
+    /// surfaced in the `Next: claude /heal-...-patch` hint at the
+    /// foot of each family's status block. Same anti-drift rationale
+    /// as [`Self::banner`].
+    #[must_use]
+    pub fn patch_skill(self) -> &'static str {
+        match self {
+            Self::Code => "/heal-code-patch",
+            Self::Test => "/heal-test-patch",
+            Self::Docs => "/heal-doc-patch",
+        }
+    }
+
     /// Is this family active for the project? Code is always on
     /// (the always-on observer set is foundational); Test and Docs
     /// follow their respective `[features.<f>]` master switches. The
@@ -89,6 +114,26 @@ impl Family {
             Self::Docs => cfg.features.docs.enabled,
         }
     }
+
+    /// Map a `Finding.metric` string to its [`Family`]. Canonical
+    /// source of truth for the metric → family contract;
+    /// `Feature::family()` overrides on the impl side and this
+    /// method must agree, otherwise per-family `--feature` filtering
+    /// and the renderer's family grouping diverge from the actual
+    /// `HotspotIndex` dispatch. Unknown metric strings default to
+    /// [`Family::Code`] — every observer registers a metric, so an
+    /// unknown value is a bug and the conservative default keeps the
+    /// finding visible under the always-on family rather than
+    /// silently disappearing under a flag.
+    #[must_use]
+    pub fn for_metric(metric: &str) -> Self {
+        match metric {
+            "doc_freshness" | "doc_drift" | "doc_coverage" | "doc_link_health" | "orphan_pages"
+            | "todo_density" | "doc_hotspot" => Self::Docs,
+            "coverage_pct" | "skip_ratio" | "test_hotspot" => Self::Test,
+            _ => Self::Code,
+        }
+    }
 }
 
 /// Per-file hotspot decoration index. Built once per `lower_all` pass
@@ -101,40 +146,55 @@ pub struct HotspotIndex {
 }
 
 impl HotspotIndex {
+    /// Build an index from a stream of `(path, score)` pairs +
+    /// matching calibration. Duplicate keys keep the higher score —
+    /// that's the doc-family case where one pair contributes its
+    /// score under both `doc_path` and every `src_path`, and any
+    /// other paired entry hitting the same src should not overwrite
+    /// a stronger signal.
+    fn from_entries(
+        entries: impl IntoIterator<Item = (PathBuf, f64)>,
+        calibration: Option<HotspotCalibration>,
+    ) -> Self {
+        let mut by_path: std::collections::HashMap<PathBuf, f64> = std::collections::HashMap::new();
+        for (path, score) in entries {
+            by_path
+                .entry(path)
+                .and_modify(|v| {
+                    if score > *v {
+                        *v = score;
+                    }
+                })
+                .or_insert(score);
+        }
+        Self {
+            by_path,
+            calibration,
+        }
+    }
+
     /// Code-family Hotspot index (`commits × CCN_sum` per src file),
     /// calibrated against `cal.calibration.hotspot`.
     #[must_use]
     pub fn new(report: Option<&HotspotReport>, cal: &Calibration) -> Self {
-        let by_path = report
-            .map(|h| {
-                h.entries
-                    .iter()
-                    .map(|e| (e.path.clone(), e.score))
-                    .collect()
-            })
-            .unwrap_or_default();
-        Self {
-            by_path,
-            calibration: cal.calibration.hotspot.clone(),
-        }
+        Self::from_entries(
+            report
+                .into_iter()
+                .flat_map(|h| h.entries.iter().map(|e| (e.path.clone(), e.score))),
+            cal.calibration.hotspot.clone(),
+        )
     }
 
     /// Test-family Hotspot index (`commits × uncov_pct` per src file),
     /// calibrated against `cal.calibration.test_hotspot`.
     #[must_use]
     pub fn for_test(report: Option<&TestHotspotReport>, cal: &Calibration) -> Self {
-        let by_path = report
-            .map(|h| {
-                h.entries
-                    .iter()
-                    .map(|e| (e.path.clone(), e.score))
-                    .collect()
-            })
-            .unwrap_or_default();
-        Self {
-            by_path,
-            calibration: cal.calibration.test_hotspot.clone(),
-        }
+        Self::from_entries(
+            report
+                .into_iter()
+                .flat_map(|h| h.entries.iter().map(|e| (e.path.clone(), e.score))),
+            cal.calibration.test_hotspot.clone(),
+        )
     }
 
     /// Docs-family Hotspot index (`paired_src_churn × debt` per pair).
@@ -145,33 +205,15 @@ impl HotspotIndex {
     /// `cal.calibration.doc_hotspot`.
     #[must_use]
     pub fn for_doc(report: Option<&DocHotspotReport>, cal: &Calibration) -> Self {
-        let mut by_path: std::collections::HashMap<PathBuf, f64> = std::collections::HashMap::new();
-        if let Some(h) = report {
-            for entry in &h.entries {
-                let _ = by_path
-                    .entry(entry.doc_path.clone())
-                    .and_modify(|v| {
-                        if entry.score > *v {
-                            *v = entry.score;
-                        }
-                    })
-                    .or_insert(entry.score);
-                for src in &entry.src_paths {
-                    let _ = by_path
-                        .entry(src.clone())
-                        .and_modify(|v| {
-                            if entry.score > *v {
-                                *v = entry.score;
-                            }
-                        })
-                        .or_insert(entry.score);
-                }
-            }
-        }
-        Self {
-            by_path,
-            calibration: cal.calibration.doc_hotspot.clone(),
-        }
+        Self::from_entries(
+            report.into_iter().flat_map(|h| {
+                h.entries.iter().flat_map(|e| {
+                    std::iter::once((e.doc_path.clone(), e.score))
+                        .chain(e.src_paths.iter().map(|p| (p.clone(), e.score)))
+                })
+            }),
+            cal.calibration.doc_hotspot.clone(),
+        )
     }
 
     /// Whether `path`'s hotspot score crosses the calibration's `p90`.

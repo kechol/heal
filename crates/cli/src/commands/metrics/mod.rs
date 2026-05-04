@@ -19,7 +19,6 @@ use serde_json::json;
 
 use crate::cli::MetricKind;
 use crate::core::config::load_from_project;
-use crate::core::finding::family_of;
 use crate::core::term::write_through_pager;
 use crate::core::HealPaths;
 use crate::feature::Family;
@@ -126,10 +125,10 @@ fn matches_metric(filter: Option<MetricKind>, section: MetricKind) -> bool {
 
 /// `None` means "no family filter"; otherwise print only when the
 /// section's metric belongs to the requested family. Resolves via
-/// `family_of` so the section list and the `Finding.family()` map
-/// stay in lock-step.
+/// `Family::for_metric` so the section list and `Finding.family()`
+/// stay in lock-step against one canonical map.
 fn matches_family(filter: Option<Family>, section: MetricKind) -> bool {
-    filter.is_none_or(|f| family_of(section.json_key()) == f)
+    filter.is_none_or(|f| Family::for_metric(section.json_key()) == f)
 }
 
 fn build_json(
