@@ -4,6 +4,19 @@
 
 ### ⚠ BREAKING
 
+- **`[policy.rules]` removed from `config.toml`.** The block was
+  parse-only since v0.2 — reserved for the v0.4+ autonomous-action
+  story (`heal run`) but never consumed by any code path. Per the
+  project's "no design for hypothetical future requirements"
+  policy, the schema is dropped now and will be redesigned next
+  to the actual implementation when `heal run` lands.
+  **Migration:** delete any `[policy.rules]` and
+  `[policy.rules.<name>]` blocks from your `.heal/config.toml`
+  (the loader uses `deny_unknown_fields`, so leaving them in
+  surfaces as a schema error on the next `heal status`).
+  Earlier `heal init` runs emitted an empty `[policy.rules]`
+  table — that empty header also has to go.
+
 - **`FINDINGS_RECORD_VERSION` bumped to 3.** Caches written by older
   HEAL versions silently invalidate on read; the next `heal status`
   rewrites `.heal/findings/latest.json` under the new schema. v3

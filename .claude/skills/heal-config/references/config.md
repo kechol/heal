@@ -30,8 +30,7 @@ struct, and there's a regression test pinning the two paths together.
 │   └── [metrics.lcom]
 └── [policy]
     ├── [policy.drain]                            — global must / should
-    ├── [policy.drain.metrics.<name>]             — per-metric overrides
-    └── [policy.rules.<name>]                     — reserved (parse-only)
+    └── [policy.drain.metrics.<name>]             — per-metric overrides
 ```
 
 ## `[project]`
@@ -208,20 +207,6 @@ Sub-metrics (e.g. `change_coupling.symmetric`) fall back to their
 parent (`change_coupling`) before the global list, so an override on
 `change_coupling` covers both `change_coupling` and
 `change_coupling.symmetric`.
-
-### `[policy.rules.<name>]` — reserved
-
-Currently parse-only; reserved for v0.4 metric-drift actions. Each
-rule carries:
-
-| Key         | Type                              | Required |
-|-------------|-----------------------------------|----------|
-| `action`    | one of `report-only`, `notify`, `propose`, `execute` | yes |
-| `threshold` | `BTreeMap<String, toml::Value>`   | no       |
-| `trigger`   | `Option<String>`                  | no       |
-
-Setting these has no runtime effect today, but the schema is
-forward-compatible — names you choose now will keep working.
 
 ## Calibration interplay
 

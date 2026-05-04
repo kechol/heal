@@ -1,6 +1,5 @@
 use heal_cli::core::config::{
     assign_workspace, Config, CrossWorkspacePolicy, DrainSpec, DrainTier, HotspotMatch,
-    PolicyAction,
 };
 use heal_cli::core::finding::{Finding, Location};
 use heal_cli::core::severity::Severity;
@@ -97,17 +96,6 @@ fn deny_unknown_fields_in_metrics() {
     "#;
     let err = Config::from_toml_str(bad).unwrap_err().to_string();
     assert!(err.contains("unknown_key"), "got: {err}");
-}
-
-#[test]
-fn policy_action_is_kebab_case() {
-    let cfg = r#"
-        [policy.rules.high_complexity_new_function]
-        action = "report-only"
-    "#;
-    let parsed = Config::from_toml_str(cfg).unwrap();
-    let policy = &parsed.policy.rules["high_complexity_new_function"];
-    assert!(matches!(policy.action, PolicyAction::ReportOnly));
 }
 
 #[test]

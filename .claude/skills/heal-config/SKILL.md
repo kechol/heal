@@ -316,8 +316,8 @@ Build the config in memory, then write it:
 
 1. **Read the current `config.toml`** if one exists. Preserve any
    user-set keys the strictness recipe doesn't touch (free-form
-   excludes the user added, custom `policy.rules`, language
-   preference). Do not silently overwrite.
+   excludes the user added, language preference). Do not silently
+   overwrite.
 2. **Apply the recipe** — set the knobs from the strictness table.
 3. **Apply the survey** — fill `git.exclude_paths` with the directories
    from Phase 2; set per-metric `enabled = false` for the disable

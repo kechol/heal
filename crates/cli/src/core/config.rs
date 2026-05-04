@@ -930,36 +930,15 @@ impl Toggle for CcnConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub enum PolicyAction {
-    ReportOnly,
-    Notify,
-    Propose,
-    Execute,
-}
-
-/// Top-level `[policy]` block. Holds the v0.3 `drain` queue policy plus
-/// the reserved-for-future user-defined `rules` map.
+/// Top-level `[policy]` block. Currently holds the `drain` queue
+/// policy. The autonomous-action machinery (`heal run`) is a v0.4+
+/// roadmap item; its config schema lives next to the implementation
+/// when it lands rather than as a parse-only placeholder here.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PolicyConfig {
     #[serde(default)]
     pub drain: PolicyDrainConfig,
-    /// User-defined named policies under `[policy.rules.<name>]`.
-    /// Currently parse-only; reserved for v0.4 metric-drift actions.
-    #[serde(default)]
-    pub rules: BTreeMap<String, PolicyRuleConfig>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct PolicyRuleConfig {
-    pub action: PolicyAction,
-    #[serde(default)]
-    pub threshold: BTreeMap<String, toml::Value>,
-    #[serde(default)]
-    pub trigger: Option<String>,
 }
 
 /// `[policy.drain]` — which `(severity, hotspot)` combinations the
