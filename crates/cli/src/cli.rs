@@ -40,6 +40,14 @@ pub enum Command {
         /// scripts and the `heal-config` skill.
         #[arg(long)]
         json: bool,
+        /// Write every config key — including the defaults the
+        /// loader would have applied anyway — to `.heal/config.toml`.
+        /// Helpful for discoverability ("which knobs exist?") at the
+        /// cost of a much longer file. Without this flag, `heal init`
+        /// emits the minimal form that contains only the values the
+        /// team has customized.
+        #[arg(long)]
+        explicit: bool,
     },
     /// Hook entrypoint invoked by git hooks and Claude Code's
     /// `settings.json` hook commands. No-ops silently when the project
@@ -469,7 +477,8 @@ impl Cli {
                 yes,
                 no_skills,
                 json,
-            } => commands::init::run(&project, force, yes, no_skills, json),
+                explicit,
+            } => commands::init::run(&project, force, yes, no_skills, json, explicit),
             Command::Hook { event } => commands::hook::run(&project, event),
             Command::Metrics {
                 json,

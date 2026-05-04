@@ -1235,17 +1235,49 @@ impl Config {
         Ok(())
     }
 
-    /// Serialize back to TOML. The struct is owned so this is infallible
-    /// for any value produced by `Default::default()` or `Config::load`.
+    /// Serialize back to TOML, preserving every field — including
+    /// values that match the serde default. Used by `heal init
+    /// --explicit` and by tests that want a full round-trip target;
+    /// the everyday code path is [`Self::to_minimal_toml`], which
+    /// strips defaults so the emitted file shows only what the team
+    /// actually customized.
     #[must_use = "the serialized string is the only return value"]
-    pub fn to_toml_string(&self) -> std::result::Result<String, toml::ser::Error> {
+    pub fn to_explicit_toml(&self) -> std::result::Result<String, toml::ser::Error> {
         toml::to_string_pretty(self)
     }
 
-    /// Persist the config atomically (temp file + rename).
+    /// Serialize to TOML with every field that matches the serde
+    /// default removed. The `heal init` default flow writes this form
+    /// so a fresh `.heal/config.toml` highlights the (currently empty)
+    /// set of customizations rather than restating the defaults the
+    /// loader would have applied anyway. Round-trips with
+    /// [`Self::from_toml_str`] because missing fields fall back to
+    /// `Default` on read.
+    #[must_use = "the serialized string is the only return value"]
+    pub fn to_minimal_toml(&self) -> std::result::Result<String, toml::ser::Error> {
+        let mut actual = toml::Value::try_from(self)?;
+        let default = toml::Value::try_from(Self::default())?;
+        prune_against_default(&mut actual, &default);
+        toml::to_string_pretty(&actual)
+    }
+
+    /// Persist the config atomically (temp file + rename) in minimal
+    /// form — only fields that diverge from the serde default land
+    /// on disk. Use [`Self::save_explicit`] when the caller wants
+    /// every field surfaced (e.g. `heal init --explicit`).
     pub fn save(&self, path: &Path) -> Result<()> {
         let body = self
-            .to_toml_string()
+            .to_minimal_toml()
+            .expect("serialization is infallible for owned data");
+        atomic_write(path, body.as_bytes())
+    }
+
+    /// Persist every field — defaults included — atomically. Drives
+    /// `heal init --explicit` so a freshly-initialized project can
+    /// show every knob `heal-config` might want to tune.
+    pub fn save_explicit(&self, path: &Path) -> Result<()> {
+        let body = self
+            .to_explicit_toml()
             .expect("serialization is infallible for owned data");
         atomic_write(path, body.as_bytes())
     }
@@ -1397,6 +1429,40 @@ fn validate_workspaces(workspaces: &[WorkspaceOverlay]) -> std::result::Result<(
         }
     }
     Ok(())
+}
+
+/// Walk an `actual` config TOML tree alongside the `default` tree
+/// (both produced by serializing the matching `Config` value) and
+/// remove every key in `actual` whose value matches `default`. Empty
+/// tables that result from the prune are removed as well, so a
+/// fresh `Config::default()` round-trips to a near-empty TOML body.
+///
+/// Keys present in `actual` but not in `default` (e.g. user-declared
+/// `[[project.workspaces]]`, hand-written `exclude_paths` entries)
+/// are kept untouched — the function never strips customization.
+fn prune_against_default(actual: &mut toml::Value, default: &toml::Value) {
+    let (Some(actual_table), Some(default_table)) = (actual.as_table_mut(), default.as_table())
+    else {
+        return;
+    };
+    let keys: Vec<String> = actual_table.keys().cloned().collect();
+    for key in keys {
+        let Some(default_val) = default_table.get(&key) else {
+            continue;
+        };
+        let actual_is_table = actual_table.get(&key).is_some_and(toml::Value::is_table);
+        let default_is_table = default_val.is_table();
+        if actual_is_table && default_is_table {
+            if let Some(actual_val) = actual_table.get_mut(&key) {
+                prune_against_default(actual_val, default_val);
+                if actual_val.as_table().is_some_and(toml::Table::is_empty) {
+                    actual_table.remove(&key);
+                }
+            }
+        } else if actual_table.get(&key) == Some(default_val) {
+            actual_table.remove(&key);
+        }
+    }
 }
 
 /// True iff `prefix` is a path-prefix of `path` (segment-wise via

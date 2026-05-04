@@ -73,14 +73,21 @@ enum SkillsAction {
 }
 
 #[allow(clippy::fn_params_excessive_bools)] // each flag is independent CLI surface
-pub fn run(project: &Path, force: bool, yes: bool, no_skills: bool, as_json: bool) -> Result<()> {
+pub fn run(
+    project: &Path,
+    force: bool,
+    yes: bool,
+    no_skills: bool,
+    as_json: bool,
+    explicit: bool,
+) -> Result<()> {
     let paths = HealPaths::new(project);
     paths
         .ensure()
         .with_context(|| format!("creating {}", paths.root().display()))?;
     write_gitignore(&paths)?;
 
-    let config_action = write_config(&paths, force)?;
+    let config_action = write_config(&paths, force, explicit)?;
     let (hook_action, hook_path) = hook_install::install(project, force)?;
     let InitialScan {
         cfg,
@@ -336,13 +343,18 @@ fn write_gitignore(paths: &HealPaths) -> Result<()> {
     Ok(())
 }
 
-fn write_config(paths: &HealPaths, force: bool) -> Result<ConfigAction> {
+fn write_config(paths: &HealPaths, force: bool, explicit: bool) -> Result<ConfigAction> {
     let cfg_path = paths.config();
     let already_present = cfg_path.exists();
     if already_present && !force {
         return Ok(ConfigAction::KeptExisting);
     }
-    Config::default().save(&cfg_path)?;
+    let cfg = Config::default();
+    if explicit {
+        cfg.save_explicit(&cfg_path)?;
+    } else {
+        cfg.save(&cfg_path)?;
+    }
     Ok(if already_present {
         ConfigAction::Overwrote
     } else {
@@ -494,7 +506,7 @@ mod tests {
     /// suite never depends on whether `claude` happens to be on the
     /// runner's PATH.
     fn run_no_skills(project: &Path, force: bool) -> Result<()> {
-        run(project, force, false, true, false)
+        run(project, force, false, true, false, false)
     }
 
     #[test]
@@ -502,7 +514,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let paths = HealPaths::new(dir.path());
         paths.ensure().unwrap();
-        let action = write_config(&paths, false).unwrap();
+        let action = write_config(&paths, false, false).unwrap();
         assert_eq!(action, ConfigAction::Wrote);
         let cfg = Config::load(&paths.config()).unwrap();
         assert_eq!(cfg, Config::default());
@@ -514,7 +526,7 @@ mod tests {
         let paths = HealPaths::new(dir.path());
         paths.ensure().unwrap();
         std::fs::write(paths.config(), "# user-edited\n").unwrap();
-        let action = write_config(&paths, false).unwrap();
+        let action = write_config(&paths, false, false).unwrap();
         assert_eq!(action, ConfigAction::KeptExisting);
         let body = std::fs::read_to_string(paths.config()).unwrap();
         assert_eq!(body, "# user-edited\n");
@@ -526,8 +538,62 @@ mod tests {
         let paths = HealPaths::new(dir.path());
         paths.ensure().unwrap();
         std::fs::write(paths.config(), "# user-edited\n").unwrap();
-        let action = write_config(&paths, true).unwrap();
+        let action = write_config(&paths, true, false).unwrap();
         assert_eq!(action, ConfigAction::Overwrote);
+        let cfg = Config::load(&paths.config()).unwrap();
+        assert_eq!(cfg, Config::default());
+    }
+
+    #[test]
+    fn write_config_minimal_default_emits_near_empty_body() {
+        let dir = TempDir::new().unwrap();
+        let paths = HealPaths::new(dir.path());
+        paths.ensure().unwrap();
+        write_config(&paths, false, false).unwrap();
+        let body = std::fs::read_to_string(paths.config()).unwrap();
+        // The minimal serializer drops every key whose value matches
+        // the serde default. `Config::default()` matches verbatim, so
+        // none of these stock-default lines should appear.
+        for noise in [
+            "since_days = 90",
+            "top_n = 5",
+            "enabled = true",
+            "max_loc_threshold = 200000",
+            "min_coupling = 3",
+            "[features.test.coverage]",
+            "[features.docs.standalone]",
+            "[policy.drain]",
+        ] {
+            assert!(
+                !body.contains(noise),
+                "minimal body should not restate default `{noise}`, got:\n{body}",
+            );
+        }
+        // Round-trip: minimal body is still parseable to the same Config.
+        let cfg = Config::load(&paths.config()).unwrap();
+        assert_eq!(cfg, Config::default());
+    }
+
+    #[test]
+    fn write_config_explicit_emits_full_default_body() {
+        let dir = TempDir::new().unwrap();
+        let paths = HealPaths::new(dir.path());
+        paths.ensure().unwrap();
+        write_config(&paths, false, true).unwrap();
+        let body = std::fs::read_to_string(paths.config()).unwrap();
+        // Spot-check a handful of fields that the minimal form
+        // suppresses but the explicit form must restate.
+        for surface in [
+            "since_days = 90",
+            "[metrics]",
+            "top_n = 5",
+            "[policy.drain]",
+        ] {
+            assert!(
+                body.contains(surface),
+                "explicit body should restate default `{surface}`, got:\n{body}",
+            );
+        }
         let cfg = Config::load(&paths.config()).unwrap();
         assert_eq!(cfg, Config::default());
     }

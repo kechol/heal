@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Features
+
+- **`heal init` writes `config.toml` in minimal form by default.**
+  Previously every fresh `.heal/config.toml` restated 80+ lines of
+  default values (`since_days = 90`, `enabled = true`, the full
+  `test_paths` and `lcov_paths` defaults, and so on) — verbose
+  enough that the few customizations a team actually sets drowned
+  in the noise. The default emit path now serializes only fields
+  that diverge from `Config::default()` and prunes empty tables.
+  A vanilla `Config::default()` round-trips to a near-empty file;
+  loaders fill the gaps via `#[serde(default)]`. Pass
+  `heal init --explicit` to keep the full long-form output for
+  discoverability ("which knobs exist?"). Implementation:
+  `Config::to_minimal_toml` walks the serialized
+  `toml::Value` tree against `Config::default()`'s tree via
+  `prune_against_default` and drops matching keys before re-
+  serializing; `Config::to_explicit_toml` is the unchanged
+  long-form path. Both round-trip, so the change is purely
+  cosmetic for the on-disk file and is **not** breaking.
+
 ### ⚠ BREAKING
 
 - **`[policy.rules]` removed from `config.toml`.** The block was

@@ -50,7 +50,14 @@ heal init                # interactive — prompts to install the Claude skills
 heal init --yes          # also extract the Claude skills (no prompt)
 heal init --no-skills    # skip the skills entirely (CI / non-Claude users)
 heal init --force        # overwrite an existing config.toml / hook
+heal init --explicit     # write every default to config.toml (long form)
 ```
+
+By default, `heal init` writes `config.toml` in **minimal form** —
+only fields the user has actually customized appear on disk. A
+fresh project is essentially an empty file. `--explicit` writes the
+full default tree so the file doubles as a discoverable reference
+of every available knob.
 
 `heal init` does:
 

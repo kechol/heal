@@ -22,7 +22,7 @@ lives in `core::paths::find_project_root`.
 ## `heal init`
 
 ```
-heal init [--force] [--yes] [--no-skills] [--json]
+heal init [--force] [--yes] [--no-skills] [--json] [--explicit]
 ```
 
 Lifecycle (`commands/init.rs`):
@@ -31,6 +31,14 @@ Lifecycle (`commands/init.rs`):
 2. Write `.heal/.gitignore` (idempotent — only writes if body differs).
 3. Write `.heal/config.toml` (skipped unless `--force` or absent;
    returns `ConfigAction::{Wrote, Overwrote, KeptExisting}`).
+   The default body is **minimal** — `Config::to_minimal_toml`
+   serializes the value, then `prune_against_default` walks the
+   `toml::Value` tree alongside `Config::default()` and drops
+   every key whose value matches the default (and every now-empty
+   table). `--explicit` skips the prune step and writes
+   `Config::to_explicit_toml`, which restates every default. Both
+   forms round-trip back to the same `Config` because
+   `from_toml_str` falls back to `Default` on missing fields.
 4. Install `.git/hooks/post-commit`. Detects existing HEAL marker
    (`HEAL_HOOK_MARKER = "# heal post-commit hook"`); refreshes only if
    marked. Skips user-authored hooks unless `--force`. `chmod 0o755` on
