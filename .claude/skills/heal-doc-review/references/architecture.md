@@ -1,10 +1,8 @@
 # Doc-quality architecture reference
 
-Use this when reasoning about which `doc_*` finding to act on, in
-what order, and what to preserve while doing so. The vocabulary is
-load-bearing: applying Reference rigor to Tutorial content (or vice
-versa) inflates the noise floor and trains users to ignore HEAL's
-docs findings.
+Reasoning frame for which `doc_*` finding to act on, in what
+order, and what to preserve. Applying Reference rigor to
+Tutorial content (or vice versa) inflates the noise floor.
 
 ## §1 Diátaxis — four document purposes
 
@@ -39,18 +37,15 @@ serving two purposes, recommend a split.
 
 ## §2 The doc decay spiral
 
-The cost of *bad* docs is non-monotone:
+Cost of bad docs is non-monotone:
 
-- **No doc:** reader doesn't know X exists. Cost = lookup time.
-- **Stale doc:** reader trusts the doc, then discovers it's wrong.
-  Cost = lookup time + debug time + trust erosion.
-- **Untrusted doc:** reader sees the warning, ignores docs going
-  forward. Cost = the docs become invisible scaffolding.
+- **No doc:** lookup time.
+- **Stale doc:** lookup time + debug time + trust erosion.
+- **Untrusted doc:** docs become invisible scaffolding.
 
-Stale > absent > absent + scaffolding. Once doc trust breaks, the
-cost of restoring it is very high. This is why `doc_drift` is
-Critical by default — an actively-misleading doc is worse than no
-doc.
+Stale > absent > absent + scaffolding. Once trust breaks, it's
+expensive to restore — this is why `doc_drift` is Critical by
+default.
 
 ## §3 Per-metric reading rules
 
@@ -134,62 +129,40 @@ the writer already left a hint.
 
 ### Coverage trap
 
-Pushing `doc_coverage` toward 100% rewards empty docstrings:
-
-```rust
-/// TODO: document this
-pub fn frobnicate() {}
-```
-
-This is *worse* than no doc — the reader learned nothing AND lost
-trust in the doc system. **Don't recommend "write a doc for every
-public symbol" without specifying the doc's Diátaxis purpose and
-quality bar.**
+Pushing `doc_coverage` to 100% rewards empty docstrings
+(`/// TODO: document this`). Worse than no doc — reader learned
+nothing AND lost trust. Never recommend "write a doc for every
+public symbol" without specifying Diátaxis purpose and quality
+bar.
 
 ### Autogen trap
 
 Generated API references (`cargo doc`, `pdoc`, TypeDoc) are
-necessary but not sufficient. They list every type and signature
-but never explain *why*. A doc strategy that's only generated
-output reads as a comprehensive list of facts with no narrative —
-readers can find anything and understand nothing.
-
-When recommending fixes, pair generation with hand-written
-Explanation docs: "auto-derive the flag list; keep the rationale
-in `concept.md`."
+necessary but not sufficient: they list facts without narrative.
+Pair generation with hand-written Explanation docs ("auto-derive
+the flag list; keep the rationale in `concept.md`").
 
 ### Link perfectionism
 
-External links rot at ~5 % per year. A doc strategy that demands
-zero broken external links incentivises rewriting around the
-problem — removing useful citations to avoid the linkchecker
-warning. The result: docs that don't reference the source
-material readers would find most useful.
-
-For external sources, recommend Web Archive snapshots (`web.archive.org`)
-or DOIs where they exist. Tag external-link findings as out of
-HEAL's scope; this skill should not propose mass-removal of
-citations.
+External links rot at ~5%/year. Demanding zero broken external
+links incentivises removing useful citations. Recommend Web
+Archive snapshots or DOIs; treat external-link findings as out
+of HEAL's scope (network access is forbidden).
 
 ### Doc bloat
 
-The deletion-side metrics (`orphan_pages`, `duplication` over
-markdown) exist because adding-only growth is a failure mode.
-Every "write more docs" recommendation must come paired with at
-least one deletion / consolidation candidate. If the prioritized
-TODO has only writes, the docs strategy is unsustainable.
+`orphan_pages` and markdown `duplication` exist because
+adding-only growth is a failure mode. Every "write more docs"
+recommendation pairs with at least one deletion / consolidation
+candidate.
 
 ## §5 Prioritization heuristic
 
-When ordering the prioritized TODO:
-
-1. **Hotspot decoration overrides metric.** A `doc_freshness` finding
-   on a hotspot file outranks a `doc_drift` finding on a sleepy
-   one. Readers spend their time on hot files; that's where bad
-   docs do the most damage.
-2. **Reference > Tutorial > How-to > Explanation** within the same
-   metric severity. Reference is consulted under time pressure;
-   correctness is load-bearing.
-3. **Mechanical > Interpretive > Architectural** within the same
-   doc purpose. The mechanical fixes drain quickly under
-   `/heal-doc-patch` and unblock the harder questions.
+1. **Hotspot decoration overrides metric.** `doc_freshness` on a
+   hotspot file outranks `doc_drift` on a sleepy one — readers
+   spend their time on hot files.
+2. **Within the same severity:** Reference > Tutorial > How-to >
+   Explanation. Reference is consulted under time pressure.
+3. **Within the same purpose:** Mechanical > Interpretive >
+   Architectural. Mechanical fixes drain fast and unblock the
+   harder questions.

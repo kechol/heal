@@ -8,22 +8,14 @@ metadata:
 
 # heal-test-reporter-setup
 
-One-shot skill that prepares a project to feed coverage data into
-HEAL's `[features.test]` observer family. It works in two phases:
-**detect** which language ecosystem the project lives in, and
-**propose** the reporter config + CI integration that ends with an
-`lcov.info` file HEAL can read.
+Prepares a project to feed coverage data into HEAL's
+`[features.test]` observer family. Two phases: **detect** the
+language ecosystem, **propose** reporter config + CI integration
+that ends with an `lcov.info` file HEAL can read.
 
-The HEAL binary is a deterministic *consumer* of `lcov.info`; it has
-no test runner, no instrumentation hooks, no in-process coverage
-collection. That's why generation lives here, in a user-triggered
-skill, rather than inside `heal status`.
-
-Read-only on source files. The skill **does not run any commands**;
-it proposes the exact shell invocations and config snippets the user
-runs themselves. The `[features.test.coverage]` consumer under
-`heal status` and `heal metrics` reads `lcov.info` the next time it
-runs.
+Read-only on source files. The skill **does not run any commands**
+— it proposes shell invocations and config snippets the user runs
+themselves.
 
 ## When this skill is right
 
@@ -58,16 +50,11 @@ the tool.
 ## Pre-flight
 
 1. **`[features.test]` enabled.** Check `.heal/config.toml`. If
-   `[features.test] enabled = false` (or the section is absent),
-   tell the user the reporter would have no consumer and ask
-   whether to enable the feature. If they decline, stop — wiring up
-   coverage without the consumer is busy-work.
-2. **`[features.test.coverage].enabled` state.** When
-   `[features.test.coverage] enabled = false`, propose flipping it
-   to `true` as part of the output (the user pastes the edit
-   themselves).
-3. **Detection plan.** The detection step walks the repo root for
-   ecosystem markers; do that walk before proposing anything.
+   disabled (or absent), ask whether to enable. If declined, stop.
+2. **`[features.test.coverage].enabled` state.** When `false`,
+   propose flipping it to `true` in the output.
+3. **Detection plan.** Walk the repo root for ecosystem markers
+   before proposing anything.
 
 ## Phase 1 — Detect the stack
 
@@ -346,26 +333,17 @@ mechanically, run /heal-test-patch.
 
 ## Constraints
 
-- **Don't run any commands.** This skill is a configuration
-  proposer, not an installer or test runner. The user runs every
-  command in their terminal so they see the output and can inspect
-  changes.
-- **Don't auto-edit `.heal/config.toml`.** Surface the proposed
-  edits as a copy-pasteable block; let the user apply them
-  themselves. Only `/heal-setup` writes that file.
-- **Don't auto-edit CI configs.** Same reason — pasting into a CI
-  workflow is a deploy decision.
-- **Match the default `lcov_paths` when possible.** If the
-  reporter's default output already lands in one of the four
-  default paths, don't propose an `lcov_paths` edit. Only extend
-  the list when the tool's output sits elsewhere (Scala / scoverage,
-  custom output dirs).
-- **Don't recommend coverage thresholds.** The calibration band
-  comes from `[calibration.coverage_pct]`, not from this skill.
-  Wiring up the reporter is independent of where Critical / High
-  cut off.
-- **Polyglot is supported.** When the repo has multiple language
-  markers, propose each setup in turn; don't pick one and ignore
-  the others.
-- **English output.** Skill writes English; the user's CI / config
-  files may be in any language.
+- **Don't run any commands.** This skill proposes; the user
+  runs every command themselves.
+- **Don't auto-edit `.heal/config.toml` or CI configs.** Surface
+  edits as copy-pasteable blocks. Only `/heal-setup` writes
+  config; CI changes are a deploy decision.
+- **Match default `lcov_paths` when possible.** Only extend the
+  list when the reporter's default sits outside the four
+  defaults (Scala / scoverage, custom output dirs).
+- **Don't recommend coverage thresholds.** That's
+  `[calibration.coverage_pct]` territory, not this skill.
+- **Polyglot supported.** Multiple language markers → propose
+  each setup in turn.
+- **English output.** Skill writes English; CI / config files
+  may be in any language.

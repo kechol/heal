@@ -9,22 +9,18 @@ metadata:
 # heal-test-review
 
 Read-only skill that interprets the `[features.test]` findings
-(`coverage_pct`, `change_coupling.drift`, `skip_ratio`) and produces
-a prioritized TODO list grounded in the test pyramid, the test-quality
-literature, and the user's actual codebase.
-
-This is the **proposal** side of test maintenance. The mechanical
-counterpart — writing missing tests for hot paths, aligning drifted
-tests, re-enabling skipped tests where the original reason no longer
-holds — lives in `/heal-test-patch`. Don't apply changes here.
+(`coverage_pct`, `change_coupling.drift`, `skip_ratio`) and
+produces a prioritized TODO list grounded in the test pyramid,
+the test-quality literature, and the user's actual codebase. The
+mechanical write counterpart is `/heal-test-patch`.
 
 ## Mental model
 
-`heal status --feature test --json` (with `[features.test] enabled = true`) returns
-findings whose `Finding.metric` is one of `coverage_pct`,
+`heal status --feature test --json` returns findings whose
+`Finding.metric` is one of `coverage_pct`,
 `change_coupling.drift`, or `skip_ratio`. Each metric measures a
-different axis of test-quality decay; the right remediation depends
-on which axis fired and why:
+different axis of test-quality decay; remediation depends on which
+axis fired and why:
 
 - **`coverage_pct`** — per-source-file line coverage from an
   externally-generated `lcov.info`. Findings only emit for `< 100%`
@@ -200,31 +196,22 @@ weakest safety net".
 
 ## Forbidden anti-patterns this skill must NOT recommend
 
-The traps below are specific to test-quality work; refusing them is
-load-bearing:
-
-- **Coverage-for-coverage's-sake tests.** Don't propose tests that
-  exercise the type system (e.g., "construct the struct and assert
-  it isn't null"), tests that repeat the implementation
-  (`assert add(2, 3) == 2 + 3`), or tests that mock everything
-  the function calls and then assert the mocks were called. These
-  raise the number without raising confidence.
-- **Lowering coverage thresholds to silence findings.** The
-  thresholds are calibration, not aspiration; nudging
+- **Coverage-for-coverage's-sake tests.** Don't propose tests
+  that exercise the type system, repeat the implementation
+  (`assert add(2, 3) == 2 + 3`), or mock everything the function
+  calls and assert the mocks. They raise the number, not the
+  confidence.
+- **Lowering coverage thresholds.** Nudging
   `[calibration.coverage_pct]` to make Critical disappear is
   Goodhart in cleartext.
-- **Adding `@pytest.mark.skip` / `#[ignore]` "to silence the
-  skip_ratio finding".** The metric measures a real signal —
-  hiding the skip from the metric (by, say, deleting the test
-  outright) is the wrong remediation. The right remediation is
-  fix the test or document why it stays skipped.
-- **Disabling `[features.test]`** — or any of its sub-features
-  — to make findings disappear. If the user has a principled
-  reason to opt out, surface that explicitly; don't propose it as
-  a way to clear the cache.
-- **Re-enabling tests by weakening assertions.** "The test was
-  skipped because it was flaky → unskip and replace `assert_eq!`
-  with `assert!`" trades real signal for a green CI run.
+- **Skipping tests to drain `skip_ratio`.** The metric measures
+  real signal; right remediation is fix the test or document why
+  it stays skipped.
+- **Disabling `[features.test]` to clear the cache.** If the
+  user has principled reasons to opt out, surface them
+  explicitly; don't propose this as a workaround.
+- **Re-enabling by weakening assertions.** "Unskip and swap
+  `assert_eq!` for `assert!`" trades real signal for green CI.
 
 ## Output format
 
