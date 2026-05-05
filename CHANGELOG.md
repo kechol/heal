@@ -4,6 +4,19 @@
 
 ### Features
 
+- **`doc_drift` extractor rejects single-character spans and
+  hex commit-sha fragments.** The doc-side identifier scan picked
+  up placeholder text (`X`, `Y`, `T`, `i`, `n` from "where `T` is
+  …" pattern descriptions) and partial commit shas (`89d849a`,
+  `c455dba`) embedded in changelog and PR-reference prose. Both
+  classes routinely failed source-tree resolution and produced
+  Critical drift findings that no doc edit would resolve. The
+  filter is universal — applied to both doc-side spans and src-side
+  AST leaves — and language-agnostic. The hex-fragment rejection
+  requires both `len ≥ 4` and at least one digit so all-letter
+  words that happen to share the hex alphabet (`face`, `bead`,
+  `cafe`) survive. No config knob; the rules apply to every
+  project running `[features.docs]`.
 - **`doc_link_health` opts deploy-side URLs out of source-tree
   verification via `exclude_link_prefixes`.** Static-site
   generators that rewrite paths at build time (Astro Starlight

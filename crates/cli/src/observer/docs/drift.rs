@@ -311,8 +311,27 @@ fn looks_like_definition_mention(span: &str) -> bool {
 /// `>`, `-`). Whitespace, backticks, single-quotes, parens, and brackets
 /// disqualify the span — those usually indicate prose rather than a
 /// symbol reference.
+///
+/// Two extra noise filters apply universally (both doc-side spans
+/// and src-side AST leaves):
+///
+/// - **Single-character spans** are rejected. Real source identifiers
+///   that are one character (`x`, `y`, `i`, `n`) exist as loop
+///   variables and generic-parameter names, but docs never reference
+///   them; the doc-side hits are universally placeholder text
+///   (`X`, `Y`, `T` in pattern descriptions) that creates pointless
+///   drift findings.
+/// - **Pure hex spans of length ≥ 4 that contain at least one digit**
+///   are rejected. These match commit-sha fragments (`89d849a`,
+///   `c455dba`) — common in changelog snippets and PR-reference
+///   prose, never in source code. The digit requirement preserves
+///   real all-letter words that happen to be pure hex (`face`,
+///   `bead`, `cafe`).
 fn is_identifier_shape(span: &str) -> bool {
     if span.is_empty() {
+        return false;
+    }
+    if span.chars().count() < 2 {
         return false;
     }
     let mut has_alpha = false;
@@ -324,7 +343,16 @@ fn is_identifier_shape(span: &str) -> bool {
             return false;
         }
     }
-    has_alpha
+    if !has_alpha {
+        return false;
+    }
+    if span.len() >= 4
+        && span.chars().any(|c| c.is_ascii_digit())
+        && span.chars().all(|c| c.is_ascii_hexdigit())
+    {
+        return false;
+    }
+    true
 }
 
 /// Walk the tree-sitter tree and collect every leaf node whose text
@@ -519,6 +547,35 @@ mod tests {
                  Real: `Foo`, `Option`."
             ),
             vec!["Foo".to_string(), "Option".to_string()],
+        );
+    }
+
+    #[test]
+    fn filters_single_char_placeholders() {
+        // Pattern descriptions routinely use `X` / `Y` / `T` /
+        // `i` / `n` as placeholders; none reference real source
+        // identifiers, but every one would otherwise drift.
+        assert_eq!(
+            names(
+                "Pattern: `X` and `Y` form `Foo<X, Y>`. Loop var `i`. \
+                 Real: `Foo`, `Map`."
+            ),
+            vec!["Foo".to_string(), "Map".to_string()],
+        );
+    }
+
+    #[test]
+    fn filters_hex_sha_fragments_but_keeps_words() {
+        // Commit-sha fragments (`89d849a`, `c455dba`) appear in
+        // changelogs and PR-reference prose; reject them. Pure-letter
+        // words that happen to be hex chars (`face`, `bead`, `cafe`)
+        // stay because they have no digit.
+        assert_eq!(
+            names(
+                "Commits: `89d849a`, `c455dba7`, `deadbeef0`. \
+                 Words: `face`, `bead`. Real: `Config`."
+            ),
+            vec!["face".to_string(), "bead".to_string(), "Config".to_string(),],
         );
     }
 
