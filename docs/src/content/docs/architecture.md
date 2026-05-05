@@ -85,7 +85,6 @@ same Severity ladder and the same drain queue.
 
 | File / dir                       | Written by                                         | When                                        |
 | -------------------------------- | -------------------------------------------------- | ------------------------------------------- |
-| `.heal/.gitignore`               | `heal init`                                        | Once at setup.                              |
 | `.heal/config.toml`              | `heal init`                                        | Once at setup; you can edit it freely.      |
 | `.heal/calibration.toml`         | `heal init` / `heal calibrate`                     | At setup, then on explicit recalibration.   |
 | `.heal/findings/latest.json`     | `heal status`                                      | Each fresh `heal status` (cache-miss path). |

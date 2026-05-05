@@ -483,6 +483,15 @@ pub struct TestCoverageConfig {
     /// `cargo llvm-cov`'s `target/llvm-cov/lcov.info`.
     #[serde(default = "TestCoverageConfig::default_lcov_paths")]
     pub lcov_paths: Vec<String>,
+    /// Optional shell command HEAL spawns from `heal hook commit`
+    /// (i.e. the post-commit git hook) to keep `lcov.info` fresh after
+    /// each commit. The process is detached and its output discarded —
+    /// the user's commit flow doesn't wait. Wrap heavy reporters
+    /// (`cargo llvm-cov`, `sbt coverageReport`) in this so HEAL never
+    /// reads stale coverage on the next `heal status`. `None` keeps
+    /// the post-commit nudge as a no-op for coverage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_commit_refresh: Option<String>,
 }
 
 impl TestCoverageConfig {
@@ -501,6 +510,7 @@ impl Default for TestCoverageConfig {
         Self {
             enabled: false,
             lcov_paths: Self::default_lcov_paths(),
+            post_commit_refresh: None,
         }
     }
 }

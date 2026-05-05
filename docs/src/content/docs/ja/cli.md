@@ -131,7 +131,7 @@ heal diff HEAD                         # ライブ vs 直近のコミット
 heal diff main                         # ライブ vs main
 heal diff v0.2.1                       # ライブ vs v0.2.1 タグ
 heal diff HEAD~5                       # ライブ vs 5 コミット前
-heal diff --all                        # Improved + Unchanged も表示
+heal diff --all                        # Improved + Unchanged と High 未満のエントリも表示
 heal diff --no-pager                   # ページャを通さず stdout に直接書く
 heal diff --json                       # 機械可読な形式
 ```
@@ -141,6 +141,8 @@ heal diff --json                       # 機械可読な形式
 ターミナル出力時のページャ動作は `heal status` と同じです。`--no-pager` で直接 stdout に出せます。
 
 出力バケットは Resolved / Regressed / Improved / New / Unchanged + 進捗パーセンテージです。右辺は **常にワーキングツリーの即席スキャン** で、永続化されません。
+
+人間向けレンダラはデフォルトで `from`/`to` のいずれもが High 未満のエントリを隠し、`[N entries below High hidden — pass --all]` というフッターを出します(ノイズの多い baseline で実行可能な行が埋もれないようにするためです)。`--all` を渡すとこの絞り込みが外れ、Improved / Unchanged バケットも一緒に表示されます。`--json` 出力は常にフィルタなしで、skill や CI からは全行が見えます。
 
 巨大なリポジトリではこの比較が高コストになります。`config.toml` の `[diff]` で LOC 上限を設定でき、超過時は手動 2 ブランチ手順に切り替わります。詳しくは [Code › 設定](/heal/ja/code/configuration/#diff) を参照。
 

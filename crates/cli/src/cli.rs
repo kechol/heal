@@ -432,9 +432,10 @@ pub struct DiffArgs {
     #[arg(long, value_name = "PATH")]
     pub workspace: Option<String>,
     /// Show the Improved / Unchanged buckets in addition to Resolved /
-    /// Regressed / New. (Distinct from `heal status --all`, which
-    /// surfaces lower Severity tiers; this flag has no effect on
-    /// Severity filtering.)
+    /// Regressed / New, and surface entries whose `from`/`to` sit
+    /// below High. Without this, the human renderer hides entries
+    /// where neither side is Critical or High and prints a "(N)
+    /// hidden — pass --all" footer; the JSON output is unaffected.
     #[arg(long)]
     pub all: bool,
     /// Emit the diff as JSON on stdout. Stable contract for skills.

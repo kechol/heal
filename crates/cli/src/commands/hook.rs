@@ -18,6 +18,7 @@
 
 use std::io::{IsTerminal, Write};
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 use crate::core::accepted::{decorate_findings, read_accepted};
 use crate::core::calibration::Calibration;
@@ -73,7 +74,36 @@ fn run_commit(project: &Path, paths: &HealPaths) -> Result<()> {
         &mut std::io::stdout(),
     )
     .ok();
+    let _ = spawn_coverage_refresh(project, &cfg);
     Ok(())
+}
+
+/// Detach the configured `[features.test.coverage].post_commit_refresh`
+/// command so the user's commit flow returns immediately. Output is
+/// discarded; if the user wants logs they can wrap their command with
+/// shell redirection. A missing command, disabled coverage, or spawn
+/// failure are all silent — a broken HEAL install must never disturb
+/// the user's commit. Returns `true` when a child was spawned (so
+/// tests can assert on the gate without racing the OS).
+fn spawn_coverage_refresh(project: &Path, cfg: &Config) -> bool {
+    if !(cfg.features.test.enabled && cfg.features.test.coverage.enabled) {
+        return false;
+    }
+    let Some(cmd) = cfg.features.test.coverage.post_commit_refresh.as_deref() else {
+        return false;
+    };
+    if cmd.trim().is_empty() {
+        return false;
+    }
+    Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .current_dir(project)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .is_ok()
 }
 
 /// Classify `reports` against the calibration on disk (if any),
@@ -262,6 +292,76 @@ mod tests {
         assert!(
             out.contains("heal status"),
             "missing nudge to heal status: {out}"
+        );
+    }
+
+    #[test]
+    fn coverage_refresh_spawns_when_configured_and_enabled() {
+        // Happy path: assert both the spawn-attempt return value AND
+        // that the child eventually wrote the sentinel. The poll
+        // loop tolerates spawn → exec scheduling on slow hosts.
+        let dir = TempDir::new().unwrap();
+        let project = dir.path();
+        let sentinel = project.join("refreshed.txt");
+        let mut cfg = Config::default();
+        cfg.features.test.enabled = true;
+        cfg.features.test.coverage.enabled = true;
+        cfg.features.test.coverage.post_commit_refresh =
+            Some(format!("touch {}", sentinel.display()));
+
+        assert!(
+            spawn_coverage_refresh(project, &cfg),
+            "configured + enabled must spawn",
+        );
+        for _ in 0..50 {
+            if sentinel.exists() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(
+            sentinel.exists(),
+            "post_commit_refresh command must have run",
+        );
+    }
+
+    #[test]
+    fn coverage_refresh_skipped_when_feature_disabled() {
+        let dir = TempDir::new().unwrap();
+        let mut cfg = Config::default();
+        cfg.features.test.enabled = false; // family off
+        cfg.features.test.coverage.enabled = true;
+        cfg.features.test.coverage.post_commit_refresh = Some("touch /tmp/should-not-run".into());
+
+        assert!(
+            !spawn_coverage_refresh(dir.path(), &cfg),
+            "disabled family must short-circuit before spawn",
+        );
+    }
+
+    #[test]
+    fn coverage_refresh_skipped_when_unset() {
+        let dir = TempDir::new().unwrap();
+        let mut cfg = Config::default();
+        cfg.features.test.enabled = true;
+        cfg.features.test.coverage.enabled = true;
+        // post_commit_refresh stays None.
+        assert!(
+            !spawn_coverage_refresh(dir.path(), &cfg),
+            "unset command must short-circuit before spawn",
+        );
+    }
+
+    #[test]
+    fn coverage_refresh_skipped_when_blank() {
+        let dir = TempDir::new().unwrap();
+        let mut cfg = Config::default();
+        cfg.features.test.enabled = true;
+        cfg.features.test.coverage.enabled = true;
+        cfg.features.test.coverage.post_commit_refresh = Some("   ".into());
+        assert!(
+            !spawn_coverage_refresh(dir.path(), &cfg),
+            "whitespace-only command must short-circuit before spawn",
         );
     }
 

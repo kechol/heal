@@ -18,6 +18,7 @@ fn cfg_test_coverage_enabled() -> Config {
         coverage: TestCoverageConfig {
             enabled: true,
             lcov_paths: vec!["lcov.info".to_owned()],
+            post_commit_refresh: None,
         },
         ..TestConfig::default()
     };

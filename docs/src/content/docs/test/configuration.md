@@ -96,6 +96,15 @@ lcov_paths = [
 - `lcov_paths` — project-relative paths probed in order. **First
   existing file wins**; the rest are ignored. Missing files are
   silent — no warning at startup.
+- `post_commit_refresh` (default unset) — optional shell command
+  the post-commit hook spawns in the background to re-run your
+  reporter after every commit. The process is detached and its
+  output discarded so your commit flow doesn't wait. Pair it with
+  the same command `/heal-test-reporter-setup` proposes
+  (`cargo llvm-cov --workspace --lcov --output-path lcov.info
+  --locked --ignore-run-fail`, `pytest --cov=...`, etc.) so the
+  next `heal status` reads fresh `lcov.info`. Skipped silently
+  when `[features.test]` or `[features.test.coverage]` is off.
 
 heal reads what your CI / local reporter produces. The default
 probe order covers:

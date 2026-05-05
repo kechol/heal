@@ -1,6 +1,6 @@
 ---
 name: heal-test-reporter-setup
-description: Detect the project's language stack (Rust / Python / JS-TS / Go / Scala or mixed), then with per-step `AskUserQuestion` approval install the lcov reporter, flip `[features.test.coverage].enabled` in `.heal/config.toml`, run the reporter, and verify HEAL picks up the resulting `lcov.info`. Edits `.heal/config.toml` and runs install / reporter commands; CI workflow edits stay a copy-pasteable proposal. Trigger on "set up coverage reporting", "configure lcov for heal", "wire up coverage", "/heal-test-reporter-setup".
+description: Detect the project's language stack (Rust / Python / JS-TS / Go / Scala or mixed), then with per-step `AskUserQuestion` approval install the lcov reporter, flip `[features.test.coverage].enabled` in `.heal/config.toml`, run the reporter, optionally wire `[features.test.coverage].post_commit_refresh` so HEAL's post-commit hook re-runs the reporter in the background, and verify HEAL picks up the resulting `lcov.info`. Edits `.heal/config.toml` and runs install / reporter commands; CI workflow edits stay a copy-pasteable proposal. Trigger on "set up coverage reporting", "configure lcov for heal", "wire up coverage", "refresh lcov on every commit", "/heal-test-reporter-setup".
 ---
 
 # heal-test-reporter-setup
@@ -244,6 +244,47 @@ Assert at least one `coverage_pct` Finding is present. If not:
   reconcile.
 - Stop. Don't auto-recover.
 
+### Step e — Wire post-commit refresh (optional)
+
+Coverage data goes stale fast — every commit that touches code or
+tests can shift the `coverage_pct` numbers HEAL classifies. The
+`[features.test.coverage].post_commit_refresh` config field lets
+HEAL's post-commit hook (already installed by `heal init`) re-run
+the reporter in the background after every commit, so the next
+`heal status` reads fresh `lcov.info` without the user having to
+remember.
+
+Show the proposed config edit first (the exact `post_commit_refresh
+= "<command>"` line, matching the reporter command from Step c).
+Then `AskUserQuestion`:
+
+> Re-run the reporter from the post-commit hook to keep `lcov.info`
+> fresh? Default: **Skip**.
+>
+> - **Apply**: write `post_commit_refresh = "<command>"`. The
+>   spawned process is detached — your commit flow doesn't wait —
+>   and its output is discarded. Heavy reporters (Rust workspace
+>   coverage takes minutes) will keep your machine warm in the
+>   background after each commit.
+> - **Skip** (Recommended): leave the field unset; you re-run the
+>   reporter manually when you want fresh coverage.
+
+Default-recommend Skip when the reporter run in Step c took longer
+than ~30 s wall clock (Rust workspace coverage, large monorepos).
+Default-recommend Apply when the run was fast (jest / pytest /
+small Rust crate) — the trade-off then favours always-fresh
+findings over background CPU.
+
+On Apply: `Edit` `.heal/config.toml`. Use the same command shape
+as Step c, prefixed with anything the user normally needs in their
+shell (e.g. `cargo llvm-cov ... --quiet` to avoid stray progress
+bars filling the terminal scrollback). For polyglot repos, chain
+the per-language reporters with `&&` (or `;` if independent
+failures should not stop the chain).
+
+Re-running the skill after Apply detects the existing
+`post_commit_refresh` and skips this step.
+
 ## Phase 3 — Propose CI integration
 
 CI changes are a deploy decision. **Propose only.** Print the
@@ -324,6 +365,7 @@ Detected:        Rust workspace + Python pipeline (polyglot)
 Reporter:        cargo-llvm-cov 0.8.5 (Rust)  pytest-cov 5.0 (Python)
 Config edits:    [features.test.coverage].enabled  false → true
                  lcov_paths: defaults sufficient (no edit)
+                 post_commit_refresh: skipped (Rust run >30 s)
 Reporter runs:   lcov.info       18 410 lines  (Rust, --ignore-run-fail
                                                   silenced 1 flaky test)
                  coverage/lcov.info  4 230 lines  (Python)
@@ -358,7 +400,8 @@ Next:
   per ecosystem. Each ecosystem can be opted out of independently.
 - **Idempotent re-run.** Re-invoking after a partial run picks up
   where it stopped. Detect installed reporters, fresh
-  `lcov.info`, already-flipped `enabled` and skip those steps.
+  `lcov.info`, already-flipped `enabled`, an existing
+  `post_commit_refresh`, and skip those steps.
 - **`--ignore-run-fail` for Rust.** cargo-llvm-cov instrumentation
   can break tests that pass under plain `cargo test` (env-var
   leakage to spawned subprocesses is the most common cause).

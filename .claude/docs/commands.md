@@ -28,8 +28,7 @@ heal init [--force] [--yes] [--no-skills] [--json] [--explicit]
 Lifecycle (`commands/init.rs`):
 
 1. `paths.ensure()` — create `.heal/` and `.heal/findings/` dirs.
-2. Write `.heal/.gitignore` (idempotent — only writes if body differs).
-3. Write `.heal/config.toml` (skipped unless `--force` or absent;
+2. Write `.heal/config.toml` (skipped unless `--force` or absent;
    returns `ConfigAction::{Wrote, Overwrote, KeptExisting}`).
    The default body is **minimal** — `Config::to_minimal_toml`
    serializes the value, then `prune_against_default` walks the
@@ -39,20 +38,20 @@ Lifecycle (`commands/init.rs`):
    `Config::to_explicit_toml`, which restates every default. Both
    forms round-trip back to the same `Config` because
    `from_toml_str` falls back to `Default` on missing fields.
-4. Install `.git/hooks/post-commit`. Detects existing HEAL marker
+3. Install `.git/hooks/post-commit`. Detects existing HEAL marker
    (`HEAL_HOOK_MARKER = "# heal post-commit hook"`); refreshes only if
    marked. Skips user-authored hooks unless `--force`. `chmod 0o755` on
    Unix.
-5. Run initial observer scan (`run_all`); build calibration with
+4. Run initial observer scan (`run_all`); build calibration with
    `calibrated_at_sha` + `codebase_files` metadata; write
    `calibration.toml`.
-6. Optionally install bundled skills. Decision tree:
+5. Optionally install bundled skills. Decision tree:
    - `--no-skills` → skip.
    - `claude` not on `PATH` → skip.
    - `--yes` → install.
    - stdin is TTY → prompt (default `Y`).
    - else → skip with non-interactive hint.
-7. Sweep legacy `heal hook edit` / `heal hook stop` from
+6. Sweep legacy `heal hook edit` / `heal hook stop` from
    `.claude/settings.json` if present (via `claude_settings::wire`).
 
 **Hook script written:**

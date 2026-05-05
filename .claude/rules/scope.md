@@ -42,8 +42,9 @@ Files under `.heal/findings/`:
 That's the full layout. No history rotation, no `YYYY-MM.jsonl`,
 no archive directory.
 
-All three are **git-tracked** (the `.heal/.gitignore` template is
-empty by design). Two consequences agents must keep load-bearing:
+All three are **git-tracked** (`heal init` no longer writes a
+`.heal/.gitignore` — the template was empty so the file was just
+noise). Two consequences agents must keep load-bearing:
 
 - `FindingsRecord.id` is a **deterministic** FNV-1a digest of
   `(head_sha, config_hash, worktree_clean)` — never a ULID or a

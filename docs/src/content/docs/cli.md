@@ -200,7 +200,7 @@ heal diff HEAD                         # live vs the last commit
 heal diff main                         # live vs main
 heal diff v0.2.1                       # live vs the v0.2.1 tag
 heal diff HEAD~5                       # live vs 5 commits back
-heal diff --all                        # also surface Improved + Unchanged
+heal diff --all                        # also surface Improved + Unchanged + below-High entries
 heal diff --no-pager                   # write straight to stdout (skip the pager)
 heal diff --json                       # machine-readable shape
 ```
@@ -218,6 +218,13 @@ straight to stdout; `--json` always writes raw to stdout.
 Output buckets: Resolved / Regressed / Improved / New / Unchanged,
 plus a progress percentage. The right-hand side is always a fresh
 in-memory scan of the current worktree — never persisted.
+
+By default the human renderer hides entries whose `from` and `to`
+Severity both sit below High (a noisy baseline drowns the actionable
+rows otherwise) and prints a `[N entries below High hidden — pass
+--all]` footer. `--all` bypasses the filter alongside surfacing the
+Improved / Unchanged buckets. The `--json` payload is unfiltered
+either way — skills and CI keep seeing every row.
 
 For very large repos the comparison can be expensive; `[diff]` in
 `config.toml` exposes a LOC ceiling that switches to a manual

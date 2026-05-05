@@ -85,7 +85,6 @@ pub fn run(
     paths
         .ensure()
         .with_context(|| format!("creating {}", paths.root().display()))?;
-    write_gitignore(&paths)?;
 
     let config_action = write_config(&paths, force, explicit)?;
     let (hook_action, hook_path) = hook_install::install(project, force)?;
@@ -319,28 +318,6 @@ fn render_skills_line(dest: &Path, action: &SkillsAction) -> String {
                 .to_string()
         }
     }
-}
-
-/// Local-only paths under `.heal/`. The findings cache itself
-/// (`fixed.json`, `regressed.jsonl`, `latest.json`) is **tracked**
-/// alongside `config.toml` and `calibration.toml` so teammates on the
-/// same commit see identical drain queues without re-scanning. Add
-/// per-machine carve-outs here if a future feature introduces them.
-const GITIGNORE_BODY: &str = "\
-# Managed by `heal init` — re-run to refresh.
-";
-
-/// Write `.heal/.gitignore` so volatile state stays out of the
-/// project's git history. Idempotent: skips the write when the on-disk
-/// body already matches, so re-running `heal init` doesn't churn
-/// mtimes.
-fn write_gitignore(paths: &HealPaths) -> Result<()> {
-    let path = paths.gitignore();
-    if std::fs::read(&path).is_ok_and(|prior| prior == GITIGNORE_BODY.as_bytes()) {
-        return Ok(());
-    }
-    crate::core::fs::atomic_write(&path, GITIGNORE_BODY.as_bytes())?;
-    Ok(())
 }
 
 fn write_config(paths: &HealPaths, force: bool, explicit: bool) -> Result<ConfigAction> {

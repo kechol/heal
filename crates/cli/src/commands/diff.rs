@@ -25,6 +25,19 @@
 //! baseline that includes Advisory churn. JSON shape is stable for
 //! skills and CI; new fields (`t0_resolved`, `t0_total`,
 //! `t0_progress_pct`, `DiffEntry.from_hotspot`) are additive.
+//!
+//! The human renderer hides entries whose `from` and `to` Severity
+//! both sit below High by default — typical baselines drown the
+//! actionable rows otherwise. `--all` bypasses the filter and also
+//! surfaces the Improved / Unchanged buckets. JSON output is
+//! unfiltered.
+//!
+//! Note this is **broader** than `heal status`'s default visibility
+//! gate (Critical OR High+hotspot). The two views differ on purpose:
+//! status surfaces today's drain queue, where hotspot is the
+//! priority signal; diff surfaces *changes* between two refs, where
+//! a plain-High regression is itself worth seeing even without the
+//! hotspot decoration.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -447,18 +460,50 @@ fn render_diff(
     )?;
     writeln!(out)?;
 
-    render_bucket("✅ Resolved", ANSI_GREEN, &diff.resolved, colorize, out)?;
-    render_bucket("⚠️  Regressed", ANSI_RED, &diff.regressed, colorize, out)?;
-    render_bucket("➕ New", ANSI_YELLOW, &diff.new_findings, colorize, out)?;
+    let mut hidden_low_severity = 0usize;
+    let always_visible: [(&str, &str, &[DiffEntry]); 3] = [
+        ("✅ Resolved", ANSI_GREEN, &diff.resolved),
+        ("⚠️  Regressed", ANSI_RED, &diff.regressed),
+        ("➕ New", ANSI_YELLOW, &diff.new_findings),
+    ];
+    for (label, color, items) in always_visible {
+        render_bucket(
+            label,
+            color,
+            items,
+            show_all,
+            &mut hidden_low_severity,
+            colorize,
+            out,
+        )?;
+    }
     if show_all {
-        render_bucket("🟢 Improved", ANSI_GREEN, &diff.improved, colorize, out)?;
-        render_bucket("▫️ Unchanged", ANSI_CYAN, &diff.unchanged, colorize, out)?;
+        for (label, color, items) in [
+            ("🟢 Improved", ANSI_GREEN, &diff.improved),
+            ("▫️ Unchanged", ANSI_CYAN, &diff.unchanged),
+        ] {
+            render_bucket(
+                label,
+                color,
+                items,
+                true,
+                &mut hidden_low_severity,
+                colorize,
+                out,
+            )?;
+        }
     } else {
-        let hidden = diff.improved.len() + diff.unchanged.len();
-        if hidden > 0 {
+        let hidden_buckets = diff.improved.len() + diff.unchanged.len();
+        if hidden_buckets > 0 {
             writeln!(
                 out,
-                "  [Improved + Unchanged: {hidden} hidden — pass --all]"
+                "  [Improved + Unchanged: {hidden_buckets} hidden — pass --all]"
+            )?;
+        }
+        if hidden_low_severity > 0 {
+            writeln!(
+                out,
+                "  [{hidden_low_severity} entries below High hidden — pass --all]"
             )?;
         }
     }
@@ -503,23 +548,44 @@ fn scoped_count(findings: &[Finding], workspace: Option<&str>) -> usize {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_bucket(
     label: &str,
     color: &str,
     items: &[DiffEntry],
+    show_all: bool,
+    hidden_low_severity: &mut usize,
     colorize: bool,
     out: &mut (impl Write + ?Sized),
 ) -> std::io::Result<()> {
-    if items.is_empty() {
+    if show_all {
+        return write_bucket(label, color, items.iter(), items.len(), colorize, out);
+    }
+    let visible: Vec<&DiffEntry> = items.iter().filter(|e| is_high_or_critical(e)).collect();
+    *hidden_low_severity += items.len() - visible.len();
+    write_bucket(
+        label,
+        color,
+        visible.iter().copied(),
+        visible.len(),
+        colorize,
+        out,
+    )
+}
+
+fn write_bucket<'a>(
+    label: &str,
+    color: &str,
+    entries: impl Iterator<Item = &'a DiffEntry>,
+    count: usize,
+    colorize: bool,
+    out: &mut (impl Write + ?Sized),
+) -> std::io::Result<()> {
+    if count == 0 {
         return Ok(());
     }
-    writeln!(
-        out,
-        "{} ({})",
-        ansi_wrap(color, label, colorize),
-        items.len()
-    )?;
-    for e in items {
+    writeln!(out, "{} ({})", ansi_wrap(color, label, colorize), count)?;
+    for e in entries {
         let arrow = match (e.from_severity, e.to_severity) {
             (Some(from), Some(to)) if from != to => format!("({from:?} → {to:?})"),
             (Some(from), Some(_)) => format!("({from:?})"),
@@ -531,6 +597,14 @@ fn render_bucket(
         writeln!(out, "  {} {} {arrow}{hot}", e.metric, e.file)?;
     }
     Ok(())
+}
+
+/// True when either side of the entry sits at High or above. The
+/// human renderer uses this as the default-visibility gate so a noisy
+/// baseline doesn't bury the actionable rows; `--all` bypasses it.
+fn is_high_or_critical(e: &DiffEntry) -> bool {
+    let hot = |sev: Option<Severity>| sev.is_some_and(|s| s >= Severity::High);
+    hot(e.from_severity) || hot(e.to_severity)
 }
 
 #[cfg(test)]
@@ -725,6 +799,77 @@ mod tests {
         );
         assert!((diff.progress_pct - 0.0).abs() < 1e-9);
         assert_eq!(diff.new_findings.len(), 1);
+    }
+
+    #[test]
+    fn render_default_hides_below_high_entries_and_reports_hidden_count() {
+        // One Resolved entry at Medium → hidden by default; one
+        // Resolved at High → shown. Footer mentions the hidden count.
+        let stay_high = finding("hi", Severity::High);
+        let dropped_med = finding("med", Severity::Medium);
+        let dropped_high = finding("dh", Severity::High);
+        let from = record(vec![
+            stay_high.clone(),
+            dropped_med.clone(),
+            dropped_high.clone(),
+        ]);
+        let to = record(vec![stay_high.clone()]);
+        let diff = compute_diff(&from, &to, None, &PolicyDrainConfig::default());
+
+        let mut buf: Vec<u8> = Vec::new();
+        render_diff(
+            "HEAD",
+            "deadbeefdeadbeef",
+            None,
+            &from,
+            &to,
+            &diff,
+            false,
+            false,
+            &mut buf,
+        )
+        .unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(out.contains("src/dh.ts"), "High entry must render: {out}");
+        assert!(
+            !out.contains("src/med.ts"),
+            "Medium entry must be hidden: {out}",
+        );
+        assert!(
+            out.contains("1 entries below High hidden"),
+            "footer must report hidden count: {out}",
+        );
+    }
+
+    #[test]
+    fn render_all_surfaces_below_high_entries_and_drops_footer() {
+        let dropped_med = finding("med", Severity::Medium);
+        let from = record(vec![dropped_med.clone()]);
+        let to = record(Vec::new());
+        let diff = compute_diff(&from, &to, None, &PolicyDrainConfig::default());
+
+        let mut buf: Vec<u8> = Vec::new();
+        render_diff(
+            "HEAD",
+            "deadbeefdeadbeef",
+            None,
+            &from,
+            &to,
+            &diff,
+            true,
+            false,
+            &mut buf,
+        )
+        .unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(
+            out.contains("src/med.ts"),
+            "--all must surface Medium entry: {out}",
+        );
+        assert!(
+            !out.contains("entries below High hidden"),
+            "--all must drop the hidden-count footer: {out}",
+        );
     }
 
     #[test]

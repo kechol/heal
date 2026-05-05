@@ -12,8 +12,8 @@ For per-area facts:
 
 ## Idempotency at the command level
 
-- `heal init` rewrites `.heal/.gitignore`, `config.toml`, and the
-  post-commit hook only when content differs. `--force` overwrites.
+- `heal init` rewrites `.heal/config.toml` and the post-commit hook
+  only when content differs. `--force` overwrites.
 - `heal status` short-circuits when the cache is fresh
   (`(head_sha, config_hash, worktree_clean=true)` match — see
   `data-model.md`).

@@ -4,6 +4,33 @@
 
 ### Features
 
+- **`heal diff` hides below-High entries by default; `--all`
+  surfaces them.** A noisy baseline used to drown the actionable
+  rows — every Resolved Medium/Ok diff entry rendered alongside
+  the High/Critical ones the user actually wanted to triage. The
+  human renderer now drops entries whose `from` and `to` Severity
+  both sit below High and prints a `[N entries below High hidden
+  — pass --all]` footer; `--all` keeps its old role (Improved /
+  Unchanged buckets) and additionally bypasses the new filter.
+  `--json` output is unfiltered either way — skills and CI keep
+  the full payload. Note this gate is intentionally **broader**
+  than `heal status`'s default (Critical OR High+hotspot): status
+  surfaces today's drain queue where hotspot is the priority
+  signal, diff surfaces changes between two refs where a plain-
+  High regression is itself worth seeing without the hotspot
+  decoration.
+- **`[features.test.coverage].post_commit_refresh` re-runs the
+  reporter from the post-commit hook so `lcov.info` stays fresh.**
+  When set, `heal hook commit` (the script `heal init` installs as
+  `.git/hooks/post-commit`) detaches the configured shell command
+  after writing its nudge — the user's commit flow returns
+  immediately, output is discarded. Pair it with the reporter
+  command from `/heal-test-reporter-setup` (`cargo llvm-cov ...`,
+  `pytest --cov ...`, `jest --coverage ...`, etc.) to keep the
+  next `heal status` reading current coverage. Skipped silently
+  when `[features.test]` or `[features.test.coverage]` is off, so
+  the field has no effect on projects that haven't opted into the
+  family.
 - **`doc_drift` resolver decomposes qualified-identifier mentions
   before reporting a miss.** Tree-sitter splits trait methods
   (`Feature::lower`), enum variants (`Severity::Medium`), field
@@ -139,6 +166,15 @@
   ADR, SRE) and the autonomy / minimal-frontmatter / no-
   skeleton-pages / idempotent-reconcile rationale live in
   `.claude/docs/doc-scaffold-design.md`.
+
+- **`heal init` no longer writes an empty `.heal/.gitignore`.** The
+  template only ever contained a `# Managed by heal init` comment —
+  the findings cache is tracked in git, so there was nothing for
+  the file to ignore. `heal init` (and `heal init --force`) skip
+  the write outright; existing `.heal/.gitignore` files are left
+  alone so users who customised the file keep their edits. Removing
+  the file by hand is a follow-up for teams that want to drop the
+  noise from `git status`.
 
 - **`heal init` writes `config.toml` in minimal form by default.**
   Previously every fresh `.heal/config.toml` restated 80+ lines of

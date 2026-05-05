@@ -105,14 +105,6 @@ impl HealPaths {
         self.findings_dir().join("accepted.json")
     }
 
-    /// `.heal/.gitignore` — written by `heal init`. Currently empty
-    /// (the findings cache is tracked); reserved for future
-    /// per-machine carve-outs.
-    #[must_use]
-    pub fn gitignore(&self) -> PathBuf {
-        self.root.join(".gitignore")
-    }
-
     /// Create every standard subdirectory. Idempotent.
     pub fn ensure(&self) -> std::io::Result<()> {
         for dir in [self.root.as_path(), &self.findings_dir()] {

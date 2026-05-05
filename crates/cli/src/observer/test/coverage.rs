@@ -256,6 +256,7 @@ mod tests {
         cfg.features.test.coverage = TestCoverageConfig {
             enabled: true,
             lcov_paths: vec!["lcov.info".to_owned()],
+            post_commit_refresh: None,
         };
         cfg
     }

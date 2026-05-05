@@ -74,7 +74,6 @@ heal status  ──►  calibration.toml で Finding を分類
 
 | ファイル / ディレクトリ          | 書き出し元                                         | タイミング                                        |
 | -------------------------------- | -------------------------------------------------- | ------------------------------------------------- |
-| `.heal/.gitignore`               | `heal init`                                        | セットアップ時に一度。                            |
 | `.heal/config.toml`              | `heal init`                                        | セットアップ時に一度。自由に編集可。              |
 | `.heal/calibration.toml`         | `heal init` / `heal calibrate`                     | セットアップ時、その後は明示的な再 calibrate 時。 |
 | `.heal/findings/latest.json`     | `heal status`                                      | 新規 `heal status`（キャッシュミス経路）ごと。    |
