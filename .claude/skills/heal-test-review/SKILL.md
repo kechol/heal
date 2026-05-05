@@ -41,6 +41,26 @@ primary location is a test file (so the right remediation lives in
 the test, not the source). When `false`, the finding is anchored on
 production code (so the remediation is *adding* a test).
 
+## Output language
+
+Write the architectural reading and the TODO list in the user's
+language. Resolution order:
+
+1. Explicit instruction in the current conversation.
+2. The language the user is writing in (Claude Code's conversation
+   language).
+3. `[project].response_language` in `.heal/config.toml` (free-form:
+   `"Japanese"`, `"日本語"`, `"ja"`, `"français"`).
+4. English (fallback).
+
+Identifiers stay verbatim — file paths, `Finding.metric` strings
+(`coverage_pct`, `skip_ratio`, `change_coupling.drift`,
+`test_hotspot`), command names (`heal status`, `cargo test`,
+`pytest`), config keys (`[features.test]`), and pyramid-tier names
+(unit / integration / e2e) are part of the contract. Translate
+prose, headings, and per-finding rationale; keep the contract
+verbatim.
+
 ## Reading frame: the test pyramid, not Diátaxis
 
 Tests have shape, and the shape carries cost-vs-confidence

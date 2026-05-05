@@ -87,6 +87,30 @@ use `/heal-doc-patch`. If they want to **map** docs ↔ src, use
 - `references/wiki-organization.md` — filesystem layout, navigation
   pattern (six-category top), SSoT discipline, anti-patterns.
 
+## Output language
+
+Write the conversation, the plan, and the per-page report in the
+user's language. Resolution order:
+
+1. Explicit instruction in the current conversation.
+2. The language the user is writing in (Claude Code's conversation
+   language).
+3. `[project].response_language` in `.heal/config.toml` (free-form:
+   `"Japanese"`, `"日本語"`, `"ja"`, `"français"`).
+4. English (fallback).
+
+The **emitted Markdown** itself follows the same resolution: if the
+project is set to Japanese, generated headings, body prose, and
+`<!-- heal:scaffold:* -->`-bracketed sections are written in
+Japanese. Identifiers that are part of the contract stay verbatim —
+file paths, frontmatter keys, section markers
+(`<!-- heal:scaffold:overview start -->`), Tier names (Tier 1 –
+Tier 5), Diátaxis labels (Tutorial / How-to / Reference /
+Explanation), arc42 / C4 section names, and command names
+(`heal status`). The ADR template (`decisions/0000-template.md`)
+keeps its `TODO(human):` markers verbatim — they are a literal
+agreement, not prose.
+
 ## Pre-flight
 
 1. **Configured root.** Read `[features.docs] scaffold_root` from

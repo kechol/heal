@@ -13,6 +13,27 @@ One finding per commit, in Severity order, until the test slice of
 the cache is empty (or the user stops). This is the **write**
 counterpart to `/heal-test-review`.
 
+## Output language
+
+Write the per-finding narration, prompts, and end-of-loop summary in
+the user's language. Resolution order:
+
+1. Explicit instruction in the current conversation.
+2. The language the user is writing in (Claude Code's conversation
+   language).
+3. `[project].response_language` in `.heal/config.toml` (free-form:
+   `"Japanese"`, `"日本語"`, `"ja"`, `"français"`).
+4. English (fallback).
+
+Identifiers stay verbatim — file paths, `Finding.metric` strings
+(`coverage_pct`, `skip_ratio`, `change_coupling.drift`,
+`test_hotspot`), command names (`heal status`, `cargo test`,
+`pytest`), and finding ids are part of the contract. Generated test
+code and added test names follow the language already used in the
+test suite (don't rename English `test_*` symbols into another
+language). Commit subject lines follow the project's existing
+convention (in this repo: English, per Conventional Commits).
+
 ## Mental model
 
 `heal status --feature test --json` writes a `FindingsRecord` to

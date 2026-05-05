@@ -42,6 +42,25 @@ recommends a fix that respects the doc's purpose.
   measures, how its severity is computed, and what a fix should
   preserve.
 
+## Output language
+
+Write the architectural reading and the TODO list in the user's
+language. Resolution order:
+
+1. Explicit instruction in the current conversation.
+2. The language the user is writing in (Claude Code's conversation
+   language).
+3. `[project].response_language` in `.heal/config.toml` (free-form:
+   `"Japanese"`, `"日本語"`, `"ja"`, `"français"`).
+4. English (fallback).
+
+Identifiers stay verbatim — file paths, `Finding.metric` strings
+(`doc_drift`, `orphan_pages`, …), command names (`heal status`),
+config keys (`[features.docs]`), and Diátaxis purpose names
+(Tutorial / How-to / Reference / Explanation) are part of the
+contract. Translate prose, headings, and per-finding rationale; keep
+the contract verbatim.
+
 ## Pre-flight
 
 1. **Findings exist.** Run `heal status --feature docs --json`. The

@@ -13,6 +13,25 @@ in Severity order, until the cache is empty (or the user stops). This
 is the **write** counterpart to `/heal-code-review` — that one proposes,
 this one applies.
 
+## Output language
+
+Write the per-finding narration, prompts, and end-of-loop summary in
+the user's language. Resolution order:
+
+1. Explicit instruction in the current conversation.
+2. The language the user is writing in (Claude Code's conversation
+   language).
+3. `[project].response_language` in `.heal/config.toml` (free-form:
+   `"Japanese"`, `"日本語"`, `"ja"`, `"français"`).
+4. English (fallback).
+
+Identifiers stay verbatim — file paths, symbol names, command names
+(`heal status`), `Finding.metric` strings, finding ids, and conventional-
+commit type prefixes (`fix:`, `refactor:`, …) are part of the contract.
+Commit subject lines follow the project's existing convention (in this
+repo: English, per Conventional Commits); translate the conversation
+around them, not the commit messages themselves.
+
 ## Mental model
 
 `heal status` analyzes the project and writes a `FindingsRecord` to

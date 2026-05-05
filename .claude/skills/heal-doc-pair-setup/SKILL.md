@@ -34,6 +34,25 @@ at `references/doc-pairs-schema.md` directly — this skill is for
 - `references/doc-pairs-schema.md` — JSON shape, version rules, and
   the meaning of every `source` value.
 
+## Output language
+
+Write progress messages, candidate-pair explanations, and the final
+report in the user's language. Resolution order:
+
+1. Explicit instruction in the current conversation.
+2. The language the user is writing in (Claude Code's conversation
+   language).
+3. `[project].response_language` in `.heal/config.toml` (free-form:
+   `"Japanese"`, `"日本語"`, `"ja"`, `"français"`).
+4. English (fallback).
+
+Identifiers stay verbatim — file paths, `source` values (`"manual"`,
+`"mention"`, `"directory_mirror"`, `"llm"`), JSON field names, and
+config keys (`[features.docs]`) are part of the contract. The written
+file (`.heal/doc_pairs.json`) is machine-consumed JSON and never
+translated; only the conversation around it follows the user's
+language.
+
 ## Pre-flight
 
 1. **`[features.docs]` enabled.** Check `.heal/config.toml`. If
@@ -73,6 +92,86 @@ For every doc file:
 This pass is high-precision but low-recall: it catches references
 docs and architecture docs that name specific symbols, but misses
 prose-only docs.
+
+##### Guardrails (avoid downstream `doc_drift` flooding)
+
+`doc_drift` flags every backtick-span identifier in the doc that
+does *not* appear in the paired srcs. The cost of a too-narrow
+pair is high: a glossary mention-paired to 3 src files produces
+`(distinct identifiers in doc) − (identifiers in those 3)`
+false-positive findings. Apply these gates before emitting a pair:
+
+- **Cross-cutting denylist.** Don't mention-pair docs whose value
+  is *spanning* the codebase — they're handled fine by the
+  standalone family (`orphan_pages`, `todo_density`,
+  `doc_link_health`). Typical members: glossary / terminology
+  pages, design-philosophy / prior-art / architecture-overview
+  pages that name everything in passing, repo-wide READMEs
+  (`README.md`, `CLAUDE.md`, `.claude/docs/README.md`,
+  `.claude/rules/README.md`), workflow / scope rule pages.
+- **Coverage-ratio gate.** Of the doc's *resolvable* identifiers
+  (those matching some src definition in the repo), the chosen
+  `srcs` set must cover **≥ 70 %**. Below that threshold the
+  remaining mentions become `doc_drift` noise — drop the pair.
+- **Unfocused-doc cap.** When a doc has **> 60** distinct
+  resolvable identifiers, treat it as cross-cutting whether or not
+  it's on the denylist. Drop the pair; let standalone handle it.
+- **Per-src hit threshold.** Require ≥ 2 distinct identifier hits
+  for a `(doc, src)` candidate. A single passing reference (one
+  cross-link to a type defined elsewhere) is too weak to justify
+  drift checks against that src.
+
+These gates were derived from dogfooding HEAL itself: the naive
+"any hit emits a pair" rule produced > 1800 critical `doc_drift`
+findings on a 200-file codebase, dominated by filename /
+metric-string false positives. Adding the guardrails halved the
+count while preserving the genuinely mention-rich pairs
+(data-model docs, observer specs, CLI references).
+
+##### Carve-out: central-types files
+
+Counterweight to the gates: a file that defines **central shared
+types** must not be excluded from a doc's `srcs` set just because
+the per-src hit threshold or the coverage-ratio gate would
+otherwise drop it. Central types are the cross-cutting vocabulary
+that every Reference / Explanation page in the codebase touches —
+losing them inflates `doc_drift` noise on every well-written doc.
+
+Identify central-types files in two passes over the corpus:
+
+1. **Counted-mention sweep.** Build the
+   `(identifier → set-of-docs)` index. Identifiers that appear in
+   **≥ 3 distinct docs** are central vocabulary. Filter to those
+   the per-`is_identifier_shape` rule would treat as identifiers
+   (i.e. survive the doc-drift extractor's filters too — file
+   paths, metric strings, and CLI flags don't count here).
+2. **Defining-file resolution.** For each central identifier,
+   intersect the set of src files that define it (via the same
+   tree-sitter pass that powers the mention pair). When the
+   identifier is defined in **a small set** (1–3 src files), tag
+   each of those as a *central-types file*.
+
+Then, when building each doc's `srcs`:
+
+- Central-types files defining identifiers the doc mentions are
+  **always included**, bypassing the per-src hit threshold and the
+  coverage-ratio gate.
+- The coverage-ratio gate's denominator excludes identifiers the
+  doc mentions whose ONLY definitions live in central-types files
+  (those are now automatically resolved by the carve-out — they
+  shouldn't penalise the rest of the gate's accounting).
+
+For HEAL specifically, the carve-out resolves identifiers like
+`Severity`, `Finding`, `FindingsRecord`, `MetricCalibration`,
+`Config`, `Family`, `IntoFindings` — defined in
+`crates/cli/src/core/finding.rs`, `core/severity.rs`,
+`core/calibration.rs`, `core/config.rs`. Without it, every
+internal Reference doc becomes a drift hotspot for routine type
+mentions even though the types are perfectly stable.
+
+Don't hardcode a central-types list — derive it from the corpus
+each run. Codebases with different shapes need different carve-out
+sets.
 
 #### Step 2 — Directory mirror (`source: "mirror"`, confidence 0.7)
 
