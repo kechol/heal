@@ -153,13 +153,11 @@ The bundled skill set lands in different places per agent:
 
 `heal init` decides per-target (one TTY prompt per detected
 agent's CLI; `--yes` installs to all detected; `--no-skills` skips
-all). Each target's tree is independent: same bundled bytes, two
-on-disk records. Drift detection (R4) applies independently to
-each. Don't add a third path without first declaring a new
-`SkillTarget` variant — the enum is the single source of truth.
-
-Caveat for v0.4: `heal skills install / update / status /
-uninstall` still operate only on `SkillTarget::Claude`. Use
-`heal init --force --yes` to refresh both targets after a binary
-upgrade. Extending the explicit `heal skills *` group to all
-targets is tracked as follow-up work.
+all). `heal skills install / update / status / uninstall` accept
+`--target <detected|claude|codex|all>` (default `detected`,
+mirroring init). Each target's tree is independent: same bundled
+bytes, two on-disk records. Drift detection (R4) applies
+independently to each. Don't add a third path without first
+declaring a new `SkillTarget` variant — the enum is the single
+source of truth, and adding a variant must come with a matching
+`TargetFilter` clap value to keep `--target` exhaustive.

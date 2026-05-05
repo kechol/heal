@@ -91,7 +91,7 @@ pub fn register(project: &Path) -> Result<WriteAction> {
 /// pre-skills artifact (plugin tree, marketplace.json, or settings-key)
 /// was actually removed during this call — distinct from "would be
 /// removed" so callers can surface honest UX text.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub struct UnregisterReport {
     pub legacy_swept: bool,
 }

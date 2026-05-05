@@ -36,6 +36,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use clap::ValueEnum;
 use include_dir::{include_dir, Dir, DirEntry, File};
 use serde::Serialize;
 
@@ -52,9 +53,10 @@ pub static SKILLS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/skills");
 /// - [`SkillTarget::Codex`] writes to `.agents/skills/`, the
 ///   project-scope path Codex CLI natively discovers (see
 ///   <https://developers.openai.com/codex/skills>).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillTarget {
+    #[default]
     Claude,
     Codex,
 }
@@ -113,6 +115,70 @@ pub const SKILLS_DEST_REL: &str = ".claude/skills";
 #[must_use]
 pub fn skills_dest(project: &Path) -> PathBuf {
     SkillTarget::Claude.dest(project)
+}
+
+/// CLI selector behind `heal skills <cmd> --target <filter>` and the
+/// `Default` value clap reaches for when the user passes nothing.
+///
+/// `Detected` mirrors `heal init`'s detection logic — it expands to
+/// every [`SkillTarget`] whose `cli_name()` is on `PATH`. The other
+/// variants are explicit overrides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, Serialize)]
+#[serde(rename_all = "kebab-case")]
+#[clap(rename_all = "kebab-case")]
+pub enum TargetFilter {
+    /// Every [`SkillTarget`] whose CLI is on `PATH`.
+    #[default]
+    Detected,
+    /// Only [`SkillTarget::Claude`] (`.claude/skills/`).
+    Claude,
+    /// Only [`SkillTarget::Codex`] (`.agents/skills/`).
+    Codex,
+    /// Every known [`SkillTarget`] regardless of CLI presence on `PATH`.
+    All,
+}
+
+impl TargetFilter {
+    /// Resolve against the live `PATH`. Returns the target list in
+    /// [`SkillTarget::ALL`] order.
+    #[must_use]
+    pub fn resolve(self) -> Vec<SkillTarget> {
+        let presence: Vec<(SkillTarget, bool)> = SkillTarget::ALL
+            .iter()
+            .map(|&t| (t, agent_on_path(t)))
+            .collect();
+        self.resolve_with(&presence)
+    }
+
+    /// Resolve against an injected `(target, on_path)` snapshot. The
+    /// hook lets tests stub PATH detection without mutating
+    /// process-wide `PATH`, which races with parallel test workers
+    /// that shell out to `git`.
+    #[must_use]
+    pub fn resolve_with(self, presence: &[(SkillTarget, bool)]) -> Vec<SkillTarget> {
+        match self {
+            Self::All => SkillTarget::ALL.to_vec(),
+            Self::Claude => vec![SkillTarget::Claude],
+            Self::Codex => vec![SkillTarget::Codex],
+            Self::Detected => presence
+                .iter()
+                .filter(|&&(_, on)| on)
+                .map(|&(t, _)| t)
+                .collect(),
+        }
+    }
+}
+
+/// Walk `PATH` looking for `target.cli_name()`. Pure stdlib so no
+/// extra dependency. Heal is Unix-only today so the Windows extension
+/// dance is omitted.
+#[must_use]
+pub fn agent_on_path(target: SkillTarget) -> bool {
+    let Some(path_var) = std::env::var_os("PATH") else {
+        return false;
+    };
+    let cli = target.cli_name();
+    std::env::split_paths(&path_var).any(|dir| dir.join(cli).is_file())
 }
 
 /// Source-of-install marker stamped into the SKILL.md `metadata:`
@@ -302,7 +368,10 @@ fn user_modified(file: &File<'_>, rel_path: &Path, on_disk: &[u8]) -> bool {
 /// version-only difference doesn't read as a user edit. SKILL.md gets
 /// the `metadata:` block stripped from its frontmatter; every other
 /// file is returned verbatim.
-fn canonical_user_bytes<'a>(rel_path: &Path, on_disk: &'a [u8]) -> std::borrow::Cow<'a, [u8]> {
+pub(crate) fn canonical_user_bytes<'a>(
+    rel_path: &Path,
+    on_disk: &'a [u8],
+) -> std::borrow::Cow<'a, [u8]> {
     if rel_path.file_name().is_some_and(|n| n == "SKILL.md") {
         if let Ok(text) = std::str::from_utf8(on_disk) {
             return std::borrow::Cow::Owned(strip_skill_metadata(text).into_bytes());

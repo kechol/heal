@@ -19,12 +19,20 @@
   legacy-hook sweeping still runs only for the Claude target —
   Codex has no sibling settings file. Skill bodies were swept to
   describe the host agent as a list ("Claude Code, Codex CLI, …")
-  rather than singling out one. **Caveat:** the explicit `heal
-  skills install / update / status / uninstall` subcommands still
-  operate only on the Claude target in this release; use `heal init
-  --force --yes` to refresh both targets in lockstep after a binary
-  upgrade. Multi-target support for the explicit group is tracked
-  as follow-up.
+  rather than singling out one.
+
+- **`heal skills install / update / status / uninstall` now accept
+  `--target <detected|claude|codex|all>`.** `detected` (the new
+  default) operates on every agent whose CLI is on `PATH`, mirroring
+  `heal init`. `claude` / `codex` scope to a single agent's tree;
+  `all` operates on every known target regardless of CLI presence
+  (the pre-Codex blanket behavior). When the `Claude` target is in
+  scope, install / update sweep legacy `heal hook edit` /
+  `heal hook stop` entries from `.claude/settings.json` and
+  uninstall sweeps the pre-skills plugin/marketplace layout, exactly
+  as before; the `Codex` target has no sibling settings file. The
+  empty-resolution case (e.g. `--target detected` on a host without
+  any agent CLI) prints a one-line hint pointing at `--target all`.
 
 - **`heal metrics` section titles carry a `[Family]` prefix.** The
   divider above each section is now `── [Code] Complexity ──`,
@@ -246,6 +254,32 @@
   cosmetic for the on-disk file and is **not** breaking.
 
 ### ⚠ BREAKING
+
+- **`heal skills install / update / status / uninstall` default to
+  `--target detected`, dropping the always-Claude shortcut.** Pre-
+  Codex `heal skills install` extracted to `.claude/skills/` even
+  when `claude` was not on `PATH` (the user might be staging an
+  install before the CLI was available). The new default mirrors
+  `heal init`: only agents whose CLI is on `PATH` are operated on,
+  so a host without `claude` will resolve to an empty target list
+  and print a hint instead of writing.
+  **Migration:** to recover the previous "extract regardless of
+  detection" behavior, pass `--target all` explicitly. To scope to
+  one agent, pass `--target claude` or `--target codex`.
+
+- **`heal skills install / update / status / uninstall` `--json`
+  shapes are now keyed by `targets: [...]`.** The single
+  flat-object shape is replaced by a per-target list, mirroring
+  `heal init`. Install / update emit
+  `{ action, version, source, filter, targets: [{target, dest, files, claude?}, ...] }`;
+  status emits `{ bundled, filter, targets: [{target, dest, state, ...}, ...] }`;
+  uninstall emits `{ filter, targets: [{target, dest, skills_removed, claude?}, ...] }`.
+  The `claude` field on a target entry is `Some` only when that
+  entry's `target == "claude"` — Codex has no sibling settings
+  state. `user_modified_paths` moved inside the per-target `files`
+  block.
+  **Migration:** scripts that consumed the flat shape should
+  iterate `targets[]`, switching on `entry.target`.
 
 - **`heal init --json`'s `skills` field is now a list keyed by
   `SkillTarget`.** Was a single object describing the (only) Claude

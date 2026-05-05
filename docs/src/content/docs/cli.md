@@ -90,25 +90,26 @@ the heal marker. If a non-heal `post-commit` hook already exists,
 
 ## `heal skills`
 
-Manages the bundled skill set for the **Claude target** under
-`.claude/skills/`:
+Manages the bundled skill set across every agent target. Each
+subcommand takes `--target <detected|claude|codex|all>` (default
+`detected`, mirroring `heal init`):
 
 ```sh
-heal skills install     # extract the skills (run once per repo)
-heal skills update      # refresh after upgrading the heal binary
-heal skills status      # compare installed vs. bundled
-heal skills uninstall   # remove the skills
+heal skills install                  # extract for every CLI on PATH
+heal skills install --target codex   # only `.agents/skills/`
+heal skills install --target all     # every known target regardless of detection
+heal skills update                   # refresh after a heal binary upgrade
+heal skills status                   # per-target installed version + drift
+heal skills uninstall --target all   # remove from every tree
 ```
 
 The skill set is embedded in the `heal` binary at compile time, so
-`heal skills install` always extracts the version matching the binary
-in use. `update` is drift-aware: files that have been hand-edited are
-left in place (use `--force` to overwrite anyway).
-
-For the **Codex target** (`.agents/skills/`), the supported refresh
-path in v0.4 is `heal init --force --yes` — it re-extracts every
-agent's tree at once. Multi-target support for the explicit
-`heal skills *` group is tracked as follow-up.
+each subcommand always operates on the version matching the binary
+in use. `update` is drift-aware: files that have been hand-edited
+are left in place per target (use `--force` to overwrite anyway).
+The Claude target's `install` / `update` also sweep legacy
+`heal hook edit` / `heal hook stop` entries from
+`.claude/settings.json`; Codex has no sibling settings file.
 
 The bundled set ships eleven skills, grouped by feature family:
 

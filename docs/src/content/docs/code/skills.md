@@ -18,8 +18,10 @@ on your `PATH` (you'll get one Y/N prompt per agent in TTY mode;
 explicitly later:
 
 ```sh
-heal init --force --yes      # refreshes both targets in lockstep
-heal skills install          # Claude target only (v0.4 limitation)
+heal init --force --yes              # refresh every detected agent's tree
+heal skills install                  # default --target detected (every CLI on PATH)
+heal skills install --target codex   # only the Codex tree
+heal skills install --target all     # every known target regardless of detection
 ```
 
 This page covers the four Code-family skills. The doc-family
@@ -28,10 +30,8 @@ test-family skills under [Test › Skills](/heal/test/skills/).
 
 The skill set is shipped inside the `heal` binary, so the version
 installed always matches the binary in use. After upgrading
-`heal`, the simplest refresh path is `heal init --force --yes` —
-that re-extracts every detected agent's tree (the
-`heal skills update` subcommand currently only refreshes the
-Claude target).
+`heal`, run `heal skills update` to refresh — `--target detected`
+covers every agent on your `PATH`.
 
 ## `/heal-code-review` — the audit skill
 
@@ -128,16 +128,15 @@ the skill recommends `heal calibrate --force` in those cases.
 ## Maintenance
 
 ```sh
-heal skills update     # refresh after upgrading heal (Claude target, drift-aware)
-heal skills status     # list drifted files (Claude target)
-heal skills uninstall  # remove every bundled skill (Claude target)
+heal skills update                   # refresh every detected agent's tree (drift-aware)
+heal skills update --target all      # refresh every known target regardless of detection
+heal skills status                   # list installed version + drift per target
+heal skills status --target codex    # scope status to one agent
+heal skills uninstall                # remove bundled skills for detected agents
+heal skills uninstall --target all   # remove from every known target
 ```
 
 `update` leaves hand-edited files in place with a warning; pass
-`--force` to overwrite. `uninstall` removes every
-`.claude/skills/heal-*` directory; sibling skills you authored
+`--force` to overwrite. `uninstall` removes every `heal-*`
+directory under each target's tree; sibling skills you authored
 survive, and project data under `.heal/` is untouched.
-
-For the Codex target (`.agents/skills/`), `heal init --force --yes`
-is the supported refresh path in v0.4 — multi-target support for
-the explicit `heal skills *` group is tracked as follow-up.

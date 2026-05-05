@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 
 use crate::commands;
 use crate::core::finding::Finding;
+use crate::skill_assets::TargetFilter;
 
 #[derive(Debug, Parser)]
 #[command(name = "heal", version, about = "Code health hook-driven harness", long_about = None)]
@@ -129,7 +130,9 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Manage the bundled Claude skill set under `.claude/skills/`.
+    /// Manage the bundled skill set across every agent target
+    /// (Claude → `.claude/skills/`, Codex → `.agents/skills/`). Each
+    /// subcommand takes `--target <detected|claude|codex|all>`.
     Skills {
         #[command(subcommand)]
         action: SkillsAction,
@@ -488,8 +491,10 @@ pub enum MarkAction {
 
 #[derive(Debug, Clone, Copy, Subcommand)]
 pub enum SkillsAction {
-    /// Extract the bundled skills into `<project>/.claude/skills/` and
-    /// merge HEAL's hook commands into `<project>/.claude/settings.json`.
+    /// Extract the bundled skills into each target's discovery path
+    /// (Claude → `.claude/skills/`, Codex → `.agents/skills/`) and
+    /// sweep legacy hook entries from `.claude/settings.json` if the
+    /// Claude target is in scope.
     Install {
         /// Overwrite existing skill files even if they were edited locally.
         #[arg(long)]
@@ -497,6 +502,11 @@ pub enum SkillsAction {
         /// Emit a JSON summary of the install outcome.
         #[arg(long)]
         json: bool,
+        /// Which agent target(s) to operate on. Default `detected`
+        /// matches `heal init` (every CLI on `PATH`); `all` operates
+        /// on every known target regardless of detection.
+        #[arg(long, value_enum, default_value_t = TargetFilter::Detected)]
+        target: TargetFilter,
     },
     /// Refresh skill files after a binary upgrade. Skips files the user
     /// has edited locally; pass `--force` to overwrite them too.
@@ -506,19 +516,26 @@ pub enum SkillsAction {
         /// Emit a JSON summary of the update outcome.
         #[arg(long)]
         json: bool,
+        #[arg(long, value_enum, default_value_t = TargetFilter::Detected)]
+        target: TargetFilter,
     },
-    /// Show installed skill version, bundled version, and any drift.
+    /// Show installed skill version, bundled version, and any drift —
+    /// per agent target.
     Status {
         /// Emit a JSON view of the install status (versions, drift list).
         #[arg(long)]
         json: bool,
+        #[arg(long, value_enum, default_value_t = TargetFilter::Detected)]
+        target: TargetFilter,
     },
-    /// Remove HEAL's skills from `.claude/skills/` and its hook
-    /// commands from `.claude/settings.json`.
+    /// Remove HEAL's skills from each target's tree (and Claude
+    /// settings when the Claude target is in scope).
     Uninstall {
         /// Emit a JSON summary of what was removed.
         #[arg(long)]
         json: bool,
+        #[arg(long, value_enum, default_value_t = TargetFilter::Detected)]
+        target: TargetFilter,
     },
 }
 
@@ -929,16 +946,37 @@ mod tests {
             let cli = parse(&["heal", "skills", action]);
             assert!(matches!(cli.command, Command::Skills { .. }));
         }
-        // `--force` only valid on install / update.
+        // `--force` only valid on install / update; default `--target`
+        // resolves to `Detected`; explicit `--target` overrides.
         let cli = parse(&["heal", "skills", "install", "--force", "--json"]);
         match cli.command {
             Command::Skills {
-                action: SkillsAction::Install { force, json },
+                action:
+                    SkillsAction::Install {
+                        force,
+                        json,
+                        target,
+                    },
             } => {
                 assert!(force);
                 assert!(json);
+                assert_eq!(target, TargetFilter::Detected);
             }
             other => panic!("expected Skills::Install, got {other:?}"),
+        }
+        let cli = parse(&["heal", "skills", "install", "--target", "all"]);
+        match cli.command {
+            Command::Skills {
+                action: SkillsAction::Install { target, .. },
+            } => assert_eq!(target, TargetFilter::All),
+            other => panic!("expected Skills::Install, got {other:?}"),
+        }
+        let cli = parse(&["heal", "skills", "uninstall", "--target", "codex"]);
+        match cli.command {
+            Command::Skills {
+                action: SkillsAction::Uninstall { target, .. },
+            } => assert_eq!(target, TargetFilter::Codex),
+            other => panic!("expected Skills::Uninstall, got {other:?}"),
         }
         Cli::try_parse_from(["heal", "skills", "uninstall", "--force"])
             .expect_err("--force not on uninstall");

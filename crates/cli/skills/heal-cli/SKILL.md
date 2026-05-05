@@ -296,19 +296,22 @@ shape with one entry per metric, optionally restricted via
 `duplication`, `hotspot`, `lcom`). No historical delta — there is no
 event log to compare against.
 
-### `heal skills install [--force] [--json]` / `update [--force] [--json]` / `status [--json]` / `uninstall [--json]`
+### `heal skills install [--force] [--target <filter>] [--json]` / `update [--force] [--target <filter>] [--json]` / `status [--target <filter>] [--json]` / `uninstall [--target <filter>] [--json]`
 
-Manage the bundled skill set under `<project>/.claude/skills/`. Each
+Manage the bundled skill set across every agent target. Each
 top-level child of the embedded tree (`heal-cli`, `heal-setup`,
 `heal-code-review`, `heal-code-patch`, …) extracts to a sibling
-directory under `.claude/skills/`. HEAL no longer registers any Claude
-Code hooks; install/uninstall sweep stale `heal hook edit` / `heal
-hook stop` entries from `.claude/settings.json` if present.
+directory under each target's discovery path:
 
-**v0.4 caveat:** these subcommands operate only on the Claude target.
-For Codex (`.agents/skills/`) use `heal init --force --yes` to refresh
-both targets in lockstep. Multi-target support for the explicit
-`heal skills *` group is tracked as follow-up.
+- `claude` → `.claude/skills/`
+- `codex`  → `.agents/skills/`
+
+`--target <filter>` accepts `detected` (default — every agent whose
+CLI is on `PATH`), `claude`, `codex`, or `all` (every known target
+regardless of CLI presence). HEAL no longer registers any Claude
+Code session hooks; install / uninstall sweep stale
+`heal hook edit` / `heal hook stop` entries from
+`.claude/settings.json` only when the Claude target is in scope.
 
 There is no sidecar manifest. Each `SKILL.md` carries a `metadata:`
 block in its YAML frontmatter (`heal-version`, `heal-source`); drift
@@ -319,13 +322,24 @@ against the bundled raw bytes.
 
 ```jsonc
 {
-  "state": "installed",                   // or not_installed
-  "dest": ".claude/skills",
-  "installed": "0.2.1",                   // omitted on pre-metadata installs
-  "bundled":   "0.2.1",
-  "source":    "bundled",
-  "version_status": "up_to_date",         // or bundled_newer / installed_newer
-  "drift": []                             // relative paths edited since install
+  "bundled": "0.4.0",
+  "filter":  "detected",                  // echo of --target
+  "targets": [
+    {
+      "target": "claude",
+      "dest":   ".claude/skills",
+      "state":  "installed",              // or "not_installed"
+      "installed": "0.4.0",               // omitted on pre-metadata installs
+      "source":    "bundled",
+      "version_status": "up_to_date",     // or bundled_newer / installed_newer
+      "drift": []                         // relative paths edited since install
+    },
+    {
+      "target": "codex",
+      "dest":   ".agents/skills",
+      "state":  "not_installed"
+    }
+  ]
 }
 ```
 
@@ -334,20 +348,35 @@ against the bundled raw bytes.
 ```jsonc
 {
   "action": "installed",                  // or "updated"
-  "dest": ".claude/skills",
-  "version": "0.2.1",
+  "version": "0.4.0",
   "source":  "bundled",
-  "files": { "added": 42, "updated": 0, "unchanged": 0, "skipped": 0, "user_modified": 0 },
-  "user_modified_paths": [],
-  "claude":  { "settings": "created" }    // or updated / unchanged
+  "filter":  "detected",
+  "targets": [
+    {
+      "target": "claude",
+      "dest":   ".claude/skills",
+      "files":  { "added": 11, "updated": 0, "unchanged": 0, "skipped": 0, "user_modified": 0, "user_modified_paths": [] },
+      "claude": { "settings": "unchanged" }    // omitted for non-Claude targets
+    }
+  ]
 }
 ```
 
 `uninstall --json`:
 
 ```jsonc
-{ "action": "removed", "dest": ".claude/skills", "skills_removed": ["heal-cli", "heal-code-patch", "heal-code-review", "heal-setup"] }
-// or { "action": "noop", … } when nothing was installed
+{
+  "filter": "claude",
+  "targets": [
+    {
+      "target": "claude",
+      "dest":   ".claude/skills",
+      "skills_removed": ["heal-cli", "heal-code-patch", "heal-code-review", "heal-setup", …],
+      "claude": { "legacy_swept": false }    // pre-skills layout sweep flag, Claude-only
+    }
+  ]
+}
+// `skills_removed` is empty + `claude.legacy_swept` is false when nothing was installed
 ```
 
 ### `heal hook <commit|edit|stop>` (internal)

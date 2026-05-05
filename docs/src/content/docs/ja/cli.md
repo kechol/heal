@@ -63,18 +63,18 @@ heal init --explicit     # 全デフォルト値を config.toml に書き出す
 
 ## `heal skills`
 
-**Claude target** (`.claude/skills/`) 配下の同梱スキルセットを管理します:
+検出した全エージェントの同梱スキルセットを管理します。各サブコマンドは `--target <detected|claude|codex|all>` を受け付けます(デフォルトは `detected` で `heal init` と同じ挙動):
 
 ```sh
-heal skills install     # スキル展開（リポジトリごとに一度）
-heal skills update      # heal バイナリを更新した後にリフレッシュ
-heal skills status      # インストール済みと同梱版を比較
-heal skills uninstall   # スキルを削除
+heal skills install                  # PATH にある全エージェント向けに展開
+heal skills install --target codex   # `.agents/skills/` だけ
+heal skills install --target all     # 検出有無に関わらず全 target に展開
+heal skills update                   # heal バイナリ更新後にリフレッシュ
+heal skills status                   # ターゲット別の installed バージョンと drift
+heal skills uninstall --target all   # 全 tree を削除
 ```
 
-スキルセットは `heal` バイナリに同梱されているので、`heal skills install` は常にバイナリに対応するバージョンを展開します。`update` はドリフト認識付きで、手編集されたファイルはそのまま残します(`--force` で上書き可)。
-
-**Codex target** (`.agents/skills/`) は v0.4 では `heal init --force --yes` が公式リフレッシュ手段です — 検出した全エージェントの tree を一括で再展開します。`heal skills *` グループのマルチターゲット対応は follow-up として追跡しています。
+スキルセットは `heal` バイナリに同梱されているので、各サブコマンドは常にバイナリに対応するバージョンに対して動きます。`update` はドリフト認識付きで、手編集されたファイルはターゲット単位で残します(`--force` で上書き可)。Claude target の `install` / `update` は `.claude/settings.json` から legacy な `heal hook edit` / `heal hook stop` エントリも掃除します(Codex target には対応する settings ファイルがないため何もしません)。
 
 同梱されるスキルは 11 個、機能ファミリ別:
 

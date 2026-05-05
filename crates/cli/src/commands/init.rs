@@ -29,7 +29,7 @@ use crate::core::config::Config;
 use crate::core::monorepo::{self, MonorepoSignal};
 use crate::core::severity::SeverityCounts;
 use crate::core::HealPaths;
-use crate::skill_assets::{self, ExtractMode, ExtractStats, SkillTarget};
+use crate::skill_assets::{self, agent_on_path, ExtractMode, ExtractStats, SkillTarget};
 use anyhow::{Context, Result};
 use serde::Serialize;
 
@@ -541,17 +541,6 @@ fn extract_counts(stats: &ExtractStats) -> SkillsAction {
         updated: s.updated,
         unchanged: s.unchanged + s.skipped,
     }
-}
-
-/// Walk `PATH` looking for `target.cli_name()`. Pure stdlib so no
-/// extra dependency. Heal is Unix-only today so the Windows extension
-/// dance is omitted.
-fn agent_on_path(target: SkillTarget) -> bool {
-    let Some(path_var) = std::env::var_os("PATH") else {
-        return false;
-    };
-    let cli = target.cli_name();
-    std::env::split_paths(&path_var).any(|dir| dir.join(cli).is_file())
 }
 
 fn confirm_skills_install(target: SkillTarget) -> Result<bool> {
