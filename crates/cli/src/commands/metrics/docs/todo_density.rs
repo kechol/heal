@@ -22,7 +22,7 @@ impl MetricSection for TodoDensitySection {
             return Ok(());
         }
         let top_n = ctx.cfg.metrics.top_n;
-        write_section_header("TODO density", ctx, w)?;
+        write_section_header("TODO density", self.metric(), ctx, w)?;
         writeln!(
             w,
             "  {} doc(s) scanned; {} carry markers ({} markers total)",

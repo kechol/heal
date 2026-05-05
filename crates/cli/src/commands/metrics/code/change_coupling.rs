@@ -19,7 +19,7 @@ impl MetricSection for ChangeCouplingSection {
             return Ok(());
         };
         let top_n = ctx.cfg.metrics.top_n_change_coupling();
-        write_section_header("Change Coupling", ctx, w)?;
+        write_section_header("Change Coupling", self.metric(), ctx, w)?;
         if report.pairs.is_empty() {
             writeln!(
                 w,

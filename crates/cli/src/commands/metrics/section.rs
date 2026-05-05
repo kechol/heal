@@ -15,6 +15,7 @@ use std::io::{self, Write};
 use crate::cli::MetricKind;
 use crate::core::config::Config;
 use crate::core::term::{ansi_wrap, ANSI_CYAN};
+use crate::feature::Family;
 use crate::observers::ObserverReports;
 
 /// Read-only context handed to every section. Holding `cfg` and the
@@ -28,15 +29,17 @@ pub(super) struct SectionCtx<'a> {
 
 /// Write the visual section divider every `MetricSection::render_text`
 /// uses as its first line. Centralized so the divider rule (a blank
-/// line followed by a cyan title bar) stays consistent and skips color
-/// codes when stdout is not a TTY.
+/// line followed by a cyan title bar carrying the `[Family]` prefix)
+/// stays consistent and skips color codes when stdout is not a TTY.
 pub(super) fn write_section_header(
     label: &str,
+    metric: MetricKind,
     ctx: &SectionCtx<'_>,
     w: &mut dyn Write,
 ) -> io::Result<()> {
     writeln!(w)?;
-    let title = format!("── {label} ──");
+    let family = Family::for_metric(metric.json_key()).label();
+    let title = format!("── [{family}] {label} ──");
     writeln!(w, "{}", ansi_wrap(ANSI_CYAN, &title, ctx.colorize))?;
     Ok(())
 }

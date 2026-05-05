@@ -23,7 +23,7 @@ impl MetricSection for SkipRatioSection {
             return Ok(());
         }
         let top_n = ctx.cfg.metrics.top_n;
-        write_section_header("Skip ratio", ctx, w)?;
+        write_section_header("Skip ratio", self.metric(), ctx, w)?;
         let skipped_files = report.skipped_file_count();
         writeln!(
             w,

@@ -23,7 +23,7 @@ impl MetricSection for CoveragePctSection {
             return Ok(());
         }
         let top_n = ctx.cfg.metrics.top_n;
-        write_section_header("Coverage", ctx, w)?;
+        write_section_header("Coverage", self.metric(), ctx, w)?;
         if let Some(src) = report.source.as_ref() {
             writeln!(w, "  source: {}", src.display())?;
         }

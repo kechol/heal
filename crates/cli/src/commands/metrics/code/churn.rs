@@ -20,7 +20,7 @@ impl MetricSection for ChurnSection {
             return Ok(());
         };
         let top_n = ctx.cfg.metrics.top_n_churn();
-        write_section_header("Churn", ctx, w)?;
+        write_section_header("Churn", self.metric(), ctx, w)?;
         if report.files.is_empty() {
             writeln!(w, "  no commits in the last {} days", report.since_days)?;
             return Ok(());

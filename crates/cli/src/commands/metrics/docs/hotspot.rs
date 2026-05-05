@@ -26,7 +26,7 @@ impl MetricSection for DocHotspotSection {
             .hotspot
             .top_n
             .unwrap_or(ctx.cfg.metrics.top_n);
-        write_section_header("Doc hotspot", ctx, w)?;
+        write_section_header("Doc hotspot", self.metric(), ctx, w)?;
         if report.entries.is_empty() {
             writeln!(
                 w,

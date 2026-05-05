@@ -22,7 +22,7 @@ impl MetricSection for ComplexitySection {
         if !obs.ccn_enabled && !obs.cognitive_enabled {
             return Ok(());
         }
-        write_section_header("Complexity", ctx, w)?;
+        write_section_header("Complexity", self.metric(), ctx, w)?;
         if report.files.is_empty() {
             writeln!(w, "  no supported source files found")?;
             return Ok(());

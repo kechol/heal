@@ -19,7 +19,7 @@ impl MetricSection for DuplicationSection {
             return Ok(());
         };
         let top_n = ctx.cfg.metrics.top_n_duplication();
-        write_section_header("Duplication", ctx, w)?;
+        write_section_header("Duplication", self.metric(), ctx, w)?;
         if report.blocks.is_empty() {
             writeln!(w, "  no blocks ≥ {} tokens detected", report.min_tokens)?;
             return Ok(());

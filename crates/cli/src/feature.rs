@@ -87,6 +87,19 @@ impl Family {
         }
     }
 
+    /// Title-cased family label used as the `[Code]` / `[Test]` /
+    /// `[Docs]` prefix in `heal metrics` section titles. Same anti-
+    /// drift rationale as [`Self::banner`] — keep the user-facing
+    /// label spelling pinned to the variant.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Code => "Code",
+            Self::Test => "Test",
+            Self::Docs => "Docs",
+        }
+    }
+
     /// Slash-command name of the family-specific drain skill —
     /// surfaced in the `Next: claude /heal-...-patch` hint at the
     /// foot of each family's status block. Same anti-drift rationale

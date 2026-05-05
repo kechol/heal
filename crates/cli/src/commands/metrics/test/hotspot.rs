@@ -26,7 +26,7 @@ impl MetricSection for TestHotspotSection {
             .hotspot
             .top_n
             .unwrap_or(ctx.cfg.metrics.top_n);
-        write_section_header("Test hotspot", ctx, w)?;
+        write_section_header("Test hotspot", self.metric(), ctx, w)?;
         if report.entries.is_empty() {
             writeln!(w, "  no files have both churn and a coverage gap")?;
             return Ok(());

@@ -22,7 +22,7 @@ impl MetricSection for DocCoverageSection {
             return Ok(());
         }
         let top_n = ctx.cfg.metrics.top_n;
-        write_section_header("Doc coverage", ctx, w)?;
+        write_section_header("Doc coverage", self.metric(), ctx, w)?;
         writeln!(
             w,
             "  {} src files tracked, {} missing paired docs",

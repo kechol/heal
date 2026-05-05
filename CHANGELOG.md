@@ -4,6 +4,18 @@
 
 ### Features
 
+- **`heal metrics` section titles carry a `[Family]` prefix.** The
+  divider above each section is now `── [Code] Complexity ──`,
+  `── [Docs] Doc drift ──`, `── [Test] Coverage ──`, etc. Mirrors
+  `heal status`'s `═══ Code ═══` / `═══ Test ═══` / `═══ Docs ═══`
+  family banners so the user can scan a single line and tell which
+  family each block belongs to without remembering the metric →
+  family map. Family is derived from the `MetricKind` via
+  `Family::for_metric` (single source of truth) plus a new
+  `Family::label()` for the title-cased rendering. JSON output is
+  unaffected — the `metric` echo field still names the metric, no
+  family field added.
+
 - **`/heal-{code,doc,test}-patch` propose `heal mark accept` for
   false positives.** Each patch loop now has a third branch
   alongside allow-list / escalate-list: when reading the file

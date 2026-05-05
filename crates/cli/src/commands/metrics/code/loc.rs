@@ -17,7 +17,7 @@ impl MetricSection for LocSection {
     fn render_text(&self, ctx: &SectionCtx<'_>, w: &mut dyn Write) -> io::Result<()> {
         let report = &ctx.reports.loc;
         let top_n = ctx.cfg.metrics.top_n_loc();
-        write_section_header("LOC", ctx, w)?;
+        write_section_header("LOC", self.metric(), ctx, w)?;
         writeln!(
             w,
             "  {} LOC across {} files",

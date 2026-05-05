@@ -22,7 +22,7 @@ impl MetricSection for DocDriftSection {
             return Ok(());
         }
         let top_n = ctx.cfg.metrics.top_n;
-        write_section_header("Doc drift", ctx, w)?;
+        write_section_header("Doc drift", self.metric(), ctx, w)?;
         writeln!(
             w,
             "  {} dangling identifier mention(s) across paired docs",

@@ -19,7 +19,7 @@ impl MetricSection for HotspotSection {
             return Ok(());
         };
         let top_n = ctx.cfg.metrics.top_n_hotspot();
-        write_section_header("Hotspot", ctx, w)?;
+        write_section_header("Hotspot", self.metric(), ctx, w)?;
         if report.entries.is_empty() {
             writeln!(w, "  no files have both churn and complexity signal")?;
             return Ok(());

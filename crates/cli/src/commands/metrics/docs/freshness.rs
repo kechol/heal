@@ -23,7 +23,7 @@ impl MetricSection for DocFreshnessSection {
             return Ok(());
         }
         let top_n = ctx.cfg.metrics.top_n;
-        write_section_header("Doc freshness", ctx, w)?;
+        write_section_header("Doc freshness", self.metric(), ctx, w)?;
         writeln!(
             w,
             "  {} pairs tracked, {} stale (high≥{} commits, critical≥{})",

@@ -19,7 +19,7 @@ impl MetricSection for LcomSection {
             return Ok(());
         };
         let top_n = ctx.cfg.metrics.top_n_lcom();
-        write_section_header("LCOM", ctx, w)?;
+        write_section_header("LCOM", self.metric(), ctx, w)?;
         if report.classes.is_empty() {
             writeln!(
                 w,

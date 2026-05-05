@@ -22,7 +22,7 @@ impl MetricSection for DocLinkHealthSection {
             return Ok(());
         }
         let top_n = ctx.cfg.metrics.top_n;
-        write_section_header("Doc link health", ctx, w)?;
+        write_section_header("Doc link health", self.metric(), ctx, w)?;
         writeln!(
             w,
             "  scanned {} link(s) across {} doc(s); {} broken",
