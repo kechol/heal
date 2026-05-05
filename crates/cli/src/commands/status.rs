@@ -248,76 +248,10 @@ pub(super) fn render(
     out: &mut (impl Write + ?Sized),
 ) -> Result<()> {
     let drain = &cfg.policy.drain;
-    writeln!(
-        out,
-        "  HEAD {}  ({} findings)",
-        record.head_sha.as_deref().unwrap_or("∅"),
-        record.findings.len(),
-    )?;
     let summary = drain_summary(&record.findings, drain);
-    writeln!(
-        out,
-        "  Drain queue: {}  ·  {}",
-        ansi_wrap(
-            ANSI_RED,
-            &format!(
-                "T0 {} findings ({} files)",
-                summary.t0_count, summary.t0_files
-            ),
-            colorize,
-        ),
-        ansi_wrap(
-            ANSI_YELLOW,
-            &format!(
-                "T1 {} findings ({} files)",
-                summary.t1_count, summary.t1_files
-            ),
-            colorize,
-        ),
-    )?;
-    writeln!(
-        out,
-        "  Population:  {}",
-        record.severity_counts.render_inline(colorize),
-    )?;
     let accepted = accepted_summary(&record.findings);
-    if accepted.count > 0 {
-        writeln!(
-            out,
-            "  {}    {} findings ({} files)",
-            ansi_wrap(ANSI_CYAN, "Accepted:", colorize),
-            accepted.count,
-            accepted.files,
-        )?;
-    }
-    if !record.worktree_clean {
-        writeln!(
-            out,
-            "  {} worktree dirty — uncommitted changes are reflected here.",
-            ansi_wrap(ANSI_YELLOW, "note:", colorize),
-        )?;
-    }
-    if let Some(ws) = filters.workspace.as_deref() {
-        writeln!(out, "  workspace: {ws}")?;
-    }
-    for line in override_notes(cfg) {
-        writeln!(
-            out,
-            "  {} {line}",
-            ansi_wrap(ANSI_CYAN, "override:", colorize)
-        )?;
-    }
-    writeln!(out)?;
-
-    if !regressed.is_empty() {
-        writeln!(
-            out,
-            "  {} {} previously-fixed finding(s) re-detected. See `.heal/findings/regressed.jsonl`.",
-            ansi_wrap(ANSI_YELLOW, "regression:", colorize),
-            regressed.len(),
-        )?;
-        writeln!(out)?;
-    }
+    render_header(record, &summary, &accepted, cfg, filters, colorize, out)?;
+    render_regressed_banner(regressed, colorize, out)?;
 
     let show_low = filters.all || matches!(filters.severity, Some(Severity::Medium | Severity::Ok));
 
@@ -351,41 +285,17 @@ pub(super) fn render(
         crate::feature::Family::Test,
         crate::feature::Family::Docs,
     ];
-
     for family in family_order {
-        let banner = family.banner();
-        let patch_skill = family.patch_skill();
-        // Skip families whose feature is disabled so the user never
-        // sees an empty banner for an opt-in family they haven't
-        // enabled. Code is always on; Test / Docs follow their
-        // master switches. The explicit `--feature <disabled>` case
-        // exits earlier in `run()` so this branch only matters for
-        // the unfiltered render.
-        if !family.is_enabled(cfg) {
-            continue;
-        }
-        // `--feature X` narrows to one family — suppress the sibling
-        // banners entirely even when they have findings (they were
-        // already filtered out by `Filters::passes`). Without a
-        // family filter, every enabled family prints its banner +
-        // Next hint so the user always sees the path forward, even
-        // when a family is empty.
-        if filters.family.is_some_and(|f| f != family) {
-            continue;
-        }
-        let items = by_family.get(&family);
-        writeln!(out, "{}", ansi_wrap(ANSI_CYAN, banner, colorize))?;
-        if let Some(items) = items {
-            let hidden = render_family(items, drain, show_low, filters.top, colorize, out)?;
-            total_hidden += hidden;
-        } else {
-            writeln!(out, "  (no findings)")?;
-        }
-        writeln!(
+        total_hidden += render_one_family(
+            family,
+            by_family.get(&family),
+            drain,
+            filters,
+            cfg,
+            show_low,
+            colorize,
             out,
-            "  Next: `claude {patch_skill}` drains this family's T0 queue one finding per commit",
         )?;
-        writeln!(out)?;
     }
 
     if !show_low && total_hidden > 0 {
@@ -407,6 +317,149 @@ pub(super) fn render(
     }
 
     Ok(())
+}
+
+/// Render the per-invocation header block — HEAD sha, drain queue
+/// summary, population counts, accepted / worktree / workspace /
+/// override notes, then a trailing blank line. Pure formatting; the
+/// pre-computed `summary` and `accepted` are passed in so the caller
+/// keeps single-pass arithmetic over `record.findings`.
+fn render_header(
+    record: &FindingsRecord,
+    summary: &DrainSummary,
+    accepted: &AcceptedSummary,
+    cfg: &Config,
+    filters: &Filters,
+    colorize: bool,
+    out: &mut (impl Write + ?Sized),
+) -> Result<()> {
+    writeln!(
+        out,
+        "  HEAD {}  ({} findings)",
+        record.head_sha.as_deref().unwrap_or("∅"),
+        record.findings.len(),
+    )?;
+    writeln!(
+        out,
+        "  Drain queue: {}  ·  {}",
+        ansi_wrap(
+            ANSI_RED,
+            &format!(
+                "T0 {} findings ({} files)",
+                summary.t0_count, summary.t0_files
+            ),
+            colorize,
+        ),
+        ansi_wrap(
+            ANSI_YELLOW,
+            &format!(
+                "T1 {} findings ({} files)",
+                summary.t1_count, summary.t1_files
+            ),
+            colorize,
+        ),
+    )?;
+    writeln!(
+        out,
+        "  Population:  {}",
+        record.severity_counts.render_inline(colorize),
+    )?;
+    if accepted.count > 0 {
+        writeln!(
+            out,
+            "  {}    {} findings ({} files)",
+            ansi_wrap(ANSI_CYAN, "Accepted:", colorize),
+            accepted.count,
+            accepted.files,
+        )?;
+    }
+    if !record.worktree_clean {
+        writeln!(
+            out,
+            "  {} worktree dirty — uncommitted changes are reflected here.",
+            ansi_wrap(ANSI_YELLOW, "note:", colorize),
+        )?;
+    }
+    if let Some(ws) = filters.workspace.as_deref() {
+        writeln!(out, "  workspace: {ws}")?;
+    }
+    for line in override_notes(cfg) {
+        writeln!(
+            out,
+            "  {} {line}",
+            ansi_wrap(ANSI_CYAN, "override:", colorize)
+        )?;
+    }
+    writeln!(out)?;
+    Ok(())
+}
+
+/// Surface `regressed.jsonl` entries that re-appeared after a recorded
+/// fix. No-op when `regressed` is empty so `render` itself stays free
+/// of the conditional.
+fn render_regressed_banner(
+    regressed: &[RegressedEntry],
+    colorize: bool,
+    out: &mut (impl Write + ?Sized),
+) -> Result<()> {
+    if regressed.is_empty() {
+        return Ok(());
+    }
+    writeln!(
+        out,
+        "  {} {} previously-fixed finding(s) re-detected. See `.heal/findings/regressed.jsonl`.",
+        ansi_wrap(ANSI_YELLOW, "regression:", colorize),
+        regressed.len(),
+    )?;
+    writeln!(out)?;
+    Ok(())
+}
+
+/// Render one family's banner, findings, and patch-skill hint. Returns
+/// the count of hidden lower-Severity findings the caller should
+/// accumulate for the global `Hidden: …` footer. Disabled families and
+/// `--feature X`-suppressed siblings produce zero output and zero hidden.
+#[allow(clippy::too_many_arguments)] // each parameter is a distinct render input
+fn render_one_family(
+    family: crate::feature::Family,
+    items: Option<&Vec<&Finding>>,
+    drain: &PolicyDrainConfig,
+    filters: &Filters,
+    cfg: &Config,
+    show_low: bool,
+    colorize: bool,
+    out: &mut (impl Write + ?Sized),
+) -> Result<usize> {
+    // Skip families whose feature is disabled so the user never sees
+    // an empty banner for an opt-in family they haven't enabled.
+    // Code is always on; Test / Docs follow their master switches.
+    // The explicit `--feature <disabled>` case exits earlier in `run()`
+    // so this branch only matters for the unfiltered render.
+    if !family.is_enabled(cfg) {
+        return Ok(0);
+    }
+    // `--feature X` narrows to one family — suppress the sibling
+    // banners entirely even when they have findings (they were
+    // already filtered out by `Filters::passes`). Without a family
+    // filter, every enabled family prints its banner + Next hint so
+    // the user always sees the path forward, even when a family is empty.
+    if filters.family.is_some_and(|f| f != family) {
+        return Ok(0);
+    }
+    writeln!(out, "{}", ansi_wrap(ANSI_CYAN, family.banner(), colorize))?;
+    let hidden = if let Some(items) = items {
+        render_family(items, drain, show_low, filters.top, colorize, out)?
+    } else {
+        writeln!(out, "  (no findings)")?;
+        0
+    };
+    writeln!(
+        out,
+        "  Next: `claude {}` drains this family's T0 queue one finding per commit",
+        family.patch_skill(),
+    )?;
+    writeln!(out)?;
+    Ok(hidden)
 }
 
 /// Render one family's findings as the per-`(Severity, hotspot)`
