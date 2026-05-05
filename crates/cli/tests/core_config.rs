@@ -739,6 +739,14 @@ fn validate_accepts_well_formed_gitignore_patterns() {
         [[project.workspaces]]
         path = "pkg/web"
         exclude_paths = ["vendor/", "**/*.tmp", "/dist", "!keep.tmp"]
+
+        [features.docs]
+        enabled = true
+
+        [features.docs.standalone]
+        include = ["docs/**/*.md", "*.md"]
+        exclude = ["docs/archive/**", "!docs/archive/keep.md"]
+        entrypoints = ["docs/quick-start.*", "docs/index.mdx"]
     "##;
     let parsed = Config::from_toml_str(cfg).unwrap();
     parsed

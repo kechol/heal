@@ -201,6 +201,14 @@ pub struct StandaloneDocsConfig {
     pub include: Vec<String>,
     #[serde(default = "StandaloneDocsConfig::default_exclude")]
     pub exclude: Vec<String>,
+    /// gitignore-syntax globs naming docs that are reachable through
+    /// channels the observer can't see — Starlight / Hugo / Docusaurus
+    /// sidebar configs, mkdocs nav lists, mdBook `SUMMARY.md`. Pages
+    /// matching any entrypoint glob are never reported as
+    /// `orphan_pages` even when no other Markdown body links to them.
+    /// Extends the built-in `README.md` / `index.{md,mdx,rst}` recognition.
+    #[serde(default)]
+    pub entrypoints: Vec<String>,
 }
 
 impl StandaloneDocsConfig {
@@ -231,6 +239,7 @@ impl Default for StandaloneDocsConfig {
         Self {
             include: Self::default_include(),
             exclude: Self::default_exclude(),
+            entrypoints: Vec::new(),
         }
     }
 }
@@ -1240,6 +1249,14 @@ impl Config {
                 message,
             }
         })?;
+        let standalone = &self.features.docs.standalone;
+        validate_gitignore_lines(&standalone.include)
+            .and_then(|()| validate_gitignore_lines(&standalone.exclude))
+            .and_then(|()| validate_gitignore_lines(&standalone.entrypoints))
+            .map_err(|message| Error::ConfigInvalid {
+                path: path.to_path_buf(),
+                message,
+            })?;
         validate_disabled_metrics(&self.metrics.disabled).map_err(|message| {
             Error::ConfigInvalid {
                 path: path.to_path_buf(),

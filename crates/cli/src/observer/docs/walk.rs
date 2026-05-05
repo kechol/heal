@@ -65,7 +65,7 @@ pub fn walk_standalone_docs(root: &Path, cfg: &Config) -> Vec<PathBuf> {
     out
 }
 
-fn build_matcher(root: &Path, lines: &[String]) -> Option<Gitignore> {
+pub(super) fn build_matcher(root: &Path, lines: &[String]) -> Option<Gitignore> {
     if lines.is_empty() {
         return None;
     }
@@ -79,7 +79,7 @@ fn build_matcher(root: &Path, lines: &[String]) -> Option<Gitignore> {
     builder.build().ok()
 }
 
-fn is_match(gi: &Gitignore, rel: &Path) -> bool {
+pub(super) fn is_match(gi: &Gitignore, rel: &Path) -> bool {
     // `matched_path_or_any_parents` yields Ignore when any ancestor is
     // matched too, which is what we want for `**/adr/**` style trees.
     gi.matched_path_or_any_parents(rel, /*is_dir=*/ false)

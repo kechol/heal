@@ -14,6 +14,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use ignore::gitignore::Gitignore;
 use serde::{Deserialize, Serialize};
 
 use crate::core::config::Config;
@@ -24,6 +25,7 @@ use crate::observer::docs::corpus::{read_doc_bodies, DocBody};
 use crate::observer::docs::markdown::{
     extract_links, is_external, resolve_relative, split_link_target,
 };
+use crate::observer::docs::walk::{build_matcher, is_match};
 
 pub struct OrphanPagesObserver {
     enabled: bool,
@@ -34,6 +36,11 @@ pub struct OrphanPagesObserver {
     /// Layer A pair docs — only paths are needed (they're seeded as
     /// "linked" via the pair entry, no body scan).
     paired_docs: Vec<PathBuf>,
+    /// Compiled `[features.docs.standalone].entrypoints` matcher. Pages
+    /// matching this set count as reachable even when no other doc
+    /// links to them — covers Starlight / Hugo / Docusaurus sidebar
+    /// configs the observer can't read directly.
+    entrypoints: Option<Gitignore>,
 }
 
 impl OrphanPagesObserver {
@@ -43,7 +50,12 @@ impl OrphanPagesObserver {
             enabled: cfg.features.docs.enabled,
             standalone,
             paired_docs,
+            entrypoints: build_matcher(Path::new(""), &cfg.features.docs.standalone.entrypoints),
         }
+    }
+
+    fn matches_entrypoint(&self, doc: &Path) -> bool {
+        self.entrypoints.as_ref().is_some_and(|m| is_match(m, doc))
     }
 
     /// Convenience for tests / out-of-band callers: read each Layer B
@@ -73,11 +85,13 @@ impl OrphanPagesObserver {
             linked.insert(paired.clone());
         }
         // Conventional entry points are never orphans even when
-        // nothing else links to them. `README.md` at any depth and
-        // `index.md` at the standalone root cover the typical
-        // Markdown / Starlight site layouts.
+        // nothing else links to them. `README.md` / `index.{md,mdx,rst}`
+        // at any depth cover Markdown / Starlight / Docusaurus
+        // landing pages. The configured `entrypoints` globs add
+        // SSG-specific reachability (sidebar / nav configs the
+        // observer can't read directly).
         for doc in &self.standalone {
-            if is_entry_point(&doc.path) {
+            if is_entry_point(&doc.path) || self.matches_entrypoint(&doc.path) {
                 linked.insert(doc.path.clone());
             }
         }
@@ -130,16 +144,16 @@ pub struct OrphanPagesTotals {
     pub orphans: usize,
 }
 
-/// `README.md` and `index.md` (any depth) are never orphans —
+/// `README.md` / `index.{md,mdx,rst}` (any depth) are never orphans —
 /// reachability comes from outside the doc graph (GitHub repo home,
-/// Starlight / mdBook home, `cargo doc` index).
+/// Starlight / mdBook home, `cargo doc` index, MDX-based SSGs).
 fn is_entry_point(doc: &Path) -> bool {
     let Some(name) = doc.file_name().and_then(|s| s.to_str()) else {
         return false;
     };
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "readme.md" | "readme.rst" | "index.md" | "index.rst"
+        "readme.md" | "readme.mdx" | "readme.rst" | "index.md" | "index.mdx" | "index.rst"
     )
 }
 

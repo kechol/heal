@@ -164,6 +164,48 @@ fn orphan_pages_treats_readme_as_entry_point() {
 }
 
 #[test]
+fn orphan_pages_treats_index_mdx_as_entry_point() {
+    // Starlight / Docusaurus / MDX-based SSGs use index.mdx as the
+    // landing page; the .md-only check missed it before.
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "docs/index.mdx", "# Home\n");
+
+    let cfg = cfg_with_docs();
+    let report = OrphanPagesObserver::from_paths(
+        &cfg,
+        dir.path(),
+        &[PathBuf::from("docs/index.mdx")],
+        vec![],
+    )
+    .scan();
+    assert!(report.orphans.is_empty(), "got: {:?}", report.orphans);
+}
+
+#[test]
+fn orphan_pages_honors_configured_entrypoints() {
+    // Pages reachable through SSG sidebar configs (Starlight, Hugo,
+    // mkdocs nav) need explicit declaration here; nothing else links
+    // to them in the body graph.
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "docs/quick-start.mdx", "# Quick start\n");
+    write(dir.path(), "docs/concept.md", "# Concept\n");
+    write(dir.path(), "docs/orphan.md", "# Truly orphaned\n");
+
+    let mut cfg = cfg_with_docs();
+    cfg.features.docs.standalone.entrypoints = vec![
+        "docs/quick-start.*".to_string(),
+        "docs/concept.md".to_string(),
+    ];
+    let docs = vec![
+        PathBuf::from("docs/quick-start.mdx"),
+        PathBuf::from("docs/concept.md"),
+        PathBuf::from("docs/orphan.md"),
+    ];
+    let report = OrphanPagesObserver::from_paths(&cfg, dir.path(), &docs, vec![]).scan();
+    assert_eq!(report.orphans, vec![PathBuf::from("docs/orphan.md")]);
+}
+
+#[test]
 fn todo_density_counts_markers_outside_fences() {
     let dir = tempfile::tempdir().unwrap();
     let body = "# Page\n\nTODO refresh.\n\n```\n// TODO inside fence is excluded\n```\n\n[要確認] 仕様未定\nFIXME the link.\n";
