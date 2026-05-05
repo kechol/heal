@@ -273,7 +273,8 @@ Config { project, git, metrics, policy, diff, features }
         │     └── DocFreshnessConfig { high_commits = 5,
         │                               critical_commits = 20 }
         └── TestConfig { enabled = false, test_paths, coverage }
-              └── TestCoverageConfig { enabled = false, lcov_paths }
+              └── TestCoverageConfig { enabled = false, lcov_paths,
+                                       post_commit_refresh = None }
 ```
 
 `DuplicationConfig` adds a `docs_min_tokens = 100` field that the
@@ -342,6 +343,7 @@ applies. `TestCoverageConfig.lcov_paths` defaults to `lcov.info`,
 | `[features.test]` | `test_paths` | language conventions | gitignore-syntax globs. |
 | `[features.test.coverage]` | `enabled` | `false` | Sub-feature switch for lcov ingestion. |
 | `[features.test.coverage]` | `lcov_paths` | 4 conventional paths | First existing wins. |
+| `[features.test.coverage]` | `post_commit_refresh` | unset | Optional shell command the post-commit hook spawns detached to refresh `lcov.info` after each commit. |
 | `[diff]` | `max_loc_threshold` | `200_000` | exit 2 above this. |
 
 ### Workspace overlay

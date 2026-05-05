@@ -93,6 +93,14 @@ heal hook commit | edit | stop
 2. Load config (silent exit if missing — uncalibrated project).
 3. `run_all` observers → `classify_with_calibration` →
    `write_nudge`.
+4. `spawn_coverage_refresh` — when
+   `[features.test.coverage].post_commit_refresh` is set AND the
+   `[features.test]` + coverage families are both on, detach
+   `sh -c "<cmd>"` with stdout / stderr / stdin → `/dev/null`.
+   The child is reparented to PID 1 on Unix when the hook
+   process exits (no zombie). Silent / best-effort — a missing
+   command, disabled coverage, or spawn failure never disturbs
+   the commit (R2: post-commit hook never blocks a commit).
 
 **Nudge format** (single line, post-commit output stays compact):
 
