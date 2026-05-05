@@ -3,10 +3,12 @@
 //! that surrounds it.
 //!
 //! The embedded tree's children are individual skill directories
-//! (`heal-cli/`, `heal-setup/`, `heal-code-review/`, `heal-code-patch/`)
-//! that get extracted directly into `<project>/.claude/skills/<name>/`.
-//! No marketplace, no plugin wrapper — Claude Code natively discovers
-//! project-scope skills under `.claude/skills/`.
+//! (`heal-cli/`, `heal-setup/`, `heal-code-review/`, `heal-code-patch/`,
+//! …) that get extracted directly into `<project>/<dest>/<name>/`. The
+//! same skill bodies serve every supported agent — see [`SkillTarget`]
+//! for the per-agent destination paths. No marketplace, no plugin
+//! wrapper — both Claude Code and Codex CLI natively discover skills
+//! under their respective project-scope paths.
 //!
 //! ## Drift detection without a manifest
 //!
@@ -25,7 +27,10 @@
 //! That makes the on-disk skill files self-describing: a teammate can
 //! re-install on a different machine and the drift verdict is the same
 //! function of `(on-disk bytes, bundled bytes)` no matter which machine
-//! ran the previous install. No untracked manifest to coordinate.
+//! ran the previous install. No untracked manifest to coordinate. The
+//! same property holds per-target: `.claude/skills/foo/SKILL.md` and
+//! `.agents/skills/foo/SKILL.md` are independent install records of the
+//! same bundled bytes.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -35,17 +40,79 @@ use include_dir::{include_dir, Dir, DirEntry, File};
 use serde::Serialize;
 
 /// Embedded bundle. Each top-level child is a skill directory whose
-/// contents land 1:1 under `<project>/.claude/skills/<skill-name>/`.
+/// contents land 1:1 under `<project>/<target.dest_rel()>/<skill-name>/`.
 pub static SKILLS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/skills");
 
-/// Project-relative location of the extracted skills tree. Single source
-/// of truth for the install destination.
+/// One agent the bundled skills can be installed for. Each variant
+/// pairs an on-disk discovery path with a `PATH`-detection name. The
+/// skill **bodies** are agent-neutral; only the destination differs.
+///
+/// - [`SkillTarget::Claude`] writes to `.claude/skills/`, the
+///   project-scope path Claude Code natively discovers.
+/// - [`SkillTarget::Codex`] writes to `.agents/skills/`, the
+///   project-scope path Codex CLI natively discovers (see
+///   <https://developers.openai.com/codex/skills>).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillTarget {
+    Claude,
+    Codex,
+}
+
+impl SkillTarget {
+    /// Every target HEAL knows about, in stable order. Iteration order
+    /// drives the `heal init` summary block and the JSON `skills` list.
+    pub const ALL: [SkillTarget; 2] = [SkillTarget::Claude, SkillTarget::Codex];
+
+    /// Project-relative directory each target's skills land in.
+    #[must_use]
+    pub const fn dest_rel(self) -> &'static str {
+        match self {
+            Self::Claude => ".claude/skills",
+            Self::Codex => ".agents/skills",
+        }
+    }
+
+    /// Resolve the absolute skills destination inside `project`.
+    #[must_use]
+    pub fn dest(self, project: &Path) -> PathBuf {
+        project.join(self.dest_rel())
+    }
+
+    /// Executable name we look for on `PATH` to decide whether the
+    /// agent is installed; also serves as the short stable label used
+    /// in user-visible "skipped (no `claude` on PATH)" copy. Unix-only
+    /// today (Heal is Unix-only, so the Windows extension dance is
+    /// omitted).
+    #[must_use]
+    pub const fn cli_name(self) -> &'static str {
+        match self {
+            Self::Claude => "claude",
+            Self::Codex => "codex",
+        }
+    }
+
+    /// Long display name for human-facing copy.
+    #[must_use]
+    pub const fn display_name(self) -> &'static str {
+        match self {
+            Self::Claude => "Claude Code",
+            Self::Codex => "Codex CLI",
+        }
+    }
+}
+
+/// Project-relative location of the Claude skills tree. Kept as a
+/// public alias (`SkillTarget::Claude.dest_rel()`) so external
+/// references continue to compile.
 pub const SKILLS_DEST_REL: &str = ".claude/skills";
 
-/// Resolve the skills destination directory inside `project`.
+/// Resolve the Claude skills destination directory inside `project`.
+/// Equivalent to `SkillTarget::Claude.dest(project)` and kept around
+/// for the call sites that haven't moved to the multi-target API.
 #[must_use]
 pub fn skills_dest(project: &Path) -> PathBuf {
-    project.join(SKILLS_DEST_REL)
+    SkillTarget::Claude.dest(project)
 }
 
 /// Source-of-install marker stamped into the SKILL.md `metadata:`

@@ -58,7 +58,9 @@ After `heal init`:
 │
 ├── .git/hooks/post-commit         # one-line shim: calls `heal hook commit`
 │
-└── .claude/skills/                # Claude skills (after `heal skills install`)
+└── <agent skills>                 # one tree per detected agent (after `heal init --yes`)
+    │                              #   .claude/skills/   (Claude Code)
+    │                              #   .agents/skills/   (OpenAI Codex)
     ├── heal-cli/                  # Code family
     ├── heal-code-patch/
     ├── heal-code-review/
@@ -72,10 +74,11 @@ After `heal init`:
     └── heal-test-patch/
 ```
 
-All eleven bundled skills extract on `heal skills install`
-regardless of which feature families are enabled — turning
-`[features.docs]` or `[features.test]` on later then makes the
-already-installed skill body relevant without a re-extract.
+All eleven bundled skills extract together — same source bytes for
+every supported agent target — regardless of which feature
+families are enabled. Turning `[features.docs]` or `[features.test]`
+on later makes the already-installed skill body relevant without a
+re-extract.
 
 `config.toml`, `calibration.toml`, and the `findings/` directory
 are all tracked in git. Teammates on the same commit share the
@@ -92,7 +95,7 @@ same Severity ladder and the same drain queue.
 | `.heal/findings/accepted.json`   | `heal mark accept` (called by `/heal-code-review`) | When the team accepts an intrinsic finding. |
 | `.heal/findings/regressed.jsonl` | `heal status` (reconcile pass)                     | When a fixed finding is re-detected.        |
 | `.heal/doc_pairs.json`           | `/heal-doc-pair-setup` skill (when `[features.docs]` is on) | When the user runs the skill; HEAL is read-only. |
-| `.claude/skills/heal-*/`         | `heal skills install`                              | Once; updated with `heal skills update`.    |
+| `<agent>/skills/heal-*/`         | `heal init` (per detected agent) / `heal skills install` (Claude only) | Once per agent; refresh with `heal init --force --yes`. |
 
 There is no event log, no monthly rotation, no `.heal/snapshots/`,
 `.heal/logs/`, or `.heal/reports/` directory. heal keeps only the

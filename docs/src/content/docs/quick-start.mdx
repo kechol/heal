@@ -66,17 +66,20 @@ heal init
 
 Creates `.heal/` (config and calibration), installs the post-commit
 hook that flags the next Critical / High after every commit, and
-(when `claude` is on your `PATH`) offers to extract the bundled
-Claude skills into `.claude/skills/`.
+offers to extract the bundled skills for every AI agent it finds
+on your `PATH` (Claude Code → `.claude/skills/`, OpenAI Codex →
+`.agents/skills/`). Use `--yes` to install for all detected agents
+without prompting, or `--no-skills` to skip them entirely.
 
 ## 3. Tune strictness with `/heal-setup`
 
 Optional but recommended on the first run. The bundled setup
 wizard surveys your codebase, picks a sensible strictness level,
-and offers to turn on the opt-in Test / Docs families.
+and offers to turn on the opt-in Test / Docs families. Run it
+through whichever agent you installed:
 
 ```sh
-claude /heal-setup
+/heal-setup
 ```
 
 It asks Strict / Default / Lenient, updates `.heal/config.toml`,
@@ -97,12 +100,14 @@ heal status
 Prints the per-file TODO list grouped by Severity. Filters and
 JSON output: [CLI › heal status](/heal/cli/#heal-status).
 
-## 5. Audit and drain with Claude
+## 5. Audit and drain with your agent
 
 Pick the bundled skill that matches what you want to do. Each
 feature family ships a read-only **review** skill (architectural
 audit, no writes) and a write **patch** skill (one commit per
-fix, refuses a dirty worktree).
+fix, refuses a dirty worktree). The examples below use `claude`;
+Codex users can substitute `codex` — the slash-command form is
+the same.
 
 ```sh
 # Always available — the always-on Code family:
@@ -115,14 +120,14 @@ claude /heal-doc-patch       # auto-fix broken internal links, dangling identifi
 
 # When [features.test] is on:
 claude /heal-test-review     # test-pyramid view of coverage gaps and silently-skipped tests.
-claude /heal-test-patch      # write the missing tests Claude flagged — one commit per uncovered hot path.
+claude /heal-test-patch      # write the missing tests the review flagged — one commit per uncovered hot path.
 ```
 
 Two more, for less common situations:
 
 ```sh
 claude /heal-doc-scaffold    # [features.docs]: stand up a fresh doc tree from codebase signals — useful on a project with no docs yet.
-claude /heal-cli             # ask Claude about the heal CLI itself — every flag and JSON shape, treated as a stable contract.
+claude /heal-cli             # ask the agent about the heal CLI itself — every flag and JSON shape, treated as a stable contract.
 ```
 
 Skill contracts: [Code › Skills](/heal/code/skills/),

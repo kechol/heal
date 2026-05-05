@@ -52,7 +52,9 @@ heal status  ──►  calibration.toml で Finding を分類
 │
 ├── .git/hooks/post-commit         # `heal hook commit` を呼ぶ 1 行のシム
 │
-└── .claude/skills/                # Claude スキル群(`heal skills install` 後)
+└── <agent skills>                 # 検出した各エージェントごとに 1 ツリー(`heal init --yes` 後)
+    │                              #   .claude/skills/   (Claude Code)
+    │                              #   .agents/skills/   (OpenAI Codex)
     ├── heal-cli/                  # Code ファミリ
     ├── heal-code-patch/
     ├── heal-code-review/
@@ -66,7 +68,7 @@ heal status  ──►  calibration.toml で Finding を分類
     └── heal-test-patch/
 ```
 
-同梱の 11 スキルは `heal skills install` ですべて展開されます。`[features.docs]` や `[features.test]` を後から有効化したときに、すでにインストール済みのスキル本体がそのまま意味を持つようになる仕組みです(再展開は不要)。
+同梱の 11 スキルは検出した各エージェントへ同一バイト列で展開されます。`[features.docs]` や `[features.test]` を後から有効化したときに、すでにインストール済みのスキル本体がそのまま意味を持つようになる仕組みです(再展開は不要)。
 
 `config.toml`、`calibration.toml`、`findings/` の中身はすべて git で追跡されるので、同じコミット上のチームメイトは同じ Severity ラダーと解消キューを共有できます。
 
@@ -81,7 +83,7 @@ heal status  ──►  calibration.toml で Finding を分類
 | `.heal/findings/accepted.json`   | `heal mark accept`（`/heal-code-review` から呼出） | チームが「設計上のもので直さない」と判断した項目を記録時。 |
 | `.heal/findings/regressed.jsonl` | `heal status`（整合パス）                          | 修正済み Finding が再検出されたとき。             |
 | `.heal/doc_pairs.json`           | `/heal-doc-pair-setup` スキル（`[features.docs]` 有効時） | ユーザがスキルを実行したとき。HEAL は読み取り専用。 |
-| `.claude/skills/heal-*/`         | `heal skills install`                              | 一度だけ。`heal skills update` で更新。           |
+| `<agent>/skills/heal-*/`         | `heal init`(検出した各エージェント)/ `heal skills install`(Claude のみ) | エージェントごとに一度。`heal init --force --yes` でリフレッシュ。 |
 
 イベントログも、月次ローテーションも、`.heal/snapshots/` / `.heal/logs/` / `.heal/reports/` も存在しません。heal は現在の状態と `regressed.jsonl` の小さな監査トレイルだけを保持します。
 

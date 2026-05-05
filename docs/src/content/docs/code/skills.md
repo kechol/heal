@@ -1,14 +1,25 @@
 ---
 title: Code · Skills
-description: The four bundled Claude Code skills for the always-on Code family — /heal-cli, /heal-setup, /heal-code-review, /heal-code-patch.
+description: The bundled skills for the always-on Code family — /heal-cli, /heal-setup, /heal-code-review, /heal-code-patch — for Claude Code and OpenAI Codex.
 ---
 
-heal ships a bundled set of Claude Code skills so the metrics it
-collects flow into Claude sessions. Install them once per
-repository:
+heal ships a bundled set of skills so the metrics it collects flow
+into your AI agent sessions. The same skill bodies serve every
+supported agent:
+
+| Agent | Project install path | Discovery doc |
+|---|---|---|
+| Claude Code | `.claude/skills/` | <https://code.claude.com/docs/en/skills> |
+| OpenAI Codex | `.agents/skills/` | <https://developers.openai.com/codex/skills> |
+
+`heal init` installs them automatically for every agent it detects
+on your `PATH` (you'll get one Y/N prompt per agent in TTY mode;
+`--yes` accepts all, `--no-skills` skips all). To run the install
+explicitly later:
 
 ```sh
-heal skills install
+heal init --force --yes      # refreshes both targets in lockstep
+heal skills install          # Claude target only (v0.4 limitation)
 ```
 
 This page covers the four Code-family skills. The doc-family
@@ -17,7 +28,10 @@ test-family skills under [Test › Skills](/heal/test/skills/).
 
 The skill set is shipped inside the `heal` binary, so the version
 installed always matches the binary in use. After upgrading
-`heal`, run `heal skills update` to refresh.
+`heal`, the simplest refresh path is `heal init --force --yes` —
+that re-extracts every detected agent's tree (the
+`heal skills update` subcommand currently only refreshes the
+Claude target).
 
 ## `/heal-code-review` — the audit skill
 
@@ -36,10 +50,10 @@ the team has decided are intrinsic — a deliberately complex tax
 engine, a procedurally cohesive parser combinator.
 
 After reading a review, you can act on any item right away — just
-ask Claude Code in the same session ("apply the first three",
-"let's fix the extract-function items"). Mechanical fixes get
-routed through `/heal-code-patch`; judgment-call items wait for
-your direction.
+ask the agent in the same session ("apply the first three", "let's
+fix the extract-function items"). Mechanical fixes get routed
+through `/heal-code-patch`; judgment-call items wait for your
+direction.
 
 ### Why review and patch are split
 
@@ -95,9 +109,8 @@ Trigger phrases: "fix the heal findings", "drain the cache",
 
 A concise, complete reference for the `heal` CLI — every
 subcommand, every `--json` shape, the `.heal/` files each command
-reads or writes. Claude loads it before shelling out to `heal`
-from any other skill so the CLI surface is treated as a stable
-contract.
+reads or writes. Loaded by every other skill before shelling out
+to `heal` so the CLI surface is treated as a stable contract.
 
 ## `/heal-setup` — setup wizard
 
@@ -115,12 +128,16 @@ the skill recommends `heal calibrate --force` in those cases.
 ## Maintenance
 
 ```sh
-heal skills update     # refresh after upgrading heal (drift-aware)
-heal skills status     # list drifted files
-heal skills uninstall  # remove every bundled skill
+heal skills update     # refresh after upgrading heal (Claude target, drift-aware)
+heal skills status     # list drifted files (Claude target)
+heal skills uninstall  # remove every bundled skill (Claude target)
 ```
 
 `update` leaves hand-edited files in place with a warning; pass
 `--force` to overwrite. `uninstall` removes every
 `.claude/skills/heal-*` directory; sibling skills you authored
 survive, and project data under `.heal/` is untouched.
+
+For the Codex target (`.agents/skills/`), `heal init --force --yes`
+is the supported refresh path in v0.4 — multi-target support for
+the explicit `heal skills *` group is tracked as follow-up.

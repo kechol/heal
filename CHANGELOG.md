@@ -4,6 +4,28 @@
 
 ### Features
 
+- **Bundled skills install for OpenAI Codex CLI alongside Claude
+  Code.** A new `SkillTarget` enum
+  (`crates/cli/src/skill_assets.rs`) makes the bundle
+  agent-neutral: the same source SKILL.md bytes serve every
+  supported agent, `heal init` decides per-target whether to
+  install. `SkillTarget::Claude` extracts to `<project>/.claude/skills/`
+  (Claude Code's project-scope discovery path) and `SkillTarget::Codex`
+  extracts to `<project>/.agents/skills/` (Codex's per-repo discovery
+  path — see <https://developers.openai.com/codex/skills>). `--yes`
+  installs for every detected agent's CLI on `PATH`; `--no-skills`
+  skips all; the interactive flow prompts once per detected target so
+  you can opt into one and skip the other. `.claude/settings.json`
+  legacy-hook sweeping still runs only for the Claude target —
+  Codex has no sibling settings file. Skill bodies were swept to
+  describe the host agent as a list ("Claude Code, Codex CLI, …")
+  rather than singling out one. **Caveat:** the explicit `heal
+  skills install / update / status / uninstall` subcommands still
+  operate only on the Claude target in this release; use `heal init
+  --force --yes` to refresh both targets in lockstep after a binary
+  upgrade. Multi-target support for the explicit group is tracked
+  as follow-up.
+
 - **`heal metrics` section titles carry a `[Family]` prefix.** The
   divider above each section is now `── [Code] Complexity ──`,
   `── [Docs] Doc drift ──`, `── [Test] Coverage ──`, etc. Mirrors
@@ -224,6 +246,30 @@
   cosmetic for the on-disk file and is **not** breaking.
 
 ### ⚠ BREAKING
+
+- **`heal init --json`'s `skills` field is now a list keyed by
+  `SkillTarget`.** Was a single object describing the (only) Claude
+  install:
+  ```jsonc
+  "skills": { "dest": "…/.claude/skills", "action": "installed", … }
+  ```
+  Is now one entry per agent target (Claude, Codex, …) in
+  `SkillTarget::ALL` order:
+  ```jsonc
+  "skills": [
+    { "target": "claude", "dest": "…/.claude/skills", "action": "installed", … },
+    { "target": "codex",  "dest": "…/.agents/skills", "action": "skipped_not_installed", "agent": "codex" }
+  ]
+  ```
+  The `skipped_no_claude` action variant is renamed
+  `skipped_not_installed` and now carries an `agent` field naming
+  the missing executable (so the same shape covers `claude`,
+  `codex`, future targets). The non-JSON renderer prints one
+  `<Agent> skills` line per target.
+  **Migration:** scripts that consumed `skills.action` should
+  iterate `skills[]` instead, switching on `entry.target`.
+  `heal-setup` and other bundled skills don't read this field, so
+  no skill-body update was needed.
 
 - **`heal status` / `heal metrics` honor `[features.<f>].enabled`
   per family.** Disabled families are now silent rather than

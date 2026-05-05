@@ -1,9 +1,9 @@
 ---
 title: Docs · スキル
-description: "[features.docs] 向け同梱 Claude Code スキル 4 種 — /heal-doc-pair-setup、/heal-doc-scaffold、/heal-doc-review、/heal-doc-patch。"
+description: "[features.docs] 向け同梱スキル 4 種 — /heal-doc-pair-setup、/heal-doc-scaffold、/heal-doc-review、/heal-doc-patch。Claude Code / OpenAI Codex 対応。"
 ---
 
-オプトインの **Docs** ファミリは Claude スキルを 4 種同梱しています。`heal skills install` で Code ファミリスキルと並んで展開され、原則として docs オブザーバが生む findings にしか作用しません。例外は `/heal-doc-scaffold` で、`[features.docs]` を有効化していないプロジェクトでも動きます — 出力はファミリを有効化した時点で観測対象に入ります。
+オプトインの **Docs** ファミリはスキルを 4 種同梱しています。`heal init` 時に検出した各エージェントターゲットへ Code ファミリスキルと並んで展開され、原則として docs オブザーバが生む findings にしか作用しません。例外は `/heal-doc-scaffold` で、`[features.docs]` を有効化していないプロジェクトでも動きます — 出力はファミリを有効化した時点で観測対象に入ります。
 
 インストール手順とドリフト認識付きの更新の仕組みは [Code › スキル](/heal/ja/code/skills/) を参照(共通の仕組みです)。
 
@@ -60,7 +60,7 @@ description: "[features.docs] 向け同梱 Claude Code スキル 4 種 — /heal
 | `orphan_pages` | このページは実際のエントリポイントから到達できるか? |
 | `todo_density` | このドキュメントは活発に建設中か、静かに見捨てられているか? |
 
-ソースは編集しません。レビューを読んで「これも直してほしい」と思ったら、その場で Claude Code に伝えれば対応に移れます(「リンク切れを直して」「インストール手順を書き直して」など)。機械的な破損は `/heal-doc-patch` を経由し、人間の判断が要る書き直し(「このセクションはまだ必要か?」「この how-to を tutorial と reference に分けるべきか?」)は自動適用されず、あなたの指示を待ちます。
+ソースは編集しません。レビューを読んで「これも直してほしい」と思ったら、その場でエージェント(Claude Code / Codex)に伝えれば対応に移れます(「リンク切れを直して」「インストール手順を書き直して」など)。機械的な破損は `/heal-doc-patch` を経由し、人間の判断が要る書き直し(「このセクションはまだ必要か?」「この how-to を tutorial と reference に分けるべきか?」)は自動適用されず、あなたの指示を待ちます。
 
 ### review と patch を分けている理由
 

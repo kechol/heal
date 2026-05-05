@@ -46,9 +46,9 @@ Details: [Installation](https://kechol.github.io/heal/installation/).
 Three commands inside any git repository:
 
 ```sh
-heal init                     # set up .heal/, calibrate, install hook, offer Claude skills
+heal init                     # set up .heal/, calibrate, install hook, offer skills for each detected agent
 heal status                    # render the Severity-grouped TODO list
-claude /heal-code-patch         # work through it, one fix per commit
+claude /heal-code-patch        # work through it, one fix per commit (substitute `codex` if you use Codex)
 ```
 
 Full walkthrough: [Quick Start](https://kechol.github.io/heal/quick-start/).

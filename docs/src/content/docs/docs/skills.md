@@ -1,11 +1,12 @@
 ---
 title: Docs · Skills
-description: The four bundled Claude Code skills for [features.docs] — /heal-doc-pair-setup, /heal-doc-scaffold, /heal-doc-review, /heal-doc-patch.
+description: The four bundled skills for [features.docs] — /heal-doc-pair-setup, /heal-doc-scaffold, /heal-doc-review, /heal-doc-patch. Available for Claude Code and OpenAI Codex.
 ---
 
-The opt-in **Docs** family ships four Claude skills, extracted
-alongside the Code-family skills on `heal skills install`. They
-only act on findings produced by the docs observers, with one
+The opt-in **Docs** family ships four skills, extracted alongside
+the Code-family skills for every detected agent target on
+`heal init`. They only act on findings produced by the docs
+observers, with one
 exception: `/heal-doc-scaffold` works even on projects that don't
 enable `[features.docs]` — its output just becomes observable
 once the family is turned on.
@@ -112,7 +113,7 @@ Per-metric framing through the **Diátaxis** lens:
 | `todo_density` | Is this doc under construction or abandoned? |
 
 Never edits source. After reading a review you can act on any
-item right away — ask Claude Code in the same session ("fix the
+item right away — ask the agent in the same session ("fix the
 broken links", "rewrite the install section"). Mechanical
 breakage flows through `/heal-doc-patch`; rewrites that need a
 human voice ("is this section still relevant?", "should this

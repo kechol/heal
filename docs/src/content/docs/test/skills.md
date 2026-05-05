@@ -1,11 +1,12 @@
 ---
 title: Test · Skills
-description: The three bundled Claude Code skills for [features.test] — /heal-test-reporter-setup, /heal-test-review, /heal-test-patch.
+description: The three bundled skills for [features.test] — /heal-test-reporter-setup, /heal-test-review, /heal-test-patch. Available for Claude Code and OpenAI Codex.
 ---
 
-The opt-in **Test** family ships three Claude skills, extracted
-alongside the Code-family skills on `heal skills install`. They
-only act on findings produced by the test observers.
+The opt-in **Test** family ships three skills, extracted alongside
+the Code-family skills for every detected agent target on
+`heal init`. They only act on findings produced by the test
+observers.
 
 For installation and the drift-aware update model, see
 [Code › Skills](/heal/code/skills/) — the mechanism is shared.
@@ -45,7 +46,7 @@ Read-only. Reads `heal status --json`, filters to the
    files first, then drifting tests, then skip-ratio outliers.
 
 Never edits source. After reading the review you can act on any
-item right away — ask Claude Code in the same session ("write the
+item right away — ask the agent in the same session ("write the
 missing tests for the top three", "re-enable the skipped tests
 under `auth/`"). Mechanical fixes flow through
 `/heal-test-patch`; judgment calls — should this skip stay

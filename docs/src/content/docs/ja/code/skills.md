@@ -1,17 +1,25 @@
 ---
 title: Code · スキル
-description: 常時オン Code ファミリ向け Claude Code スキル 4 種 — /heal-cli、/heal-setup、/heal-code-review、/heal-code-patch。
+description: 常時オン Code ファミリ向け同梱スキル 4 種 — /heal-cli、/heal-setup、/heal-code-review、/heal-code-patch。Claude Code と OpenAI Codex に対応。
 ---
 
-heal は Claude Code 向けスキルセットを同梱しているので、収集したメトリクスは Claude セッションへ自動的に流れます。リポジトリごとに 1 回インストールします:
+heal は AI エージェント向けの同梱スキルセットを持ち、収集したメトリクスがそのままセッションへ流れます。スキル本体のソースは agent-neutral で、対応エージェントごとに展開先だけが違います:
+
+| エージェント | プロジェクト配置先 | 仕様ドキュメント |
+|---|---|---|
+| Claude Code | `.claude/skills/` | <https://code.claude.com/docs/en/skills> |
+| OpenAI Codex | `.agents/skills/` | <https://developers.openai.com/codex/skills> |
+
+`heal init` は `PATH` から検出した各エージェント向けに自動でインストールします(TTY 時はエージェントごとに 1 回 Y/N、`--yes` で全許諾、`--no-skills` で全スキップ)。明示的に再実行する場合:
 
 ```sh
-heal skills install
+heal init --force --yes      # 検出した全エージェントを一括リフレッシュ
+heal skills install          # Claude target のみ(v0.4 制約)
 ```
 
 このページは 4 つの Code ファミリスキルを扱います。doc 系は [Docs › スキル](/heal/ja/docs/skills/)、test 系は [Test › スキル](/heal/ja/test/skills/) を参照。
 
-スキルセットは `heal` バイナリに同梱されているので、インストールされるバージョンは常にバイナリと一致します。`heal` をアップグレードしたら `heal skills update` で更新します。
+スキルセットは `heal` バイナリに同梱されているので、インストールされるバージョンは常にバイナリと一致します。`heal` をアップグレードしたあとのリフレッシュは `heal init --force --yes` が最も簡潔です(`heal skills update` は現状 Claude target のみ更新)。
 
 ## `/heal-code-review` — 監査スキル
 
@@ -22,7 +30,7 @@ heal skills install
 
 ソースは編集しません。チームが「設計上のもので直さない」(意図的に複雑な税金エンジン、手続き的に凝集したパーサコンビネータなど)と判断した項目には `heal mark accept` も推奨できます。
 
-レビューを読んで「これも直してほしい」と思ったら、その場で Claude Code に伝えれば対応に移れます(「最初の 3 件を直して」「Extract Function 系から片付けて」など)。機械的な修正は `/heal-code-patch` 経由に流れ、判断が要る項目は自動適用されず、あなたの指示を待ちます。
+レビューを読んで「これも直してほしい」と思ったら、その場でエージェント(Claude Code / Codex)に伝えれば対応に移れます(「最初の 3 件を直して」「Extract Function 系から片付けて」など)。機械的な修正は `/heal-code-patch` 経由に流れ、判断が要る項目は自動適用されず、あなたの指示を待ちます。
 
 ### review と patch を分けている理由
 
@@ -58,7 +66,7 @@ heal skills install
 
 ## `/heal-cli` — CLI リファレンス
 
-`heal` CLI の簡潔で完全なリファレンス。各サブコマンド、各 `--json` の形、各コマンドが読み書きする `.heal/` ファイルを網羅しています。Claude が他のスキルから `heal` をシェル実行する前にこれを読み込むので、CLI 表面は安定した契約として扱われます。
+`heal` CLI の簡潔で完全なリファレンス。各サブコマンド、各 `--json` の形、各コマンドが読み書きする `.heal/` ファイルを網羅しています。他のスキルが `heal` をシェル実行する前にこれを読み込むので、CLI 表面は安定した契約として扱われます。
 
 ## `/heal-setup` — セットアップウィザード
 
@@ -69,9 +77,11 @@ heal skills install
 ## メンテナンス
 
 ```sh
-heal skills update     # heal バイナリ更新後にリフレッシュ(ドリフト認識付き)
-heal skills status     # ドリフトしたファイルを一覧
-heal skills uninstall  # 同梱スキルをすべて削除
+heal skills update     # heal バイナリ更新後にリフレッシュ(Claude target、ドリフト認識付き)
+heal skills status     # ドリフトしたファイルを一覧(Claude target)
+heal skills uninstall  # 同梱スキルをすべて削除(Claude target)
 ```
 
 `update` は手編集されたファイルをそのまま残します(警告付き)。`--force` で上書き可。`uninstall` は `.claude/skills/heal-*` 配下をすべて削除しますが、あなたが書いた兄弟スキルは残り、`.heal/` 配下のプロジェクトデータも基本的に手付かずです。
+
+Codex target (`.agents/skills/`) のリフレッシュは v0.4 では `heal init --force --yes` が公式手段です — `heal skills *` グループのマルチターゲット対応は follow-up として追跡しています。

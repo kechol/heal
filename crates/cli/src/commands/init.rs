@@ -12,9 +12,11 @@
 //!      `meta.calibrated_at_sha` / `meta.codebase_files` so the
 //!      `heal-setup` skill can later judge drift without consulting any
 //!      event log.
-//!   6. Optionally extract the bundled skills to `.claude/skills/` and
-//!      register HEAL's hook commands in `.claude/settings.json`
-//!      (prompted when `claude` is on `PATH` and stdin is a TTY; bypassed
+//!   6. Optionally extract the bundled skills, once per detected agent
+//!      target — `.claude/skills/` for Claude Code, `.agents/skills/`
+//!      for Codex CLI. The Claude path also sweeps legacy hook entries
+//!      from `.claude/settings.json`. Each target is decided
+//!      independently (prompted per-target when stdin is a TTY; bypassed
 //!      with `--yes` / `--no-skills`).
 
 use std::fmt;
@@ -27,7 +29,7 @@ use crate::core::config::Config;
 use crate::core::monorepo::{self, MonorepoSignal};
 use crate::core::severity::SeverityCounts;
 use crate::core::HealPaths;
-use crate::skill_assets::{self, skills_dest, ExtractMode, ExtractStats};
+use crate::skill_assets::{self, ExtractMode, ExtractStats, SkillTarget};
 use anyhow::{Context, Result};
 use serde::Serialize;
 
@@ -54,10 +56,10 @@ impl fmt::Display for ConfigAction {
     }
 }
 
-/// Outcome of the optional Claude-skills install step. Doubles as the
-/// JSON shape under `init --json`'s `plugin` field — the variant
-/// discriminator becomes `action: "<snake_case>"` and the `Installed`
-/// variant's fields flatten in alongside it.
+/// Per-target outcome of the optional skills install step. Doubles as
+/// the JSON shape under `init --json`'s `skills[].action` discriminator
+/// — the variant tag becomes `action: "<snake_case>"` and the
+/// `Installed` variant's fields flatten in alongside it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 enum SkillsAction {
@@ -68,7 +70,12 @@ enum SkillsAction {
     },
     Declined,
     SuppressedByFlag,
-    SkippedNoClaude,
+    /// The agent's CLI is not on `PATH`, so the skills would have
+    /// nowhere to be invoked from. `agent` is the executable name we
+    /// looked for (e.g. `"claude"`, `"codex"`).
+    SkippedNotInstalled {
+        agent: &'static str,
+    },
     SkippedNonInteractive,
 }
 
@@ -93,9 +100,7 @@ pub fn run(
         primary_language,
         severity_counts,
     } = run_initial_scan(project, &paths)?;
-    let skills_dest = skills_dest(project);
-    let skills_action =
-        handle_skills_install(project, &paths, &skills_dest, force, yes, no_skills)?;
+    let skills_outcomes = handle_skills_install(project, &paths, force, yes, no_skills)?;
     // Surface workspace manifests only when no `[[project.workspaces]]`
     // block exists yet; once the user declares them, the hint becomes
     // noise. Empty list = solo package or already-declared workspaces.
@@ -115,8 +120,7 @@ pub fn run(
             &config_action,
             &hook_action,
             hook_path.as_deref(),
-            &skills_dest,
-            &skills_action,
+            &skills_outcomes,
             severity_counts.as_ref(),
             &monorepo_signals,
         ));
@@ -129,8 +133,7 @@ pub fn run(
         config_action,
         hook_action,
         hook_path.as_deref(),
-        &skills_dest,
-        &skills_action,
+        &skills_outcomes,
         severity_counts.as_ref(),
         &monorepo_signals,
     );
@@ -148,7 +151,12 @@ struct InitReport<'a> {
     config: PathAction<'a, ConfigAction>,
     calibration_path: String,
     post_commit_hook: PathAction<'a, HookAction>,
-    skills: SkillsReport<'a>,
+    /// One report per agent target HEAL knows about (Claude, Codex,
+    /// …), in [`SkillTarget::ALL`] order. Each entry self-describes
+    /// the destination path and outcome — even targets whose CLI is
+    /// not installed appear with a `skipped_not_installed` action so
+    /// downstream tooling can see what was considered.
+    skills: Vec<SkillsTargetReport<'a>>,
     severity_counts: Option<&'a SeverityCounts>,
     /// Manifests detected in the project root that suggest a monorepo
     /// layout the user may want to declare via `[[project.workspaces]]`.
@@ -171,11 +179,23 @@ struct PathAction<'a, A: Serialize> {
     action: &'a A,
 }
 
+/// One entry in [`InitReport::skills`] — the install verdict for a
+/// single agent target.
 #[derive(Debug, Serialize)]
-struct SkillsReport<'a> {
+struct SkillsTargetReport<'a> {
+    target: SkillTarget,
     dest: String,
     #[serde(flatten)]
     action: &'a SkillsAction,
+}
+
+/// Internal pairing of `(target, action)` produced by
+/// [`handle_skills_install`]. Owned so the renderer and the JSON
+/// encoder can both borrow from it without an extra allocation.
+#[derive(Debug)]
+struct SkillsTargetOutcome {
+    target: SkillTarget,
+    action: SkillsAction,
 }
 
 impl<'a> InitReport<'a> {
@@ -187,11 +207,18 @@ impl<'a> InitReport<'a> {
         config_action: &'a ConfigAction,
         hook_action: &'a HookAction,
         hook_path: Option<&Path>,
-        skills_dest: &Path,
-        skills_action: &'a SkillsAction,
+        skills_outcomes: &'a [SkillsTargetOutcome],
         severity_counts: Option<&'a SeverityCounts>,
         monorepo_signals: &'a [MonorepoSignal],
     ) -> Self {
+        let skills = skills_outcomes
+            .iter()
+            .map(|o| SkillsTargetReport {
+                target: o.target,
+                dest: o.target.dest(project).display().to_string(),
+                action: &o.action,
+            })
+            .collect();
         Self {
             project: project.display().to_string(),
             heal_dir: paths.root().display().to_string(),
@@ -205,10 +232,7 @@ impl<'a> InitReport<'a> {
                 path: hook_path.map(|p| p.display().to_string()),
                 action: hook_action,
             },
-            skills: SkillsReport {
-                dest: skills_dest.display().to_string(),
-                action: skills_action,
-            },
+            skills,
             severity_counts,
             monorepo_signals,
         }
@@ -222,8 +246,7 @@ fn print_summary(
     config_action: ConfigAction,
     hook_action: HookAction,
     hook_path: Option<&Path>,
-    skills_dest: &Path,
-    skills_action: &SkillsAction,
+    skills_outcomes: &[SkillsTargetOutcome],
     severity_counts: Option<&SeverityCounts>,
     monorepo_signals: &[MonorepoSignal],
 ) {
@@ -244,10 +267,15 @@ fn print_summary(
         Some(p) => println!("  post-commit hook  {}  ({hook_action})", p.display()),
         None => println!("  post-commit hook  {hook_action}"),
     }
-    println!(
-        "  Claude skills     {}",
-        render_skills_line(skills_dest, skills_action),
-    );
+    for outcome in skills_outcomes {
+        println!(
+            "  {} skills{} {}",
+            outcome.target.display_name(),
+            // pad shorter labels so the dest column lines up
+            " ".repeat(skills_label_padding(outcome.target)),
+            render_skills_line(outcome.target, &outcome.action),
+        );
+    }
 
     if let Some(counts) = severity_counts {
         let colorize = std::io::stdout().is_terminal();
@@ -270,7 +298,7 @@ fn print_summary(
         }
         println!(
             "  → declare workspaces in `[[project.workspaces]]` so calibration\n    \
-             scopes per package — run `claude /heal-setup` to set this up.",
+             scopes per package — run `/heal-setup` in any installed agent to set this up.",
         );
     }
 
@@ -279,24 +307,49 @@ fn print_summary(
     println!("  heal status               # render the Severity-grouped TODO list");
     println!("  heal metrics              # see metric trends");
     println!("  heal diff                 # progress vs. the calibration baseline");
-    match skills_action {
-        SkillsAction::Installed { .. } => {
-            println!();
-            println!("Claude skills (from this project):");
-            println!("  claude /heal-setup        # tune thresholds, enable optional features");
-            println!("  claude /heal-code-review  # architectural reading + refactor TODO");
-            println!("  claude /heal-code-patch   # drain the cache, one fix per commit");
-        }
-        SkillsAction::SkippedNoClaude => {
-            // Claude isn't there to use them anyway — no skill hint.
-        }
-        _ => {
-            println!("  heal skills install       # extract the Claude skills when ready");
-        }
+    let any_installed = skills_outcomes
+        .iter()
+        .any(|o| matches!(o.action, SkillsAction::Installed { .. }));
+    let any_skip_for_install = skills_outcomes.iter().any(|o| {
+        matches!(
+            o.action,
+            SkillsAction::Declined
+                | SkillsAction::SuppressedByFlag
+                | SkillsAction::SkippedNonInteractive
+        )
+    });
+    if any_installed {
+        println!();
+        println!("Skills (run from any installed agent):");
+        println!("  /heal-setup        # tune thresholds, enable optional features");
+        println!("  /heal-code-review  # architectural reading + refactor TODO");
+        println!("  /heal-code-patch   # drain the cache, one fix per commit");
+    } else if any_skip_for_install {
+        println!("  heal skills install       # extract the bundled skills when ready");
     }
 }
 
-fn render_skills_line(dest: &Path, action: &SkillsAction) -> String {
+/// Pre-computed widest `display_name()` length across every
+/// [`SkillTarget`] variant. The renderer pads each agent's left
+/// label up to this width so the dest column lines up.
+const WIDEST_DISPLAY_NAME: usize = {
+    let mut max = 0;
+    let mut i = 0;
+    while i < SkillTarget::ALL.len() {
+        let len = SkillTarget::ALL[i].display_name().len();
+        if len > max {
+            max = len;
+        }
+        i += 1;
+    }
+    max
+};
+
+fn skills_label_padding(target: SkillTarget) -> usize {
+    WIDEST_DISPLAY_NAME.saturating_sub(target.display_name().len())
+}
+
+fn render_skills_line(target: SkillTarget, action: &SkillsAction) -> String {
     match action {
         SkillsAction::Installed {
             added,
@@ -308,11 +361,13 @@ fn render_skills_line(dest: &Path, action: &SkillsAction) -> String {
                 parts.push(format!("{updated} updated"));
             }
             parts.push(format!("{unchanged} unchanged"));
-            format!("{}/  (extracted: {})", dest.display(), parts.join(", "))
+            format!("{}/  (extracted: {})", target.dest_rel(), parts.join(", "))
         }
         SkillsAction::Declined => "skipped (declined)".to_string(),
         SkillsAction::SuppressedByFlag => "skipped (--no-skills)".to_string(),
-        SkillsAction::SkippedNoClaude => "skipped (no `claude` command on PATH)".to_string(),
+        SkillsAction::SkippedNotInstalled { agent } => {
+            format!("skipped (no `{agent}` command on PATH)")
+        }
         SkillsAction::SkippedNonInteractive => {
             "skipped (non-interactive shell; pass `--yes` or run `heal skills install` later)"
                 .to_string()
@@ -370,17 +425,20 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<InitialScan> {
     })
 }
 
-/// Decide whether to install the bundled skills and do it. Returns the
-/// outcome label so the summary block can render "<path> (verb)".
+/// Decide per agent target whether to install the bundled skills and
+/// do it. Returns one outcome per [`SkillTarget`] in
+/// [`SkillTarget::ALL`] order so the summary block can render every
+/// considered target — even ones whose CLI is absent.
 ///
-/// Decision tree (first match wins):
-///   1. `--no-skills` → `SuppressedByFlag`.
-///   2. `claude` not on `PATH` → `SkippedNoClaude` (no prompt — the
-///      skills are useless without Claude Code anyway).
+/// Per-target decision tree (first match wins):
+///   1. `--no-skills` → `SuppressedByFlag` for every target.
+///   2. The target's CLI is not on `PATH` → `SkippedNotInstalled` (no
+///      prompt — the skills are useless without that agent anyway).
 ///   3. `--yes` → install.
-///   4. stdin is a TTY → prompt the user (default `Y`).
-///   5. otherwise → `SkippedNonInteractive` (with a hint in the
-///      summary).
+///   4. stdin is a TTY → prompt the user (default `Y`), once per
+///      detected target so users can opt into one agent and skip the
+///      other.
+///   5. otherwise → `SkippedNonInteractive`.
 ///
 /// `force` matches `heal init --force` semantics: when on, refresh the
 /// skills tree (overwriting drift / locally edited files) so a binary
@@ -389,23 +447,61 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<InitialScan> {
 fn handle_skills_install(
     project: &Path,
     paths: &HealPaths,
-    dest: &Path,
     force: bool,
     yes: bool,
     no_skills: bool,
+) -> Result<Vec<SkillsTargetOutcome>> {
+    // Snapshot detection up-front so the per-target loop sees a stable
+    // view; also lets tests stub the detection without mutating
+    // process-wide `PATH` (which races with parallel test workers that
+    // shell out to `git`).
+    let detected: Vec<(SkillTarget, bool)> = SkillTarget::ALL
+        .iter()
+        .map(|&t| (t, agent_on_path(t)))
+        .collect();
+    handle_skills_install_with(project, paths, force, yes, no_skills, &detected)
+}
+
+fn handle_skills_install_with(
+    project: &Path,
+    paths: &HealPaths,
+    force: bool,
+    yes: bool,
+    no_skills: bool,
+    detected: &[(SkillTarget, bool)],
+) -> Result<Vec<SkillsTargetOutcome>> {
+    let mut outcomes = Vec::with_capacity(detected.len());
+    for &(target, on_path) in detected {
+        let action = decide_target(project, paths, target, force, yes, no_skills, on_path)?;
+        outcomes.push(SkillsTargetOutcome { target, action });
+    }
+    Ok(outcomes)
+}
+
+#[allow(clippy::fn_params_excessive_bools)]
+fn decide_target(
+    project: &Path,
+    paths: &HealPaths,
+    target: SkillTarget,
+    force: bool,
+    yes: bool,
+    no_skills: bool,
+    on_path: bool,
 ) -> Result<SkillsAction> {
     if no_skills {
         return Ok(SkillsAction::SuppressedByFlag);
     }
-    if !claude_on_path() {
-        return Ok(SkillsAction::SkippedNoClaude);
+    if !on_path {
+        return Ok(SkillsAction::SkippedNotInstalled {
+            agent: target.cli_name(),
+        });
     }
     if yes {
-        return install_skills(project, paths, dest, force);
+        return install_skills_for(project, paths, target, force);
     }
     if std::io::stdin().is_terminal() {
-        if confirm_skills_install()? {
-            install_skills(project, paths, dest, force)
+        if confirm_skills_install(target)? {
+            install_skills_for(project, paths, target, force)
         } else {
             Ok(SkillsAction::Declined)
         }
@@ -414,10 +510,10 @@ fn handle_skills_install(
     }
 }
 
-fn install_skills(
+fn install_skills_for(
     project: &Path,
     _paths: &HealPaths,
-    dest: &Path,
+    target: SkillTarget,
     force: bool,
 ) -> Result<SkillsAction> {
     let mode = if force {
@@ -427,8 +523,14 @@ fn install_skills(
     } else {
         ExtractMode::InstallSafe
     };
-    let stats = skill_assets::extract(dest, mode)?;
-    claude_settings::wire(project)?;
+    let dest = target.dest(project);
+    let stats = skill_assets::extract(&dest, mode)?;
+    // Only the Claude path has a settings.json to sweep. Codex relies
+    // on plain skill discovery under `.agents/skills/` — there's no
+    // sibling settings file to maintain.
+    if matches!(target, SkillTarget::Claude) {
+        claude_settings::wire(project)?;
+    }
     Ok(extract_counts(&stats))
 }
 
@@ -441,19 +543,22 @@ fn extract_counts(stats: &ExtractStats) -> SkillsAction {
     }
 }
 
-/// Walk `PATH` looking for an executable named `claude`. Pure stdlib so
-/// no extra dependency. Heal is Unix-only today so the Windows
-/// extension dance is omitted.
-fn claude_on_path() -> bool {
+/// Walk `PATH` looking for `target.cli_name()`. Pure stdlib so no
+/// extra dependency. Heal is Unix-only today so the Windows extension
+/// dance is omitted.
+fn agent_on_path(target: SkillTarget) -> bool {
     let Some(path_var) = std::env::var_os("PATH") else {
         return false;
     };
-    std::env::split_paths(&path_var).any(|dir| dir.join("claude").is_file())
+    let cli = target.cli_name();
+    std::env::split_paths(&path_var).any(|dir| dir.join(cli).is_file())
 }
 
-fn confirm_skills_install() -> Result<bool> {
+fn confirm_skills_install(target: SkillTarget) -> Result<bool> {
     print!(
-        "Install the bundled Claude skills (/heal-cli, /heal-setup, /heal-code-review, /heal-code-patch)? [Y/n] ",
+        "Install the bundled HEAL skills for {} (under `{}/`)? [Y/n] ",
+        target.display_name(),
+        target.dest_rel(),
     );
     std::io::stdout()
         .flush()
@@ -607,10 +712,16 @@ mod tests {
         init_repo(dir.path());
         commit_default(dir.path(), "main.rs", "fn main() {}\n", "solo@example.com");
         run_no_skills(dir.path(), false).unwrap();
-        assert!(
-            !skills_dest(dir.path()).exists(),
-            "--no-skills must not extract the skill set"
-        );
+        for &target in &SkillTarget::ALL {
+            assert!(
+                !target.dest(dir.path()).exists(),
+                "--no-skills must not extract the skill set for {target:?}",
+            );
+        }
+    }
+
+    fn detected(claude: bool, codex: bool) -> [(SkillTarget, bool); 2] {
+        [(SkillTarget::Claude, claude), (SkillTarget::Codex, codex)]
     }
 
     #[test]
@@ -619,67 +730,120 @@ mod tests {
         let project = dir.path();
         let paths = HealPaths::new(project);
         paths.ensure().unwrap();
-        let dest = skills_dest(project);
-        let action = handle_skills_install(project, &paths, &dest, false, false, true).unwrap();
-        assert_eq!(action, SkillsAction::SuppressedByFlag);
-        assert!(!dest.exists());
-    }
-
-    #[test]
-    fn handle_skills_install_with_yes_extracts_skills_when_claude_available() {
-        // Stage a fake `claude` binary on PATH so the prompt logic
-        // believes Claude Code is installed. Without this, the call
-        // legitimately returns SkippedNoClaude on hosts that don't
-        // happen to have `claude` on PATH.
-        let bin_dir = TempDir::new().unwrap();
-        let claude_bin = bin_dir.path().join("claude");
-        std::fs::write(&claude_bin, b"#!/bin/sh\nexit 0\n").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&claude_bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // `--no-skills` must short-circuit before detection matters.
+        let outcomes =
+            handle_skills_install_with(project, &paths, false, false, true, &detected(true, true))
+                .unwrap();
+        assert_eq!(outcomes.len(), SkillTarget::ALL.len());
+        for outcome in &outcomes {
+            assert_eq!(outcome.action, SkillsAction::SuppressedByFlag);
+            assert!(!outcome.target.dest(project).exists());
         }
-        let original_path = std::env::var_os("PATH").unwrap_or_default();
-        let mut new_path = std::ffi::OsString::from(bin_dir.path());
-        new_path.push(":");
-        new_path.push(&original_path);
-        let _guard = PathGuard::set(new_path);
-
-        let dir = TempDir::new().unwrap();
-        let project = dir.path();
-        let paths = HealPaths::new(project);
-        paths.ensure().unwrap();
-        let dest = skills_dest(project);
-        let action = handle_skills_install(project, &paths, &dest, false, true, false).unwrap();
-        assert!(matches!(action, SkillsAction::Installed { .. }));
-        assert!(dest.exists(), "yes path must extract the skill set");
-        assert!(dest.join("heal-cli/SKILL.md").exists());
     }
 
     #[test]
-    fn handle_skills_install_skips_when_no_claude() {
-        // Pretend PATH is empty so the claude lookup fails
-        // deterministically regardless of host environment.
-        let _guard = PathGuard::set(std::ffi::OsString::new());
+    fn handle_skills_install_with_yes_extracts_for_each_detected_agent() {
         let dir = TempDir::new().unwrap();
         let project = dir.path();
         let paths = HealPaths::new(project);
         paths.ensure().unwrap();
-        let dest = skills_dest(project);
-        let action = handle_skills_install(project, &paths, &dest, false, true, false).unwrap();
-        assert_eq!(action, SkillsAction::SkippedNoClaude);
-        assert!(!dest.exists());
+        let outcomes =
+            handle_skills_install_with(project, &paths, false, true, false, &detected(true, true))
+                .unwrap();
+        assert_eq!(outcomes.len(), SkillTarget::ALL.len());
+        for outcome in &outcomes {
+            assert!(
+                matches!(outcome.action, SkillsAction::Installed { .. }),
+                "expected Installed for {target:?}, got {action:?}",
+                target = outcome.target,
+                action = outcome.action,
+            );
+            let dest = outcome.target.dest(project);
+            assert!(
+                dest.exists(),
+                "{target:?} dest must exist",
+                target = outcome.target
+            );
+            assert!(dest.join("heal-cli/SKILL.md").exists());
+        }
     }
 
     #[test]
-    fn install_skills_force_overwrites_drifted_files() {
-        // First install: clean extraction.
+    fn handle_skills_install_with_only_codex_skips_claude_target() {
         let dir = TempDir::new().unwrap();
         let project = dir.path();
         let paths = HealPaths::new(project);
         paths.ensure().unwrap();
-        let dest = project.join("skills");
-        let initial = install_skills(project, &paths, &dest, false).unwrap();
+        let outcomes =
+            handle_skills_install_with(project, &paths, false, true, false, &detected(false, true))
+                .unwrap();
+
+        let claude = outcomes
+            .iter()
+            .find(|o| o.target == SkillTarget::Claude)
+            .unwrap();
+        assert_eq!(
+            claude.action,
+            SkillsAction::SkippedNotInstalled { agent: "claude" },
+        );
+        assert!(!SkillTarget::Claude.dest(project).exists());
+
+        let codex = outcomes
+            .iter()
+            .find(|o| o.target == SkillTarget::Codex)
+            .unwrap();
+        assert!(matches!(codex.action, SkillsAction::Installed { .. }));
+        assert!(SkillTarget::Codex
+            .dest(project)
+            .join("heal-cli/SKILL.md")
+            .exists());
+    }
+
+    #[test]
+    fn handle_skills_install_skips_every_target_when_no_agent_present() {
+        let dir = TempDir::new().unwrap();
+        let project = dir.path();
+        let paths = HealPaths::new(project);
+        paths.ensure().unwrap();
+        let outcomes = handle_skills_install_with(
+            project,
+            &paths,
+            false,
+            true,
+            false,
+            &detected(false, false),
+        )
+        .unwrap();
+        assert_eq!(outcomes.len(), SkillTarget::ALL.len());
+        for outcome in &outcomes {
+            assert!(
+                matches!(outcome.action, SkillsAction::SkippedNotInstalled { .. }),
+                "expected SkippedNotInstalled for {target:?}, got {action:?}",
+                target = outcome.target,
+                action = outcome.action,
+            );
+            assert!(!outcome.target.dest(project).exists());
+        }
+    }
+
+    // No PATH-mutating test here intentionally: cargo's parallel
+    // scheduler races such tests against any sibling that shells out
+    // to git (commits, in particular), because git's child processes
+    // resolve `PATH` at execve time. `handle_skills_install_with`
+    // takes detection as input precisely so we can stub it without
+    // touching process-wide state. `agent_on_path` itself is a thin
+    // `split_paths` loop — covered indirectly via `from_path` on hosts
+    // that have or lack each agent, no dedicated test needed.
+
+    #[test]
+    fn install_skills_for_force_overwrites_drifted_files() {
+        // First install: clean extraction into the Claude target.
+        let dir = TempDir::new().unwrap();
+        let project = dir.path();
+        let paths = HealPaths::new(project);
+        paths.ensure().unwrap();
+        let target = SkillTarget::Claude;
+        let initial = install_skills_for(project, &paths, target, false).unwrap();
         let SkillsAction::Installed {
             added: initial_added,
             updated: initial_updated,
@@ -692,12 +856,13 @@ mod tests {
         assert_eq!(initial_updated, 0, "no drift on first install");
 
         // Tamper with a known-shipped skill file.
+        let dest = target.dest(project);
         let skill = dest.join("heal-code-patch/SKILL.md");
         assert!(skill.exists(), "fixture should have shipped this skill");
         std::fs::write(&skill, "tampered\n").unwrap();
 
         // Refresh path: force=true should overwrite even drifted files.
-        let refreshed = install_skills(project, &paths, &dest, true).unwrap();
+        let refreshed = install_skills_for(project, &paths, target, true).unwrap();
         let SkillsAction::Installed {
             updated: refreshed_updated,
             ..
@@ -717,20 +882,21 @@ mod tests {
     }
 
     #[test]
-    fn install_skills_no_force_preserves_existing_files() {
-        // First install seeds the manifest.
+    fn install_skills_for_no_force_preserves_existing_files() {
+        // First install seeds the on-disk metadata stamp.
         let dir = TempDir::new().unwrap();
         let project = dir.path();
         let paths = HealPaths::new(project);
         paths.ensure().unwrap();
-        let dest = project.join("skills");
-        install_skills(project, &paths, &dest, false).unwrap();
+        let target = SkillTarget::Claude;
+        install_skills_for(project, &paths, target, false).unwrap();
 
         // Tamper with a skill — without --force we expect it preserved.
+        let dest = target.dest(project);
         let skill = dest.join("heal-code-patch/SKILL.md");
         std::fs::write(&skill, "tampered\n").unwrap();
 
-        let action = install_skills(project, &paths, &dest, false).unwrap();
+        let action = install_skills_for(project, &paths, target, false).unwrap();
         let SkillsAction::Installed { updated, .. } = action else {
             panic!("expected Installed, got {action:?}");
         };
@@ -742,39 +908,26 @@ mod tests {
         );
     }
 
-    /// RAII guard so individual tests can mutate `PATH` without leaking
-    /// the change into siblings. The static `Mutex` serializes
-    /// PathGuard-holding tests so concurrent ones don't trample each
-    /// other's expected `claude_on_path()` outcome; `test_support::git`
-    /// caches the git binary path so non-PathGuard tests that shell out
-    /// to git don't observe transient `PATH=""` either.
-    struct PathGuard {
-        original: Option<std::ffi::OsString>,
-        _lock: std::sync::MutexGuard<'static, ()>,
-    }
-
-    static PATH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    impl PathGuard {
-        fn set(value: std::ffi::OsString) -> Self {
-            let lock = PATH_LOCK
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let original = std::env::var_os("PATH");
-            std::env::set_var("PATH", value);
-            Self {
-                original,
-                _lock: lock,
-            }
-        }
-    }
-
-    impl Drop for PathGuard {
-        fn drop(&mut self) {
-            match self.original.take() {
-                Some(v) => std::env::set_var("PATH", v),
-                None => std::env::remove_var("PATH"),
-            }
-        }
+    #[test]
+    fn install_skills_for_codex_does_not_touch_claude_settings() {
+        // Codex install must not write `.claude/settings.json` —
+        // settings wiring is Claude-specific.
+        let dir = TempDir::new().unwrap();
+        let project = dir.path();
+        let paths = HealPaths::new(project);
+        paths.ensure().unwrap();
+        install_skills_for(project, &paths, SkillTarget::Codex, false).unwrap();
+        assert!(SkillTarget::Codex
+            .dest(project)
+            .join("heal-cli/SKILL.md")
+            .exists());
+        assert!(
+            !project.join(".claude/settings.json").exists(),
+            "codex install must not create .claude/settings.json",
+        );
+        assert!(
+            !SkillTarget::Claude.dest(project).exists(),
+            "codex install must not write to .claude/skills/",
+        );
     }
 }

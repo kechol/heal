@@ -1,9 +1,9 @@
 ---
 title: Test · スキル
-description: "[features.test] 向け同梱 Claude Code スキル 3 種 — /heal-test-reporter-setup、/heal-test-review、/heal-test-patch。"
+description: "[features.test] 向け同梱スキル 3 種 — /heal-test-reporter-setup、/heal-test-review、/heal-test-patch。Claude Code / OpenAI Codex 対応。"
 ---
 
-オプトインの **Test** ファミリは Claude スキルを 3 種同梱しています。`heal skills install` で Code ファミリスキルと並んで展開されますが、test オブザーバが生む findings にしか作用しません。
+オプトインの **Test** ファミリはスキルを 3 種同梱しています。`heal init` 時に検出した各エージェントターゲットへ Code ファミリスキルと並んで展開されますが、test オブザーバが生む findings にしか作用しません。
 
 インストール手順とドリフト認識付きの更新の仕組みは [Code › スキル](/heal/ja/code/skills/) を参照(共通の仕組みです)。
 
@@ -31,7 +31,7 @@ description: "[features.test] 向け同梱 Claude Code スキル 3 種 — /heal
 1. テストスイートの **アーキテクチャ的読解** — 支配的な軸は「unit テストがない」「テストがソースについていけていない」「重要パスがカバーされていない」「skip された flake が永続的な skip として固化した」のどれか?
 2. **優先順位付きテスト修正 TODO リスト** — まず hotspot ファイルのカバレッジギャップ、次にドリフトしたテスト、最後に skip 比率の outlier。
 
-ソースは編集しません。レビューを読んで「これも直してほしい」と思ったら、その場で Claude Code に伝えれば対応に移れます(「上位 3 件のテストを書いて」「`auth/` 配下の skip を再有効化して」など)。機械的な修正は `/heal-test-patch` を経由し、判断が要る項目(「実は本物の flake で skip のままが正しいのでは?」「このカバーされていないファイルはそもそもテストすべきか、削除すべきか?」)は自動適用されず、あなたの指示を待ちます。
+ソースは編集しません。レビューを読んで「これも直してほしい」と思ったら、その場でエージェント(Claude Code / Codex)に伝えれば対応に移れます(「上位 3 件のテストを書いて」「`auth/` 配下の skip を再有効化して」など)。機械的な修正は `/heal-test-patch` を経由し、判断が要る項目(「実は本物の flake で skip のままが正しいのでは?」「このカバーされていないファイルはそもそもテストすべきか、削除すべきか?」)は自動適用されず、あなたの指示を待ちます。
 
 ### review と patch を分けている理由
 

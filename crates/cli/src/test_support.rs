@@ -11,11 +11,12 @@ use std::sync::OnceLock;
 use crate::core::config::Config;
 use crate::core::HealPaths;
 
-/// Resolve `git`'s absolute path once and cache it. Other inline tests
-/// (`init::tests::handle_skills_install_*`) mutate `PATH` to drive the
-/// `claude` lookup logic, which races with `Command::new("git")`'s
-/// runtime PATH resolution under cargo's parallel test scheduler. Pinning
-/// the binary up front makes git-shelling tests immune to that race.
+/// Resolve `git`'s absolute path once and cache it. The cache exists
+/// because `Command::new("git")` resolves `PATH` at runtime, and any
+/// inline test that mutates `PATH` (we no longer have one in
+/// `commands/init.rs`, but the helper is kept defensive) would race
+/// against parallel git-shelling siblings. Pinning the binary up front
+/// makes git-shelling tests immune to that race.
 fn git_bin() -> &'static Path {
     static CACHED: OnceLock<PathBuf> = OnceLock::new();
     CACHED.get_or_init(|| {

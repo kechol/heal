@@ -112,13 +112,54 @@ without a major-version bump.
 Source: `crates/cli/skills/<skill>/`. The path is **inside the crate
 dir** so `cargo publish` includes it. Don't move it out —
 `include_dir!` is a compile-time read of files under
-`$CARGO_MANIFEST_DIR`.
+`$CARGO_MANIFEST_DIR`. Skills land in different on-disk locations
+depending on the agent target (see R12) but all read from this
+single source tree.
 
 ## R10. Trigger-rich descriptions
 
 Skill `description` fields are long, list trigger phrases, and end
-with the slash-command form (`/heal-setup`). This pattern is what
-Claude Code's skill matcher keys on.
+with the slash-command form (`/heal-setup`). The pattern is what
+both Claude Code and Codex CLI's skill matchers key on (Codex uses
+the same `description`-driven implicit invocation — see
+<https://developers.openai.com/codex/skills>).
 
 When adding a new skill, follow the existing `description` shape;
 don't shorten it for terseness.
+
+## R11. Skill bodies are agent-neutral
+
+Source SKILL.md bodies are written so the same bytes serve every
+supported agent. Don't introduce text that hard-codes one host:
+
+- No "Claude Code" / "Codex CLI" name in instructions to the model
+  (the chat-language fallback line documents the host as a list,
+  not a singular).
+- No tool names (`Bash`, `Edit`, `Read`) — describe shell commands
+  via the heal CLI surface instead.
+- Slash-command references (`/heal-code-patch`) are fine — both
+  Claude Code and Codex resolve the same form.
+
+Drift fixes itself: any sweep needed for one host shows up
+identically in the other's install. Pin tests and dogfooding cover
+both.
+
+## R12. Two install destinations, one bundle
+
+The bundled skill set lands in different places per agent:
+
+- `SkillTarget::Claude` → `<project>/.claude/skills/<name>/`
+- `SkillTarget::Codex`  → `<project>/.agents/skills/<name>/`
+
+`heal init` decides per-target (one TTY prompt per detected
+agent's CLI; `--yes` installs to all detected; `--no-skills` skips
+all). Each target's tree is independent: same bundled bytes, two
+on-disk records. Drift detection (R4) applies independently to
+each. Don't add a third path without first declaring a new
+`SkillTarget` variant — the enum is the single source of truth.
+
+Caveat for v0.4: `heal skills install / update / status /
+uninstall` still operate only on `SkillTarget::Claude`. Use
+`heal init --force --yes` to refresh both targets after a binary
+upgrade. Extending the explicit `heal skills *` group to all
+targets is tracked as follow-up work.

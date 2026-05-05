@@ -46,10 +46,10 @@ only when you need the raw output without going through Claude.
 Bootstraps heal inside a git repository:
 
 ```sh
-heal init                # interactive — prompts to install the Claude skills
-heal init --yes          # also extract the Claude skills (no prompt)
-heal init --no-skills    # skip the skills entirely (CI / non-Claude users)
-heal init --force        # overwrite an existing config.toml / hook
+heal init                # interactive — one Y/N prompt per detected agent
+heal init --yes          # extract skills for every detected agent (no prompt)
+heal init --no-skills    # skip every agent (CI / no AI agent installed)
+heal init --force        # overwrite an existing config.toml / hook; refresh skills
 heal init --explicit     # write every default to config.toml (long form)
 ```
 
@@ -69,15 +69,19 @@ of every available knob.
    distribution per metric — that becomes `calibration.toml`.
 3. Install `.git/hooks/post-commit` (idempotent — re-installation
    never duplicates the line).
-4. If the `claude` CLI is on `PATH`, prompt to extract the bundled
-   skill set into `.claude/skills/`. The prompt defaults to `Y`; pass
-   `--yes` to skip the prompt and install, or `--no-skills` to skip
-   without prompting. When `claude` isn't on `PATH`, the prompt is
-   suppressed silently.
+4. For each AI agent on `PATH`, extract the bundled skill set into
+   that agent's project-scope discovery path:
+   - `claude` → `.claude/skills/`
+   - `codex`  → `.agents/skills/`
+
+   In a TTY, you get one Y/N prompt per detected agent (default
+   `Y`). `--yes` accepts every prompt; `--no-skills` skips every
+   prompt. Agents whose CLI is not on `PATH` are silently skipped —
+   their skills would have nowhere to be invoked from.
 
 When done, `heal init` prints an "Installed:" summary listing every
-file it wrote — config, calibration, post-commit hook, and the
-Claude skills path (or the reason it was skipped).
+file it wrote — config, calibration, post-commit hook, and one line
+per agent target (or the reason it was skipped).
 
 Re-running is safe: `config.toml` is left in place unless `--force`
 is passed; the post-commit hook is replaced only when it carries
@@ -86,7 +90,8 @@ the heal marker. If a non-heal `post-commit` hook already exists,
 
 ## `heal skills`
 
-Manages the bundled Claude skill set under `.claude/skills/`:
+Manages the bundled skill set for the **Claude target** under
+`.claude/skills/`:
 
 ```sh
 heal skills install     # extract the skills (run once per repo)
@@ -99,6 +104,11 @@ The skill set is embedded in the `heal` binary at compile time, so
 `heal skills install` always extracts the version matching the binary
 in use. `update` is drift-aware: files that have been hand-edited are
 left in place (use `--force` to overwrite anyway).
+
+For the **Codex target** (`.agents/skills/`), the supported refresh
+path in v0.4 is `heal init --force --yes` — it re-extracts every
+agent's tree at once. Multi-target support for the explicit
+`heal skills *` group is tracked as follow-up.
 
 The bundled set ships eleven skills, grouped by feature family:
 
