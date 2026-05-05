@@ -76,13 +76,17 @@ different.
 while there are non-Ok doc_* findings in the cache:
     pick the next one (Severity order: Critical → High → Medium)
         skip findings where `accepted == true`
-    decide: allow-list (apply mechanically) or escalate-list (stop)?
+    read the doc + paired srcs
+    decide: allow-list (apply) / false-positive (propose accept) / escalate-list (stop)?
     if allow-list:
-        read the doc; apply the smallest fix
+        apply the smallest fix
         run any verification (link recheck, syntax)
         git commit -m "<conventional doc message>"
         heal mark fix --finding-id <id> --commit-sha <sha>
         heal status --refresh --feature docs --json
+    if false-positive:
+        propose `heal mark accept` via AskUserQuestion (see section below);
+        on user Apply, accept the finding and continue
     if escalate-list:
         end the session; surface remaining findings; recommend /heal-doc-review
 ```
@@ -160,6 +164,64 @@ Apply when the marker's question has a clear, verifiable answer
 in the current code or config. Replace the marker line with the
 answer. When the answer requires interpretation (e.g. a TODO
 asking "should we deprecate X?"), escalate.
+
+## False positive — propose `heal mark accept`
+
+The `[features.docs]` observers fire on identifier-shaped tokens,
+heading slugs, link targets, and TODO-style markers — heuristics
+that occasionally match content the doc author intentionally
+included. When reading the doc + paired srcs reveals the finding
+is in one of these categories, propose to the user that it be
+recorded as **accepted** instead of edited. Use `AskUserQuestion`:
+
+> The finding at `<file>:<line>` (`<metric>` `<short summary>`)
+> looks like a false positive (`<short reason>`). Mark it accepted
+> so it stops appearing in the drain queue?
+>
+> - **Accept** (Recommended): record `heal mark accept` with the
+>   reason; the finding moves to `📌 Accepted`.
+> - **Treat as real**: leave it in the cache; the next
+>   `/heal-doc-review` will triage it.
+
+On Accept, run:
+
+```sh
+heal mark accept \
+  --finding-id "<finding_id>" \
+  --reason "<short_categorical_reason>"
+```
+
+Categorical reason strings the docs family produces in practice
+(use these where they fit; coin a new one only when necessary):
+
+- `false_positive_observer_extracted_non_codebase_identifier` —
+  `doc_drift` matched a generic English word, third-party tool
+  name (`less`, `lychee`), stdlib mention (`std::hash::DefaultHasher`),
+  Python framework method (`.skipIf`), tree-sitter grammar terminology
+  (`class_declaration`), or external-tool tool name (`AskUserQuestion`).
+- `pair_coverage_gap_identifier_exists_in_unpaired_src` —
+  `doc_drift` flagged a real codebase identifier whose defining
+  src isn't listed under the doc's `srcs` in
+  `.heal/doc_pairs.json`. The fix lives in `/heal-doc-pair-setup`,
+  not in the doc.
+- `false_positive_observer_slugify_diverges_from_github_slugger`
+  — `doc_link_health` (MissingAnchor) where the rendered link
+  works in Starlight / mdBook / mkdocs but the observer's
+  approximate slugify rule disagrees on punctuation handling
+  (`_`, em-dash, `.`).
+- `false_positive_observer_counts_noun_phrase_TODO` —
+  `todo_density` counted noun-phrase usages of TODO/FIXME/etc.
+  (e.g. "the TODO list", "refactor TODO") that refer to HEAL's
+  own output rather than action items.
+- `intentional_external_link` — `doc_link_health` (MissingPath)
+  where the link target is intentionally external to the source
+  tree (a future site, a marketing page) and shouldn't resolve
+  locally.
+
+Don't auto-accept — the user must approve each. Don't propose
+accept on a finding that's just *hard* to fix (like
+`doc_freshness`); that's escalate territory and belongs in
+`/heal-doc-review`.
 
 ## Escalate-list (stop and surface)
 
@@ -288,7 +350,7 @@ While running, narrate one short paragraph per finding:
 End with a session summary:
 
 ```
-Doc cache drain: fixed 6 / skipped 1 / regressed 0 / 1 escalated.
+Doc cache drain: fixed 6 / accepted 12 / skipped 1 / regressed 0 / 1 escalated.
 Escalated: docs/concept.md doc_freshness (12 commits past doc) —
 recommend running /heal-doc-review for proposal-level discussion.
 ```

@@ -106,15 +106,22 @@ while there are non-Ok findings in the cache:
         # for this skill. They show up under `📌 Accepted` in
         # `heal status --all`, not in the drain queue.
     read the file(s); plan the smallest fix that addresses the metric
-    apply the change
-    run tests / type-check / linter (best effort, see "Verification")
-    git add -p / git add <file>; git commit -m "<conventional message>"
-    heal mark fix --finding-id <id> --commit-sha <new SHA>
-    heal status --refresh --feature code --json   # re-scan code family only
-    if the finding is back (regressed warning):
-        leave it for now; record in session notes; continue with next finding
-    else:
-        continue
+    decide: allow-list (apply) / false-positive (propose accept) / escalate-list (stop)?
+    if allow-list:
+        apply the change
+        run tests / type-check / linter (best effort, see "Verification")
+        git add -p / git add <file>; git commit -m "<conventional message>"
+        heal mark fix --finding-id <id> --commit-sha <new SHA>
+        heal status --refresh --feature code --json   # re-scan code family only
+        if the finding is back (regressed warning):
+            leave it for now; record in session notes; continue with next finding
+        else:
+            continue
+    if false-positive:
+        propose `heal mark accept` via AskUserQuestion (see section below);
+        on user Apply, accept the finding and continue
+    if escalate-list:
+        end the session; surface remaining findings; recommend /heal-code-review
 ```
 
 Stop conditions: cache empty, user interrupts (Ctrl+C / Stop), or you
@@ -166,8 +173,9 @@ surfaces. Always consult both before acting.
 
 Read the file before making the change. The metric might be measuring
 something intentional (parser tables, exhaustive `match` arms, generated
-code). If the finding is a false positive, log it in session notes and
-move on without committing.
+code). If the finding is a false positive, propose `heal mark accept`
+to the user via the section below — don't silently leave it in the
+cache.
 
 ### Allow-list (apply mechanically)
 
@@ -190,6 +198,41 @@ confirm the pattern fits:
   times within the same function, where naming reveals intent.
 - **Replace Magic Number / String with Named Constant.** Apply when
   the value appears in multiple places and its meaning is fixed.
+
+### False positive — propose `heal mark accept`
+
+When reading the file shows the finding is the metric counting
+something it shouldn't — generated code, exhaustive enum dispatch,
+intentional parser tables, vendored third-party code, an inherently
+wide procedural pipeline that can't be split without losing
+cohesion — propose to the user that the finding be recorded as
+**accepted** instead of refactored. Use `AskUserQuestion`:
+
+> The finding at `<file>:<symbol>` (`<metric>=<value>`) looks like
+> intrinsic complexity rather than refactor-worthy debt
+> (`<short reason>`). Mark it accepted so it stops blocking the
+> drain queue?
+>
+> - **Accept** (Recommended): record `heal mark accept` with the
+>   reason; the finding moves to `📌 Accepted` and disappears from
+>   future drain runs.
+> - **Treat as real**: leave it in the cache; the next
+>   `/heal-code-review` will triage it.
+
+On Accept, run:
+
+```sh
+heal mark accept \
+  --finding-id "<finding_id>" \
+  --reason "<short_categorical_reason>"
+```
+
+Use a stable, categorical reason string (`generated_code`,
+`exhaustive_enum_dispatch`, `intentional_parser_table`,
+`vendored_third_party`, `coherent_pipeline_relocate_trap`) so future
+audits can group accepts by category. Don't auto-accept — the user
+must approve each. Don't propose accept on a finding that's just
+*hard* to fix; that's escalate territory.
 
 ### Escalate-list (stop and ask the user)
 
@@ -315,12 +358,13 @@ finding:
 When you stop (cache drained or user interrupt), end with a summary:
 
 ```
-Session summary: fixed 8 / skipped 2 / regressed 1 / 1 still pending.
+Session summary: fixed 8 / accepted 3 / skipped 2 / regressed 1 / 1 still pending.
 Next: review the commits with `git log --oneline`, then push when ready.
 ```
 
-Skipped findings stay in the cache for the next session — no need to
-record them anywhere persistent.
+Accepted findings move to `📌 Accepted`; skipped findings stay in the
+cache for the next session — no need to record them anywhere
+persistent.
 
 ## When NOT to act
 
