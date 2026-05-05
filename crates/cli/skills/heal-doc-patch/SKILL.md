@@ -10,6 +10,27 @@ per commit, in Severity order, until the docs slice of the cache is
 empty (or the user stops). This is the **write** counterpart to
 `/heal-doc-review`.
 
+## Output language
+
+Write the per-finding narration, prompts, and end-of-loop summary in
+the user's language. Resolution order:
+
+1. Explicit instruction in the current conversation.
+2. The language the user is writing in (Claude Code's conversation
+   language).
+3. `[project].response_language` in `.heal/config.toml` (free-form:
+   `"Japanese"`, `"日本語"`, `"ja"`, `"français"`).
+4. English (fallback).
+
+Identifiers stay verbatim — file paths, `Finding.metric` strings
+(`doc_drift`, `doc_link_health`, …), command names (`heal status`),
+and finding ids are part of the contract. Doc edits themselves keep
+the language already used in the doc tree (don't translate a stale
+identifier in an English doc into Japanese, even if the user is
+writing in Japanese). Commit subject lines follow the project's
+existing convention (in this repo: English, per Conventional
+Commits).
+
 ## Mental model
 
 `heal status --feature docs --json` writes a `FindingsRecord` to

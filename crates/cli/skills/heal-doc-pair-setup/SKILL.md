@@ -31,6 +31,25 @@ at `references/doc-pairs-schema.md` directly — this skill is for
 - `references/doc-pairs-schema.md` — JSON shape, version rules, and
   the meaning of every `source` value.
 
+## Output language
+
+Write progress messages, candidate-pair explanations, and the final
+report in the user's language. Resolution order:
+
+1. Explicit instruction in the current conversation.
+2. The language the user is writing in (Claude Code's conversation
+   language).
+3. `[project].response_language` in `.heal/config.toml` (free-form:
+   `"Japanese"`, `"日本語"`, `"ja"`, `"français"`).
+4. English (fallback).
+
+Identifiers stay verbatim — file paths, `source` values (`"manual"`,
+`"mention"`, `"directory_mirror"`, `"llm"`), JSON field names, and
+config keys (`[features.docs]`) are part of the contract. The written
+file (`.heal/doc_pairs.json`) is machine-consumed JSON and never
+translated; only the conversation around it follows the user's
+language.
+
 ## Pre-flight
 
 1. **`[features.docs]` enabled.** Check `.heal/config.toml`. If

@@ -45,6 +45,29 @@ config, not explaining one.
   `.heal/config.toml`: type, default, what it controls, when to tune.
   Load it before recommending a non-default value.
 
+## Output language
+
+Write the survey summary, the strictness recommendation, the
+`AskUserQuestion` prompts, and the post-write report in the user's
+language. Resolution order:
+
+1. Explicit instruction in the current conversation.
+2. The language the user is writing in (Claude Code's conversation
+   language).
+3. `[project].response_language` in `.heal/config.toml` (free-form:
+   `"Japanese"`, `"日本語"`, `"ja"`, `"français"`). When this skill
+   *writes* `response_language` for the first time, infer it from
+   signals (1) and (2) and confirm with the user before persisting —
+   the value flows to every other heal skill on subsequent runs.
+4. English (fallback).
+
+Identifiers stay verbatim — config keys (`[project]`,
+`[features.docs]`, `[metrics.ccn]`), command names (`heal init`,
+`heal calibrate --force`), file paths (`.heal/config.toml`,
+`.heal/calibration.toml`), and TOML values written into the file
+are part of the contract. Translate the surrounding explanation,
+not the file.
+
 ## Pre-flight
 
 Before changing anything:
@@ -588,6 +611,9 @@ say on whether to run `heal calibrate --force`.
   `[features.test]` question, leave the section omitted (= disabled
   by default). Never auto-enable a feature whose chained setup the
   user hasn't acknowledged.
-- **English output by default.** The user can ask for translation if
-  they prefer another language. The `[project].response_language`
-  setting controls heal's *own* output language, not the skill's.
+- **Conversation language follows the resolution order in
+  "Output language" above.** The skill's prose, prompts, and report
+  match the user's language. When `[project].response_language` is
+  absent and the user is clearly writing in a non-English language,
+  set it during the write phase (after confirming with the user) so
+  every other heal skill picks the same default on subsequent runs.

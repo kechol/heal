@@ -52,6 +52,25 @@ main prompt so it stays terse.
   Knuth), and the 5-question judgment test for whether a refactor
   proposal is worth making.
 
+## Output language
+
+Write the architectural reading and the TODO list in the user's
+language. Resolution order:
+
+1. Explicit instruction in the current conversation.
+2. The language the user is writing in (Claude Code's conversation
+   language).
+3. `[project].response_language` in `.heal/config.toml` (free-form:
+   `"Japanese"`, `"日本語"`, `"ja"`, `"français"`).
+4. English (fallback).
+
+Identifiers stay verbatim — file paths, symbol names, command names
+(`heal status`), config keys (`[features.docs]`), `Finding.metric`
+strings, and refactor-pattern names from `references/architecture.md`
+(`Extract Function`, `Move Method`, `Strangler Fig`, …) are part of
+the contract. Translate prose, headings, and per-finding rationale;
+keep the contract verbatim.
+
 ## Mental model
 
 `heal status --all --feature code --json` emits a `FindingsRecord` containing every

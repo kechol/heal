@@ -28,6 +28,25 @@ copy-pasteable block and never auto-applied.
   previous reporter no longer applies.
 - Polyglot repo gained a new language and wants coverage for it.
 
+## Output language
+
+Write the per-step approval prompts, install commentary, and final
+verification report in the user's language. Resolution order:
+
+1. Explicit instruction in the current conversation.
+2. The language the user is writing in (Claude Code's conversation
+   language).
+3. `[project].response_language` in `.heal/config.toml` (free-form:
+   `"Japanese"`, `"日本語"`, `"ja"`, `"français"`).
+4. English (fallback).
+
+Identifiers stay verbatim — install commands (`cargo install
+cargo-llvm-cov`, `pip install coverage`), config keys
+(`[features.test.coverage]`, `lcov_paths`), file paths (`lcov.info`,
+`coverage/lcov.info`), and the copy-pasteable CI workflow snippet
+are part of the contract. Translate the surrounding explanation,
+not the commands.
+
 ## Mental model
 
 The HEAL observer reads `lcov.info` from one of the configured

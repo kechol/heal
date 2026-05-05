@@ -4,6 +4,24 @@
 
 ### Features
 
+- **Bundled skills now respect `[project].response_language` and
+  the user's conversation language.** Every `/heal-*` skill body
+  carries an explicit "Output language" section with the same
+  resolution order: explicit in-conversation instruction → the
+  language the user is writing in → `[project].response_language`
+  in `.heal/config.toml` (free-form: `"Japanese"`, `"日本語"`,
+  `"ja"`, `"français"`) → English. Previously the setting only
+  governed `heal`'s own CLI renderings and skills followed their
+  own English-by-default convention; the new wording propagates
+  the team-wide language preference into every architectural
+  reading, TODO list, drain narration, scaffold report, and setup
+  prompt the bundled skills produce. Identifiers (command names,
+  config keys, file paths, `Finding.metric` strings, JSON field
+  names) and conventional-commit subject lines stay verbatim —
+  the contract is not translated. `/heal-setup` infers and
+  confirms `response_language` on first run when the user is
+  clearly writing in a non-English language so the rest of the
+  skill set picks the same default on subsequent runs.
 - **New skill: `/heal-doc-scaffold` — stand up the project's
   documentation tree from scratch, autonomously, and safely
   re-runnable.** Five-phase pipeline (Detect codebase → Survey

@@ -22,6 +22,24 @@ Conventions used below:
   `config.toml` and `calibration.toml` (and even then, prefer
   `heal calibrate --force` over editing thresholds by hand).
 
+## Output language
+
+Match the user's language for prose. Resolution order:
+
+1. Explicit instruction in the current conversation.
+2. The language the user is writing in (Claude Code's conversation
+   language).
+3. `[project].response_language` in `.heal/config.toml` (free-form:
+   `"Japanese"`, `"日本語"`, `"ja"`, `"français"` — passed verbatim to
+   the model).
+4. English (fallback).
+
+Identifiers stay verbatim — command names (`heal status`), flags
+(`--feature docs`), config keys (`[features.docs]`), file paths
+(`.heal/findings/latest.json`), `Finding.metric` strings, and JSON
+field names are part of the contract, not prose. Translate the
+surrounding explanation, not the contract.
+
 ## The loop
 
 ```

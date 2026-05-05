@@ -42,11 +42,15 @@ single optional key.
 
 | Key                  | Type               | Default | Meaning                                                                                                                                                                                |
 |----------------------|--------------------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `response_language`  | `Option<String>`   | `None`  | Natural language for AI-generated output (heal's own renderings, future `run-*` proposals). Free-form: `"Japanese"`, `"日本語"`, `"ja"`, `"français"`. `None` keeps the model default. |
+| `response_language`  | `Option<String>`   | `None`  | Natural language for AI-generated output. Free-form: `"Japanese"`, `"日本語"`, `"ja"`, `"français"`. `None` keeps the model default. Read by every bundled `/heal-*` skill as the project-wide language default (see "Output language" in each `SKILL.md`). |
 
-`response_language` only governs heal's own output. Skills like
-`heal-code-review` follow their own language convention — it does not
-propagate to them.
+`response_language` is the **project-wide default** every bundled
+heal skill consults. Resolution order inside each skill: explicit
+in-conversation instruction → Claude Code's conversation language
+→ this setting → English. Setting it once means teammates and CI
+agents on the same `.heal/config.toml` produce reports, TODO lists,
+and per-finding narration in the same language without each user
+re-asking.
 
 ## `[git]`
 
