@@ -15,7 +15,7 @@ Sequential, single-threaded, fixed order:
 
 ```
 LOC → Complexity (CCN + Cognitive) → Churn → ChangeCoupling
-    → DocPairs (load) → Duplication (+ Markdown pass) → Hotspot
+    → DocPairsFile (load) → Duplication (+ Markdown pass) → Hotspot
     → LCOM → DocFreshness → DocDrift → DocCoverage
     → DocLinkHealth → OrphanPages → TodoDensity
 ```
@@ -30,9 +30,9 @@ LOC → Complexity (CCN + Cognitive) → Churn → ChangeCoupling
 
 LOC always runs (no per-config gate). Every other observer is
 `enabled`-gated via its `*Config`. The docs family (everything from
-`DocPairs` down) is gated on `cfg.features.docs.enabled`; when off,
-`.heal/doc_pairs.json` is not consulted and the docs reports are all
-`None`.
+`DocPairsFile` down) is gated on `cfg.features.docs.enabled`; when
+off, `.heal/doc_pairs.json` is not consulted and the docs reports
+are all `None`.
 
 ---
 
