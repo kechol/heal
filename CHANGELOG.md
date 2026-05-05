@@ -4,6 +4,22 @@
 
 ### Features
 
+- **`doc_drift` resolver decomposes qualified-identifier mentions
+  before reporting a miss.** Tree-sitter splits trait methods
+  (`Feature::lower`), enum variants (`Severity::Medium`), field
+  accesses (`Finding.workspace`), and nested module paths
+  (`core::Error::Io`) into separate AST leaves — qualifier and
+  member each appear as their own token. The pre-fix resolver
+  required the joined string to match a single leaf, so every
+  qualified mention drifted on every Reference doc. The new
+  resolver tries the exact match first and, on miss, splits the
+  mention on `::` / `.` and accepts when **every** segment
+  appears in the paired srcs' leaf set. Universal across the six
+  supported languages — no per-language tree-sitter query was
+  added; the rule keys on the qualified-identifier shape that
+  is itself language-agnostic. doc_drift findings on this repo:
+  64 → 31 after the resolver change (combined with the
+  single-character / hex-fragment filter, 85 → 31).
 - **`doc_drift` extractor rejects single-character spans and
   hex commit-sha fragments.** The doc-side identifier scan picked
   up placeholder text (`X`, `Y`, `T`, `i`, `n` from "where `T` is

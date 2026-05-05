@@ -92,7 +92,7 @@ impl DocDriftObserver {
                 combined.extend(set.iter().cloned());
             }
             for mention in mentions {
-                if combined.contains(&mention.text) {
+                if mention_resolves(&combined, &mention.text) {
                     continue;
                 }
                 report.entries.push(DocDriftEntry {
@@ -355,6 +355,48 @@ fn is_identifier_shape(span: &str) -> bool {
     true
 }
 
+/// True when `mention` is satisfied by the union `combined` of every
+/// paired src's identifier-shaped AST leaves.
+///
+/// First tries an exact-string match. When that fails, decomposes
+/// qualified identifiers (`Foo::bar`, `Foo.bar`, `Foo::bar::baz`)
+/// and accepts when **every** segment is present in the src set.
+/// Catches three patterns tree-sitter splits across separate leaves
+/// — and which would otherwise drift on every Reference doc:
+///
+/// - **Trait methods** (`Feature::lower`): `Feature` is the trait
+///   name leaf, `lower` is the function-name leaf inside the trait /
+///   impl block.
+/// - **Enum variants** (`Severity::Medium`): `Severity` is the enum
+///   name leaf, `Medium` is the variant name leaf inside the
+///   `enum_variant_list`.
+/// - **Field accesses** (`Finding.workspace`): `Finding` is the
+///   struct name leaf, `workspace` is the field-name leaf inside
+///   the field-declaration list. Same shape applies in Python /
+///   JS / TS / Go / Scala (`Class.method`, `pkg.Type.field`).
+///
+/// Doc-side already gates these forms via `looks_like_definition_mention`
+/// — all-lowercase `::`-separated paths (`os.path.join`,
+/// `core::finding`) are rejected before reaching this point, so
+/// decomposition only runs on `Foo::bar`-shaped references that
+/// genuinely look like a member access.
+///
+/// Empty segments (from leading / consecutive separators) are
+/// dropped before the per-segment check; a single-segment mention
+/// after split (e.g. mention is just `Foo`) falls through to
+/// "not resolved" because the exact match would already have
+/// succeeded if `Foo` were present.
+fn mention_resolves(combined: &HashSet<String>, mention: &str) -> bool {
+    if combined.contains(mention) {
+        return true;
+    }
+    let segments: Vec<&str> = mention
+        .split([':', '.'])
+        .filter(|s| !s.is_empty())
+        .collect();
+    segments.len() > 1 && segments.iter().all(|s| combined.contains(*s))
+}
+
 /// Walk the tree-sitter tree and collect every leaf node whose text
 /// looks like an identifier. We don't filter by node kind because
 /// kind names vary across grammars — alphanumeric leaves are a robust
@@ -562,6 +604,80 @@ mod tests {
             ),
             vec!["Foo".to_string(), "Map".to_string()],
         );
+    }
+
+    #[test]
+    fn mention_resolves_via_exact_match() {
+        let mut set = HashSet::new();
+        set.insert("Config".to_string());
+        assert!(mention_resolves(&set, "Config"));
+        assert!(!mention_resolves(&set, "Other"));
+    }
+
+    #[test]
+    fn mention_resolves_via_decomposed_qualified_identifier() {
+        // Tree-sitter splits trait methods, enum variants, and field
+        // accesses into separate leaves — qualifier and member each
+        // appear as their own AST leaf token rather than as a joined
+        // span. The decomposed match accepts when every segment is
+        // present, regardless of which language produced the leaves.
+        let mut set = HashSet::new();
+        for s in [
+            "Severity",
+            "Medium",
+            "Feature",
+            "lower",
+            "Finding",
+            "workspace",
+        ] {
+            set.insert(s.to_string());
+        }
+        assert!(
+            mention_resolves(&set, "Severity::Medium"),
+            "enum variant must resolve",
+        );
+        assert!(
+            mention_resolves(&set, "Feature::lower"),
+            "trait method must resolve",
+        );
+        assert!(
+            mention_resolves(&set, "Finding.workspace"),
+            "field access must resolve",
+        );
+    }
+
+    #[test]
+    fn mention_resolves_requires_every_segment() {
+        // A partial match (qualifier present but member absent, or
+        // vice versa) must not slip through — that would convert
+        // genuine drift into a false negative.
+        let mut set = HashSet::new();
+        set.insert("Foo".to_string());
+        assert!(
+            !mention_resolves(&set, "Foo::bar"),
+            "missing member must keep finding",
+        );
+        let mut set = HashSet::new();
+        set.insert("bar".to_string());
+        assert!(
+            !mention_resolves(&set, "Foo::bar"),
+            "missing qualifier must keep finding",
+        );
+    }
+
+    #[test]
+    fn mention_resolves_handles_three_segment_paths() {
+        // `core::Error::Io` form: 3 segments, all required.
+        let mut set = HashSet::new();
+        for s in ["core", "Error", "Io"] {
+            set.insert(s.to_string());
+        }
+        assert!(mention_resolves(&set, "core::Error::Io"));
+        let mut partial = HashSet::new();
+        for s in ["core", "Error"] {
+            partial.insert(s.to_string());
+        }
+        assert!(!mention_resolves(&partial, "core::Error::Io"));
     }
 
     #[test]
