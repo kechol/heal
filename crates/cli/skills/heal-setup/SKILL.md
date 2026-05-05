@@ -69,6 +69,11 @@ Before changing anything:
 
 ### Phase 1 — Calibrate
 
+Run the recalibration drift check first (see *Recalibration drift
+check* below). When zero drift conditions fire, skip `--force` and
+read the existing calibration via `heal calibrate --json` — the
+percentile breaks are still valid. When any condition fires, run:
+
 ```sh
 heal calibrate --force --json
 ```
@@ -493,9 +498,13 @@ the toggle, `test_paths`, and `lcov_paths`.
 4. **Chain to `/heal-test-reporter-setup`.** After the config
    write, hand off so the language-specific reporter wiring
    (cargo-llvm-cov, pytest-cov, vitest / jest, gcov2lcov,
-   scoverage) lands. Same hand-off etiquette as the docs family:
+   scoverage) lands. The chained skill installs the reporter,
+   flips `[features.test.coverage].enabled = true`, runs the
+   reporter, and verifies — each step gated by its own
+   `AskUserQuestion`. Same hand-off etiquette as the docs family:
    announce the chain, let the user opt out of running it
-   immediately.
+   immediately. CI workflow edits stay a proposal there too;
+   this skill never edits CI.
 
 ## Output format
 

@@ -71,6 +71,41 @@ This pass is high-precision but low-recall: it catches references
 docs and architecture docs that name specific symbols, but misses
 prose-only docs.
 
+##### Guardrails (avoid downstream `doc_drift` flooding)
+
+`doc_drift` flags every backtick-span identifier in the doc that
+does *not* appear in the paired srcs. The cost of a too-narrow
+pair is high: a glossary mention-paired to 3 src files produces
+`(distinct identifiers in doc) − (identifiers in those 3)`
+false-positive findings. Apply these gates before emitting a pair:
+
+- **Cross-cutting denylist.** Don't mention-pair docs whose value
+  is *spanning* the codebase — they're handled fine by the
+  standalone family (`orphan_pages`, `todo_density`,
+  `doc_link_health`). Typical members: glossary / terminology
+  pages, design-philosophy / prior-art / architecture-overview
+  pages that name everything in passing, repo-wide READMEs
+  (`README.md`, `CLAUDE.md`, `.claude/docs/README.md`,
+  `.claude/rules/README.md`), workflow / scope rule pages.
+- **Coverage-ratio gate.** Of the doc's *resolvable* identifiers
+  (those matching some src definition in the repo), the chosen
+  `srcs` set must cover **≥ 70 %**. Below that threshold the
+  remaining mentions become `doc_drift` noise — drop the pair.
+- **Unfocused-doc cap.** When a doc has **> 60** distinct
+  resolvable identifiers, treat it as cross-cutting whether or not
+  it's on the denylist. Drop the pair; let standalone handle it.
+- **Per-src hit threshold.** Require ≥ 2 distinct identifier hits
+  for a `(doc, src)` candidate. A single passing reference (one
+  cross-link to a type defined elsewhere) is too weak to justify
+  drift checks against that src.
+
+These gates were derived from dogfooding HEAL itself: the naive
+"any hit emits a pair" rule produced > 1800 critical `doc_drift`
+findings on a 200-file codebase, dominated by filename /
+metric-string false positives. Adding the guardrails halved the
+count while preserving the genuinely mention-rich pairs
+(data-model docs, observer specs, CLI references).
+
 #### Step 2 — Directory mirror (`source: "mirror"`, confidence 0.7)
 
 Look for path symmetries: `src/foo.rs` ↔ `docs/foo.md`, `lib/foo.ts`

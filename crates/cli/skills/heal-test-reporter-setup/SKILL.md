@@ -1,33 +1,38 @@
 ---
 name: heal-test-reporter-setup
-description: Detect the project's language stack (Rust / Python / JS-TS / Go / Scala or mixed) and propose the lcov reporter configuration plus CI integration so `lcov.info` lands at one of HEAL's default `lcov_paths`. Read-only on the codebase; proposes commands and config edits without running them. Trigger on "set up coverage reporting", "configure lcov for heal", "wire up coverage", "/heal-test-reporter-setup".
+description: Detect the project's language stack (Rust / Python / JS-TS / Go / Scala or mixed), then with per-step `AskUserQuestion` approval install the lcov reporter, flip `[features.test.coverage].enabled` in `.heal/config.toml`, run the reporter, and verify HEAL picks up the resulting `lcov.info`. Edits `.heal/config.toml` and runs install / reporter commands; CI workflow edits stay a copy-pasteable proposal. Trigger on "set up coverage reporting", "configure lcov for heal", "wire up coverage", "/heal-test-reporter-setup".
 ---
 
 # heal-test-reporter-setup
 
-Prepares a project to feed coverage data into HEAL's
-`[features.test]` observer family. Two phases: **detect** the
-language ecosystem, **propose** reporter config + CI integration
-that ends with an `lcov.info` file HEAL can read.
+Wires a project up to feed coverage data into HEAL's
+`[features.test]` observer family. Three phases: **detect** the
+language ecosystem, **install + configure + run** the reporter
+under per-step approval (no install, no config edit, no reporter
+run lands until the user approves it), then **verify**
+`heal status` picks up the resulting `lcov.info`.
 
-Read-only on source files. The skill **does not run any commands**
-— it proposes shell invocations and config snippets the user runs
-themselves.
+The skill performs side effects: `cargo install`, `pip install`,
+`npm install`, `go install`, `sbt`, edits to
+`.heal/config.toml`, and the reporter run that produces
+`lcov.info`. CI workflow edits remain a **proposal** — CI changes
+affect every contributor's PR, so they get printed as a
+copy-pasteable block and never auto-applied.
 
 ## When this skill is right
 
 - First-time setup right after enabling `[features.test]` in
-  `.heal/config.toml`: HEAL emits no `coverage_pct` findings until an
-  `lcov.info` is reachable.
-- The project switched test runners (jest → vitest, unittest →
-  pytest) and the previous reporter config no longer applies.
-- The user added a new language to a polyglot repo (e.g. a Rust
-  workspace gained a Python pipeline) and wants coverage for both.
+  `.heal/config.toml`: HEAL emits no `coverage_pct` findings until
+  an `lcov.info` is reachable.
+- Switched test runner (jest → vitest, unittest → pytest) and the
+  previous reporter no longer applies.
+- Polyglot repo gained a new language and wants coverage for it.
 
 ## Mental model
 
 The HEAL observer reads `lcov.info` from one of the configured
-`lcov_paths`. Default search order (set in `[features.test.coverage]`):
+`lcov_paths`. Default search order (set in
+`[features.test.coverage]`):
 
 ```toml
 lcov_paths = [
@@ -38,237 +43,238 @@ lcov_paths = [
 ]
 ```
 
-The skill's job is to make sure **at least one of these paths**
-contains a current `lcov.info` after the project's test run. The
-right reporter is the one whose default output matches; when it
-doesn't, point `lcov_paths` at the right place rather than fighting
-the tool.
+The skill makes sure **at least one of these paths** holds a
+current `lcov.info` after the project's test run. The right
+reporter is the one whose default output matches; when it
+doesn't, extend `lcov_paths` rather than fight the tool.
 
 ## Pre-flight
 
-1. **`[features.test]` enabled.** Check `.heal/config.toml`. If
-   disabled (or absent), ask whether to enable. If declined, stop.
-2. **`[features.test.coverage].enabled` state.** When `false`,
-   propose flipping it to `true` in the output.
+1. **`[features.test]` enabled.** Read `.heal/config.toml`. If
+   disabled (or absent), ask whether to flip it on. Stop if
+   declined — the rest of the skill has no consumer.
+2. **Existing reporter check.** If `lcov.info` already exists at
+   one of `lcov_paths` and is recent (mtime within 24 h), report
+   it and ask whether to skip the install / run step (idempotent
+   re-run).
 3. **Detection plan.** Walk the repo root for ecosystem markers
-   before proposing anything.
+   before asking anything; show the detected stack in the first
+   `AskUserQuestion`.
 
 ## Phase 1 — Detect the stack
 
-Walk the repo root once and check for these markers, in order. A
-polyglot repo can match multiple — propose for each in turn.
+Walk the repo root once. Markers, in order. A polyglot repo can
+match several — in Phase 2 each ecosystem gets its own
+confirm-and-execute sequence.
 
 ### Rust — `Cargo.toml` present
 
-Default reporter: `cargo-llvm-cov`, lands at `lcov.info` by default.
+Reporter: `cargo-llvm-cov`. Default output: `lcov.info`.
+Component: `llvm-tools-preview` (rustup), needed for
+`llvm-profdata` + `llvm-cov` (the binaries that convert profraw →
+lcov). cargo-llvm-cov 0.5+ auto-installs the component on first
+run; pinning it in CI via
+`dtolnay/rust-toolchain@... with: components: llvm-tools-preview`
+keeps job time predictable.
 
-Propose:
-
-```sh
-cargo install cargo-llvm-cov
-cargo llvm-cov --workspace --lcov --output-path lcov.info
-```
-
-For a single-crate repo, drop `--workspace`. For monorepos with
-mixed test runners, run from the workspace root.
-
-`cargo-llvm-cov` matches the `lcov.info` default path. No
-`lcov_paths` edit needed.
+Workspace flag: include `--workspace` for multi-crate workspaces;
+drop it for single-crate repos. **Use `--ignore-run-fail`** so a
+single test that's flaky under instrumentation (env-var leakage
+to spawned subprocesses, timing-sensitive code) doesn't block the
+whole lcov emit. The flag still surfaces failed test names so the
+user can investigate separately.
 
 ### Python — `pyproject.toml`, `setup.py`, or `requirements.txt`
 
-Default reporter: `pytest-cov`. Detect the test runner inside
+Reporter: `pytest-cov`. Detect the test runner inside
 `pyproject.toml` (`[tool.pytest.ini_options]`) or
-`tox.ini` / `setup.cfg`. Propose:
+`tox.ini` / `setup.cfg`. Output: `coverage/lcov.info` (matches
+default `lcov_paths`).
 
-```sh
-pip install pytest pytest-cov
-pytest --cov=<src-package> --cov-report=lcov:coverage/lcov.info
-```
-
-Replace `<src-package>` with the project's source root (e.g.
-`--cov=src` or `--cov=heal_pipeline`). The output path
-`coverage/lcov.info` matches the second default `lcov_paths` entry.
-
-For projects on `unittest` (no pytest), suggest migrating the
-coverage entrypoint to `coverage.py` directly:
-
-```sh
-coverage run -m unittest discover
-coverage lcov -o coverage/lcov.info
-```
+For `unittest`-only projects (no pytest), use `coverage.py`
+directly:
+`coverage run -m unittest discover && coverage lcov -o coverage/lcov.info`.
 
 ### JavaScript / TypeScript — `package.json` present
 
-Detect the runner from `package.json` `devDependencies`:
+Detect the runner from `devDependencies`:
 
-- **jest** (`"jest"` in deps): propose
+- **jest**: `jest --coverage --coverageReporters=lcov`. Output:
+  `coverage/lcov.info`.
+- **vitest**: needs `vitest.config.ts` with the v8 / istanbul
+  provider and `reporter: ["lcov"]`. Output:
+  `coverage/lcov.info`.
+- **mocha + nyc**: `npx nyc --reporter=lcov mocha`. Output:
+  `coverage/lcov.info`.
 
-  ```sh
-  jest --coverage --coverageReporters=lcov
-  ```
-
-  Jest writes `coverage/lcov.info` by default — matches the second
-  default `lcov_paths` entry.
-
-- **vitest** (`"vitest"` in deps): propose adding to
-  `vitest.config.ts`:
-
-  ```ts
-  import { defineConfig } from "vitest/config";
-
-  export default defineConfig({
-    test: {
-      coverage: {
-        provider: "v8",
-        reporter: ["lcov"],
-        reportsDirectory: "coverage",
-      },
-    },
-  });
-  ```
-
-  Then `npx vitest run --coverage`. Output: `coverage/lcov.info`.
-
-- **mocha + nyc**: propose
-
-  ```sh
-  npx nyc --reporter=lcov mocha
-  ```
-
-  Output: `coverage/lcov.info`.
-
-If the project pins a runner that isn't one of those, surface it in
-the output and ask the user which they want — don't guess.
+If the project pins a runner that isn't one of those, surface it
+and ask the user which they want — don't guess.
 
 ### Go — `go.mod` present
 
-Go's built-in coverage emits a `coverage.out` file (its own format,
-not lcov). Convert with `gcov2lcov`:
-
-```sh
-go install github.com/jandelgado/gcov2lcov@latest
-go test -coverprofile=coverage.out ./...
-gcov2lcov -infile=coverage.out -outfile=coverage/lcov.info
-```
-
-Output: `coverage/lcov.info`. Matches default `lcov_paths`.
+Go's built-in coverage emits `coverage.out` (its own format). Convert with `gcov2lcov`:
+`go test -coverprofile=coverage.out ./... && gcov2lcov -infile=coverage.out -outfile=coverage/lcov.info`.
 
 ### Scala — `build.sbt` present
 
-Use the `scoverage` plugin:
+Plugin: `scoverage`. Output:
+`target/scala-<v>/scoverage-report/lcov.info` — **not** in
+default `lcov_paths`, so this is the one ecosystem where the
+skill always proposes a `lcov_paths` extension in Phase 2 Step b.
 
-1. Add to `project/plugins.sbt`:
+### Polyglot
 
-   ```scala
-   addSbtPlugin("org.scoverage" % "sbt-scoverage" % "2.0.12")
-   ```
+Each detected ecosystem runs through Phase 2 separately. The user
+can opt out of any one ecosystem at the per-step prompt.
 
-2. Run:
+## Phase 2 — Confirm and Execute
 
-   ```sh
-   sbt clean coverage test coverageReport
-   ```
+For each detected ecosystem, run the four-step sequence below.
+Every step gates on `AskUserQuestion`. **Default to skip** when
+the user declines or doesn't reply — never auto-install.
 
-The plugin writes lcov to
-`target/scala-<version>/scoverage-report/scoverage.xml` plus an lcov
-output the user must point HEAL at. Propose updating `lcov_paths`:
+### Step a — Install the reporter
 
-```toml
-[features.test.coverage]
-lcov_paths = [
-  "lcov.info",
-  "coverage/lcov.info",
-  "target/llvm-cov/lcov.info",
-  "coverage/lcov-report/lcov.info",
-  "target/scala-2.13/scoverage-report/lcov.info",  # added
-]
-```
+`AskUserQuestion`:
 
-### Polyglot — multiple markers present
+> Install `<reporter>` for `<lang>`?
+>
+> - **Install** (Recommended): runs `<exact command>`. ~<duration>.
+> - **Skip**: leave the reporter to the user; the skill stops here.
 
-Propose each language's setup separately. The user can run them in
-parallel (CI) or sequentially. The default `lcov_paths` covers the
-top three slots; languages whose default output sits elsewhere (e.g.
-Scala) need an explicit `lcov_paths` extension.
+On Install: shell out via `Bash`. The first install is slow
+(cargo-llvm-cov: ~1–2 min compile; pytest-cov: ~10 s; jest: ~20 s
+fresh; sbt-scoverage: ~30 s). Use `run_in_background: true` and
+wait for completion. Print only the final 5–10 lines on success;
+print full stderr on failure and stop.
 
-The HEAL observer reads **all** matching paths and merges by source
-file. For overlapping per-file coverage (rare — a Rust file covered
-by both `cargo-llvm-cov` and a different tool), the highest line
-hit count wins.
+On Skip: stop the skill. Re-invoking later resumes from this step
+(idempotent — Phase 1 detects the install state).
 
-## Phase 2 — Write step (proposed, not run)
-
-Output a single block the user pastes into their terminal / editor.
-Two parts:
-
-### Part A — `.heal/config.toml` edits
-
-Show the diff against the user's current config. Common shape:
+When the user has a tool-version manifest (`mise.toml`,
+`.tool-versions`, `asdf`, `pyenv`-managed `requirements*.txt`),
+prefer pinning there over a bare global install. For mise:
 
 ```toml
-# .heal/config.toml
-
-[features.test]
-enabled = true
-
-[features.test.coverage]
-enabled = true
-# lcov_paths defaults cover the top reporters; uncomment the line
-# below only if your reporter writes elsewhere.
-# lcov_paths = ["custom/path/lcov.info", ...]
+# mise.toml
+[tools]
+"cargo:cargo-llvm-cov" = "0.8.5"
 ```
 
-### Part B — local invocation
+Surface this as a follow-up in the run summary; don't second-guess
+the user's choice if they declined the manifest edit.
 
-The exact command(s) to produce the lcov file. Single-language
-projects get one block; polyglot projects get one block per
-language with a comment naming each.
+### Step b — Edit `.heal/config.toml`
 
-### Part C — verification handshake
+Show the diff first (current `[features.test.coverage]` block vs
+proposed). Then `AskUserQuestion`:
 
-Tell the user to run:
+> Apply this edit to `.heal/config.toml`?
+>
+> - **Apply** (Recommended): write the change.
+> - **Skip**: keep the current config; the skill stops here.
+
+On Apply: `Edit` the TOML in place. Then run
+`heal status --refresh --feature test --json` once to confirm the
+file parses (`Config::from_toml_str` uses `deny_unknown_fields`,
+so a typo surfaces immediately). On parse failure, surface the
+error and revert the edit.
+
+When the reporter's default output is **not** in default
+`lcov_paths` (Scala / scoverage; custom output dirs), extend
+`lcov_paths` in the same edit. When the existing file already has
+`enabled = true`, mention it and skip.
+
+### Step c — Run the reporter
+
+`AskUserQuestion`:
+
+> Run `<reporter command>` now? Time: ~<estimate>.
+>
+> - **Run** (Recommended): shells out and waits.
+> - **Skip**: skip the run; the user runs it themselves later.
+
+On Run: `Bash` with `run_in_background: true` (these runs are
+slow — Rust workspace coverage is several minutes; cargo-llvm-cov
+recompiles with instrumentation). Use the language-specific
+flags from Phase 1:
+
+- Rust: `cargo llvm-cov --workspace --lcov --output-path lcov.info --locked --ignore-run-fail`
+- Python: `pytest --cov=<src-package> --cov-report=lcov:coverage/lcov.info`
+- jest: `jest --coverage --coverageReporters=lcov`
+- vitest: `npx vitest run --coverage`
+- Go: `go test -coverprofile=coverage.out ./... && gcov2lcov -infile=coverage.out -outfile=coverage/lcov.info`
+- Scala: `sbt clean coverage test coverageReport`
+
+Print failing-test names if the run reports any (under
+`--ignore-run-fail` they are non-fatal but still informative).
+
+### Step d — Verify
+
+After the reporter run, run:
 
 ```sh
-<reporter command>                       # produces lcov.info
-heal status --refresh --feature test --json  # re-scan, narrow to test family
+heal status --refresh --feature test --json
 ```
 
-After that, `heal status` should emit `coverage_pct` findings. If
-not, the path doesn't match `lcov_paths` — surface that and propose
-the `lcov_paths` edit.
+Assert at least one `coverage_pct` Finding is present. If not:
 
-## Phase 3 — CI integration suggestion
+- Confirm `lcov.info` exists at one of `lcov_paths` (use
+  `wc -l <path>` to confirm non-empty).
+- Print the actual path and `lcov_paths` value so the user can
+  reconcile.
+- Stop. Don't auto-recover.
 
-Coverage in CI keeps the `latest.json` everyone shares accurate. Per
-common CI providers:
+## Phase 3 — Propose CI integration
 
-### GitHub Actions
+CI changes are a deploy decision. **Propose only.** Print the
+GitHub Actions / GitLab CI / CircleCI block matching the chosen
+reporter, with the repo's existing pin style (SHA-pinned actions,
+`--locked` flags, version pins) when detectable.
 
-Append to the test job (or its own job depending on runtime cost):
+`AskUserQuestion` once:
+
+> Apply this CI block to `<workflow file>`?
+>
+> - **Apply**: edit the workflow file.
+> - **Skip** (Recommended): print only; the user pastes it
+>   themselves when they're ready to deploy.
+
+Default-recommend Skip — CI workflow edits affect every
+contributor's PR; the install + edit + run loop above only
+affects the local machine and is reversible.
+
+### GitHub Actions skeleton
 
 ```yaml
-- name: Generate coverage
-  run: cargo llvm-cov --workspace --lcov --output-path lcov.info
-- name: Upload coverage artifact
-  uses: actions/upload-artifact@v4
-  with:
-    name: lcov.info
-    path: lcov.info
+coverage:
+  name: coverage
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@<sha> # vN
+    - uses: dtolnay/rust-toolchain@<sha> # stable
+      with:
+        components: llvm-tools-preview        # Rust only
+    - uses: Swatinem/rust-cache@<sha> # v2     # Rust only
+    - run: cargo install cargo-llvm-cov --locked --version <pinned>
+    - run: cargo llvm-cov --workspace --lcov --output-path lcov.info --locked --ignore-run-fail
+    - uses: actions/upload-artifact@<sha> # vN
+      with:
+        name: lcov.info
+        path: lcov.info
+        retention-days: 14
 ```
 
-Replace the `Generate coverage` step's command with the appropriate
-one for the detected stack (`pytest --cov ...`, `jest --coverage ...`,
-`go test -coverprofile=... && gcov2lcov ...`, `sbt clean coverage
-test coverageReport`).
-
-If the team commits the lcov file (uncommon, but supported), suggest
-the post-commit hook will pick it up automatically.
+Replace the `Rust only` lines and the `cargo install` /
+`cargo llvm-cov` block with the per-language equivalents
+(`pytest --cov ...`, `jest --coverage ...`,
+`go test -coverprofile=... && gcov2lcov ...`,
+`sbt clean coverage test coverageReport`).
 
 ### GitLab CI
 
 ```yaml
-test:
+coverage:
   script:
     - <reporter command>
   artifacts:
@@ -285,62 +291,59 @@ test:
     path: lcov.info
 ```
 
-For all providers, the artifact is so a downstream HEAL job (or a
-maintainer pulling the artifact locally) can run
-`heal status --refresh` against the same `lcov.info` and see the
-same findings as anyone else on the same commit.
+The artifact is so a downstream HEAL run (or a maintainer pulling
+the lcov locally) can `heal status --refresh` against the same
+`lcov.info` and see findings identical to anyone else on the same
+commit.
 
 ## Output format
 
-Single block, sectioned, with copy-paste commands clearly delimited.
-Example for a Rust workspace:
+End with one summary block:
 
 ```
-Detected: Rust workspace (Cargo.toml at root + 3 member crates)
+Detected:        Rust workspace + Python pipeline (polyglot)
+Reporter:        cargo-llvm-cov 0.8.5 (Rust)  pytest-cov 5.0 (Python)
+Config edits:    [features.test.coverage].enabled  false → true
+                 lcov_paths: defaults sufficient (no edit)
+Reporter runs:   lcov.info       18 410 lines  (Rust, --ignore-run-fail
+                                                  silenced 1 flaky test)
+                 coverage/lcov.info  4 230 lines  (Python)
+heal status:     coverage_pct  critical=26  high=1  ok=49  (test family)
+CI proposal:     printed above; not applied (run again with the
+                 workflow file open if you want to apply).
 
-1. Install reporter (one-time):
-   cargo install cargo-llvm-cov
+Follow-ups for the user:
+  - Pin cargo-llvm-cov in mise.toml (suggested edit shown above).
+  - Investigate the flaky test under instrumentation if it persists.
 
-2. Enable [features.test.coverage] in .heal/config.toml:
-   [features.test]
-   enabled = true
-
-   [features.test.coverage]
-   enabled = true
-
-3. Run locally:
-   cargo llvm-cov --workspace --lcov --output-path lcov.info
-   heal status --refresh --feature test --json
-
-4. Wire into CI (.github/workflows/ci.yml):
-   - name: Generate coverage
-     run: cargo llvm-cov --workspace --lcov --output-path lcov.info
-   - uses: actions/upload-artifact@v4
-     with:
-       name: lcov.info
-       path: lcov.info
-
-5. lcov_paths: defaults already cover lcov.info — no edit needed.
-
-After the first run, heal status will emit coverage_pct findings
-for source files below the calibration threshold (≤ 5% Critical,
-> 75% Ok). To review them, run /heal-test-review. To drain them
-mechanically, run /heal-test-patch.
+Next:
+  /heal-test-review   # architectural reading + TODO list
+  /heal-test-patch    # mechanical drain, one commit per finding
 ```
 
 ## Constraints
 
-- **Don't run any commands.** This skill proposes; the user
-  runs every command themselves.
-- **Don't auto-edit `.heal/config.toml` or CI configs.** Surface
-  edits as copy-pasteable blocks. Only `/heal-setup` writes
-  config; CI changes are a deploy decision.
+- **Per-step approval, no exception.** Every install, every config
+  edit, every reporter run, and every CI edit goes through
+  `AskUserQuestion`. Default to skip on no answer.
+- **CI edits stay proposals by default.** Recommend `Skip` on the
+  CI question; only edit `.github/workflows/*.yml`,
+  `.gitlab-ci.yml`, or `.circleci/config.yml` when the user
+  explicitly chooses Apply.
+- **No coverage thresholds.** That's `[calibration.coverage_pct]`
+  territory, not this skill.
 - **Match default `lcov_paths` when possible.** Only extend the
   list when the reporter's default sits outside the four
   defaults (Scala / scoverage, custom output dirs).
-- **Don't recommend coverage thresholds.** That's
-  `[calibration.coverage_pct]` territory, not this skill.
-- **Polyglot supported.** Multiple language markers → propose
-  each setup in turn.
+- **Polyglot supported.** Multiple language markers → run Phase 2
+  per ecosystem. Each ecosystem can be opted out of independently.
+- **Idempotent re-run.** Re-invoking after a partial run picks up
+  where it stopped. Detect installed reporters, fresh
+  `lcov.info`, already-flipped `enabled` and skip those steps.
+- **`--ignore-run-fail` for Rust.** cargo-llvm-cov instrumentation
+  can break tests that pass under plain `cargo test` (env-var
+  leakage to spawned subprocesses is the most common cause).
+  Always use `--ignore-run-fail` to still produce `lcov.info`;
+  print failing test names so the user can investigate.
 - **English output.** Skill writes English; CI / config files
   may be in any language.
