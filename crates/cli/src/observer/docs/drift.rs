@@ -215,7 +215,7 @@ fn scan_line_for_inline(line: &str, line_no: u32, out: &mut Vec<InlineMention>) 
             return;
         }
         let span = &line[start..end];
-        if is_identifier_shape(span) {
+        if is_identifier_shape(span) && looks_like_definition_mention(span) {
             out.push(InlineMention {
                 text: span.to_owned(),
                 line: line_no,
@@ -223,6 +223,85 @@ fn scan_line_for_inline(line: &str, line_no: u32, out: &mut Vec<InlineMention>) 
         }
         i = end + 1;
     }
+}
+
+/// Doc-side filter: reject backtick spans whose shape rules them out as
+/// **definition mentions** in any of HEAL's six supported languages
+/// (Rust / TypeScript / JavaScript / Python / Go / Scala) even though
+/// they pass `is_identifier_shape`.
+///
+/// Applied only on the doc side — src-side AST leaves are real
+/// identifiers by construction. Each rejection class corresponds to a
+/// false-positive pattern observed when running `doc_drift` on docs
+/// that reference their own project's vocabulary: config keys, CLI
+/// flags, file paths, metric strings, package / module paths, and
+/// front-matter keys.
+///
+/// The rules are language-agnostic because they key on shape features
+/// that no source-AST leaf token in any of the six languages produces:
+///
+/// - Hyphens never appear in identifiers in Rust / TS / JS / Python /
+///   Go / Scala (npm package names like `lodash-es` and Cargo crate
+///   names like `cargo-llvm-cov` use hyphens, but neither is a typed
+///   definition).
+/// - File extensions (`.rs`, `.py`, `.ts`, `.tsx`, `.go`, `.scala`,
+///   `.toml`, `.json`, `.lock`, `.md`, …) are filenames, not identifier
+///   leaves.
+/// - All-lowercase `::`-separated paths are Rust module paths
+///   (`core::finding`); `Foo::bar` (first segment uppercase) is an
+///   associated-item reference common to Rust prose and is kept.
+/// - All-lowercase `.`-separated paths are Python / JS / TS / Go /
+///   Scala module-and-attribute access (`os.path.join`,
+///   `lodash.cloneDeep`, `pkg.helper`, `package.Class`, `metric.tag`).
+///   `Foo.bar` (uppercase first letter) covers Java/Scala/Go-style
+///   `Class.method` references and field accesses (`Finding.workspace`,
+///   `LocReport.primary`) and is kept.
+/// - Trailing `:` is YAML / TOML key syntax (`title:`, `metadata:`).
+/// - Angle brackets are parameterized types (`Option<T>`, `Array<T>`,
+///   `List[T]` cousin spelled with `<>` in TS/Scala/Rust). Tree-sitter
+///   splits generics across leaves, so the full span never matches.
+fn looks_like_definition_mention(span: &str) -> bool {
+    // CLI flag (`--feature`, `-v`).
+    if span.starts_with('-') {
+        return false;
+    }
+    // Hyphenated package / crate name (`heal-cli`, `lodash-es`).
+    if span.contains('-') {
+        return false;
+    }
+    // File extension (`config.toml`, `lib.rs`, `script.py`, …).
+    if let Some(idx) = span.rfind('.') {
+        let ext = &span[idx + 1..];
+        if (2..=5).contains(&ext.len()) && ext.chars().all(|c| c.is_ascii_lowercase()) {
+            return false;
+        }
+    }
+    // Rust module path (`core::finding`). `core::Error` and `Foo::bar`
+    // stay because they have at least one uppercase-led segment.
+    if span.contains("::")
+        && span
+            .split("::")
+            .all(|s| s.chars().next().is_some_and(|c| c.is_ascii_lowercase()))
+    {
+        return false;
+    }
+    // Python / JS / TS / Go / Scala module-attribute path
+    // (`os.path.join`) and metric / config-key strings
+    // (`change_coupling.drift`). `Foo.bar` survives because it's not
+    // all-lowercase.
+    if span.contains('.') && !span.contains("::") && span.chars().all(|c| !c.is_ascii_uppercase()) {
+        return false;
+    }
+    // YAML / TOML key (`title:`, `metadata:`).
+    if span.ends_with(':') {
+        return false;
+    }
+    // Parameterized type (`Option<T>`, `Array<T>`) — generics split
+    // across tree-sitter leaves so the full span never matches.
+    if span.contains('<') || span.contains('>') {
+        return false;
+    }
+    true
 }
 
 /// Token shape acceptable as an identifier mention. Must contain at
@@ -346,29 +425,139 @@ impl Feature for DocDriftFeature {
 mod tests {
     use super::*;
 
+    fn names(body: &str) -> Vec<String> {
+        extract_inline_identifiers(body)
+            .into_iter()
+            .map(|m| m.text)
+            .collect()
+    }
+
     #[test]
     fn extracts_inline_identifiers_outside_fences() {
-        let body = "Use `Foo::bar` to do X.\n\n```rust\nlet `Baz` = 1;\n```\n\nSee `Qux`.";
-        let mentions = extract_inline_identifiers(body);
-        let names: Vec<String> = mentions.iter().map(|m| m.text.clone()).collect();
-        assert!(names.contains(&"Foo::bar".to_string()));
-        assert!(names.contains(&"Qux".to_string()));
-        assert!(!names.contains(&"Baz".to_string()), "fenced span leaked");
+        let got = names("Use `Foo::bar` to do X.\n\n```rust\nlet `Baz` = 1;\n```\n\nSee `Qux`.");
+        assert!(got.contains(&"Foo::bar".to_string()));
+        assert!(got.contains(&"Qux".to_string()));
+        assert!(!got.contains(&"Baz".to_string()), "fenced span leaked");
     }
 
     #[test]
     fn skips_double_backtick_spans() {
-        let body = "Embed ``with `nested` backticks`` here, plus `Real`.";
-        let mentions = extract_inline_identifiers(body);
-        let names: Vec<String> = mentions.iter().map(|m| m.text.clone()).collect();
-        assert_eq!(names, vec!["Real".to_string()]);
+        assert_eq!(
+            names("Embed ``with `nested` backticks`` here, plus `Real`."),
+            vec!["Real".to_string()],
+        );
     }
 
     #[test]
     fn ignores_non_identifier_shape() {
-        let body = "Numbers `123`, prose `hello world`, punct `()`. But `Real_id`.";
-        let mentions = extract_inline_identifiers(body);
-        let names: Vec<String> = mentions.iter().map(|m| m.text.clone()).collect();
-        assert_eq!(names, vec!["Real_id".to_string()]);
+        assert_eq!(
+            names("Numbers `123`, prose `hello world`, punct `()`. But `Real_id`."),
+            vec!["Real_id".to_string()],
+        );
+    }
+
+    #[test]
+    fn filters_file_extension_mentions() {
+        assert_eq!(
+            names(
+                "Files: `config.toml`, `state.json`, `lib.rs`, `quick-start.mdx`. \
+                 Real: `Config`."
+            ),
+            vec!["Config".to_string()],
+        );
+    }
+
+    #[test]
+    fn filters_cli_flags_and_hyphenated_names() {
+        assert_eq!(
+            names(
+                "Flags: `--feature`, `-v`. Crates: `heal-cli`, `cargo-llvm-cov`. \
+                 Real: `Cli`."
+            ),
+            vec!["Cli".to_string()],
+        );
+    }
+
+    #[test]
+    fn filters_module_paths_but_keeps_type_references() {
+        assert_eq!(
+            names(
+                "Module: `core::finding`, `observers::run_all`. \
+                 Type: `core::Error`, `tree_sitter::Tree`. \
+                 Method: `Foo::bar`."
+            ),
+            vec![
+                "core::Error".to_string(),
+                "tree_sitter::Tree".to_string(),
+                "Foo::bar".to_string(),
+            ],
+        );
+    }
+
+    #[test]
+    fn filters_metric_strings_but_keeps_field_references() {
+        assert_eq!(
+            names(
+                "Metric: `change_coupling.drift`, `doc_link_health`. \
+                 TOML key: `features.docs`. \
+                 Field: `Finding.workspace`, `LocReport.primary`."
+            ),
+            vec![
+                "doc_link_health".to_string(),
+                "Finding.workspace".to_string(),
+                "LocReport.primary".to_string(),
+            ],
+        );
+    }
+
+    #[test]
+    fn filters_yaml_keys_and_parameterized_types() {
+        assert_eq!(
+            names(
+                "Front matter: `title:`, `description:`. \
+                 Generics: `Option<usize>`, `Vec<DocBody>`. \
+                 Real: `Foo`, `Option`."
+            ),
+            vec!["Foo".to_string(), "Option".to_string()],
+        );
+    }
+
+    #[test]
+    fn filters_module_attribute_paths_across_languages() {
+        // Python all-lowercase module + attribute access — filtered.
+        // Class-style mentions (uppercase somewhere) — kept.
+        assert_eq!(
+            names("Use `os.path.join` and `requests.get`. Class: `MyClass.method`."),
+            vec!["MyClass.method".to_string()],
+        );
+
+        // Go-style `package.Method` (lowercase package, uppercase
+        // exported name) is kept — it's a definition reference. The
+        // shape is indistinguishable from JS `lodash.cloneDeep`
+        // (also `lower.Upper`), which is a method call rather than a
+        // definition; the false-positive cost there is accepted to
+        // preserve Go's idiomatic exported-symbol reference shape.
+        assert_eq!(
+            names("Call `fmt.Println` for output. Internal: `pkg.helper`."),
+            vec!["fmt.Println".to_string()],
+        );
+
+        // Scala package path with a final type — kept.
+        assert_eq!(
+            names("Reference `scala.collection.immutable.List`. Lowercase: `pkg.helper`."),
+            vec!["scala.collection.immutable.List".to_string()],
+        );
+    }
+
+    #[test]
+    fn filters_extensions_for_six_languages() {
+        assert_eq!(
+            names(
+                "Files: `lib.rs`, `script.py`, `app.ts`, `index.tsx`, \
+                 `main.go`, `Build.scala`, `module.js`, `mod.jsx`. \
+                 Type: `Foo`."
+            ),
+            vec!["Foo".to_string()],
+        );
     }
 }
