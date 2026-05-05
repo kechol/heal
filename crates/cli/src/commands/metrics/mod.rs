@@ -186,3 +186,235 @@ fn build_json(
     }
     serde_json::Value::Object(payload)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::config::Config;
+    use crate::observers::run_all;
+    use crate::test_support::{commit, init_repo};
+    use tempfile::TempDir;
+
+    fn init_project(dir: &Path) {
+        init_repo(dir);
+        commit(
+            dir,
+            "lib.rs",
+            "pub fn add(a: i32, b: i32) -> i32 { a + b }\n",
+            "solo@example.com",
+            "init",
+        );
+        let paths = HealPaths::new(dir);
+        paths.ensure().unwrap();
+        Config::default().save(&paths.config()).unwrap();
+    }
+
+    #[test]
+    fn matches_metric_passes_when_filter_none_or_equal() {
+        assert!(matches_metric(None, MetricKind::Loc));
+        assert!(matches_metric(Some(MetricKind::Loc), MetricKind::Loc));
+        assert!(!matches_metric(Some(MetricKind::Loc), MetricKind::Churn));
+    }
+
+    #[test]
+    fn matches_family_routes_via_family_for_metric() {
+        assert!(matches_family(None, MetricKind::Loc));
+        assert!(matches_family(Some(Family::Code), MetricKind::Loc));
+        assert!(!matches_family(Some(Family::Test), MetricKind::Loc));
+        assert!(matches_family(Some(Family::Test), MetricKind::CoveragePct));
+        assert!(matches_family(Some(Family::Docs), MetricKind::DocFreshness));
+    }
+
+    #[test]
+    fn run_text_uninitialized_returns_ok() {
+        let dir = TempDir::new().unwrap();
+        // No `heal init` — exercise the "HEAL is not initialized" branch.
+        run(dir.path(), false, None, None, None, true).unwrap();
+    }
+
+    #[test]
+    fn run_json_uninitialized_returns_initialized_false() {
+        let dir = TempDir::new().unwrap();
+        let cfg_exists = HealPaths::new(dir.path()).config().exists();
+        assert!(!cfg_exists);
+        let payload = build_json(cfg_exists, None, None, None, None, None, &all_sections());
+        assert_eq!(payload["initialized"], serde_json::Value::Bool(false));
+        // Without cfg/reports, neither metric data nor the `worst`
+        // payload should be present — only the `initialized` flag.
+        assert!(payload.get("loc").is_none());
+        assert!(payload.get("worst").is_none());
+    }
+
+    #[test]
+    fn run_text_initialized_walks_every_section_render() {
+        let dir = TempDir::new().unwrap();
+        init_project(dir.path());
+        // Text mode end-to-end. `no_pager = true` so tests never spawn
+        // `less`. Asserts that every section's `render_text` returns
+        // `Ok(())` against a real (but minimal) project.
+        run(dir.path(), false, None, None, None, true).unwrap();
+    }
+
+    #[test]
+    fn run_json_initialized_unfiltered_returns_ok() {
+        let dir = TempDir::new().unwrap();
+        init_project(dir.path());
+        run(dir.path(), true, None, None, None, true).unwrap();
+    }
+
+    #[test]
+    fn run_json_with_metric_filter_returns_ok() {
+        let dir = TempDir::new().unwrap();
+        init_project(dir.path());
+        run(dir.path(), true, Some(MetricKind::Loc), None, None, true).unwrap();
+    }
+
+    #[test]
+    fn run_json_with_feature_filter_returns_ok() {
+        let dir = TempDir::new().unwrap();
+        init_project(dir.path());
+        run(dir.path(), true, None, Some(Family::Code), None, true).unwrap();
+    }
+
+    #[test]
+    fn build_json_unfiltered_includes_every_section_key() {
+        let dir = TempDir::new().unwrap();
+        init_project(dir.path());
+        let cfg = load_from_project(dir.path()).unwrap();
+        let reports = run_all(dir.path(), &cfg, None, None);
+        let sections = all_sections();
+
+        let payload = build_json(
+            true,
+            Some(&cfg),
+            Some(&reports),
+            None,
+            None,
+            None,
+            &sections,
+        );
+        assert_eq!(payload["initialized"], serde_json::Value::Bool(true));
+        // Every section's `json_key` must appear under the unfiltered
+        // path, regardless of whether its observer produced signal.
+        // Code-family observers always run; docs/test default to off
+        // and serialize as `null` — both cases are valid keys.
+        for s in &sections {
+            let key = s.metric().json_key();
+            assert!(
+                payload.get(key).is_some(),
+                "unfiltered payload must include `{key}`",
+            );
+        }
+        // The Loc observer always emits a non-null report for any
+        // walkable project, so `payload[\"loc\"]` is the canary.
+        assert!(
+            !payload["loc"].is_null(),
+            "loc must serialize as a non-null report",
+        );
+    }
+
+    #[test]
+    fn build_json_metric_filter_emits_top_n_and_worst() {
+        let dir = TempDir::new().unwrap();
+        init_project(dir.path());
+        let cfg = load_from_project(dir.path()).unwrap();
+        let reports = run_all(dir.path(), &cfg, Some(MetricKind::Loc), None);
+        let sections = all_sections();
+
+        let payload = build_json(
+            true,
+            Some(&cfg),
+            Some(&reports),
+            Some(MetricKind::Loc),
+            None,
+            None,
+            &sections,
+        );
+        assert_eq!(payload["metric"], serde_json::Value::String("loc".into()));
+        assert!(
+            payload["top_n"].is_number(),
+            "metric-filter path must echo the configured top_n",
+        );
+        assert!(
+            payload.get("worst").is_some(),
+            "metric-filter path must emit the worst payload",
+        );
+        // Per-section raw keys are excluded under `--metric`; only
+        // `top_n` + `worst` carry the slice the skill consumes.
+        assert!(payload.get("loc").is_none());
+        assert!(payload.get("complexity").is_none());
+    }
+
+    #[test]
+    fn build_json_feature_filter_narrows_to_family_keys() {
+        let dir = TempDir::new().unwrap();
+        init_project(dir.path());
+        let cfg = load_from_project(dir.path()).unwrap();
+        let reports = run_all(dir.path(), &cfg, None, None);
+        let sections = all_sections();
+
+        let payload = build_json(
+            true,
+            Some(&cfg),
+            Some(&reports),
+            None,
+            Some(Family::Code),
+            None,
+            &sections,
+        );
+        assert_eq!(payload["feature"], serde_json::Value::String("code".into()));
+        // Code-family keys present.
+        for k in [
+            "loc",
+            "complexity",
+            "churn",
+            "change_coupling",
+            "duplication",
+            "hotspot",
+            "lcom",
+        ] {
+            assert!(payload.get(k).is_some(), "code-family key `{k}` missing");
+        }
+        // Docs / test family keys absent.
+        for k in [
+            "doc_freshness",
+            "doc_drift",
+            "doc_coverage",
+            "doc_link_health",
+            "orphan_pages",
+            "todo_density",
+            "doc_hotspot",
+            "coverage_pct",
+            "skip_ratio",
+            "test_hotspot",
+        ] {
+            assert!(
+                payload.get(k).is_none(),
+                "non-code key `{k}` leaked under `--feature code`",
+            );
+        }
+    }
+
+    #[test]
+    fn build_json_workspace_echoes_path() {
+        let dir = TempDir::new().unwrap();
+        init_project(dir.path());
+        let ws = dir.path().join("crates/foo");
+        let cfg = load_from_project(dir.path()).unwrap();
+        let reports = run_all(dir.path(), &cfg, None, Some(&ws));
+        let sections = all_sections();
+        let payload = build_json(
+            true,
+            Some(&cfg),
+            Some(&reports),
+            None,
+            None,
+            Some(&ws),
+            &sections,
+        );
+        assert_eq!(
+            payload["workspace"],
+            serde_json::Value::String(ws.display().to_string()),
+        );
+    }
+}

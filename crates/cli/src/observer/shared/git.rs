@@ -128,3 +128,227 @@ pub fn head_commit_info(root: &Path) -> Option<CommitInfo> {
         deletions,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{commit, git, init_repo};
+    use tempfile::TempDir;
+
+    fn set_user(dir: &Path) {
+        git(dir, &["config", "user.name", "tester"]);
+        git(dir, &["config", "user.email", "tester@example.com"]);
+    }
+
+    // ── head_sha ────────────────────────────────────────────────────
+
+    #[test]
+    fn head_sha_returns_none_outside_repo() {
+        let dir = TempDir::new().unwrap();
+        // Plain tempdir, no `git init` — `Repository::discover` fails.
+        assert!(head_sha(dir.path()).is_none());
+    }
+
+    #[test]
+    fn head_sha_returns_none_on_unborn_head() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        // Fresh `git init` with no commits — HEAD points at a ref that
+        // doesn't exist yet. `repo.head()` errors here.
+        assert!(head_sha(dir.path()).is_none());
+    }
+
+    #[test]
+    fn head_sha_returns_full_oid_after_commit() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit(dir.path(), "a.txt", "x\n", "tester@example.com", "init");
+        let sha = head_sha(dir.path()).expect("HEAD must resolve after commit");
+        assert_eq!(sha.len(), 40, "sha must be full 40-hex");
+        assert!(sha.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    // ── resolve_ref ────────────────────────────────────────────────
+
+    #[test]
+    fn resolve_ref_returns_none_outside_repo() {
+        let dir = TempDir::new().unwrap();
+        assert!(resolve_ref(dir.path(), "HEAD").is_none());
+    }
+
+    #[test]
+    fn resolve_ref_returns_none_for_unresolvable_revspec() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit(dir.path(), "a.txt", "x\n", "tester@example.com", "init");
+        assert!(resolve_ref(dir.path(), "no-such-branch-or-tag").is_none());
+    }
+
+    #[test]
+    fn resolve_ref_resolves_head_and_branch_to_oid() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit(dir.path(), "a.txt", "x\n", "tester@example.com", "init");
+        let head = head_sha(dir.path()).unwrap();
+        assert_eq!(
+            resolve_ref(dir.path(), "HEAD").as_deref(),
+            Some(head.as_str())
+        );
+    }
+
+    // ── worktree_clean ─────────────────────────────────────────────
+
+    #[test]
+    fn worktree_clean_returns_none_outside_repo() {
+        let dir = TempDir::new().unwrap();
+        assert!(worktree_clean(dir.path()).is_none());
+    }
+
+    #[test]
+    fn worktree_clean_true_after_clean_commit() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit(dir.path(), "a.txt", "x\n", "tester@example.com", "init");
+        assert_eq!(worktree_clean(dir.path()), Some(true));
+    }
+
+    #[test]
+    fn worktree_clean_false_when_untracked_file_present() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit(dir.path(), "a.txt", "x\n", "tester@example.com", "init");
+        std::fs::write(dir.path().join("untracked.txt"), "hi\n").unwrap();
+        // Untracked must count as dirty so a half-applied refactor isn't
+        // miscategorised as a reusable clean check.
+        assert_eq!(worktree_clean(dir.path()), Some(false));
+    }
+
+    #[test]
+    fn worktree_clean_false_when_tracked_file_modified() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit(dir.path(), "a.txt", "x\n", "tester@example.com", "init");
+        std::fs::write(dir.path().join("a.txt"), "y\n").unwrap();
+        assert_eq!(worktree_clean(dir.path()), Some(false));
+    }
+
+    // ── user_signature ─────────────────────────────────────────────
+
+    #[test]
+    fn user_signature_returns_none_outside_repo() {
+        let dir = TempDir::new().unwrap();
+        assert!(user_signature(dir.path()).is_none());
+    }
+
+    #[test]
+    fn user_signature_formats_name_and_email_when_both_set() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        set_user(dir.path());
+        assert_eq!(
+            user_signature(dir.path()),
+            Some("tester <tester@example.com>".into()),
+        );
+    }
+
+    // ── hooks_dir ──────────────────────────────────────────────────
+
+    #[test]
+    fn hooks_dir_returns_none_outside_repo() {
+        let dir = TempDir::new().unwrap();
+        assert!(hooks_dir(dir.path()).is_none());
+    }
+
+    #[test]
+    fn hooks_dir_resolves_to_gitdir_hooks() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        let h = hooks_dir(dir.path()).expect("hooks dir must resolve");
+        // `commondir()` ends with `.git/` for a non-worktree repo; the
+        // hooks dir is therefore `<...>/.git/hooks`. We only assert the
+        // suffix because macOS `TempDir` paths under `/var/` resolve to
+        // `/private/var/` after canonicalisation, which would break a
+        // `starts_with(dir.path())` check.
+        assert!(
+            h.ends_with("hooks"),
+            "expected `.../hooks`, got {}",
+            h.display()
+        );
+        assert!(h.parent().unwrap().ends_with(".git"));
+    }
+
+    // ── head_commit_info ───────────────────────────────────────────
+
+    #[test]
+    fn head_commit_info_returns_none_outside_repo() {
+        let dir = TempDir::new().unwrap();
+        assert!(head_commit_info(dir.path()).is_none());
+    }
+
+    #[test]
+    fn head_commit_info_returns_none_on_unborn_head() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        assert!(head_commit_info(dir.path()).is_none());
+    }
+
+    #[test]
+    fn head_commit_info_root_commit_has_no_parent_and_reports_own_stats() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit(
+            dir.path(),
+            "a.txt",
+            "line one\nline two\n",
+            "alice@example.com",
+            "first commit",
+        );
+        let info = head_commit_info(dir.path()).expect("head commit must resolve");
+        assert!(info.parent_sha.is_none(), "root commit has no parent");
+        assert_eq!(info.author_email.as_deref(), Some("alice@example.com"));
+        assert_eq!(info.message_summary, "first commit");
+        // Root-commit diff is taken against an empty tree so additions
+        // for the very first commit still surface (otherwise post-commit
+        // log payloads would report `(0, 0, 0)` for fresh repos).
+        assert_eq!(info.files_changed, 1);
+        assert_eq!(info.insertions, 2);
+        assert_eq!(info.deletions, 0);
+    }
+
+    #[test]
+    fn head_commit_info_with_parent_records_parent_sha_and_first_parent_diff() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit(dir.path(), "a.txt", "one\n", "alice@example.com", "first");
+        let parent = head_sha(dir.path()).unwrap();
+        commit(
+            dir.path(),
+            "a.txt",
+            "one\ntwo\nthree\n",
+            "bob@example.com",
+            "second commit",
+        );
+        let info = head_commit_info(dir.path()).expect("head commit must resolve");
+        assert_eq!(info.parent_sha.as_deref(), Some(parent.as_str()));
+        assert_eq!(info.author_email.as_deref(), Some("bob@example.com"));
+        assert_eq!(info.message_summary, "second commit");
+        assert_eq!(info.files_changed, 1);
+        assert_eq!(info.insertions, 2);
+        assert_eq!(info.deletions, 0);
+    }
+
+    #[test]
+    fn head_commit_info_message_summary_is_first_line_only() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit(
+            dir.path(),
+            "a.txt",
+            "x\n",
+            "tester@example.com",
+            "subject line\n\nbody paragraph that must NOT leak into summary",
+        );
+        let info = head_commit_info(dir.path()).unwrap();
+        assert_eq!(info.message_summary, "subject line");
+    }
+}

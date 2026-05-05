@@ -581,3 +581,388 @@ impl Cli {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    fn parse(args: &[&str]) -> Cli {
+        Cli::try_parse_from(args).unwrap_or_else(|e| panic!("parse failed for {args:?}: {e}"))
+    }
+
+    #[test]
+    fn clap_derive_is_internally_consistent() {
+        // clap's debug_assert path catches arg-name collisions, missing
+        // value names, and conflicting flag definitions at startup.
+        // Run it here so a derive regression surfaces in unit tests
+        // instead of at first user invocation.
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn parses_init_with_every_flag() {
+        let cli = parse(&["heal", "init", "--force", "--yes", "--json", "--explicit"]);
+        match cli.command {
+            Command::Init {
+                force,
+                yes,
+                no_skills,
+                json,
+                explicit,
+            } => {
+                assert!(force);
+                assert!(yes);
+                assert!(!no_skills);
+                assert!(json);
+                assert!(explicit);
+            }
+            other => panic!("expected Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn init_yes_and_no_skills_conflict() {
+        let err =
+            Cli::try_parse_from(["heal", "init", "--yes", "--no-skills"]).expect_err("conflict");
+        assert!(
+            err.to_string().contains("cannot be used with"),
+            "expected conflict error, got: {err}",
+        );
+    }
+
+    #[test]
+    fn parses_global_project_flag_before_subcommand() {
+        let cli = parse(&["heal", "--project", "/tmp/foo", "metrics"]);
+        assert_eq!(
+            cli.project.as_deref(),
+            Some(std::path::Path::new("/tmp/foo"))
+        );
+        assert!(matches!(cli.command, Command::Metrics { .. }));
+    }
+
+    #[test]
+    fn parses_metrics_with_kebab_metric_and_feature() {
+        let cli = parse(&[
+            "heal",
+            "metrics",
+            "--json",
+            "--metric",
+            "change-coupling",
+            "--feature",
+            "code",
+            "--workspace",
+            "crates/cli",
+            "--no-pager",
+        ]);
+        match cli.command {
+            Command::Metrics {
+                json,
+                metric,
+                feature,
+                workspace,
+                no_pager,
+            } => {
+                assert!(json);
+                assert_eq!(metric, Some(MetricKind::ChangeCoupling));
+                assert_eq!(feature, Some(FamilyFilter::Code));
+                assert_eq!(
+                    workspace.as_deref(),
+                    Some(std::path::Path::new("crates/cli"))
+                );
+                assert!(no_pager);
+            }
+            other => panic!("expected Metrics, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn metric_kebab_to_json_key_round_trip() {
+        // Every CLI-facing kebab form must map to its JSON snake_case
+        // counterpart via `MetricKind::json_key`. This is the contract
+        // skills rely on for `payload[payload.metric]`.
+        let cases = [
+            ("loc", "loc"),
+            ("complexity", "complexity"),
+            ("churn", "churn"),
+            ("change-coupling", "change_coupling"),
+            ("duplication", "duplication"),
+            ("hotspot", "hotspot"),
+            ("lcom", "lcom"),
+            ("doc-freshness", "doc_freshness"),
+            ("doc-drift", "doc_drift"),
+            ("doc-coverage", "doc_coverage"),
+            ("doc-link-health", "doc_link_health"),
+            ("orphan-pages", "orphan_pages"),
+            ("todo-density", "todo_density"),
+            ("coverage-pct", "coverage_pct"),
+            ("skip-ratio", "skip_ratio"),
+            ("test-hotspot", "test_hotspot"),
+            ("doc-hotspot", "doc_hotspot"),
+        ];
+        for (kebab, json_key) in cases {
+            let cli = parse(&["heal", "metrics", "--metric", kebab]);
+            let parsed_metric = match cli.command {
+                Command::Metrics { metric, .. } => metric.expect("metric flag set"),
+                other => panic!("expected Metrics, got {other:?}"),
+            };
+            assert_eq!(
+                parsed_metric.json_key(),
+                json_key,
+                "`--metric {kebab}` must round-trip to JSON key `{json_key}`",
+            );
+        }
+    }
+
+    #[test]
+    fn family_filter_round_trips_through_as_family() {
+        // The CLI mirrors `crate::feature::Family` via `FamilyFilter` so
+        // the lib stays clap-free. Both layers must agree on each name.
+        for (kebab, expected) in [
+            ("code", crate::feature::Family::Code),
+            ("test", crate::feature::Family::Test),
+            ("docs", crate::feature::Family::Docs),
+        ] {
+            let cli = parse(&["heal", "metrics", "--feature", kebab]);
+            let parsed_feature = match cli.command {
+                Command::Metrics { feature, .. } => feature.expect("feature flag set"),
+                other => panic!("expected Metrics, got {other:?}"),
+            };
+            assert_eq!(parsed_feature.as_family(), expected);
+        }
+    }
+
+    #[test]
+    fn parses_status_with_every_flag() {
+        let cli = parse(&[
+            "heal",
+            "status",
+            "--metric",
+            "ccn",
+            "--workspace",
+            "crates/foo",
+            "--path",
+            "src/payments",
+            "--feature",
+            "code",
+            "--severity",
+            "critical",
+            "--all",
+            "--json",
+            "--refresh",
+            "--top",
+            "5",
+            "--no-pager",
+        ]);
+        match cli.command {
+            Command::Status(args) => {
+                assert_eq!(args.metric, Some(FindingMetric::Ccn));
+                assert_eq!(args.workspace.as_deref(), Some("crates/foo"));
+                assert_eq!(args.path.as_deref(), Some("src/payments"));
+                assert_eq!(args.feature, Some(FamilyFilter::Code));
+                assert_eq!(args.severity, Some(SeverityFilter::Critical));
+                assert!(args.all);
+                assert!(args.json);
+                assert!(args.refresh);
+                assert_eq!(args.top, Some(5));
+                assert!(args.no_pager);
+            }
+            other => panic!("expected Status, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_diff_with_revspec_and_flags() {
+        let cli = parse(&[
+            "heal",
+            "diff",
+            "v0.3.0",
+            "--workspace",
+            "crates/cli",
+            "--all",
+            "--json",
+            "--no-pager",
+        ]);
+        match cli.command {
+            Command::Diff(args) => {
+                assert_eq!(args.revspec.as_deref(), Some("v0.3.0"));
+                assert_eq!(args.workspace.as_deref(), Some("crates/cli"));
+                assert!(args.all);
+                assert!(args.json);
+                assert!(args.no_pager);
+            }
+            other => panic!("expected Diff, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn diff_revspec_is_optional() {
+        let cli = parse(&["heal", "diff"]);
+        match cli.command {
+            Command::Diff(args) => assert!(args.revspec.is_none()),
+            other => panic!("expected Diff, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_hook_subcommands() {
+        for (arg, expected) in [
+            ("commit", HookEvent::Commit),
+            ("edit", HookEvent::Edit),
+            ("stop", HookEvent::Stop),
+        ] {
+            let cli = parse(&["heal", "hook", arg]);
+            match cli.command {
+                Command::Hook { event } => assert_eq!(
+                    std::mem::discriminant(&event),
+                    std::mem::discriminant(&expected),
+                    "`heal hook {arg}` must dispatch to {expected:?}",
+                ),
+                other => panic!("expected Hook, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn parses_mark_fix_and_accept() {
+        let cli = parse(&[
+            "heal",
+            "mark",
+            "fix",
+            "--finding-id",
+            "abc",
+            "--commit-sha",
+            "def",
+            "--json",
+        ]);
+        match cli.command {
+            Command::Mark {
+                action:
+                    MarkAction::Fix {
+                        finding_id,
+                        commit_sha,
+                        json,
+                    },
+            } => {
+                assert_eq!(finding_id, "abc");
+                assert_eq!(commit_sha, "def");
+                assert!(json);
+            }
+            other => panic!("expected Mark::Fix, got {other:?}"),
+        }
+
+        let cli = parse(&[
+            "heal",
+            "mark",
+            "accept",
+            "--finding-id",
+            "abc",
+            "--reason",
+            "intrinsic complexity",
+        ]);
+        match cli.command {
+            Command::Mark {
+                action:
+                    MarkAction::Accept {
+                        finding_id,
+                        reason,
+                        json,
+                    },
+            } => {
+                assert_eq!(finding_id, "abc");
+                assert_eq!(reason, "intrinsic complexity");
+                assert!(!json);
+            }
+            other => panic!("expected Mark::Accept, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mark_fix_requires_finding_id_and_commit_sha() {
+        Cli::try_parse_from(["heal", "mark", "fix"]).expect_err("missing required args");
+        Cli::try_parse_from(["heal", "mark", "fix", "--finding-id", "x"])
+            .expect_err("missing commit-sha");
+    }
+
+    #[test]
+    fn mark_accept_reason_defaults_to_empty_string() {
+        let cli = parse(&["heal", "mark", "accept", "--finding-id", "abc"]);
+        match cli.command {
+            Command::Mark {
+                action: MarkAction::Accept { reason, .. },
+            } => assert_eq!(reason, ""),
+            other => panic!("expected Mark::Accept, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_legacy_mark_fixed_alias() {
+        // The hidden `mark-fixed` alias keeps older skill bundles
+        // working after the rename to `mark fix`. If this regresses,
+        // shipped skills break silently — guard it explicitly.
+        let cli = parse(&[
+            "heal",
+            "mark-fixed",
+            "--finding-id",
+            "abc",
+            "--commit-sha",
+            "def",
+        ]);
+        match cli.command {
+            Command::MarkFixed {
+                finding_id,
+                commit_sha,
+                json,
+            } => {
+                assert_eq!(finding_id, "abc");
+                assert_eq!(commit_sha, "def");
+                assert!(!json);
+            }
+            other => panic!("expected MarkFixed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_skills_subcommands() {
+        for action in ["install", "update", "status", "uninstall"] {
+            let cli = parse(&["heal", "skills", action]);
+            assert!(matches!(cli.command, Command::Skills { .. }));
+        }
+        // `--force` only valid on install / update.
+        let cli = parse(&["heal", "skills", "install", "--force", "--json"]);
+        match cli.command {
+            Command::Skills {
+                action: SkillsAction::Install { force, json },
+            } => {
+                assert!(force);
+                assert!(json);
+            }
+            other => panic!("expected Skills::Install, got {other:?}"),
+        }
+        Cli::try_parse_from(["heal", "skills", "uninstall", "--force"])
+            .expect_err("--force not on uninstall");
+    }
+
+    #[test]
+    fn parses_calibrate_with_force_and_json() {
+        let cli = parse(&["heal", "calibrate", "--force", "--json"]);
+        match cli.command {
+            Command::Calibrate { force, json } => {
+                assert!(force);
+                assert!(json);
+            }
+            other => panic!("expected Calibrate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_subcommand() {
+        Cli::try_parse_from(["heal", "do-the-thing"]).expect_err("unknown subcommand");
+    }
+
+    #[test]
+    fn rejects_unknown_metric_value() {
+        Cli::try_parse_from(["heal", "metrics", "--metric", "not-a-metric"])
+            .expect_err("unknown metric value");
+    }
+}
