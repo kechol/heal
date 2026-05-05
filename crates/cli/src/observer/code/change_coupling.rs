@@ -913,26 +913,8 @@ mod pair_class_tests {
 
         fn reports_with(pairs: Vec<FilePair>) -> ObserverReports {
             ObserverReports {
-                loc: crate::observer::code::loc::LocReport::default(),
-                complexity: crate::observer::code::complexity::ComplexityReport::default(),
-                complexity_observer: crate::observer::code::complexity::ComplexityObserver::default(
-                ),
-                churn: None,
                 change_coupling: Some(report(pairs)),
-                duplication: None,
-                hotspot: None,
-                lcom: None,
-                doc_pairs: None,
-                doc_freshness: None,
-                doc_drift: None,
-                doc_coverage: None,
-                doc_link_health: None,
-                orphan_pages: None,
-                todo_density: None,
-                coverage: None,
-                skip_ratio: None,
-                test_hotspot: None,
-                doc_hotspot: None,
+                ..ObserverReports::default()
             }
         }
 

@@ -39,6 +39,7 @@ use crate::observer::test::skip_ratio::{SkipRatioObserver, SkipRatioReport};
 
 use crate::cli::MetricKind;
 
+#[derive(Default)]
 pub struct ObserverReports {
     pub loc: LocReport,
     pub complexity: ComplexityReport,
@@ -708,13 +709,12 @@ mod tests {
     use crate::core::severity::SeverityCounts;
     use crate::observer::code::change_coupling::{ChangeCouplingReport, CouplingTotals, FilePair};
     use crate::observer::code::complexity::{
-        ComplexityObserver, ComplexityReport, ComplexityTotals, FileComplexity, FunctionMetric,
+        ComplexityReport, ComplexityTotals, FileComplexity, FunctionMetric,
     };
     use crate::observer::code::duplication::{
         DuplicateBlock, DuplicateLocation, DuplicationReport, DuplicationTotals, FileDuplication,
     };
     use crate::observer::code::hotspot::{HotspotEntry, HotspotReport, HotspotTotals};
-    use crate::observer::code::loc::LocReport;
     use std::collections::HashSet;
     use std::path::PathBuf;
 
@@ -827,25 +827,11 @@ mod tests {
         };
 
         let reports = ObserverReports {
-            loc: LocReport::default(),
             complexity,
-            complexity_observer: ComplexityObserver::default(),
-            churn: None,
             change_coupling: Some(change_coupling),
             duplication: Some(duplication),
             hotspot: Some(hotspot),
-            lcom: None,
-            doc_pairs: None,
-            doc_freshness: None,
-            doc_drift: None,
-            doc_coverage: None,
-            doc_link_health: None,
-            orphan_pages: None,
-            todo_density: None,
-            coverage: None,
-            skip_ratio: None,
-            test_hotspot: None,
-            doc_hotspot: None,
+            ..ObserverReports::default()
         };
 
         let cal = Calibration {

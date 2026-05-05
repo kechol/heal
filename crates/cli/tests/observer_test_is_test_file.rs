@@ -109,28 +109,11 @@ fn pair(a: &str, b: &str, count: u32, class: PairClass) -> FilePair {
 
 fn observer_reports_with_pairs(pairs: Vec<FilePair>) -> ObserverReports {
     ObserverReports {
-        loc: heal_cli::observer::code::loc::LocReport::default(),
-        complexity: heal_cli::observer::code::complexity::ComplexityReport::default(),
-        complexity_observer: heal_cli::observer::code::complexity::ComplexityObserver::default(),
-        churn: None,
         change_coupling: Some(ChangeCouplingReport {
             pairs,
             ..Default::default()
         }),
-        duplication: None,
-        hotspot: None,
-        lcom: None,
-        doc_pairs: None,
-        doc_freshness: None,
-        doc_drift: None,
-        doc_coverage: None,
-        doc_link_health: None,
-        orphan_pages: None,
-        todo_density: None,
-        coverage: None,
-        skip_ratio: None,
-        test_hotspot: None,
-        doc_hotspot: None,
+        ..ObserverReports::default()
     }
 }
 
