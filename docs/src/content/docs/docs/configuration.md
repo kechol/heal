@@ -21,7 +21,7 @@ enabled = true
 
 Then run the bundled pair-setup skill once to populate
 `.heal/doc_pairs.json`. heal is a read-only consumer of that
-file — see [`.heal/doc_pairs.json`](#heal-doc_pairsjson--the-pair-file)
+file — see [`.heal/doc_pairs.json`](#healdoc_pairsjson--the-pair-file)
 below.
 
 ```sh
