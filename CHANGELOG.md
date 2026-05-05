@@ -4,6 +4,23 @@
 
 ### Features
 
+- **`/heal-{code,doc,test}-patch` propose `heal mark accept` for
+  false positives.** Each patch loop now has a third branch
+  alongside allow-list / escalate-list: when reading the file
+  reveals the finding is the observer matching something it
+  shouldn't (generated code / parser tables for code; generic
+  English / external-tool / pair-coverage-gap / observer-slugify
+  divergence for docs; integration-suite-covered / environment-
+  gated skip / vendored generated bindings for test), the skill
+  asks the user via `AskUserQuestion` whether to record the
+  finding as accepted with a categorical reason string instead
+  of editing the source. Stops false positives from sticking
+  around in the cache run after run, and keeps the audit trail
+  in `accepted.json` grouped by categorical reason for later
+  review. Each skill ships a list of categorical reason strings
+  observed in this repo's own dogfooding so users have a
+  starting vocabulary.
+
 - **`heal diff` hides below-High entries by default; `--all`
   surfaces them.** A noisy baseline used to drown the actionable
   rows — every Resolved Medium/Ok diff entry rendered alongside

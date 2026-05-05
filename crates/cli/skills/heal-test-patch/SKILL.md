@@ -82,13 +82,17 @@ test fixes different.
 while there are non-Ok [features.test] findings in the cache:
     pick the next one (Severity order: Critical🔥 → Critical → High🔥 → High → Medium)
         skip findings where `accepted == true`
-    decide: allow-list (apply mechanically) or escalate-list (stop)?
+    read the source / test
+    decide: allow-list (apply) / false-positive (propose accept) / escalate-list (stop)?
     if allow-list:
-        read the source / test; apply the smallest fix
+        apply the smallest fix
         run the project's test runner — must be green
         git commit -m "<conventional test message>"
         heal mark fix --finding-id <id> --commit-sha <sha>
         heal status --refresh --feature test --json
+    if false-positive:
+        propose `heal mark accept` via AskUserQuestion (see section below);
+        on user Apply, accept the finding and continue
     if escalate-list:
         end the session; surface remaining findings; recommend /heal-test-review
 ```
@@ -152,6 +156,56 @@ longer holds. Examples:
 
 After re-enabling, run the test runner. The test must pass — if it
 fails, the skip was load-bearing; revert and escalate.
+
+## False positive — propose `heal mark accept`
+
+The `[features.test]` observers fire on coverage gaps, skipped
+tests, and `TestSrc` change-coupling drift — heuristics that
+sometimes flag code or tests that are intentionally outside the
+suite's reach. When reading the source / test reveals the finding
+is in one of these categories, propose to the user that it be
+recorded as **accepted** instead of fixed. Use `AskUserQuestion`:
+
+> The finding at `<file>:<symbol>` (`<metric>=<value>`) looks like
+> intentional shape rather than a fix-worthy gap (`<short reason>`).
+> Mark it accepted so it stops appearing in the drain queue?
+>
+> - **Accept** (Recommended): record `heal mark accept` with the
+>   reason; the finding moves to `📌 Accepted`.
+> - **Treat as real**: leave it in the cache; the next
+>   `/heal-test-review` will triage it.
+
+On Accept, run:
+
+```sh
+heal mark accept \
+  --finding-id "<finding_id>" \
+  --reason "<short_categorical_reason>"
+```
+
+Categorical reason strings the test family produces in practice
+(use these where they fit; coin a new one only when necessary):
+
+- `coverage_exercised_via_integration_suite` — `coverage_pct`
+  flagged a file the unit suite doesn't touch but the integration
+  / e2e suite covers (lcov reporters typically only see the
+  runner they're attached to).
+- `intentional_skip_environment_gated` — `skip_ratio` flagged
+  tests that intentionally skip outside CI (machine-specific
+  hardware, GPU runtime, paid-API contract tests).
+- `change_coupling_drift_test_lives_at_higher_layer` —
+  `change_coupling.drift` flagged a `TestSrc` pair where the test
+  belongs upstream of the src (architecture test, integration
+  test) and isn't expected to co-evolve commit-by-commit.
+- `coverage_pct_generated_or_vendored` — `coverage_pct` on
+  generated bindings, vendored third-party code, or schema-derived
+  types where covering the generator's output isn't the right
+  test target.
+
+Don't auto-accept — the user must approve each. Don't propose
+accept on a finding that's just *hard* to test (undocumented
+behavior, flaky function); that's escalate territory and belongs
+in `/heal-test-review`.
 
 ## Escalate-list (stop and surface)
 
@@ -324,7 +378,7 @@ While running, narrate one short paragraph per finding:
 End with a session summary:
 
 ```
-Test cache drain: fixed 6 / skipped 1 / regressed 0 / 1 escalated.
+Test cache drain: fixed 6 / accepted 4 / skipped 1 / regressed 0 / 1 escalated.
 Escalated: src/protocol/handshake.rs coverage_pct (Crit🔥) — function
 has no documented behavior, writing tests would encode a guess.
 Recommend running /heal-test-review for proposal-level discussion.
