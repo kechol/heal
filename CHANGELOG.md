@@ -4,6 +4,22 @@
 
 ### Features
 
+- **`doc_link_health` opts deploy-side URLs out of source-tree
+  verification via `exclude_link_prefixes`.** Static-site
+  generators that rewrite paths at build time (Astro Starlight
+  `base:`, VitePress `base:`, Docusaurus `baseUrl`, mdBook
+  `url-prefix`) make doc authors write links matching the deploy
+  URL (`/heal/quick-start/`) — the observer can't resolve those
+  to source files without re-implementing the framework's
+  rewriting and index-file conventions. The new
+  `[features.docs.doc_link_health].exclude_link_prefixes` (default
+  empty `Vec<String>`) skips link targets whose prefix matches any
+  entry; the framework's own build-time link checker (`astro
+  build`, `vitepress build`) validates the same targets from the
+  deploy side, so coverage isn't lost. Empty-string entries are
+  ignored so a single accidental `""` doesn't silence the
+  observer. Additive — pre-existing configs keep the
+  every-link-checked behaviour.
 - **`todo_density` skips markers inside backtick-quoted spans by
   default, with an opt-in `allowlist_paths` for whole-doc
   exemption.** Reference pages that document the marker keywords

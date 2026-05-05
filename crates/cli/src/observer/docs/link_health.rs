@@ -29,6 +29,11 @@ use crate::observer::docs::markdown::{
 pub struct DocLinkHealthObserver {
     enabled: bool,
     docs: Vec<DocBody>,
+    /// Link-target prefixes that opt out of source-tree verification.
+    /// Mirrors `[features.docs.doc_link_health].exclude_link_prefixes`
+    /// — typically a static-site deploy URL (`/heal/`) the framework's
+    /// own build-time checker validates from the deploy side.
+    exclude_prefixes: Vec<String>,
 }
 
 impl DocLinkHealthObserver {
@@ -37,6 +42,12 @@ impl DocLinkHealthObserver {
         Self {
             enabled: cfg.features.docs.enabled,
             docs,
+            exclude_prefixes: cfg
+                .features
+                .docs
+                .doc_link_health
+                .exclude_link_prefixes
+                .clone(),
         }
     }
 
@@ -74,6 +85,9 @@ impl DocLinkHealthObserver {
             let headings = collect_heading_ids(&doc.body);
             for link in extract_links(&doc.body) {
                 if is_external(&link.target) {
+                    continue;
+                }
+                if self.is_excluded(&link.target) {
                     continue;
                 }
                 total_links += 1;
@@ -118,6 +132,16 @@ impl DocLinkHealthObserver {
             broken: report.entries.len(),
         };
         report
+    }
+
+    /// True when `target` starts with any configured deploy-side
+    /// prefix and should bypass repo-root resolution. Empty prefixes
+    /// are skipped so an accidental `""` entry doesn't suppress
+    /// every link.
+    fn is_excluded(&self, target: &str) -> bool {
+        self.exclude_prefixes
+            .iter()
+            .any(|p| !p.is_empty() && target.starts_with(p))
     }
 }
 

@@ -95,6 +95,28 @@ allowlist_paths = [
 
 どちらの knob もカウントから Severity への変換しきい値(3 = Medium、10 = High)は変更しません。
 
+## `[features.docs.doc_link_health]`
+
+```toml
+[features.docs.doc_link_health]
+exclude_link_prefixes = []   # デフォルト: すべての内部リンクをソースツリーに対して検証
+```
+
+`exclude_link_prefixes` は、target が指定 prefix のいずれかで始まるリンクをソースツリー検証の対象外にします。リンクは「resolved」とも「broken」ともカウントされず、resolver は完全にスキップします。フレームワークがビルド時に書き換える静的サイトのデプロイ URL に使ってください:
+
+```toml
+[features.docs.doc_link_health]
+exclude_link_prefixes = ["/heal/"]   # Starlight base: '/heal'
+```
+
+| フレームワーク | フレームワーク側設定 | `exclude_link_prefixes` の値 |
+|---|---|---|
+| Astro Starlight | `base: '/heal'` | `["/heal/"]` |
+| VitePress / Docusaurus | `base: '/docs/'` | `["/docs/"]` |
+| mdBook | `book.url-prefix = "/guide"` | `["/guide/"]` |
+
+これらの target は `astro build` などのフレームワーク自身のビルド時リンクチェッカーがデプロイ側から検証してくれるので、heal はカバレッジを失わずにこのスライスを譲れます。空文字列(`""`)エントリは無視されます — heal は単一の空文字でオブザーバ全体が黙るような事故を避けています。
+
 ## `.heal/doc_pairs.json` — ペアファイル
 
 ペアファイルは `config.toml` と `calibration.toml` と並んで **git に追跡** されるので、同じコミット上のチームメイトは同じペアを共有します。heal は自動生成しません。

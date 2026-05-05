@@ -130,6 +130,12 @@ pub struct DocsConfig {
     /// disabling the observer for the whole project.
     #[serde(default)]
     pub todo_density: TodoDensityConfig,
+    /// `[features.docs.doc_link_health]` — knobs for the relative-link
+    /// resolver. Defaults check every internal link against the
+    /// repo-relative file tree; site-deploy-aware skipping is opt-in
+    /// via `exclude_link_prefixes`.
+    #[serde(default)]
+    pub doc_link_health: DocLinkHealthConfig,
 }
 
 impl Eq for DocsConfig {}
@@ -157,8 +163,36 @@ impl Default for DocsConfig {
             doc_freshness: DocFreshnessConfig::default(),
             hotspot: DocHotspotConfig::default(),
             todo_density: TodoDensityConfig::default(),
+            doc_link_health: DocLinkHealthConfig::default(),
         }
     }
+}
+
+/// `[features.docs.doc_link_health]` — link-resolver knobs.
+///
+/// The observer otherwise checks every internal link target against
+/// the repo-relative file tree. `exclude_link_prefixes` opts links
+/// whose target starts with any listed prefix out of that check
+/// entirely — use it for static-site deploy URLs (Starlight `base:`,
+/// `VitePress` `base:`, Docusaurus `baseUrl`) that rewrite to source
+/// files HEAL can't observe without parsing the framework config.
+/// The framework's own build-time link checker (e.g. `astro build`,
+/// `vitepress build`) catches the same broken links from the deploy
+/// side, so HEAL can defer that slice without losing coverage.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DocLinkHealthConfig {
+    /// URL prefixes that mark a link as "deploy-side, not repo-side".
+    /// Prefix-match (not glob); a link target starting with any entry
+    /// is skipped entirely — neither path nor anchor is verified.
+    /// Empty (default) preserves the pre-knob behaviour where every
+    /// internal link is checked against the source tree.
+    ///
+    /// Typical values:
+    /// - `["/heal/"]` for Starlight deployed under `base: '/heal'`
+    /// - `["/docs/"]` for `VitePress` / Docusaurus deployed at `/docs/`
+    #[serde(default)]
+    pub exclude_link_prefixes: Vec<String>,
 }
 
 /// `[features.docs.hotspot]` — per-pair `paired_src_churn × debt`

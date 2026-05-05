@@ -136,6 +136,36 @@ allowlist_paths = [
 Both knobs leave the count-to-Severity floors (3 = Medium, 10 =
 High) untouched.
 
+## `[features.docs.doc_link_health]`
+
+```toml
+[features.docs.doc_link_health]
+exclude_link_prefixes = []   # default: check every internal link against the source tree
+```
+
+`exclude_link_prefixes` opts links whose target starts with any
+listed prefix out of source-tree verification. The link is
+counted as neither resolved nor broken — the resolver bypasses
+it entirely. Use it for static-site deploy URLs that the
+framework rewrites at build time:
+
+```toml
+[features.docs.doc_link_health]
+exclude_link_prefixes = ["/heal/"]   # Starlight base: '/heal'
+```
+
+| Framework | Setting in framework config | `exclude_link_prefixes` value |
+|-----------|----------------------------|-------------------------------|
+| Astro Starlight | `base: '/heal'` | `["/heal/"]` |
+| VitePress / Docusaurus | `base: '/docs/'` | `["/docs/"]` |
+| mdBook | `book.url-prefix = "/guide"` | `["/guide/"]` |
+
+The framework's own build-time link checker (e.g.
+`astro build`) already validates these targets from the deploy
+side, so heal can defer that slice without losing coverage.
+Empty entries (`""`) are ignored — heal doesn't let a single
+empty string accidentally silence the entire observer.
+
 ## `.heal/doc_pairs.json` — the pair file
 
 The pair file is **tracked in git** alongside `config.toml` and

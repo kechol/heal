@@ -4,7 +4,9 @@
 
 use std::path::PathBuf;
 
-use heal_cli::core::config::{Config, DocsConfig, FeaturesConfig, TodoDensityConfig};
+use heal_cli::core::config::{
+    Config, DocLinkHealthConfig, DocsConfig, FeaturesConfig, TodoDensityConfig,
+};
 use heal_cli::core::severity::Severity;
 use heal_cli::observer::docs::link_health::{DocLinkHealthObserver, LinkBreakKind};
 use heal_cli::observer::docs::orphan_pages::OrphanPagesObserver;
@@ -108,6 +110,57 @@ fn doc_link_health_skips_external_links() {
             .scan(dir.path());
     assert_eq!(report.totals.scanned_links, 0);
     assert!(report.entries.is_empty());
+}
+
+#[test]
+fn doc_link_health_skips_targets_matching_exclude_link_prefixes() {
+    // Static-site deploy URLs (Starlight `base: '/heal'`, VitePress
+    // `base: '/docs/'`) reference source files via the deploy-side
+    // path, which the framework rewrites at build time. The
+    // observer can't reproduce that rewriting without parsing the
+    // framework config, so configurable prefixes opt those targets
+    // out of repo-tree verification entirely.
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "README.md",
+        "see [start](/heal/quick-start/) and [missing](./never-existed.md)\n",
+    );
+
+    let mut cfg = cfg_with_docs();
+    cfg.features.docs.doc_link_health = DocLinkHealthConfig {
+        exclude_link_prefixes: vec!["/heal/".into()],
+    };
+    let report =
+        DocLinkHealthObserver::from_paths(&cfg, dir.path(), &[PathBuf::from("README.md")], &[])
+            .scan(dir.path());
+    // The deploy-prefixed link is not even counted toward
+    // `scanned_links` — it bypasses the resolver entirely.
+    assert_eq!(report.totals.scanned_links, 1);
+    assert_eq!(report.entries.len(), 1);
+    assert_eq!(report.entries[0].target, "./never-existed.md");
+    assert_eq!(report.entries[0].kind, LinkBreakKind::MissingPath);
+}
+
+#[test]
+fn doc_link_health_empty_exclude_prefix_does_not_match_every_link() {
+    // Guardrail: an accidental empty-string entry would otherwise
+    // prefix-match every target and silence the entire observer.
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "README.md",
+        "see [missing](./never-existed.md)\n",
+    );
+
+    let mut cfg = cfg_with_docs();
+    cfg.features.docs.doc_link_health = DocLinkHealthConfig {
+        exclude_link_prefixes: vec![String::new()],
+    };
+    let report =
+        DocLinkHealthObserver::from_paths(&cfg, dir.path(), &[PathBuf::from("README.md")], &[])
+            .scan(dir.path());
+    assert_eq!(report.entries.len(), 1, "empty prefix must not match all");
 }
 
 #[test]
