@@ -148,3 +148,32 @@ is a breaking change:
 1. `CHANGELOG.md` "Unreleased" `⚠ BREAKING` note.
 2. Update consuming skill bodies in the same PR.
 3. Bump `FINDINGS_RECORD_VERSION` if applicable.
+
+## R15. Single-language CI builds run with `-D warnings`
+
+CI's `test (single-language)` matrix invokes
+`cargo test --no-default-features --features lang-<one>` for every
+`lang-*` feature in turn — `lang-rust`, `lang-python`,
+`lang-javascript`, `lang-typescript`, `lang-go`, `lang-scala`. Each
+build reaches the workspace lints with `RUSTFLAGS=-D warnings`, so
+`unused_imports` and `dead_code` become hard errors.
+
+Symbols consumed only by code under one `cfg(feature = "lang-X")`
+gate must be gated identically. Common offenders:
+
+- Top-level `use` lines pulling in types only the `lang-go` walker
+  uses (`HashSet`, etc.) — gate the `use` with the same
+  `cfg(feature = "lang-go")`.
+- Test helpers (`fn cfg_enabled`, `fn cov_of`, `use std::fs`,
+  `use tempfile::TempDir`) only called by `#[cfg(feature = "lang-rust")]`
+  test cases — gate the helper / import the same way.
+- Integration tests (`crates/cli/tests/observer_*.rs`) whose
+  fixtures depend on a specific grammar (`src/cli.rs`,
+  `tests/foo_test.py`, `js/foo.test.ts`) — gate the `#[test]` with
+  the matching `#[cfg(feature = "lang-X")]` (or `#[cfg(all(...))]`
+  when several grammars are required).
+
+`cargo test` (default features) catches none of this — it pulls
+every grammar in. Run `cargo test --no-default-features --features
+lang-javascript` (or any single grammar) before pushing if the
+change touched a `cfg(feature = "lang-...")` block.

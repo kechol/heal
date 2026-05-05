@@ -1,12 +1,33 @@
 #!/usr/bin/env sh
-# rustfmt pre-commit hook — fails the commit when staged Rust files
-# don't match `cargo fmt --all`. Skipped when no .rs files are staged.
+# Pre-commit checks. Each check runs only when its file kind is
+# staged so unrelated commits don't pay the cost.
 
+# rustfmt — staged *.rs files must match `cargo fmt --all`.
 staged_rs=$(git diff --cached --name-only --diff-filter=ACMR -- '*.rs')
-[ -z "$staged_rs" ] && exit 0
+if [ -n "$staged_rs" ]; then
+  if ! cargo fmt --all -- --check; then
+    echo "" >&2
+    echo "rustfmt check failed. Run: cargo fmt --all && git add -u" >&2
+    exit 1
+  fi
+fi
 
-if ! cargo fmt --all -- --check; then
-  echo "" >&2
-  echo "rustfmt check failed. Run: cargo fmt --all && git add -u" >&2
-  exit 1
+# Prettier — Starlight site under `docs/` runs `prettier --check` in
+# CI. Mirror it locally for any staged docs file matching the same
+# glob (`*.{md,mdx,json,yml,yaml,ts,mjs}` under `docs/`).
+staged_docs=$(git diff --cached --name-only --diff-filter=ACMR \
+  -- 'docs/*.md' 'docs/*.mdx' 'docs/*.json' 'docs/*.yml' \
+     'docs/*.yaml' 'docs/*.ts' 'docs/*.mjs' \
+     'docs/**/*.md' 'docs/**/*.mdx' 'docs/**/*.json' \
+     'docs/**/*.yml' 'docs/**/*.yaml' 'docs/**/*.ts' 'docs/**/*.mjs')
+if [ -n "$staged_docs" ]; then
+  if [ ! -d docs/node_modules ]; then
+    echo "docs/node_modules missing — run \`npm install\` in docs/ first." >&2
+    exit 1
+  fi
+  if ! (cd docs && npm run --silent format:check); then
+    echo "" >&2
+    echo "prettier check failed. Run: (cd docs && npm run format) && git add -u" >&2
+    exit 1
+  fi
 fi
