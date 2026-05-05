@@ -106,6 +106,51 @@ metric-string false positives. Adding the guardrails halved the
 count while preserving the genuinely mention-rich pairs
 (data-model docs, observer specs, CLI references).
 
+##### Carve-out: central-types files
+
+Counterweight to the gates: a file that defines **central shared
+types** must not be excluded from a doc's `srcs` set just because
+the per-src hit threshold or the coverage-ratio gate would
+otherwise drop it. Central types are the cross-cutting vocabulary
+that every Reference / Explanation page in the codebase touches —
+losing them inflates `doc_drift` noise on every well-written doc.
+
+Identify central-types files in two passes over the corpus:
+
+1. **Counted-mention sweep.** Build the
+   `(identifier → set-of-docs)` index. Identifiers that appear in
+   **≥ 3 distinct docs** are central vocabulary. Filter to those
+   the per-`is_identifier_shape` rule would treat as identifiers
+   (i.e. survive the doc-drift extractor's filters too — file
+   paths, metric strings, and CLI flags don't count here).
+2. **Defining-file resolution.** For each central identifier,
+   intersect the set of src files that define it (via the same
+   tree-sitter pass that powers the mention pair). When the
+   identifier is defined in **a small set** (1–3 src files), tag
+   each of those as a *central-types file*.
+
+Then, when building each doc's `srcs`:
+
+- Central-types files defining identifiers the doc mentions are
+  **always included**, bypassing the per-src hit threshold and the
+  coverage-ratio gate.
+- The coverage-ratio gate's denominator excludes identifiers the
+  doc mentions whose ONLY definitions live in central-types files
+  (those are now automatically resolved by the carve-out — they
+  shouldn't penalise the rest of the gate's accounting).
+
+For HEAL specifically, the carve-out resolves identifiers like
+`Severity`, `Finding`, `FindingsRecord`, `MetricCalibration`,
+`Config`, `Family`, `IntoFindings` — defined in
+`crates/cli/src/core/finding.rs`, `core/severity.rs`,
+`core/calibration.rs`, `core/config.rs`. Without it, every
+internal Reference doc becomes a drift hotspot for routine type
+mentions even though the types are perfectly stable.
+
+Don't hardcode a central-types list — derive it from the corpus
+each run. Codebases with different shapes need different carve-out
+sets.
+
 #### Step 2 — Directory mirror (`source: "mirror"`, confidence 0.7)
 
 Look for path symmetries: `src/foo.rs` ↔ `docs/foo.md`, `lib/foo.ts`
