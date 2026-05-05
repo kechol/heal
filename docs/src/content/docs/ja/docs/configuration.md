@@ -14,7 +14,7 @@ description: "[features.docs] の有効化、standalone ドキュメントの選
 enabled = true
 ```
 
-このあと、同梱のペア設定スキルを 1 度実行して `.heal/doc_pairs.json` を生成します。heal はこのファイルの読み取り専用消費者です(下記の [`.heal/doc_pairs.json`](#heal-doc_pairsjson--ペアファイル) を参照)。
+このあと、同梱のペア設定スキルを 1 度実行して `.heal/doc_pairs.json` を生成します。heal はこのファイルの読み取り専用消費者です(下記の [`.heal/doc_pairs.json`](#healdoc_pairsjson--ペアファイル) を参照)。
 
 ```sh
 claude /heal-doc-pair-setup
