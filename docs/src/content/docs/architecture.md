@@ -86,15 +86,15 @@ same Severity ladder and the same drain queue.
 
 ## What gets written and when
 
-| File / dir                       | Written by                                         | When                                        |
-| -------------------------------- | -------------------------------------------------- | ------------------------------------------- |
-| `.heal/config.toml`              | `heal init`                                        | Once at setup; you can edit it freely.      |
-| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                     | At setup, then on explicit recalibration.   |
-| `.heal/findings/latest.json`     | `heal status`                                      | Each fresh `heal status` (cache-miss path). |
-| `.heal/findings/fixed.json`      | `heal mark fix` (called by `/heal-code-patch`)     | Each commit `/heal-code-patch` lands.       |
-| `.heal/findings/accepted.json`   | `heal mark accept` (called by `/heal-code-review`) | When the team accepts an intrinsic finding. |
-| `.heal/findings/regressed.jsonl` | `heal status` (reconcile pass)                     | When a fixed finding is re-detected.        |
-| `.heal/doc_pairs.json`           | `/heal-doc-pair-setup` skill (when `[features.docs]` is on) | When the user runs the skill; HEAL is read-only. |
+| File / dir                       | Written by                                                             | When                                                    |
+| -------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------- |
+| `.heal/config.toml`              | `heal init`                                                            | Once at setup; you can edit it freely.                  |
+| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                                         | At setup, then on explicit recalibration.               |
+| `.heal/findings/latest.json`     | `heal status`                                                          | Each fresh `heal status` (cache-miss path).             |
+| `.heal/findings/fixed.json`      | `heal mark fix` (called by `/heal-code-patch`)                         | Each commit `/heal-code-patch` lands.                   |
+| `.heal/findings/accepted.json`   | `heal mark accept` (called by `/heal-code-review`)                     | When the team accepts an intrinsic finding.             |
+| `.heal/findings/regressed.jsonl` | `heal status` (reconcile pass)                                         | When a fixed finding is re-detected.                    |
+| `.heal/doc_pairs.json`           | `/heal-doc-pair-setup` skill (when `[features.docs]` is on)            | When the user runs the skill; HEAL is read-only.        |
 | `<agent>/skills/heal-*/`         | `heal init` (per detected agent) / `heal skills install` (Claude only) | Once per agent; refresh with `heal init --force --yes`. |
 
 There is no event log, no monthly rotation, no `.heal/snapshots/`,

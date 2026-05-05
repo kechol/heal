@@ -1,6 +1,6 @@
 ---
 title: Test · スキル
-description: "[features.test] 向け同梱スキル 3 種 — /heal-test-reporter-setup、/heal-test-review、/heal-test-patch。Claude Code / OpenAI Codex 対応。"
+description: '[features.test] 向け同梱スキル 3 種 — /heal-test-reporter-setup、/heal-test-review、/heal-test-patch。Claude Code / OpenAI Codex 対応。'
 ---
 
 オプトインの **Test** ファミリはスキルを 3 種同梱しています。`heal init` 時に検出した各エージェントターゲットへ Code ファミリスキルと並んで展開されますが、test オブザーバが生む findings にしか作用しません。
@@ -11,14 +11,14 @@ description: "[features.test] 向け同梱スキル 3 種 — /heal-test-reporte
 
 ワンショットセットアップスキル。プロジェクトの言語スタックを判別し、`lcov.info` が heal のデフォルト `lcov_paths` のどこかに着地するよう、lcov リポータの設定と CI 統合を提案します。
 
-| スタック | 提案 |
-|---|---|
-| Rust | `cargo llvm-cov --lcov --output-path lcov.info` |
-| Python | `pytest --cov=src --cov-report=lcov`(`pytest-cov`) |
-| JS / TS | `nyc --reporter=lcov mocha` / `vitest --coverage --coverage.reporter=lcov` |
-| Go | `go test -coverprofile=coverage.out` + `gcov2lcov` |
-| Scala | `scoverage` プラグイン + lcov リポータ |
-| 混在 | スタック別の提案 + 単一の `lcov.info` を生成する CI ステップ |
+| スタック | 提案                                                                       |
+| -------- | -------------------------------------------------------------------------- |
+| Rust     | `cargo llvm-cov --lcov --output-path lcov.info`                            |
+| Python   | `pytest --cov=src --cov-report=lcov`(`pytest-cov`)                         |
+| JS / TS  | `nyc --reporter=lcov mocha` / `vitest --coverage --coverage.reporter=lcov` |
+| Go       | `go test -coverprofile=coverage.out` + `gcov2lcov`                         |
+| Scala    | `scoverage` プラグイン + lcov リポータ                                     |
+| 混在     | スタック別の提案 + 単一の `lcov.info` を生成する CI ステップ               |
 
 コードベースに対しては読み取り専用で、コマンドや config 編集の **提案** にとどまります(実行はしません)。コマンドはユーザが実行し、heal が次の `heal status` で結果の `lcov.info` を読みます。
 
@@ -52,11 +52,11 @@ description: "[features.test] 向け同梱スキル 3 種 — /heal-test-reporte
 
 **メトリクス別の手筋**:
 
-| メトリクス | デフォルトの手 |
-|---|---|
-| `coverage_pct` | 未カバーの hot path に unit テストを書く / 拡張する。コミットごとに coverage リポータを再実行して `lcov.info` を更新。 |
-| `skip_ratio` | 理由が成立しなくなった skip を再有効化。skip マーカーを削除し、テストを実行、失敗があればその場で修正。 |
-| `change_coupling.drift` | ドリフトしたテストとソースを一緒に表面化し、テストをソースの現在の形に合わせる。 |
+| メトリクス              | デフォルトの手                                                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `coverage_pct`          | 未カバーの hot path に unit テストを書く / 拡張する。コミットごとに coverage リポータを再実行して `lcov.info` を更新。 |
+| `skip_ratio`            | 理由が成立しなくなった skip を再有効化。skip マーカーを削除し、テストを実行、失敗があればその場で修正。                |
+| `change_coupling.drift` | ドリフトしたテストとソースを一緒に表面化し、テストをソースの現在の形に合わせる。                                       |
 
 **Refusal**(スキル本体に encoded、プロンプトしても上書きされません):
 

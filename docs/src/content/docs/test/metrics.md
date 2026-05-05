@@ -15,12 +15,12 @@ For the bundled skills see [Test › Skills](/heal/test/skills/).
 
 ## At a glance
 
-| Metric | Layer | What it flags |
-|---|---|---|
-| `coverage_pct` | per-source-file | line coverage parsed from `lcov.info`; only files with `< 100%` produce findings |
-| `skip_ratio` | per-test-file | skipped tests as a percentage of total tests in the file |
-| `test_hotspot` | per-source-file | `commits × uncov_pct` composite — flips `hotspot=true` on `coverage_pct` Findings |
-| `change_coupling.drift` | per-pair (submetric) | a test paired with a source that has been changing without it |
+| Metric                  | Layer                | What it flags                                                                     |
+| ----------------------- | -------------------- | --------------------------------------------------------------------------------- |
+| `coverage_pct`          | per-source-file      | line coverage parsed from `lcov.info`; only files with `< 100%` produce findings  |
+| `skip_ratio`            | per-test-file        | skipped tests as a percentage of total tests in the file                          |
+| `test_hotspot`          | per-source-file      | `commits × uncov_pct` composite — flips `hotspot=true` on `coverage_pct` Findings |
+| `change_coupling.drift` | per-pair (submetric) | a test paired with a source that has been changing without it                     |
 
 Plus a structural addition: every Finding gains an
 `is_test_file: bool` flag so skills can read test- and

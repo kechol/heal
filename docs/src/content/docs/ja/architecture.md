@@ -74,15 +74,15 @@ heal status  ──►  calibration.toml で Finding を分類
 
 ## 何がいつ書かれるか
 
-| ファイル / ディレクトリ          | 書き出し元                                         | タイミング                                        |
-| -------------------------------- | -------------------------------------------------- | ------------------------------------------------- |
-| `.heal/config.toml`              | `heal init`                                        | セットアップ時に一度。自由に編集可。              |
-| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                     | セットアップ時、その後は明示的な再 calibrate 時。 |
-| `.heal/findings/latest.json`     | `heal status`                                      | 新規 `heal status`（キャッシュミス経路）ごと。    |
-| `.heal/findings/fixed.json`      | `heal mark fix`（`/heal-code-patch` から呼出）     | `/heal-code-patch` のコミット着地ごと。           |
-| `.heal/findings/accepted.json`   | `heal mark accept`（`/heal-code-review` から呼出） | チームが「設計上のもので直さない」と判断した項目を記録時。 |
-| `.heal/findings/regressed.jsonl` | `heal status`（整合パス）                          | 修正済み Finding が再検出されたとき。             |
-| `.heal/doc_pairs.json`           | `/heal-doc-pair-setup` スキル（`[features.docs]` 有効時） | ユーザがスキルを実行したとき。HEAL は読み取り専用。 |
+| ファイル / ディレクトリ          | 書き出し元                                                              | タイミング                                                         |
+| -------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `.heal/config.toml`              | `heal init`                                                             | セットアップ時に一度。自由に編集可。                               |
+| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                                          | セットアップ時、その後は明示的な再 calibrate 時。                  |
+| `.heal/findings/latest.json`     | `heal status`                                                           | 新規 `heal status`（キャッシュミス経路）ごと。                     |
+| `.heal/findings/fixed.json`      | `heal mark fix`（`/heal-code-patch` から呼出）                          | `/heal-code-patch` のコミット着地ごと。                            |
+| `.heal/findings/accepted.json`   | `heal mark accept`（`/heal-code-review` から呼出）                      | チームが「設計上のもので直さない」と判断した項目を記録時。         |
+| `.heal/findings/regressed.jsonl` | `heal status`（整合パス）                                               | 修正済み Finding が再検出されたとき。                              |
+| `.heal/doc_pairs.json`           | `/heal-doc-pair-setup` スキル（`[features.docs]` 有効時）               | ユーザがスキルを実行したとき。HEAL は読み取り専用。                |
 | `<agent>/skills/heal-*/`         | `heal init`(検出した各エージェント)/ `heal skills install`(Claude のみ) | エージェントごとに一度。`heal init --force --yes` でリフレッシュ。 |
 
 イベントログも、月次ローテーションも、`.heal/snapshots/` / `.heal/logs/` / `.heal/reports/` も存在しません。heal は現在の状態と `regressed.jsonl` の小さな監査トレイルだけを保持します。
@@ -182,11 +182,11 @@ heal はコード健全性の **測定** と、それに対して何を行うか
 
 `heal status` は非 Ok の Finding を `[policy.drain]` 駆動で 3 つのバケットに分けます。
 
-| Tier                  | デフォルト spec                         | レンダラー挙動                  | Skill 挙動                                   |
-| --------------------- | --------------------------------------- | ------------------------------- | -------------------------------------------- |
-| **T0 / 解消キュー**  | `must = ["critical:hotspot"]`           | 常に表示、Severity 🔥 desc 順。 | `/heal-code-patch` が 1 件ずつ解消。 |
-| **T1 / 余裕があれば解消** | `should = ["critical", "high:hotspot"]` | デフォルト表示、別セクション。  | レビュー対象、自動解消 しない。            |
-| **Advisory**          | それ以外の非 Ok                         | `--all` 時のみ表示。            | 自動解消 なし、余裕のあるときに review。   |
+| Tier                      | デフォルト spec                         | レンダラー挙動                  | Skill 挙動                               |
+| ------------------------- | --------------------------------------- | ------------------------------- | ---------------------------------------- |
+| **T0 / 解消キュー**       | `must = ["critical:hotspot"]`           | 常に表示、Severity 🔥 desc 順。 | `/heal-code-patch` が 1 件ずつ解消。     |
+| **T1 / 余裕があれば解消** | `should = ["critical", "high:hotspot"]` | デフォルト表示、別セクション。  | レビュー対象、自動解消 しない。          |
+| **Advisory**              | それ以外の非 Ok                         | `--all` 時のみ表示。            | 自動解消 なし、余裕のあるときに review。 |
 
 `Severity::Ok` の Finding は 解消対象外です。レンダラーは Ok 🔥 pre-section（上位 10% hotspot だがメトリクスフロア未満）と隠し合計カウントで表示します。
 

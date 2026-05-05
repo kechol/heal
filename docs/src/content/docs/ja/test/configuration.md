@@ -1,6 +1,6 @@
 ---
 title: Test · 設定
-description: "[features.test] の有効化、lcov.info の配線、テストとして扱うファイルの指定方法。"
+description: '[features.test] の有効化、lcov.info の配線、テストとして扱うファイルの指定方法。'
 ---
 
 **Test** ファミリはオプトインです。デフォルトでオフ。`cargo llvm-cov`、`pytest --cov`、`nyc`、`scoverage` などのリポータが生成した `lcov.info` がある(または用意できる)ときに有効化してください。heal はテストを実行しません。テストスイートを実際に走らせて初めて分かること(flakiness、mutation score、ランタイム傾向など)はスコープ外です。
@@ -74,12 +74,12 @@ lcov_paths = [
 
 heal は CI / ローカルリポータが書き出したものを読みます。デフォルトの探索順がカバーするのは:
 
-| リポータ | 書き出すパス |
-|---|---|
-| `cargo llvm-cov --lcov` | `target/llvm-cov/lcov.info` |
-| `pytest --cov --cov-report=lcov` | `coverage/lcov.info` |
-| `nyc --reporter=lcov` | `coverage/lcov-report/lcov.info` |
-| `scoverage`(Scala) | プラグイン依存。必要なら `lcov.info` にシンボリックリンク |
+| リポータ                         | 書き出すパス                                              |
+| -------------------------------- | --------------------------------------------------------- |
+| `cargo llvm-cov --lcov`          | `target/llvm-cov/lcov.info`                               |
+| `pytest --cov --cov-report=lcov` | `coverage/lcov.info`                                      |
+| `nyc --reporter=lcov`            | `coverage/lcov-report/lcov.info`                          |
+| `scoverage`(Scala)               | プラグイン依存。必要なら `lcov.info` にシンボリックリンク |
 
 lcov リーダーは寛容で、未知のレコードタイプを許容したり、リポータが summary を省略したときに per-line レコードから合計を復元したりします。多くのリポータ方言がそのまま動きます。
 

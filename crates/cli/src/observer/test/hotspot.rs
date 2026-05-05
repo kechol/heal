@@ -226,6 +226,10 @@ mod tests {
         }
     }
 
+    // Test helper consumed only by the `lang-rust` cases below.
+    // Gating keeps single-language CI builds (e.g.
+    // `--features lang-javascript`) from tripping `-D dead-code`.
+    #[cfg(feature = "lang-rust")]
     fn cov_of(items: &[(&str, f64)]) -> CoverageReport {
         CoverageReport {
             source: None,

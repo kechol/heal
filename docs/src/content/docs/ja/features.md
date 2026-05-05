@@ -11,11 +11,11 @@ heal のオブザーバは 3 つのファミリに分かれています。**Code
 
 デフォルトのオブザーバファミリです。LOC・CCN・Cognitive Complexity・Churn・Change Coupling・Duplication・Hotspot・LCOM の 8 メトリクスを、コードベース自身の分布に合わせてcalibrate し、`heal status` で表示します。`🔥` の Hotspot 装飾は、複雑かつ頻繁に編集されるファイル(リグレッションが集中しがちな場所)を強調します。
 
-| ページ | こんなときに読む |
-|---|---|
+| ページ                                        | こんなときに読む                                                     |
+| --------------------------------------------- | -------------------------------------------------------------------- |
 | [Configuration](/heal/ja/code/configuration/) | 閾値の調整、モノレポワークスペースの追加、解消ポリシーの変更をしたい |
-| [Metrics](/heal/ja/code/metrics/) | 各メトリクスの意味と Severity の決まり方を知りたい |
-| [Skills](/heal/ja/code/skills/) | Claude セッションから heal を動かしたい(レビュー、解消、設定) |
+| [Metrics](/heal/ja/code/metrics/)             | 各メトリクスの意味と Severity の決まり方を知りたい                   |
+| [Skills](/heal/ja/code/skills/)               | Claude セッションから heal を動かしたい(レビュー、解消、設定)        |
 
 有効化フラグはありません。`heal init` がすべての Code オブザーバを有効化した状態で `config.toml` を書きます。
 
@@ -25,11 +25,11 @@ heal のオブザーバは 3 つのファミリに分かれています。**Code
 
 3 つのテスト品質オブザーバを追加し、各項目に `is_test_file` フラグを付けます。中心的なシグナルは **行カバレッジ** で、外部リポータ(`cargo llvm-cov`、`pytest --cov`、`nyc`、`scoverage`)が生成した `lcov.info` を読み取ります。Hotspot のスコアにはカバレッジ未達ファイル向けの乗数が加わり、頻繁に変更され **かつ** カバレッジが不足し **かつ** 複雑なファイルが解消キューの上位に浮上します。post-commit のナッジには「N uncovered hotspot」の行が追加されるので、次にテストを書くべき場所が見えるようになります。
 
-| ページ | こんなときに読む |
-|---|---|
-| [Configuration](/heal/ja/test/configuration/) | ファミリを有効化したい、または `lcov.info` を配線したい |
-| [Metrics](/heal/ja/test/metrics/) | 各テストシグナルが何を捕まえるかを知りたい |
-| [Skills](/heal/ja/test/skills/) | Claude にテストスイートをレビューさせたい、カバレッジの穴を埋めさせたい |
+| ページ                                        | こんなときに読む                                                        |
+| --------------------------------------------- | ----------------------------------------------------------------------- |
+| [Configuration](/heal/ja/test/configuration/) | ファミリを有効化したい、または `lcov.info` を配線したい                 |
+| [Metrics](/heal/ja/test/metrics/)             | 各テストシグナルが何を捕まえるかを知りたい                              |
+| [Skills](/heal/ja/test/skills/)               | Claude にテストスイートをレビューさせたい、カバレッジの穴を埋めさせたい |
 
 有効化:
 
@@ -53,11 +53,11 @@ claude /heal-test-reporter-setup
 
 ペアになったドキュメントとソースを比較する 7 つのドキュメント品質オブザーバを追加します:鮮度、識別子の参照切れ、ペアの欠落、内部リンク切れ、孤立ページ、TODO マーカーの密度、そして docs 用の Hotspot コンポーザ。各ドキュメントが説明するソースの対応表は小さな JSON ファイル(`.heal/doc_pairs.json`、`/heal-doc-pair-setup` が一度生成)で管理します。Markdown / RST の重複検出もこのファミリで有効になります。Hotspot のスコアにも、ペアになったドキュメントが古いファイルへの乗数が加わります。
 
-| ページ | こんなときに読む |
-|---|---|
-| [Configuration](/heal/ja/docs/configuration/) | ファミリを有効化したい、ペアファイルの中身を知りたい |
-| [Metrics](/heal/ja/docs/metrics/) | 各ドキュメントシグナルが何を捕まえるかを知りたい |
-| [Skills](/heal/ja/docs/skills/) | Claude にペアを検出させたい、ドキュメントを監査させたい、修正を適用させたい |
+| ページ                                        | こんなときに読む                                                            |
+| --------------------------------------------- | --------------------------------------------------------------------------- |
+| [Configuration](/heal/ja/docs/configuration/) | ファミリを有効化したい、ペアファイルの中身を知りたい                        |
+| [Metrics](/heal/ja/docs/metrics/)             | 各ドキュメントシグナルが何を捕まえるかを知りたい                            |
+| [Skills](/heal/ja/docs/skills/)               | Claude にペアを検出させたい、ドキュメントを監査させたい、修正を適用させたい |
 
 有効化:
 

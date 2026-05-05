@@ -52,8 +52,8 @@ for the full ladder.
 
 **A Hotspot is a file that's both hard to read and frequently
 edited.** heal ranks every file by `commits × complexity` (the
-"code as a crime scene" idea from Adam Tornhill's *Your Code as a
-Crime Scene*); the top 10% of that distribution gets the `🔥`
+"code as a crime scene" idea from Adam Tornhill's _Your Code as a
+Crime Scene_); the top 10% of that distribution gets the `🔥`
 flag in `heal status`.
 
 The intuition: a high-complexity file that nobody touches is debt
@@ -83,8 +83,8 @@ file. The bundled Claude skills are the **repair half** — they read
 what `heal` produced and turn it into commits.
 
 A measurement tool that also "helpfully" applies fixes blurs the
-line between *what is wrong* and *how this team chooses to address
-it*. heal keeps those two questions in separate programs so each
+line between _what is wrong_ and _how this team chooses to address
+it_. heal keeps those two questions in separate programs so each
 side stays answerable on its own terms.
 
 Inside the repair half, two skills further split _thinking_ from

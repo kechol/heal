@@ -7,10 +7,10 @@ heal ships a bundled set of skills so the metrics it collects flow
 into your AI agent sessions. The same skill bodies serve every
 supported agent:
 
-| Agent | Project install path | Discovery doc |
-|---|---|---|
-| Claude Code | `.claude/skills/` | <https://code.claude.com/docs/en/skills> |
-| OpenAI Codex | `.agents/skills/` | <https://developers.openai.com/codex/skills> |
+| Agent        | Project install path | Discovery doc                                |
+| ------------ | -------------------- | -------------------------------------------- |
+| Claude Code  | `.claude/skills/`    | <https://code.claude.com/docs/en/skills>     |
+| OpenAI Codex | `.agents/skills/`    | <https://developers.openai.com/codex/skills> |
 
 `heal init` installs them automatically for every agent it detects
 on your `PATH` (you'll get one Y/N prompt per agent in TTY mode;
@@ -62,7 +62,7 @@ wants Extract Function, a duplicate that wants a shared helper, a
 drifted test that needs realignment. Steps that don't require
 domain knowledge.
 
-**Review** also surfaces the items that *do* need a human call —
+**Review** also surfaces the items that _do_ need a human call —
 should this hub be split? is this duplication two different
 concepts that grew the same shape? is this complex function
 intrinsic to the problem or accidental? — so review proposes and
@@ -88,13 +88,13 @@ auto-drained.
 
 **Per-metric moves** (Fowler / Tornhill vocabulary):
 
-| Metric | Common move |
-|---|---|
-| `ccn` / `cognitive` | Extract Function, Guard Clauses, Decompose Conditional |
-| `duplication` | Extract Function / Method, Pull Up Method, Rule of Three |
+| Metric                                 | Common move                                                      |
+| -------------------------------------- | ---------------------------------------------------------------- |
+| `ccn` / `cognitive`                    | Extract Function, Guard Clauses, Decompose Conditional           |
+| `duplication`                          | Extract Function / Method, Pull Up Method, Rule of Three         |
 | `change_coupling` (incl. `.symmetric`) | Surface the architectural seam — patch never auto-fixes coupling |
-| `lcom` | Extract Class along the cluster boundary |
-| `hotspot` | Hotspot is a flag, not a problem — act on the underlying metric |
+| `lcom`                                 | Extract Class along the cluster boundary                         |
+| `hotspot`                              | Hotspot is a flag, not a problem — act on the underlying metric  |
 
 **Constraints** (enforced by the skill): one finding = one
 commit, Conventional Commit subject + `Refs: F#<finding_id>`

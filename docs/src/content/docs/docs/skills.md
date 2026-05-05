@@ -30,10 +30,10 @@ when adding a manual pair entry by hand.
 
 **Three heuristics** for picking pairs:
 
-| Heuristic | How it picks pairs |
-|---|---|
-| **Mention** | Doc body references `path/to/source.rs` or a backtick-spanned identifier that resolves to a single src file. |
-| **Mirror** | Directory layout mirrors: `docs/payments/engine.md` ↔ `src/payments/engine.ts`. |
+| Heuristic          | How it picks pairs                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| **Mention**        | Doc body references `path/to/source.rs` or a backtick-spanned identifier that resolves to a single src file.        |
+| **Mirror**         | Directory layout mirrors: `docs/payments/engine.md` ↔ `src/payments/engine.ts`.                                     |
 | **LLM** (optional) | An LLM read of doc + candidate source, when the first two fail. Skipped by default; the skill asks before invoking. |
 
 Each candidate carries a `confidence` score and a `source` field.
@@ -103,14 +103,14 @@ Read-only. Reads `heal status --json`, filters to the
 
 Per-metric framing through the **Diátaxis** lens:
 
-| Metric | Diátaxis question |
-|---|---|
-| `doc_freshness` | Has the section the user reads first moved? |
-| `doc_drift` | Will a copy-pasted snippet still compile? |
-| `doc_coverage` | Is this source expected to have docs at all? |
-| `doc_link_health` | Will internal navigation work? |
-| `orphan_pages` | Is this page reachable from real entry points? |
-| `todo_density` | Is this doc under construction or abandoned? |
+| Metric            | Diátaxis question                              |
+| ----------------- | ---------------------------------------------- |
+| `doc_freshness`   | Has the section the user reads first moved?    |
+| `doc_drift`       | Will a copy-pasted snippet still compile?      |
+| `doc_coverage`    | Is this source expected to have docs at all?   |
+| `doc_link_health` | Will internal navigation work?                 |
+| `orphan_pages`    | Is this page reachable from real entry points? |
+| `todo_density`    | Is this doc under construction or abandoned?   |
 
 Never edits source. After reading a review you can act on any
 item right away — ask the agent in the same session ("fix the
@@ -148,15 +148,15 @@ at a time. **One commit per fix.**
 
 **Per-metric moves:**
 
-| Metric | Default move |
-|---|---|
-| `doc_link_health` (`MissingPath`) | Update the relative path. On a rename, follow `git log --diff-filter=R`. |
-| `doc_link_health` (`MissingAnchor`) | Match the heading slug; update the link if the heading was renamed. |
-| `doc_drift` | Remove the stale reference, or restore the identifier under its new name on a clear rename. |
-| `orphan_pages` | Add a link from the parent README; if the orphan should be deleted, escalate. |
-| `todo_density` | Resolve the resolvable TODOs; escalate the rest to GitHub issues with a link in the doc. |
-| `doc_freshness` | Re-read the paired source and rewrite the affected section. Preserve voice and structure — this is a content sync, not a redesign. |
-| `doc_coverage` | Escalate to the user — the patch skill won't write a brand-new doc unilaterally. |
+| Metric                              | Default move                                                                                                                       |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `doc_link_health` (`MissingPath`)   | Update the relative path. On a rename, follow `git log --diff-filter=R`.                                                           |
+| `doc_link_health` (`MissingAnchor`) | Match the heading slug; update the link if the heading was renamed.                                                                |
+| `doc_drift`                         | Remove the stale reference, or restore the identifier under its new name on a clear rename.                                        |
+| `orphan_pages`                      | Add a link from the parent README; if the orphan should be deleted, escalate.                                                      |
+| `todo_density`                      | Resolve the resolvable TODOs; escalate the rest to GitHub issues with a link in the doc.                                           |
+| `doc_freshness`                     | Re-read the paired source and rewrite the affected section. Preserve voice and structure — this is a content sync, not a redesign. |
+| `doc_coverage`                      | Escalate to the user — the patch skill won't write a brand-new doc unilaterally.                                                   |
 
 **Refusals** (encoded in the skill body):
 

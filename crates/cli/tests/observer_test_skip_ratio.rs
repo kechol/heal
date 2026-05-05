@@ -30,6 +30,11 @@ fn empty_reports() -> ObserverReports {
     ObserverReports::default()
 }
 
+#[cfg(all(
+    feature = "lang-rust",
+    feature = "lang-python",
+    feature = "lang-typescript"
+))]
 #[test]
 fn observer_walks_test_paths_and_emits_per_language_entries() {
     let tmp = tempfile::TempDir::new().unwrap();

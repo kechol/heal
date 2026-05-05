@@ -1,6 +1,6 @@
 ---
 title: Docs · スキル
-description: "[features.docs] 向け同梱スキル 4 種 — /heal-doc-pair-setup、/heal-doc-scaffold、/heal-doc-review、/heal-doc-patch。Claude Code / OpenAI Codex 対応。"
+description: '[features.docs] 向け同梱スキル 4 種 — /heal-doc-pair-setup、/heal-doc-scaffold、/heal-doc-review、/heal-doc-patch。Claude Code / OpenAI Codex 対応。'
 ---
 
 オプトインの **Docs** ファミリはスキルを 4 種同梱しています。`heal init` 時に検出した各エージェントターゲットへ Code ファミリスキルと並んで展開され、原則として docs オブザーバが生む findings にしか作用しません。例外は `/heal-doc-scaffold` で、`[features.docs]` を有効化していないプロジェクトでも動きます — 出力はファミリを有効化した時点で観測対象に入ります。
@@ -15,10 +15,10 @@ description: "[features.docs] 向け同梱スキル 4 種 — /heal-doc-pair-set
 
 **3 つの heuristic** でペアを選びます:
 
-| Heuristic | ペアを選ぶ方法 |
-|---|---|
-| **Mention** | ドキュメント本体が `path/to/source.rs` または単一の src ファイルに解決するバックティック span 識別子を参照している。 |
-| **Mirror** | ディレクトリ構造ミラー: `docs/payments/engine.md` ↔ `src/payments/engine.ts`。 |
+| Heuristic     | ペアを選ぶ方法                                                                                                          |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **Mention**   | ドキュメント本体が `path/to/source.rs` または単一の src ファイルに解決するバックティック span 識別子を参照している。    |
+| **Mirror**    | ディレクトリ構造ミラー: `docs/payments/engine.md` ↔ `src/payments/engine.ts`。                                          |
 | **LLM**(任意) | 上記 2 つが失敗したときに LLM でドキュメント + 候補ソースを読む。デフォルトはスキップ。スキルは呼び出し前に確認します。 |
 
 各候補は `confidence` と `source` を持ち、マージパスは `source: "manual"` のエントリをそのまま残します。ソースファイルに対しては読み取り専用で、`.heal/doc_pairs.json` のみを書きます。
@@ -51,14 +51,14 @@ description: "[features.docs] 向け同梱スキル 4 種 — /heal-doc-pair-set
 
 メトリクス別の **Diátaxis** レンズでのフレーミング:
 
-| メトリクス | Diátaxis 観点 |
-|---|---|
-| `doc_freshness` | ユーザが最初に読むセクションが動いたか? |
-| `doc_drift` | このドキュメントからコピペしたスニペットはまだコンパイルできるか? |
-| `doc_coverage` | このソースはそもそもドキュメントを必要とするか? |
-| `doc_link_health` | 内部ナビゲーションは動くか? |
-| `orphan_pages` | このページは実際のエントリポイントから到達できるか? |
-| `todo_density` | このドキュメントは活発に建設中か、静かに見捨てられているか? |
+| メトリクス        | Diátaxis 観点                                                     |
+| ----------------- | ----------------------------------------------------------------- |
+| `doc_freshness`   | ユーザが最初に読むセクションが動いたか?                           |
+| `doc_drift`       | このドキュメントからコピペしたスニペットはまだコンパイルできるか? |
+| `doc_coverage`    | このソースはそもそもドキュメントを必要とするか?                   |
+| `doc_link_health` | 内部ナビゲーションは動くか?                                       |
+| `orphan_pages`    | このページは実際のエントリポイントから到達できるか?               |
+| `todo_density`    | このドキュメントは活発に建設中か、静かに見捨てられているか?       |
 
 ソースは編集しません。レビューを読んで「これも直してほしい」と思ったら、その場でエージェント(Claude Code / Codex)に伝えれば対応に移れます(「リンク切れを直して」「インストール手順を書き直して」など)。機械的な破損は `/heal-doc-patch` を経由し、人間の判断が要る書き直し(「このセクションはまだ必要か?」「この how-to を tutorial と reference に分けるべきか?」)は自動適用されず、あなたの指示を待ちます。
 
@@ -81,15 +81,15 @@ description: "[features.docs] 向け同梱スキル 4 種 — /heal-doc-pair-set
 
 **メトリクス別の手筋**:
 
-| メトリクス | デフォルトの手 |
-|---|---|
-| `doc_link_health`(`MissingPath`) | 相対パスを更新。リネームされていれば `git log --diff-filter=R` で追う。 |
-| `doc_link_health`(`MissingAnchor`) | heading slug を合わせる。heading がリネームされていれば新 slug にリンクを更新。 |
-| `doc_drift` | 古い識別子の参照を消す、または明確なリネームがあれば新名前で復活。 |
-| `orphan_pages` | 親 README からのリンクを足す。削除すべきならエスカレート。 |
-| `todo_density` | 解決可能な TODO を解決し、残りは GitHub issue へ。 |
-| `doc_freshness` | ペアソースを再読み、影響を受けたセクションを書き直す。voice と構造は保持(内容同期で再設計ではない)。 |
-| `doc_coverage` | ユーザにエスカレート。patch スキルが一方的に新規ドキュメントを書くことはしない(空スタブを避けるため)。 |
+| メトリクス                         | デフォルトの手                                                                                         |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `doc_link_health`(`MissingPath`)   | 相対パスを更新。リネームされていれば `git log --diff-filter=R` で追う。                                |
+| `doc_link_health`(`MissingAnchor`) | heading slug を合わせる。heading がリネームされていれば新 slug にリンクを更新。                        |
+| `doc_drift`                        | 古い識別子の参照を消す、または明確なリネームがあれば新名前で復活。                                     |
+| `orphan_pages`                     | 親 README からのリンクを足す。削除すべきならエスカレート。                                             |
+| `todo_density`                     | 解決可能な TODO を解決し、残りは GitHub issue へ。                                                     |
+| `doc_freshness`                    | ペアソースを再読み、影響を受けたセクションを書き直す。voice と構造は保持(内容同期で再設計ではない)。   |
+| `doc_coverage`                     | ユーザにエスカレート。patch スキルが一方的に新規ドキュメントを書くことはしない(空スタブを避けるため)。 |
 
 **Refusal**(スキル本体に encoded):
 

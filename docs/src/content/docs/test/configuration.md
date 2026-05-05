@@ -102,19 +102,19 @@ lcov_paths = [
   output discarded so your commit flow doesn't wait. Pair it with
   the same command `/heal-test-reporter-setup` proposes
   (`cargo llvm-cov --workspace --lcov --output-path lcov.info
-  --locked --ignore-run-fail`, `pytest --cov=...`, etc.) so the
+--locked --ignore-run-fail`, `pytest --cov=...`, etc.) so the
   next `heal status` reads fresh `lcov.info`. Skipped silently
   when `[features.test]` or `[features.test.coverage]` is off.
 
 heal reads what your CI / local reporter produces. The default
 probe order covers:
 
-| Reporter | Path written |
-|---|---|
-| `cargo llvm-cov --lcov` | `target/llvm-cov/lcov.info` |
-| `pytest --cov --cov-report=lcov` | `coverage/lcov.info` |
-| `nyc --reporter=lcov` | `coverage/lcov-report/lcov.info` |
-| `scoverage` (Scala) | varies; symlink to `lcov.info` if needed |
+| Reporter                         | Path written                             |
+| -------------------------------- | ---------------------------------------- |
+| `cargo llvm-cov --lcov`          | `target/llvm-cov/lcov.info`              |
+| `pytest --cov --cov-report=lcov` | `coverage/lcov.info`                     |
+| `nyc --reporter=lcov`            | `coverage/lcov-report/lcov.info`         |
+| `scoverage` (Scala)              | varies; symlink to `lcov.info` if needed |
 
 The lcov reader is permissive — it tolerates unknown record types
 and recovers totals from per-line records when reporters omit the

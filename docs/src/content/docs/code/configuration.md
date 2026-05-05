@@ -43,16 +43,16 @@ min_cluster_count = 2
 
 ## Defaults at a glance
 
-| Metric           | Default                        |
-| ---------------- | ------------------------------ |
-| LOC              | always enabled (no toggle)     |
-| Churn            | enabled                        |
-| Complexity (CCN) | enabled                        |
-| Cognitive        | enabled                        |
-| Duplication      | enabled                        |
-| Change Coupling  | enabled (incl. symmetric)      |
-| Hotspot          | enabled                        |
-| LCOM             | enabled                        |
+| Metric           | Default                    |
+| ---------------- | -------------------------- |
+| LOC              | always enabled (no toggle) |
+| Churn            | enabled                    |
+| Complexity (CCN) | enabled                    |
+| Cognitive        | enabled                    |
+| Duplication      | enabled                    |
+| Change Coupling  | enabled (incl. symmetric)  |
+| Hotspot          | enabled                    |
+| LCOM             | enabled                    |
 
 Disable a metric by adding its name to the top-level
 `[metrics] disabled = [...]` list. A disabled metric is skipped
@@ -275,7 +275,7 @@ weight_complexity = 1.0
 ```
 
 - The composed score is `(weight_complexity × ccn_sum) ×
-  (weight_churn × commits)`. Setting either weight to `0.0`
+(weight_churn × commits)`. Setting either weight to `0.0`
   disables that side of the composition.
 
 Hotspot doesn't have a `floor_critical`; it's a flag (top 10% of

@@ -5,10 +5,10 @@ description: 常時オン Code ファミリ向け同梱スキル 4 種 — /heal
 
 heal は AI エージェント向けの同梱スキルセットを持ち、収集したメトリクスがそのままセッションへ流れます。スキル本体のソースは agent-neutral で、対応エージェントごとに展開先だけが違います:
 
-| エージェント | プロジェクト配置先 | 仕様ドキュメント |
-|---|---|---|
-| Claude Code | `.claude/skills/` | <https://code.claude.com/docs/en/skills> |
-| OpenAI Codex | `.agents/skills/` | <https://developers.openai.com/codex/skills> |
+| エージェント | プロジェクト配置先 | 仕様ドキュメント                             |
+| ------------ | ------------------ | -------------------------------------------- |
+| Claude Code  | `.claude/skills/`  | <https://code.claude.com/docs/en/skills>     |
+| OpenAI Codex | `.agents/skills/`  | <https://developers.openai.com/codex/skills> |
 
 `heal init` は `PATH` から検出した各エージェント向けに自動でインストールします(TTY 時はエージェントごとに 1 回 Y/N、`--yes` で全許諾、`--no-skills` で全スキップ)。明示的に再実行する場合:
 
@@ -54,13 +54,13 @@ heal skills install --target all     # 検出有無に関わらず全 target に
 
 **メトリクス別の手筋**(Fowler / Tornhill 語彙):
 
-| メトリクス | 主な手 |
-|---|---|
-| `ccn` / `cognitive` | Extract Function、Guard Clauses、Decompose Conditional |
-| `duplication` | Extract Function / Method、Pull Up Method、Rule of Three |
+| メトリクス                           | 主な手                                                        |
+| ------------------------------------ | ------------------------------------------------------------- |
+| `ccn` / `cognitive`                  | Extract Function、Guard Clauses、Decompose Conditional        |
+| `duplication`                        | Extract Function / Method、Pull Up Method、Rule of Three      |
 | `change_coupling`(`.symmetric` 含む) | アーキテクチャの継ぎ目を可視化(coupling の自動修正は行わない) |
-| `lcom` | クラスタ境界に沿って Extract Class |
-| `hotspot` | Hotspot はフラグであって問題ではない。基底のメトリクスに対処 |
+| `lcom`                               | クラスタ境界に沿って Extract Class                            |
+| `hotspot`                            | Hotspot はフラグであって問題ではない。基底のメトリクスに対処  |
 
 **制約**(スキルが強制): 1 finding = 1 commit、Conventional Commit subject + `Refs: F#<finding_id>` trailer、push / amend / `--no-verify` はしない。docs / test ファミリのメトリクスに属する findings はスキップ — そちらは `/heal-doc-patch` / `/heal-test-patch` の担当です。
 

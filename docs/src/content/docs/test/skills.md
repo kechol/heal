@@ -17,14 +17,14 @@ One-shot setup skill. Detects your project's language stack and
 proposes the lcov reporter configuration plus CI integration so
 `lcov.info` lands at one of heal's default `lcov_paths`.
 
-| Stack | Proposes |
-|---|---|
-| Rust | `cargo llvm-cov --lcov --output-path lcov.info` |
-| Python | `pytest --cov=src --cov-report=lcov` (`pytest-cov`) |
+| Stack   | Proposes                                                                   |
+| ------- | -------------------------------------------------------------------------- |
+| Rust    | `cargo llvm-cov --lcov --output-path lcov.info`                            |
+| Python  | `pytest --cov=src --cov-report=lcov` (`pytest-cov`)                        |
 | JS / TS | `nyc --reporter=lcov mocha` / `vitest --coverage --coverage.reporter=lcov` |
-| Go | `go test -coverprofile=coverage.out` + `gcov2lcov` |
-| Scala | `scoverage` plugin + lcov reporter |
-| Mixed | per-stack proposals + a CI step producing a single `lcov.info` |
+| Go      | `go test -coverprofile=coverage.out` + `gcov2lcov`                         |
+| Scala   | `scoverage` plugin + lcov reporter                                         |
+| Mixed   | per-stack proposals + a CI step producing a single `lcov.info`             |
 
 Read-only on the codebase — proposes commands and config edits
 without running them. You run the commands; heal reads the
@@ -84,11 +84,11 @@ at a time, in Severity order. **One commit per fix.**
 
 **Per-metric moves:**
 
-| Metric | Default move |
-|---|---|
-| `coverage_pct` | Write or extend a unit test for an uncovered hot path; re-run the reporter so `lcov.info` updates. |
-| `skip_ratio` | Re-enable a skipped test whose reason no longer holds; remove the skip marker, run the test, fix any failure inline. |
-| `change_coupling.drift` | Align the drifted test with its source — the skill surfaces both files together. |
+| Metric                  | Default move                                                                                                         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `coverage_pct`          | Write or extend a unit test for an uncovered hot path; re-run the reporter so `lcov.info` updates.                   |
+| `skip_ratio`            | Re-enable a skipped test whose reason no longer holds; remove the skip marker, run the test, fix any failure inline. |
+| `change_coupling.drift` | Align the drifted test with its source — the skill surfaces both files together.                                     |
 
 **Refusals** (encoded in the skill body, won't budge with
 prompting):

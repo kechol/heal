@@ -100,10 +100,10 @@ changes.
 Apply rule:
 
 | `src_commits_since_doc ≥` | Severity |
-|---|---|
-| `critical_commits` | Critical |
-| `high_commits` | High |
-| 1 | Medium |
+| ------------------------- | -------- |
+| `critical_commits`        | Critical |
+| `high_commits`            | High     |
+| 1                         | Medium   |
 
 Tighten by lowering both floors; loosen by raising them.
 
@@ -117,7 +117,7 @@ allowlist_paths       = []     # gitignore-style globs to skip entirely
 
 `ignore_in_inline_code = true` (the default) keeps `TODO` /
 `FIXME` / `XXX` / `TBD` / `[要確認]` / `[要修正]` mentions
-*inside* single- or double-backtick spans from being counted.
+_inside_ single- or double-backtick spans from being counted.
 Reference pages that document the marker keywords themselves (an
 observer reference, a style guide explaining what `TODO` means)
 are quoting the words rather than logging action items, so the
@@ -126,7 +126,7 @@ project. Flip to `false` if your team uses inline-code spans for
 real action items.
 
 `allowlist_paths` skips matching docs entirely — useful when the
-quoting pattern is the *whole* page and per-line stripping isn't
+quoting pattern is the _whole_ page and per-line stripping isn't
 enough (e.g. a metric reference that lists every marker shape in
 its body):
 
@@ -158,11 +158,11 @@ framework rewrites at build time:
 exclude_link_prefixes = ["/heal/"]   # Starlight base: '/heal'
 ```
 
-| Framework | Setting in framework config | `exclude_link_prefixes` value |
-|-----------|----------------------------|-------------------------------|
-| Astro Starlight | `base: '/heal'` | `["/heal/"]` |
-| VitePress / Docusaurus | `base: '/docs/'` | `["/docs/"]` |
-| mdBook | `book.url-prefix = "/guide"` | `["/guide/"]` |
+| Framework              | Setting in framework config  | `exclude_link_prefixes` value |
+| ---------------------- | ---------------------------- | ----------------------------- |
+| Astro Starlight        | `base: '/heal'`              | `["/heal/"]`                  |
+| VitePress / Docusaurus | `base: '/docs/'`             | `["/docs/"]`                  |
+| mdBook                 | `book.url-prefix = "/guide"` | `["/guide/"]`                 |
 
 The framework's own build-time link checker (e.g.
 `astro build`) already validates these targets from the deploy
@@ -196,13 +196,13 @@ pairing universe. heal never auto-generates it.
 }
 ```
 
-| Field | Meaning |
-|---|---|
-| `version` | Schema version (currently `1`). |
-| `pairs[].doc` | Project-relative path to a documentation file. |
-| `pairs[].srcs` | One or more source files the doc describes. |
-| `pairs[].confidence` | `0.0` – `1.0`. Manual entries are usually `1.0`; auto-detected entries carry the heuristic's confidence. |
-| `pairs[].source` | One of `"mention"` (doc references the src), `"mirror"` (directory layout mirrors), `"llm"` (LLM inference), `"manual"` (user-authored — preserved across regeneration). |
+| Field                | Meaning                                                                                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `version`            | Schema version (currently `1`).                                                                                                                                          |
+| `pairs[].doc`        | Project-relative path to a documentation file.                                                                                                                           |
+| `pairs[].srcs`       | One or more source files the doc describes.                                                                                                                              |
+| `pairs[].confidence` | `0.0` – `1.0`. Manual entries are usually `1.0`; auto-detected entries carry the heuristic's confidence.                                                                 |
+| `pairs[].source`     | One of `"mention"` (doc references the src), `"mirror"` (directory layout mirrors), `"llm"` (LLM inference), `"manual"` (user-authored — preserved across regeneration). |
 
 **Manual entries are sacred.** When `/heal-doc-pair-setup`
 regenerates the file, every `source: "manual"` row is preserved

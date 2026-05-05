@@ -22,11 +22,11 @@ calibrated to the codebase's own distribution and surfaced through
 both complex and frequently touched: the historical concentration of
 regressions.
 
-| Page | Read this when… |
-|---|---|
+| Page                                       | Read this when…                                                                   |
+| ------------------------------------------ | --------------------------------------------------------------------------------- |
 | [Configuration](/heal/code/configuration/) | You want to tune thresholds, add monorepo workspaces, or change the drain policy. |
-| [Metrics](/heal/code/metrics/) | You want to know what each metric means and how Severity is decided. |
-| [Skills](/heal/code/skills/) | You want to drive heal from a Claude session — review, drain, configure. |
+| [Metrics](/heal/code/metrics/)             | You want to know what each metric means and how Severity is decided.              |
+| [Skills](/heal/code/skills/)               | You want to drive heal from a Claude session — review, drain, configure.          |
 
 There's no flag to enable Code; `heal init` writes a config with
 every observer turned on.
@@ -46,11 +46,11 @@ gains a multiplier for uncovered files, so files that change a lot
 drain queue. The post-commit nudge gains an "N uncovered hotspot"
 line so you know where the next test should land.
 
-| Page | Read this when… |
-|---|---|
-| [Configuration](/heal/test/configuration/) | You're ready to enable the family or wire up an `lcov.info`. |
-| [Metrics](/heal/test/metrics/) | You want to know what each test signal flags. |
-| [Skills](/heal/test/skills/) | You want Claude to review your test suite or fill coverage gaps. |
+| Page                                       | Read this when…                                                  |
+| ------------------------------------------ | ---------------------------------------------------------------- |
+| [Configuration](/heal/test/configuration/) | You're ready to enable the family or wire up an `lcov.info`.     |
+| [Metrics](/heal/test/metrics/)             | You want to know what each test signal flags.                    |
+| [Skills](/heal/test/skills/)               | You want Claude to review your test suite or fill coverage gaps. |
 
 Enable with:
 
@@ -83,11 +83,11 @@ maps each doc to the source it describes. The Markdown / RST
 duplication pass turns on with this family too. Hotspot scoring
 gains a multiplier when a file's paired doc is stale.
 
-| Page | Read this when… |
-|---|---|
+| Page                                       | Read this when…                                                         |
+| ------------------------------------------ | ----------------------------------------------------------------------- |
 | [Configuration](/heal/docs/configuration/) | You're ready to enable the family or want to understand the pairs file. |
-| [Metrics](/heal/docs/metrics/) | You want to know what each doc signal flags. |
-| [Skills](/heal/docs/skills/) | You want Claude to detect pairs, audit your docs, or apply fixes. |
+| [Metrics](/heal/docs/metrics/)             | You want to know what each doc signal flags.                            |
+| [Skills](/heal/docs/skills/)               | You want Claude to detect pairs, audit your docs, or apply fixes.       |
 
 Enable with:
 

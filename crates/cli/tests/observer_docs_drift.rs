@@ -35,6 +35,7 @@ fn empty_when_disabled() {
     assert!(report.entries.is_empty());
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn emits_finding_for_dangling_identifier() {
     let dir = tempfile::tempdir().unwrap();
@@ -55,6 +56,7 @@ fn emits_finding_for_dangling_identifier() {
     assert_eq!(report.totals.dangling_identifiers, 1);
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn skips_identifiers_inside_code_fences() {
     let dir = tempfile::tempdir().unwrap();
@@ -70,6 +72,7 @@ fn skips_identifiers_inside_code_fences() {
     );
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn into_findings_attach_doc_line_and_secondary_locations() {
     let dir = tempfile::tempdir().unwrap();
@@ -93,6 +96,7 @@ fn into_findings_attach_doc_line_and_secondary_locations() {
     );
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn ignores_when_identifier_present_in_any_paired_src() {
     let dir = tempfile::tempdir().unwrap();

@@ -36,16 +36,16 @@ min_cluster_count = 2
 
 ## デフォルトの一覧
 
-| メトリクス       | デフォルト                  |
-| ---------------- | --------------------------- |
-| LOC              | 常に有効(切り替え不可)    |
-| Churn            | 有効                        |
-| Complexity (CCN) | 有効                        |
-| Cognitive        | 有効                        |
-| Duplication      | 有効                        |
-| Change Coupling  | 有効(symmetric を含む)    |
-| Hotspot          | 有効                        |
-| LCOM             | 有効                        |
+| メトリクス       | デフォルト             |
+| ---------------- | ---------------------- |
+| LOC              | 常に有効(切り替え不可) |
+| Churn            | 有効                   |
+| Complexity (CCN) | 有効                   |
+| Cognitive        | 有効                   |
+| Duplication      | 有効                   |
+| Change Coupling  | 有効(symmetric を含む) |
+| Hotspot          | 有効                   |
+| LCOM             | 有効                   |
 
 無効化するには最上位の `[metrics] disabled = [...]` リストにメトリクス名を追加します。名前は snake_case 形式(`lcom`、`change_coupling` など)。`loc` は他の全オブザーバが依存するため無効化できません。無効化したメトリクスは完全にスキップされ、`heal status` にも現れません。
 

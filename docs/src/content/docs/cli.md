@@ -30,7 +30,7 @@ to warrant attention. Hidden from `--help`.
 | `heal mark fix`    | `/heal-code-patch` skill  | Record that a commit fixed a finding so the next `heal status` reconciles it. |
 | `heal mark accept` | `/heal-code-review` skill | Record an intrinsic finding the team has decided not to refactor.             |
 | `heal metrics`     | `/heal-code-review` skill | Per-metric summary recomputed on every invocation.                            |
-| `heal calibrate`   | `/heal-setup` skill      | Reset Severity thresholds to today's codebase distribution.                   |
+| `heal calibrate`   | `/heal-setup` skill       | Reset Severity thresholds to today's codebase distribution.                   |
 
 `heal metrics` and `heal calibrate` are listed here because the
 bundled skills decide _when_ to run them — `/heal-code-review` reads
@@ -72,7 +72,7 @@ of every available knob.
 4. For each AI agent on `PATH`, extract the bundled skill set into
    that agent's project-scope discovery path:
    - `claude` → `.claude/skills/`
-   - `codex`  → `.agents/skills/`
+   - `codex` → `.agents/skills/`
 
    In a TTY, you get one Y/N prompt per detected agent (default
    `Y`). `--yes` accepts every prompt; `--no-skills` skips every

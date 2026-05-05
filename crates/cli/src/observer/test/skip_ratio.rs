@@ -22,6 +22,11 @@
 //! runtime call and a single test can contain multiple skip statements
 //! — the walker dedupes on the enclosing function declaration.
 
+// `HashSet` is consumed only by the `lang-go` walker (see the
+// `cfg(feature = "lang-go")` block below). Gate the import to match
+// so a single-language build like `--features lang-javascript`
+// doesn't trip `-D unused-imports` in CI.
+#[cfg(feature = "lang-go")]
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -496,10 +501,19 @@ impl Feature for SkipRatioFeature {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // `std::fs`, `TempDir`, and `cfg_enabled` are consumed only by
+    // the `lang-rust` integration tests below. Single-language CI
+    // builds (e.g. `--features lang-javascript`) compile this module
+    // without those tests, so the imports / helper would trip
+    // `-D unused-imports` / `-D dead-code` without these gates.
+    #[cfg(feature = "lang-rust")]
     use crate::core::config::TestConfig;
+    #[cfg(feature = "lang-rust")]
     use std::fs;
+    #[cfg(feature = "lang-rust")]
     use tempfile::TempDir;
 
+    #[cfg(feature = "lang-rust")]
     fn cfg_enabled() -> Config {
         let mut cfg = Config::default();
         cfg.features.test = TestConfig {
