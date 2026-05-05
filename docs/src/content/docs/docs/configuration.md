@@ -103,6 +103,39 @@ Apply rule:
 
 Tighten by lowering both floors; loosen by raising them.
 
+## `[features.docs.todo_density]`
+
+```toml
+[features.docs.todo_density]
+ignore_in_inline_code = true   # default: skip markers inside `…` spans
+allowlist_paths       = []     # gitignore-style globs to skip entirely
+```
+
+`ignore_in_inline_code = true` (the default) keeps `TODO` /
+`FIXME` / `XXX` / `TBD` / `[要確認]` / `[要修正]` mentions
+*inside* single- or double-backtick spans from being counted.
+Reference pages that document the marker keywords themselves (an
+observer reference, a style guide explaining what `TODO` means)
+are quoting the words rather than logging action items, so the
+default opts those out without disabling the observer for the
+project. Flip to `false` if your team uses inline-code spans for
+real action items.
+
+`allowlist_paths` skips matching docs entirely — useful when the
+quoting pattern is the *whole* page and per-line stripping isn't
+enough (e.g. a metric reference that lists every marker shape in
+its body):
+
+```toml
+[features.docs.todo_density]
+allowlist_paths = [
+  "docs/reference/**/metrics.md",
+]
+```
+
+Both knobs leave the count-to-Severity floors (3 = Medium, 10 =
+High) untouched.
+
 ## `.heal/doc_pairs.json` — the pair file
 
 The pair file is **tracked in git** alongside `config.toml` and

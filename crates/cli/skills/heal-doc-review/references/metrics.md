@@ -112,8 +112,18 @@ from `standalone.include`, or delete.
 
 Markers inside fenced code blocks (` ``` `, ` ~~~ `) are not
 counted — those are illustrative and shouldn't drive the doc-
-quality signal.
+quality signal. Markers inside backtick-quoted inline-code spans
+are also skipped by default
+(`[features.docs.todo_density] ignore_in_inline_code = true`),
+so a reference page that *describes* the marker keywords doesn't
+self-flag every paragraph that quotes them. Whole-doc opt-out
+goes through `[features.docs.todo_density] allowlist_paths`
+(gitignore-syntax globs) when even per-line stripping is too
+fine-grained.
 
 Fix shape: read each marker, decide whether the answer is now
 known (write it), still unknown (defer to a tracked issue), or
-the marker is stale (delete).
+the marker is stale (delete). When the doc is *itself* the
+documentation of the marker keywords, prefer adding it to
+`allowlist_paths` over deleting the citations — the prose is
+load-bearing.

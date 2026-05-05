@@ -123,7 +123,11 @@ entry points (README.md, index.md). Severity Medium. Read:
 Counts `TODO / FIXME / XXX / TBD / [要確認] / [要修正]` markers per
 doc. Severity Medium at ≥3 markers, High at ≥10. The marker is
 author-confessed incompleteness; the fix is usually obvious because
-the writer already left a hint.
+the writer already left a hint. Markers inside fenced code blocks
+and (by default) backtick-quoted inline-code spans don't count —
+configurable in `[features.docs.todo_density]` along with a
+per-doc `allowlist_paths` for reference pages that document the
+marker keywords themselves.
 
 ## §4 Four traps to avoid in recommendations
 

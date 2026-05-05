@@ -8,12 +8,13 @@
 //!
 //! Severity scales with marker count per file rather than per line —
 //! a doc with 20 TODOs is a stronger signal than a 200-line doc with
-//! one TODO buried at line 192. The floors live in
-//! `[features.docs.todo_density]` (added in `DocsConfig`) for users
-//! who want to tighten or loosen the gate.
+//! one TODO buried at line 192. The count → Severity floors are
+//! hard-coded; the inline-code skip and per-doc allowlist live in
+//! [`crate::core::config::TodoDensityConfig`].
 
 use std::path::{Path, PathBuf};
 
+use ignore::gitignore::Gitignore;
 use serde::{Deserialize, Serialize};
 
 use crate::core::config::Config;
@@ -21,6 +22,8 @@ use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Family, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 use crate::observer::docs::corpus::{read_doc_bodies, DocBody};
+use crate::observer::docs::markdown::strip_inline_code;
+use crate::observer::docs::walk::{build_matcher, is_match};
 
 /// Markers we count. Single-pass over each line so adding a new marker
 /// is a one-element edit.
@@ -28,6 +31,8 @@ const MARKERS: &[&str] = &["TODO", "FIXME", "XXX", "TBD", "[要確認]", "[要�
 
 pub struct TodoDensityObserver {
     enabled: bool,
+    ignore_in_inline_code: bool,
+    allowlist: Option<Gitignore>,
     docs: Vec<DocBody>,
 }
 
@@ -41,8 +46,11 @@ pub(crate) const HIGH_THRESHOLD: u32 = 10;
 impl TodoDensityObserver {
     #[must_use]
     pub fn from_inputs(cfg: &Config, docs: Vec<DocBody>) -> Self {
+        let td = &cfg.features.docs.todo_density;
         Self {
             enabled: cfg.features.docs.enabled,
+            ignore_in_inline_code: td.ignore_in_inline_code,
+            allowlist: build_matcher(Path::new(""), &td.allowlist_paths),
             docs,
         }
     }
@@ -63,7 +71,14 @@ impl TodoDensityObserver {
         }
         let mut entries: Vec<TodoDensityEntry> = Vec::new();
         for doc in &self.docs {
-            let count = count_markers(&doc.body);
+            if self
+                .allowlist
+                .as_ref()
+                .is_some_and(|m| is_match(m, &doc.path))
+            {
+                continue;
+            }
+            let count = count_markers(&doc.body, self.ignore_in_inline_code);
             if count == 0 {
                 continue;
             }
@@ -103,12 +118,21 @@ pub fn classify(marker_count: u32) -> Severity {
 }
 
 /// Count marker occurrences in `body`, skipping fenced code blocks (a
-/// `TODO` inside an example shouldn't count as a doc marker).
-fn count_markers(body: &str) -> u32 {
+/// `TODO` inside an example shouldn't count as a doc marker). When
+/// `ignore_in_inline_code` is true (the project default; see
+/// [`crate::core::config::TodoDensityConfig`]), markers inside
+/// backtick-quoted spans are also skipped — the doc is *quoting* the
+/// keyword, not flagging an action item.
+fn count_markers(body: &str, ignore_in_inline_code: bool) -> u32 {
     let mut count: u32 = 0;
     for (_, line) in crate::observer::docs::markdown::iter_prose_lines(body) {
+        let target = if ignore_in_inline_code {
+            strip_inline_code(line)
+        } else {
+            std::borrow::Cow::Borrowed(line)
+        };
         for m in MARKERS {
-            count = count.saturating_add(u32::try_from(line.matches(m).count()).unwrap_or(0));
+            count = count.saturating_add(u32::try_from(target.matches(m).count()).unwrap_or(0));
         }
     }
     count

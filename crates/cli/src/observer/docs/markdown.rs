@@ -110,6 +110,67 @@ fn find_unescaped(bytes: &[u8], from: usize, target: u8) -> Option<usize> {
     None
 }
 
+/// Replace every backtick-quoted inline-code span (single, double,
+/// or triple) on `line` with spaces of equal length, leaving prose
+/// outside the spans untouched and column positions unchanged.
+/// Single- and double-backtick spans behave the same way — both
+/// delimit inline code in `CommonMark`; the doubled form lets
+/// authors embed literal backticks. An unclosed backtick run at
+/// end-of-line strips to the line end. Returns `Cow::Borrowed`
+/// when the line has no backticks so the common case avoids any
+/// allocation.
+#[must_use]
+pub(crate) fn strip_inline_code(line: &str) -> std::borrow::Cow<'_, str> {
+    if !line.contains('`') {
+        return std::borrow::Cow::Borrowed(line);
+    }
+    let bytes = line.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'`' {
+            out.push(bytes[i]);
+            i += 1;
+            continue;
+        }
+        let run_start = i;
+        let mut run_len = 0;
+        while i < bytes.len() && bytes[i] == b'`' {
+            run_len += 1;
+            i += 1;
+        }
+        // Search for a matching closing backtick run of the same length.
+        let body_start = i;
+        let mut close_pos: Option<usize> = None;
+        while i < bytes.len() {
+            if bytes[i] != b'`' {
+                i += 1;
+                continue;
+            }
+            let mut closing_len = 0;
+            let close_start = i;
+            while i < bytes.len() && bytes[i] == b'`' {
+                closing_len += 1;
+                i += 1;
+            }
+            if closing_len == run_len {
+                close_pos = Some(close_start);
+                break;
+            }
+        }
+        if let Some(close_start) = close_pos {
+            let total = close_start + run_len - run_start;
+            out.extend(std::iter::repeat_n(b' ', total));
+        } else {
+            let trailing = bytes.len() - body_start;
+            out.extend(std::iter::repeat_n(b' ', run_len + trailing));
+            break;
+        }
+    }
+    // Bytes-only ASCII substitution (spaces) preserves UTF-8 boundaries.
+    std::borrow::Cow::Owned(String::from_utf8(out).expect("strip preserves UTF-8 boundaries"))
+}
+
 /// True iff the link target points outside the doc graph. Used by
 /// every Layer B observer to skip externals — HTTP/HTTPS link
 /// checking is `scope.md` R5 out-of-scope.
@@ -160,6 +221,49 @@ mod tests {
         let body = "alpha\n```\nbravo\n```\ncharlie\n~~~\ndelta\n~~~\necho\n";
         let lines: Vec<(u32, &str)> = iter_prose_lines(body).collect();
         assert_eq!(lines, vec![(1, "alpha"), (5, "charlie"), (9, "echo")]);
+    }
+
+    #[test]
+    fn strip_inline_code_replaces_single_and_double_backtick_spans() {
+        let line = "see `TODO` and ``FIXME`` markers";
+        let stripped = strip_inline_code(line);
+        // `TODO` (6 bytes) + ``FIXME`` (9 bytes) → equal-length runs
+        // of spaces; surrounding prose untouched.
+        assert_eq!(stripped, "see        and           markers");
+        assert_eq!(stripped.len(), line.len());
+        assert!(!stripped.contains("TODO"));
+        assert!(!stripped.contains("FIXME"));
+    }
+
+    #[test]
+    fn strip_inline_code_preserves_text_outside_spans() {
+        let line = "real TODO followed by `inline` only";
+        let stripped = strip_inline_code(line);
+        assert!(stripped.contains("real TODO"));
+        assert!(!stripped.contains("inline"));
+    }
+
+    #[test]
+    fn strip_inline_code_handles_unclosed_backtick() {
+        let line = "open `TODO never closes";
+        let stripped = strip_inline_code(line);
+        assert!(!stripped.contains("TODO"));
+        assert_eq!(stripped.len(), line.len());
+    }
+
+    #[test]
+    fn strip_inline_code_borrows_when_no_backticks() {
+        let line = "plain prose with no markup at all";
+        let stripped = strip_inline_code(line);
+        assert!(matches!(stripped, std::borrow::Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn strip_inline_code_keeps_utf8_outside_spans() {
+        let line = "[要確認] but not `[要確認]`";
+        let stripped = strip_inline_code(line);
+        assert!(stripped.contains("[要確認]"));
+        assert_eq!(stripped.matches("[要確認]").count(), 1);
     }
 
     #[test]

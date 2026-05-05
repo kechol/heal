@@ -132,7 +132,11 @@ README, not a rewrite.
 
 Per-doc count of `TODO` / `FIXME` / `XXX` / `TBD` / `[要確認]` /
 `[要修正]` markers. Markers inside fenced code blocks are
-excluded — those are illustrative, not real action items.
+excluded — those are illustrative, not real action items. Markers
+inside backtick-quoted inline-code spans are excluded by default
+too (`[features.docs.todo_density] ignore_in_inline_code = true`),
+so a reference page that *describes* the marker keywords
+(e.g. this very document) doesn't self-flag every paragraph.
 
 | `marker_count ≥` | Severity |
 |---|---|
@@ -140,8 +144,10 @@ excluded — those are illustrative, not real action items.
 | 3  | Medium |
 | ≤ 2 | Ok (no Finding) |
 
-Thresholds are hard-coded in v0.4. They may become a config knob
-in a later release.
+The count → Severity floors are hard-coded in v0.4. The inline-code
+skip toggle and a per-doc `allowlist_paths` glob list can be tuned
+in `[features.docs.todo_density]` (see
+[Configuration](/heal/docs/configuration/#featuresdocstodo_density)).
 
 ## Markdown duplication
 

@@ -4,6 +4,23 @@
 
 ### Features
 
+- **`todo_density` skips markers inside backtick-quoted spans by
+  default, with an opt-in `allowlist_paths` for whole-doc
+  exemption.** Reference pages that document the marker keywords
+  themselves (e.g. an observer reference describing what `TODO`
+  / `FIXME` / `XXX` / `TBD` mean) used to self-flag every
+  paragraph that quoted the keywords. The new
+  `[features.docs.todo_density]` block adds two knobs:
+  `ignore_in_inline_code` (default `true`) skips matches inside
+  single- or double-backtick spans, and `allowlist_paths`
+  (gitignore-syntax globs, default empty) skips matched docs
+  entirely. Markers in fenced code blocks were already excluded;
+  the new defaults extend that to inline code spans, which fits
+  how reference docs typically quote keywords. Severity floors
+  (≥3 Medium, ≥10 High) are unchanged. Additive — empty
+  `[features.docs.todo_density]` keeps the previous behaviour
+  apart from the inline-code skip default; flip
+  `ignore_in_inline_code = false` to restore the v0.3 counting.
 - **Bundled skills now respect `[project].response_language` and
   the user's conversation language.** Every `/heal-*` skill body
   carries an explicit "Output language" section with the same

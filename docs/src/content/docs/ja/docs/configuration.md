@@ -74,6 +74,27 @@ critical_commits = 20   # ドキュメントを過ぎたソースコミット数
 
 両フロアを下げると締まり、上げると緩みます。
 
+## `[features.docs.todo_density]`
+
+```toml
+[features.docs.todo_density]
+ignore_in_inline_code = true   # デフォルト: バッククォート span 内のマーカーを数えない
+allowlist_paths       = []     # 完全に除外する gitignore 形式の glob
+```
+
+`ignore_in_inline_code = true`(デフォルト)は、シングル / ダブルバッククォート span の内側にある `TODO` / `FIXME` / `XXX` / `TBD` / `[要確認]` / `[要修正]` のマーカー言及をカウント対象から外します。マーカーキーワード自体を説明するリファレンス(オブザーバの説明、`TODO` の意味を解説するスタイルガイド)は、アクションアイテムを記録しているのではなく単語を引用しているだけなので、デフォルトでオブザーバを無効化せずにこれらだけ除外します。チームがインラインコード span を本当のアクションアイテムとして使っているなら `false` に倒してください。
+
+`allowlist_paths` はマッチした doc を丸ごとスキップします。引用パターンがページ全体に及び、行単位の strip では足りない場合(例: 全マーカー形を本文に列挙する metric リファレンス)に有効です:
+
+```toml
+[features.docs.todo_density]
+allowlist_paths = [
+  "docs/reference/**/metrics.md",
+]
+```
+
+どちらの knob もカウントから Severity への変換しきい値(3 = Medium、10 = High)は変更しません。
+
 ## `.heal/doc_pairs.json` — ペアファイル
 
 ペアファイルは `config.toml` と `calibration.toml` と並んで **git に追跡** されるので、同じコミット上のチームメイトは同じペアを共有します。heal は自動生成しません。

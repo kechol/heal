@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use heal_cli::core::config::{Config, DocsConfig, FeaturesConfig};
+use heal_cli::core::config::{Config, DocsConfig, FeaturesConfig, TodoDensityConfig};
 use heal_cli::core::severity::Severity;
 use heal_cli::observer::docs::link_health::{DocLinkHealthObserver, LinkBreakKind};
 use heal_cli::observer::docs::orphan_pages::OrphanPagesObserver;
@@ -216,6 +216,62 @@ fn todo_density_counts_markers_outside_fences() {
         TodoDensityObserver::from_paths(&cfg, dir.path(), &[PathBuf::from("page.md")]).scan();
     assert_eq!(report.entries.len(), 1);
     assert_eq!(report.entries[0].marker_count, 3);
+}
+
+#[test]
+fn todo_density_skips_markers_inside_inline_code_by_default() {
+    let dir = tempfile::tempdir().unwrap();
+    // Two real markers in prose, plus one mention each inside single-
+    // and double-backtick spans (the doc is *quoting* them — it
+    // happens to be a reference page describing the observer itself).
+    let body = "# Reference\n\nThe observer counts `TODO`, `FIXME`, ``XXX``, and `[要確認]` markers.\n\nReal: TODO refresh.\n[要確認] 仕様未定\n";
+    write(dir.path(), "page.md", body);
+
+    let cfg = cfg_with_docs();
+    let report =
+        TodoDensityObserver::from_paths(&cfg, dir.path(), &[PathBuf::from("page.md")]).scan();
+    assert_eq!(report.entries.len(), 1);
+    assert_eq!(report.entries[0].marker_count, 2);
+}
+
+#[test]
+fn todo_density_counts_inline_code_markers_when_disabled() {
+    let dir = tempfile::tempdir().unwrap();
+    let body = "Reference: `TODO` and `FIXME` markers.\nReal TODO line.\n";
+    write(dir.path(), "page.md", body);
+
+    let mut cfg = cfg_with_docs();
+    cfg.features.docs.todo_density = TodoDensityConfig {
+        ignore_in_inline_code: false,
+        allowlist_paths: Vec::new(),
+    };
+    let report =
+        TodoDensityObserver::from_paths(&cfg, dir.path(), &[PathBuf::from("page.md")]).scan();
+    assert_eq!(report.entries.len(), 1);
+    assert_eq!(report.entries[0].marker_count, 3);
+}
+
+#[test]
+fn todo_density_allowlist_paths_skips_doc_entirely() {
+    let dir = tempfile::tempdir().unwrap();
+    let kept = "TODO real action item.\n";
+    let allowed = "TODO same shape but documented.\n";
+    write(dir.path(), "kept.md", kept);
+    write(dir.path(), "docs/allowed.md", allowed);
+
+    let mut cfg = cfg_with_docs();
+    cfg.features.docs.todo_density = TodoDensityConfig {
+        ignore_in_inline_code: true,
+        allowlist_paths: vec!["docs/allowed.md".to_owned()],
+    };
+    let report = TodoDensityObserver::from_paths(
+        &cfg,
+        dir.path(),
+        &[PathBuf::from("kept.md"), PathBuf::from("docs/allowed.md")],
+    )
+    .scan();
+    assert_eq!(report.entries.len(), 1);
+    assert_eq!(report.entries[0].doc_path, PathBuf::from("kept.md"));
 }
 
 #[test]

@@ -92,7 +92,7 @@ Heading の slug は GitHub 互換の slugify 規約(lowercase + non-alnum → `
 
 > _「各ドキュメントが open な TODO をいくつ抱えているか?」_
 
-ドキュメント単位の `TODO` / `FIXME` / `XXX` / `TBD` / `[要確認]` / `[要修正]` マーカー数です。fenced コードブロック内のマーカーは除外します(説明用の例で、本物のアクション項目ではないため)。
+ドキュメント単位の `TODO` / `FIXME` / `XXX` / `TBD` / `[要確認]` / `[要修正]` マーカー数です。fenced コードブロック内のマーカーは除外します(説明用の例で、本物のアクション項目ではないため)。バッククォートで囲ったインラインコード span 内のマーカーもデフォルトで除外します(`[features.docs.todo_density] ignore_in_inline_code = true`)。マーカーキーワード自体を *説明* するリファレンスページ(まさにこのドキュメント)が段落ごとに自爆するのを防ぐためです。
 
 | `marker_count ≥` | Severity |
 |---|---|
@@ -100,7 +100,7 @@ Heading の slug は GitHub 互換の slugify 規約(lowercase + non-alnum → `
 | 3  | Medium |
 | ≤ 2 | Ok(Finding なし) |
 
-しきい値は v0.4 ではハードコードです。今後のリリースで設定調整値になる可能性があります。
+カウント → Severity のフロアは v0.4 ではハードコードです。インラインコード除外トグルと doc 単位の `allowlist_paths` glob は `[features.docs.todo_density]` で調整できます([設定](/heal/ja/docs/configuration/#featuresdocstodo_density) を参照)。
 
 ## Markdown 重複
 

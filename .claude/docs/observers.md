@@ -469,10 +469,16 @@ graph.
 
 **What:** per-doc count of `TODO` / `FIXME` / `XXX` / `TBD` /
 `[要確認]` / `[要修正]` markers. Markers inside fenced code
-blocks are excluded (those are illustrative).
-**Severity:** ≥10 → High, ≥3 → Medium, else Ok. Thresholds are
-hard-coded in v0.4; consider a config knob in v0.5 if users tune
-them.
+blocks are excluded (those are illustrative). Markers inside
+single- or double-backtick inline-code spans are excluded too
+when `[features.docs.todo_density] ignore_in_inline_code = true`
+(the default) — a reference page that *describes* the marker
+keywords is quoting them, not flagging them. Per-doc opt-out
+lives in `[features.docs.todo_density] allowlist_paths`
+(gitignore-syntax globs).
+**Severity:** ≥10 → High, ≥3 → Medium, else Ok. The count →
+Severity floors are hard-coded in v0.4; consider a config knob in
+v0.5 if users tune them.
 
 ### Per-family hotspots
 

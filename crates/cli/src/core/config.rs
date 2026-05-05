@@ -121,6 +121,15 @@ pub struct DocsConfig {
     /// factually-wrong docs than about merely-stale ones.
     #[serde(default)]
     pub hotspot: DocHotspotConfig,
+    /// `[features.docs.todo_density]` — per-doc marker counter
+    /// behaviour. Defaults skip markers inside backtick-quoted spans
+    /// (the doc is *quoting* the keyword, not flagging an action item)
+    /// and apply no per-doc allowlist. Documents that legitimately
+    /// describe `TODO` / `FIXME` keywords (e.g. an observer reference)
+    /// can opt into per-path skipping via `allowlist_paths` without
+    /// disabling the observer for the whole project.
+    #[serde(default)]
+    pub todo_density: TodoDensityConfig,
 }
 
 impl Eq for DocsConfig {}
@@ -147,6 +156,7 @@ impl Default for DocsConfig {
             standalone: StandaloneDocsConfig::default(),
             doc_freshness: DocFreshnessConfig::default(),
             hotspot: DocHotspotConfig::default(),
+            todo_density: TodoDensityConfig::default(),
         }
     }
 }
@@ -275,6 +285,47 @@ impl Default for DocFreshnessConfig {
         Self {
             high_commits: Self::default_high_commits(),
             critical_commits: Self::default_critical_commits(),
+        }
+    }
+}
+
+/// `[features.docs.todo_density]` — per-doc marker counter behaviour.
+/// The observer counts `TODO` / `FIXME` / `XXX` / `TBD` / `[要確認]` /
+/// `[要修正]` occurrences in each doc; this block tunes which spans the
+/// counter inspects. Marker count thresholds (`MEDIUM_THRESHOLD`,
+/// `HIGH_THRESHOLD`) live alongside the observer.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TodoDensityConfig {
+    /// When true (default), markers inside single- or double-backtick
+    /// inline-code spans are not counted. The doc is *quoting* the
+    /// keyword (e.g. an observer reference describing `TODO` / `FIXME`
+    /// markers) rather than flagging an action item, so the count
+    /// should ignore them. Flip to `false` when the project
+    /// deliberately uses inline-code spans for action items.
+    #[serde(default = "TodoDensityConfig::default_ignore_in_inline_code")]
+    pub ignore_in_inline_code: bool,
+    /// Gitignore-syntax globs naming docs to skip entirely. Useful for
+    /// reference pages that document the marker keywords themselves
+    /// and would otherwise self-flag every paragraph. Validated at
+    /// load via [`Config::validate`].
+    #[serde(default)]
+    pub allowlist_paths: Vec<String>,
+}
+
+impl TodoDensityConfig {
+    pub(crate) const DEFAULT_IGNORE_IN_INLINE_CODE: bool = true;
+
+    fn default_ignore_in_inline_code() -> bool {
+        Self::DEFAULT_IGNORE_IN_INLINE_CODE
+    }
+}
+
+impl Default for TodoDensityConfig {
+    fn default() -> Self {
+        Self {
+            ignore_in_inline_code: Self::default_ignore_in_inline_code(),
+            allowlist_paths: Vec::new(),
         }
     }
 }
@@ -1253,6 +1304,9 @@ impl Config {
         validate_gitignore_lines(&standalone.include)
             .and_then(|()| validate_gitignore_lines(&standalone.exclude))
             .and_then(|()| validate_gitignore_lines(&standalone.entrypoints))
+            .and_then(|()| {
+                validate_gitignore_lines(&self.features.docs.todo_density.allowlist_paths)
+            })
             .map_err(|message| Error::ConfigInvalid {
                 path: path.to_path_buf(),
                 message,
