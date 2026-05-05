@@ -21,19 +21,13 @@ Contributing   → contributing, quality-goals, test-strategy,
                  security
 ```
 
-Why six and not, say, ten? Two reasons:
+Six because: (1) readers hold ~7±2 categories in working memory,
+and (2) six × 3–5 pages = 18–30 — matching DeepWiki's 30-page
+ceiling above which wikis become abandoned archives.
 
-1. **Cognitive load.** Readers can hold ~7±2 categories in
-   working memory; six fits well under the cap.
-2. **DeepWiki's empirical 30-page ceiling.** Six categories ×
-   3–5 pages each = 18–30 pages, which matches the ceiling
-   above which wikis become abandoned mass-archives instead of
-   read tools.
-
-The skill does **not** add a seventh top-level category.
 Sub-sections within a category (e.g.
-`Operations/Runbooks/<NNNN-NAME>`) are fine; another
-top-level peer is not.
+`Operations/Runbooks/<NNNN-NAME>`) are fine. A seventh top-level
+peer is not.
 
 ## §2 Filesystem layout
 
@@ -95,29 +89,16 @@ in the report; don't manufacture them.
 
 ## §3 Page-count discipline
 
-The catalog totals 25 page types across five tiers:
-
-```
-Tier 1  Essential        4–5 pages
-Tier 2  Recommended      5–7 pages
-Tier 3  Domain-dependent 4–6 pages
-Tier 4  Operational      4–5 pages
-Tier 5  Strategic        3–5 pages
-                         ──────────
-                         20–28 pages, typical mature project
-```
-
-Multiply by audience size (one runbook per alert, one ADR per
-decision, one postmortem per incident) and the **total** wiki —
-including human-authored growth — converges around 30–80 pages
-on real codebases. DeepWiki's product limits (30 pages free
-tier, 80 pages enterprise) match this empirically.
+The catalog totals 25 page types across five tiers (20–28 pages
+on a typical mature project). With user-authored growth (one
+runbook per alert, one ADR per decision, one postmortem per
+incident), the total converges around 30–80 pages — matching
+DeepWiki's free / enterprise ceilings.
 
 The skill caps **scaffold-emitted** pages at the catalog.
-User-authored growth past that is the user's choice; the skill
-doesn't gate that. But if a user comes back asking "scaffold me
-20 more pages", push back on the page-bloat anti-pattern
-(`page-catalog.md` §5) before complying.
+User-authored growth past that is the user's choice. If the
+user asks for 20 more scaffolded pages, push back on the
+page-bloat anti-pattern (`page-catalog.md` §5) first.
 
 ## §4 SSoT discipline
 

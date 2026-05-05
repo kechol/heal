@@ -13,20 +13,19 @@ empty (or the user stops). This is the **write** counterpart to
 ## Mental model
 
 `heal status --feature docs --json` writes a `FindingsRecord` to
-`.heal/findings/latest.json` and emits the docs-family slice on
-stdout. The seven docs metric strings are: `doc_freshness`,
-`doc_drift`, `doc_coverage`, `doc_link_health`, `orphan_pages`,
-`todo_density`, plus the per-family decoration carrier
-`doc_hotspot` (always `Severity::Ok`; flips `hotspot=true` on the
-other six when the pair's churn × debt is in the project's top
-decile). Each id is deterministic — the same broken link keeps
-the same id across runs, so a finding that disappears from the
-cache after a commit is genuinely fixed.
+`.heal/findings/latest.json`. The seven docs metric strings:
+`doc_freshness`, `doc_drift`, `doc_coverage`, `doc_link_health`,
+`orphan_pages`, `todo_density`, plus the per-family decoration
+carrier `doc_hotspot` (always `Severity::Ok`; flips
+`hotspot=true` on the other six when the pair's churn × debt
+sits in the project's top decile). Finding ids are deterministic
+— same broken link keeps the same id, so disappearance from the
+cache after a commit means it's genuinely fixed.
 
-`/heal-doc-patch` mirrors `/heal-code-patch`'s loop verbatim — same
-pre-flight, same per-commit `heal mark fix`, same constraints — but
-the allow-list / escalate-list is different because doc fixes have
-different judgment surface.
+This skill mirrors `/heal-code-patch`'s loop — same pre-flight,
+same per-commit `heal mark fix`, same constraints. The
+allow-list / escalate-list below is what makes doc fixes
+different.
 
 ## Pre-flight (refuse to start when these fail)
 
@@ -186,33 +185,22 @@ proposal-level discussion before mechanical fixes.
 
 ## Anti-patterns to refuse
 
-The four traps from `/heal-doc-review`'s reference apply here too,
-but the mechanical bias makes one in particular load-bearing:
+The four traps from `/heal-doc-review`'s reference apply here.
+Two are load-bearing for the mechanical loop:
 
 ### Don't manufacture content to clear a finding
 
-The Coverage trap (§4 of
-`/heal-doc-review`'s `references/architecture.md`) says coverage
-100% with empty bodies is worse than 80% with real
-explanations. The mechanical-fix temptation is to satisfy
-`doc_coverage` by writing `# CLI\n\nCLI documentation.\n` and
-calling the finding done. **Never do this.** A blank stub is
-actively worse than a missing doc.
+Writing `# CLI\n\nCLI documentation.\n` to satisfy
+`doc_coverage` is forbidden — a blank stub is actively worse
+than a missing doc (Coverage trap, `/heal-doc-review`'s
+`references/architecture.md` §4). When `doc_coverage` is all
+that's left, end the loop; the write is interpretive.
 
-When `doc_coverage` is the only thing left, the loop ends. The
-write is interpretive.
+### Don't harmonise across intentional drift
 
-### Don't enforce uniformity at the cost of correctness
-
-`/heal-doc-patch` must not "harmonise" terminology by editing
-quotations, migration guides, or deprecation notes that
-deliberately reference old names. The §5.6 trap from
-`documentation-quality-reference.md` is exactly this failure
-mode.
-
-When a `doc_drift` finding sits inside a quoted block, an explicit
-"prior to vX.Y this was called …" passage, or a CHANGELOG entry,
-**escalate**. The "drift" there is intentional and load-bearing.
+Quotations, migration guides, deprecation notes, and CHANGELOG
+entries deliberately reference old names. When a `doc_drift`
+finding sits inside one, escalate — the drift is load-bearing.
 
 ## Verification per commit
 
@@ -238,15 +226,14 @@ Conventional Commits with the finding id:
 docs(heal): fix broken link in docs/cli.md → migration.md
 
 The legacy ./old-flag.md was consolidated into migration.md in
-e8a1f2c (Sep 2025). Update the cross-reference.
+e8a1f2c. Update the cross-reference.
 
 Refs: F#doc_link_health:docs/cli.md:./old-flag.md:1234567890abcdef
 ```
 
 Subject: `docs(heal): <verb> in <doc-path>`. Body: 2-3 sentences
-including the underlying cause (rename, removal, etc.) — the
-audit-trail value is "why was this fix correct?", not just "what
-changed."
+naming the underlying cause (rename, removal, etc.) — the
+audit-trail value is "why was this fix correct?".
 
 ## Marking the commit
 

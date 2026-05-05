@@ -12,29 +12,24 @@ table**: short, decisive, scoped to what the skill needs at runtime.
 
 ## §1 Emit gate
 
-The catalog's primary rule: **emit a page only when the codebase
-can fill it with meaningful content.** Pages that would ship as
-a stack of `TODO(human):` markers or `<not detected>` cells are
-**not emitted**. Skeleton-only files are not the skill's output;
-the user authors them when they have the relevant input.
+Primary rule: **emit a page only when the codebase can fill it
+with meaningful content.** Skeleton-only pages (those that would
+ship as a stack of `TODO(human):` or `<not detected>` cells) are
+not emitted; the user authors them later.
 
-That collapses what earlier drafts called the "human-only
-carve-out" to a single artefact: the **ADR template**
-(`decisions/0000-template.md`). It carries `TODO(human):`
-markers in its Context / Decision / Consequences body sections,
-because the template's purpose is "copy this file when filing
-the next ADR" — the markers cue the writer at copy time. No
-other page emitted by this skill carries `TODO(human):`.
+The single exception is the ADR template
+(`decisions/0000-template.md`), which ships `TODO(human):`
+markers in its Context / Decision / Consequences sections —
+the template's purpose is "copy this when filing the next ADR,"
+so the markers cue the writer at copy time. No other emitted
+page carries `TODO(human):`.
 
 | Page | Treatment |
 |---|---|
-| ADR template (`decisions/0000-template.md`) | Emit always, with `TODO(human):` markers inside Context / Decision / Consequences. |
-| README "Why" section | Section omitted on auto-emit. User adds it when ready. |
-| Individual ADR bodies | Authored from the template; not auto-generated. |
-| Quality Goals, Bounded Context Map, Roadmap, Risks, Postmortems, Runbooks, Service Overview, SLOs, On-call onboarding, Security Posture | **Not emitted on first run.** Authored by the user when they have the input. |
-
-The "skip rather than skeleton" rule is what the rest of this
-catalog enforces.
+| ADR template (`decisions/0000-template.md`) | Emit always with `TODO(human):` inside body sections. |
+| README "Why" section | Section omitted on auto-emit; user adds when ready. |
+| Individual ADR bodies | User-authored from the template. |
+| Quality Goals, Bounded Context Map, Roadmap, Risks, Postmortems, Runbooks, Service Overview, SLOs, On-call onboarding, Security Posture | Not emitted on first run; user authors when they have the input. |
 
 ## §2 The emit set
 
@@ -104,7 +99,7 @@ untouched.
 
 ## §3 Per-page metadata block
 
-Every page carries one frontmatter field — `title`:
+Every page carries one frontmatter field:
 
 ```yaml
 ---
@@ -112,25 +107,8 @@ title: <page title>
 ---
 ```
 
-That's the whole block. Earlier drafts of the catalog also
-emitted Diátaxis / audience / freshness owner / last review /
-review cycle / related-pages / related-code / related-adrs.
-Each was dropped because it was either recoverable from
-`git log` (ownership, freshness) or duplicating information
-already in the body (Diátaxis purpose is conveyed by the
-content; "see also" Markdown links carry the cross-link graph;
-`.heal/doc_pairs.json` carries doc ⇔ src mapping). See
-`references/page-templates.md` §2 for the full table.
-
-The minimal frontmatter has two consequences worth flagging:
-
-- **No state-management drift on regenerate.** A re-run of the
-  skill doesn't have to reconcile `last_review` dates or
-  `freshness_owner` against the latest commit history.
-- **No tooling lock-in.** Site generators that consume more
-  than `title` (Starlight directive props, mkdocs-material
-  metadata extensions) can be wired in by hand-editing the
-  frontmatter — the skill's emit doesn't fight that edit.
+Rationale and the dropped-fields recovery table live in
+`references/page-templates.md` §2.
 
 ## §4 Auto-fill summary (emitted pages only)
 
@@ -165,32 +143,23 @@ one file — the ADR template.
 
 ## §5 Anti-patterns the skill must refuse
 
-These are the failure modes that show up when scaffold tools
-over-reach. Hard-coded into the skill body so they survive future
-edits.
-
-1. **Skeleton-only pages.** A page that ships as a stack of
-   `TODO(human):` markers or `<not detected>` cells is not
-   emitted. The user authors it when they have the input. The
-   only `TODO(human):` markers in this skill's output are inside
-   the ADR template's body sections — that template is meaningful
-   (a copy-source for filing the next ADR), not a skeleton.
-2. **Manufacturing prose to clear `doc_coverage`.** A one-line
-   stub like `# CLI\n\nCLI documentation.\n` is forbidden — the
-   Coverage trap. Skip the page instead.
+1. **Skeleton-only pages.** Pages that would ship as 80%+
+   `TODO(human):` or `<not detected>` are not emitted. The only
+   `TODO(human):` in this skill's output sits inside the ADR
+   template's body sections.
+2. **Stub prose to clear `doc_coverage`.** A one-line stub
+   (`# CLI\n\nCLI documentation.\n`) is forbidden — Coverage
+   trap. Skip instead.
 3. **Mirroring `src/` into `<scaffold_root>/`.** Wiki structure
-   is question-shaped, not code-shaped — the page plan reflects
-   reader questions (`.claude/docs/doc-scaffold-design.md` §2.1).
+   is question-shaped, not code-shaped. See
+   `.claude/docs/doc-scaffold-design.md` §2.1.
 4. **Inventing values.** Owner names, oncall rotations,
    dashboard URLs, SLO numbers, threat-model claims — never
-   guessed. The honest options are auto-fill from a detected
-   source or skip the page.
-5. **Emitting > 30 pages.** The page plan caps the catalog at
-   ~28 page types; user-authored growth past that is the user's
-   call.
-6. **Deleting human-authored files.** Even with `--force`. The
-   contract is "overwrite generated pages"; "delete arbitrary
-   files in the doc tree" is out of scope.
-7. **Auto-translating.** When the project's existing prose is
-   non-English, the skill emits English content and surfaces a
-   note in the summary. The user picks the locale strategy.
+   guessed. Honest options: auto-fill from a detected source,
+   or skip the page.
+5. **Emitting > 30 pages.** Catalog caps at ~28; user-authored
+   growth is the user's call.
+6. **Deleting human-authored files** (even under `--force`).
+7. **Auto-translating.** Non-English project → emit English
+   and surface the locale split in the summary; user picks
+   the strategy.

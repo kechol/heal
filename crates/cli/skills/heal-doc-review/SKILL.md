@@ -5,24 +5,21 @@ description: Read every finding from the `[features.docs]` observer family produ
 
 # heal-doc-review
 
-Read-only skill that interprets the `[features.docs]` findings (`doc_freshness`,
-`doc_drift`, `doc_coverage`, `doc_link_health`, `orphan_pages`,
-`todo_density`) and produces a prioritized TODO list grounded in
-Diátaxis, the doc-quality literature, and the user's actual codebase.
-
-This is the **proposal** side of doc maintenance. The mechanical
-counterpart — broken-link fixes, dangling-identifier deletions, etc.
-— lives in `/heal-doc-patch`. Don't apply changes here.
+Read-only skill that interprets the `[features.docs]` findings
+(`doc_freshness`, `doc_drift`, `doc_coverage`, `doc_link_health`,
+`orphan_pages`, `todo_density`) and produces a prioritized TODO
+list grounded in Diátaxis, the doc-quality literature, and the
+user's actual codebase. The mechanical write counterpart is
+`/heal-doc-patch`.
 
 ## Mental model
 
-`heal status --feature docs --json` (with `[features.docs] enabled = true`) returns
-findings with `Finding.metric` strings prefixed with `doc_`. Each
-metric measures a different axis of doc decay; the right
-remediation depends on which axis fired and why. The reading layer
-maps findings to one of four Diátaxis purposes (Tutorial / How-to /
-Reference / Explanation) and recommends a fix that respects the
-doc's purpose.
+`heal status --feature docs --json` returns findings whose
+`Finding.metric` is prefixed with `doc_`. Each metric measures a
+different axis of decay; remediation depends on which axis fired
+and why. The reading layer maps findings to one of four Diátaxis
+purposes (Tutorial / How-to / Reference / Explanation) and
+recommends a fix that respects the doc's purpose.
 
 ## When this skill is right
 
@@ -177,18 +174,14 @@ Counts:
 
 ## Constraints
 
-- **Read-only.** Never edit a doc, src file, or `.heal/*` file
-  from this skill.
-- **Diátaxis-aware.** Don't recommend Reference rigor on
-  Explanation docs (or vice versa). The lens matters.
-- **Avoid the traps.** Coverage / autogen / link perfectionism /
-  doc bloat are spelled out in `references/architecture.md` §4 —
-  consult that section before writing any "write more docs"
-  recommendation.
-- **Don't moralize.** A doc that's been stale 30 commits is a
-  signal, not a verdict. The user might have intentionally
-  frozen it.
-- **English output.** Skill writes English; underlying docs may
-  be in any language. When suggesting a rewrite of a non-English
-  doc, recommend the user (or a translator) handle it — don't
-  auto-translate.
+- **Read-only.** Never edit a doc, src, or `.heal/*` file.
+- **Diátaxis-aware.** Don't apply Reference rigor to
+  Explanation docs or vice versa.
+- **Avoid the traps.** Coverage / autogen / link perfectionism
+  / doc bloat — consult `references/architecture.md` §4 before
+  any "write more docs" recommendation.
+- **Don't moralize.** A doc stale 30 commits is a signal, not a
+  verdict — the user may have intentionally frozen it.
+- **English output.** Skill writes English; docs may be in any
+  language. For non-English rewrites, recommend the user or a
+  translator handle it — don't auto-translate.

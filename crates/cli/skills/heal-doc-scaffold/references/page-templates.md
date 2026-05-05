@@ -25,7 +25,7 @@ shape the catalog forbids; the user authors it later.
 
 ## §2 The frontmatter block
 
-Every emitted page starts with one field. That's it.
+Every emitted page starts with exactly one field:
 
 ```yaml
 ---
@@ -33,30 +33,21 @@ title: <auto: page title>
 ---
 ```
 
-`title` is kept because Starlight / mkdocs / mdBook nav and
-sidebars key on it; the H1 alone isn't enough for those
-generators. Everything else that earlier drafts of this skill
-emitted has been dropped, because each was either recoverable
-from git or duplicating information the body already carries:
+`title` is kept because Starlight / mkdocs / mdBook sidebars key
+on it. Other fields earlier drafts emitted are dropped — each
+was either recoverable from git or duplicating body content:
 
 | Dropped field | Recover via |
 |---|---|
-| `diataxis`, `audience` | The body's tone and content. Categorisation is a reader/writer judgment, not a tag the skill can usefully assert. |
-| `freshness_owner` | `git log --format="%aN" -- <path>` (top contributor) |
-| `last_review` / `review_cycle` | `git log -1 --format="%cI" -- <path>` + the `doc_freshness` observer's commit-distance signal |
-| `related_pages` / `related_code` / `related_adrs` | Markdown links in the body and `.heal/doc_pairs.json` |
+| `diataxis`, `audience` | Body tone and content; categorisation is a reader/writer judgment. |
+| `freshness_owner` | `git log --format="%aN" -- <path>` |
+| `last_review` / `review_cycle` | `git log -1 --format="%cI" -- <path>` + `doc_freshness` |
+| `related_pages` / `related_code` / `related_adrs` | Body Markdown links and `.heal/doc_pairs.json` |
 
-Frontmatter is a state-management burden when it carries fields
-the emitter has to keep in sync with elsewhere. The minimum
-shape avoids that trap entirely.
+Minimum shape avoids state-management drift on regenerate.
 
-The `[features.docs]` `todo_density` observer recognises
-`TODO(human):` as a marker; the markers inside the ADR template
-keep that file from being a one-off ghost in `todo_density`
-output (the template is the obvious source of the markers, by
-design). Pages this skill does not emit do not have any TODO
-markers to surface — they simply don't exist until the user
-writes them.
+`todo_density` recognises `TODO(human):` as a marker; the ADR
+template's markers are the only legitimate source.
 
 ## §3 Tier 1 templates
 

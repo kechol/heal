@@ -13,28 +13,24 @@ counterpart to `/heal-test-review`.
 ## Mental model
 
 `heal status --feature test --json` writes a `FindingsRecord` to
-`.heal/findings/latest.json` and emits the test-family slice on
-stdout. Findings produced by the `[features.test]` observer
-family carry one of these `Finding.metric` strings:
+`.heal/findings/latest.json`. The `[features.test]` metric strings:
 
-- `coverage_pct` — uncovered source file (severity from
-  `[calibration.coverage_pct]`).
-- `change_coupling.drift` — `TestSrc` pair where the test isn't
-  co-evolving with its source (Severity::Medium).
-- `skip_ratio` — per-test-file skip percentage (`> 1% / > 5% / > 20%`
-  bands).
-- `test_hotspot` — per-src-file `commits × uncov_pct` decoration
-  carrier; `Severity::Ok` itself, but flips `hotspot=true` on
-  `coverage_pct` findings sitting on the same src.
+- `coverage_pct` — uncovered source file; severity from
+  `[calibration.coverage_pct]`.
+- `change_coupling.drift` — `TestSrc` pair where the test
+  isn't co-evolving with its source (`Severity::Medium`).
+- `skip_ratio` — per-test-file skip percentage (`> 1% / > 5% / > 20%`).
+- `test_hotspot` — `commits × uncov_pct` decoration carrier;
+  `Severity::Ok`, flips `hotspot=true` on `coverage_pct`
+  findings on the same src.
 
-Each id is deterministic — the same coverage gap on
-`src/foo.rs::bar` keeps the same id across runs, so a finding that
-disappears from the cache after a commit is genuinely fixed.
+Finding ids are deterministic — disappearance from the cache
+after a commit means it's genuinely fixed.
 
-`/heal-test-patch` mirrors `/heal-code-patch` and `/heal-doc-patch`
-verbatim — same pre-flight, same per-commit `heal mark fix`, same
-constraints. The allow-list / escalate-list below is what makes the
-test family different.
+This skill mirrors `/heal-code-patch` and `/heal-doc-patch` —
+same pre-flight, same per-commit `heal mark fix`, same
+constraints. The allow-list / escalate-list below is what makes
+test fixes different.
 
 ## Pre-flight (refuse to start when these fail)
 
@@ -181,56 +177,50 @@ proposal-level discussion before mechanical fixes.
 
 ## Forbidden anti-patterns (must refuse)
 
-These are not "stop and ask" — they are bright-line refusals. If a
-fix's only path forward goes through one of these, abort the
-finding and move to the next.
+Bright-line refusals — if a fix's only path forward goes through
+one of these, abort the finding and move on.
 
 ### Lowering test strength to drain a finding
 
-- Replacing a strict assertion (`assert_eq!(out, Expected::Foo)`)
-  with a loose one (`assert!(out.is_ok())`) to make a test pass.
-- Replacing a deep equality check with a shallow truthiness check.
-- Weakening fixture validation: dropping schema checks, broadening
-  regex matchers, removing length / count assertions.
+- Replacing strict assertions (`assert_eq!`) with loose ones
+  (`assert!(out.is_ok())`).
+- Replacing deep equality with shallow truthiness.
+- Weakening fixture validation (dropping schema checks,
+  broadening regex matchers, removing length / count asserts).
 - Adding `# pragma: no cover` / `#[allow(dead_code)]` /
-  `/* istanbul ignore next */` to suppress coverage measurement
-  rather than actually covering the code.
-- Deleting a test that fails (as opposed to fixing the bug or the
-  test).
+  `/* istanbul ignore next */` to suppress measurement instead
+  of covering the code.
+- Deleting a failing test instead of fixing the bug or the test.
 
-The point of the suite is to detect regression. Every weakening
-above narrows that detection window. The metric will move; the
-codebase's safety net won't.
+Each weakening narrows the suite's detection window. The metric
+moves; the safety net doesn't.
 
-### Adding `@pytest.mark.skip` / `#[ignore]` / `it.skip` to "fix" a flake
+### Skipping a flake to drain `skip_ratio`
 
-Flakiness is **out of scope** for this skill. Skipping a flake is
-the wrong remediation: it converts an intermittent signal into a
-permanent blind spot, AND raises the `skip_ratio` metric this skill
-is supposed to drain. Surface the flake to the user and move on.
+Flakiness is out of scope for this skill. Skipping converts an
+intermittent signal into a permanent blind spot AND raises the
+metric. Surface the flake and move on.
 
 ### Generating tests without running them
 
-Every patch commit must include a successful test-runner output.
-"I wrote the test; the user can run it" is not acceptable — the
-loop's contract is one-finding-per-commit-with-passing-tests. If
-the runner won't run (missing dependency, broken harness), the
-finding is in escalate territory.
+Every patch commit must include successful runner output. "I
+wrote the test; the user can run it" violates the
+one-finding-per-commit-with-passing-tests contract. If the
+runner won't run, the finding is in escalate territory.
 
-### Bulk-adding scaffolded tests across multiple files in one commit
+### Bulk-committing across files
 
-The contract is **one finding per commit**. A coverage drain across
-12 files is 12 commits, not one. Bulk commits break `heal diff`'s
-ability to attribute drops, break the audit trail in `fixed.json`,
-and make it impossible to revert a single bad test in isolation.
+One finding per commit. A coverage drain across 12 files is 12
+commits. Bulk commits break `heal diff` attribution, break the
+`fixed.json` audit trail, and prevent reverting a single bad test.
 
 ### Manufacturing assertions
 
-A test that asserts what the implementation does (rather than what
-the contract requires) is worse than no test — it locks in the
-current behavior, including its bugs. When you can't articulate
-*what should be true regardless of how the function is written*,
-the finding is undocumented behavior and belongs in escalate.
+A test that asserts what the implementation does — not what the
+contract requires — locks in current behavior including its bugs.
+When you can't articulate *what should be true regardless of how
+the function is written*, the finding is undocumented behavior
+and belongs in escalate.
 
 ## Verification per commit
 
@@ -256,30 +246,30 @@ skip the finding.
 
 ## Commit message format
 
-Conventional Commits with the finding id as the trailing tag:
+Conventional Commits with the finding id:
 
 ```
 test(heal): cover validate_order in src/payments/engine.rs
 
 Add four AAA-structured unit tests against the function's
 documented contract: empty cart returns ValidationError::Empty,
-negative quantity returns ValidationError::Quantity, etc. Coverage
-on engine.rs climbs from 12% to 78%.
+negative quantity returns ValidationError::Quantity, etc.
+Coverage on engine.rs climbs from 12% to 78%.
 
 cargo test → 128 passed.
 
 Refs: F#coverage_pct:src/payments/engine.rs:1234567890abcdef
 ```
 
-Subject: `test(heal): <verb> <symbol> in <file>` for new tests,
-`test(heal): align <test-name> in <test-file>` for drift fixes,
-`test(heal): re-enable <test-name>` (or `test(heal): remove obsolete
-<test-name>`) for skip resolutions.
+Subject patterns:
 
-Body: 2-3 sentences including the underlying cause (rename,
-documentation, stale skip reason) and a one-line runner-output
-summary. The audit-trail value is "why was this fix correct?", not
-just "what changed."
+- new test → `test(heal): <verb> <symbol> in <file>`
+- drift fix → `test(heal): align <test-name> in <test-file>`
+- skip resolution → `test(heal): re-enable <test-name>` or
+  `test(heal): remove obsolete <test-name>`
+
+Body: 2-3 sentences naming the cause (rename, documentation,
+stale skip reason) plus a one-line runner-output summary.
 
 ## Marking the commit
 

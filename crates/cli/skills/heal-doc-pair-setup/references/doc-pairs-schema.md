@@ -1,17 +1,15 @@
 # `.heal/doc_pairs.json` schema reference
 
-The single source of truth for Layer A doc ⇔ src pair mappings. The
-HEAL binary reads this file at every `heal status` / `heal metrics`
-invocation when `[features.docs] enabled = true`. It does not write
-it — generation lives in `/heal-doc-pair-setup`.
+SSoT for Layer A doc ⇔ src pair mappings. Read by `heal status` /
+`heal metrics` when `[features.docs] enabled = true`; written only
+by `/heal-doc-pair-setup`.
 
 ## File location
 
-Default: `.heal/doc_pairs.json` (project root relative). The path is
-configurable via `[features.docs] pairs_path = "..."` in
-`.heal/config.toml`. The default is the right answer for almost
-every project; change only when the convention conflicts with an
-existing tool.
+Default: `.heal/doc_pairs.json` (project-root relative).
+Configurable via `[features.docs] pairs_path = "..."` in
+`.heal/config.toml`. Override only when the default conflicts
+with an existing tool.
 
 ## Top-level shape
 
@@ -55,15 +53,15 @@ points at it.
 
 ### `pairs[].srcs` (required, array of strings)
 
-One or more project-relative source files this doc describes. A
-single doc can describe several srcs — a CLI reference page often
-covers a `cli.rs` plus several files under `commands/`. Order is
-informational; the observers treat the array as a set.
+One or more project-relative source files this doc describes
+(observers treat the array as a set; order is informational).
+A single doc can cover several srcs — e.g. a CLI reference page
+covers `cli.rs` plus files under `commands/`.
 
-The set should be **what a reader of the doc would expect to read
-next**. It is *not* a transitive closure of every type the doc
-mentions; `Foo::bar` mentioned in passing for context doesn't mean
-`Foo`'s defining file should join the pair.
+The set is **what a reader of the doc would expect to read
+next** — *not* a transitive closure of every type the doc
+mentions. `Foo::bar` referenced in passing for context doesn't
+mean `Foo`'s defining file joins the pair.
 
 ### `pairs[].confidence` (optional, float in `[0.0, 1.0]`)
 
@@ -91,26 +89,24 @@ How the entry was produced. Values:
 
 ## Manual-entry contract
 
-`source: "manual"` is a one-way door: once an entry carries it, the
-skill's Phase 2 (Merge) treats the entry as immutable. To change a
-manual entry, edit the JSON directly. To convert a poor LLM
-inference into a stable pair, edit the entry and change `source`
-to `"manual"` — the skill will preserve it from then on.
+`source: "manual"` is a one-way door — Phase 2 (Merge) treats
+manual entries as immutable. To change one, edit the JSON
+directly. To lock in a good LLM inference, edit it and flip
+`source` to `"manual"`; the skill preserves it from then on.
 
 ## Integrity warnings
 
-At every `heal status` invocation with the docs feature enabled,
-the binary calls `DocPairsFile::integrity_check`. Each referenced
-path that doesn't exist on disk produces one stderr warning:
+`DocPairsFile::integrity_check` runs on every `heal status` with
+docs enabled. Each missing path produces one non-fatal stderr
+warning:
 
 ```
 warn: .heal/doc_pairs.json: pair[3] references missing path src/cli_old.rs
 ```
 
-The warnings are non-fatal. The observers skip the offending entry
-and continue. Manual entries with missing paths are **not** auto-
-removed — they survive the warning so the user can re-add the moved
-file deliberately.
+Observers skip the offending entry and continue. Manual entries
+with missing paths are **not** auto-removed — the user re-adds
+the moved file deliberately.
 
 ## Common shapes
 

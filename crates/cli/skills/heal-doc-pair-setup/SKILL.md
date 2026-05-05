@@ -5,19 +5,12 @@ description: Scan the source tree and doc tree, detect doc ⇔ src pairs using m
 
 # heal-doc-pair-setup
 
-One-shot skill that produces (or updates) a project's
-`.heal/doc_pairs.json`. It works in three phases: **detect** doc ↔ src
-correspondences via three independent heuristics, **merge** the
-candidates with the existing file (preserving manual entries), and
-**write** the SSoT atomically.
-
-The HEAL binary is a deterministic *consumer* of this file; it has no
-detection logic on its own. That's why generation lives here, in a
-user-triggered skill, rather than inside `heal status`.
-
-Read-only on source files. The only file it writes is
-`.heal/doc_pairs.json`. The `[features.docs]` observers under `heal
-status` and `heal metrics` read it back the next time they run.
+Produces (or updates) `.heal/doc_pairs.json`, the SSoT for the
+`[features.docs]` observer family. Three phases: **detect** doc ↔
+src correspondences via three independent heuristics, **merge**
+with the existing file (preserving manual entries), **write** the
+SSoT atomically. Read-only on source files; the only file written
+is `.heal/doc_pairs.json`.
 
 ## When this skill is right
 
@@ -40,23 +33,17 @@ at `references/doc-pairs-schema.md` directly — this skill is for
 
 ## Pre-flight
 
-Before changing anything:
-
 1. **`[features.docs]` enabled.** Check `.heal/config.toml`. If
-   `[features.docs] enabled = false` (or the section is absent), tell
-   the user the file would have no consumers and ask whether to
-   enable the feature now. If they decline, stop — generating the
-   SSoT without the feature on is busy-work.
-2. **Existing JSON loaded.** If `.heal/doc_pairs.json` already
-   exists, read it. The `source: "manual"` entries are sacred — they
-   carry through every regeneration unchanged.
-3. **Walk plan in mind.** The detection sweeps three trees:
-   - **Sources:** every file under tree-sitter-supported extensions
+   disabled (or absent), tell the user the file would have no
+   consumers and ask whether to enable. If they decline, stop.
+2. **Existing JSON loaded.** When `.heal/doc_pairs.json` exists,
+   read it. `source: "manual"` entries are sacred and carry
+   through every regeneration unchanged.
+3. **Walk targets:**
+   - **Sources:** files under tree-sitter-supported extensions
      (`.rs`, `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.go`, `.scala`).
-   - **Docs:** every file under `features.docs.standalone.include`
-     globs (default `**/*.md` + `**/*.rst`) minus the `exclude`
-     globs.
-   - **Layer A targets:** these are the pair sets we want to discover.
+   - **Docs:** files matching `features.docs.standalone.include`
+     (default `**/*.md` + `**/*.rst`) minus `exclude`.
 
 ## Procedure (Detect → Merge → Write)
 
@@ -120,14 +107,11 @@ either delete entries the heuristic got wrong or promote them to
 
 #### Stopping rule
 
-For very large codebases (>50k LOC, >500 docs), Phase 3 can balloon
-into a long-running discovery loop. Cap LLM inference at the **20
-docs with no Phase 1/2 match**, sorted by what's likely most
-important: shortest paths first, then by recent commit churn (use
-`heal metrics --metric churn --json`). Skip the rest with a comment
-in the output saying *"N more docs unpaired; rerun with stronger
-hints to extend"*. Don't silently truncate without surfacing the
-number.
+For large codebases (>50k LOC, >500 docs), cap LLM inference at
+the **20 unpaired docs** with shortest paths first, ties broken by
+recent commit churn (`heal metrics --metric churn --json`). Surface
+the truncated count in the output ("N more docs unpaired; rerun
+with stronger hints to extend"); never silently truncate.
 
 ### Phase 2 — Merge
 
@@ -189,19 +173,16 @@ directly (and changing `source` to `"manual"` to lock in the fix).
 
 ## Constraints
 
-- **Write `.heal/doc_pairs.json` only.** Never edit `config.toml` or
-  any source / doc file from this skill.
-- **Manual entries are sacred.** Re-running this skill must never
-  silently change a `source: "manual"` entry. The only mutation
-  allowed is deleting a manual entry the user explicitly requested
-  removal of (handle that as a separate flow, not auto).
-- **Recommend, don't require.** If the LLM pass picks the wrong
-  pair, the user fixes it by editing the JSON. Don't try to
-  auto-correct on the next run — manual edits override.
-- **Schema version drift.** When `DOC_PAIRS_VERSION` bumps, HEAL
-  will silently treat the old file as absent (same pattern as
-  `findings_cache`). Re-running this skill regenerates under the
-  new version. Mention this in the output if you detect a version
-  mismatch.
-- **English output.** The skill writes English in its summary; the
-  JSON itself has no localised content.
+- **Writes `.heal/doc_pairs.json` only.** Never edits
+  `config.toml` or any source / doc file.
+- **Manual entries are sacred.** Re-running must never silently
+  change a `source: "manual"` entry. Deletion happens only on
+  explicit user request, not as auto-cleanup.
+- **No auto-correct.** When the LLM pass picks the wrong pair,
+  the user fixes it by editing the JSON. Don't reverse the
+  edit on the next run.
+- **Schema version drift.** When `DOC_PAIRS_VERSION` bumps,
+  HEAL treats the old file as absent. Mention in the output if
+  you detect a mismatch.
+- **English output.** Summary is English; the JSON has no
+  localised content.

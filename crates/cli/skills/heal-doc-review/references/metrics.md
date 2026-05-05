@@ -1,8 +1,7 @@
 # `[features.docs]` metrics reference
 
-Per-metric definitions matching the binary's observer outputs. Use
-this when interpreting `Finding.summary` / `Finding.metric` strings
-out of `heal status --json`.
+Per-metric definitions for interpreting `Finding.summary` /
+`Finding.metric` from `heal status --json`.
 
 ## `doc_freshness`
 

@@ -1,6 +1,6 @@
 ---
 name: heal-doc-scaffold
-description: Stand up a project's documentation tree from scratch — autonomously, from codebase signals alone (no `AskUserQuestion` calls). Emits **only** pages the codebase can fill meaningfully: container lists, module responsibilities, glossary seeds, getting-started commands, API references, ER tables, runtime sequence diagrams, contributing rules — all derived from manifests, source comments, IaC, and CI configs. Pages whose value comes from organisational decisions (Quality Goals, Bounded Context Map, Roadmap, Service Overview, SLOs, Runbooks, Postmortems, Security Posture) are **not generated as skeletons** — they're skipped on first run and added when the user has the relevant input. `TODO(human):` markers are reserved for the absolute minimum: ADR bodies (frozen judgment) and Postmortem "Lessons" sections, both inside templates that only emit when the user actually files an ADR or postmortem. Output lands under `[features.docs] scaffold_root` (default `.heal/docs/`). Missing-only by default; `--force` overwrites. Trigger on "scaffold the docs tree", "generate the wiki", "build the documentation from scratch", "/heal-doc-scaffold".
+description: Stand up a project's documentation tree from scratch — autonomously, from codebase signals alone (no `AskUserQuestion` calls). Emits **only** pages the codebase can fill meaningfully: container lists, module responsibilities, glossary seeds, getting-started commands, API references, ER tables, runtime sequence diagrams, contributing rules — all derived from manifests, source comments, IaC, and CI configs. Pages whose value comes from organisational decisions (Quality Goals, Bounded Context Map, Roadmap, Service Overview, SLOs, Runbooks, Postmortems, Security Posture) are **not generated as skeletons** — they're skipped on first run and added when the user has the relevant input. `TODO(human):` markers ship in only one file: the ADR template (`decisions/0000-template.md`). Output lands under `[features.docs] scaffold_root` (default `.heal/docs/`). Default mode reconciles an existing tree (refreshes auto-managed sections, preserves hand-edits); `--missing-only` only adds new pages; `--force` regenerates emit-set pages from scratch. Trigger on "scaffold the docs tree", "generate the wiki", "build the documentation from scratch", "/heal-doc-scaffold".
 ---
 
 # heal-doc-scaffold
@@ -41,28 +41,19 @@ Tier 5 (3–5 pages)   Strategic   — Roadmap, Risk Register,
                                    Test Strategy, Security
 ```
 
-A typical mature codebase wants 20–28 of these pages — not 200.
-Page-count discipline is part of the contract; see
-`references/wiki-organization.md` §3 for why DeepWiki's 30-page
-ceiling is approximately right.
+A typical mature codebase wants 20–28 pages, not 200. The skill
+emits **only** pages whose content the codebase can fill — a
+page that would ship as a stack of `TODO(human):` markers or
+`<not detected>` cells is not emitted at all. The user authors
+those later when they have the relevant input (an incident
+produces a postmortem; a roadmap decision drives the Roadmap
+page).
 
-The skill emits a **codebase-derived** wiki: a page lands only
-when there's enough signal to fill it with real content.
-Skeleton-only pages — those that would ship as a stack of
-`TODO(human):` markers — are simply not generated. The user
-adds them later when they have the relevant input (a real
-incident produces the first postmortem; a chosen Roadmap drives
-the Roadmap page; an organisational priority list drives Quality
-Goals). The wiki on day 1 is smaller than the catalog's full
-range, on purpose.
-
-The only `TODO(human):` markers that ever ship are inside the
-ADR template and the Postmortem template — and those templates
-are themselves emitted only when an actual ADR / postmortem is
-filed (the skill emits the Index page and the template file;
-individual entries are user-authored). Everywhere else the
-output is auto-filled content or `<not detected>` — never a
-placeholder calling for the writer to draft a section.
+The single exception: the ADR template
+(`decisions/0000-template.md`) ships with `TODO(human):`
+markers in its body — that template is meaningful on its own
+(its purpose is "copy this when you file ADR-NNNN"). No other
+file in this skill's output ever contains `TODO(human):`.
 
 ## When this skill is right
 
@@ -93,62 +84,44 @@ use `/heal-doc-patch`. If they want to **map** docs ↔ src, use
 - `references/wiki-organization.md` — filesystem layout, navigation
   pattern (six-category top), SSoT discipline, anti-patterns.
 
-## Pre-flight (refuse to start when these fail)
+## Pre-flight
 
-1. **Configured root.** Read
-   `[features.docs] scaffold_root` from `.heal/config.toml`. The
-   default is `.heal/docs/`, which keeps scaffold output under
-   the `.heal/` umbrella alongside `config.toml`,
-   `calibration.toml`, and `doc_pairs.json`. That default
-   intentionally avoids colliding with any existing `docs/` tree
-   the project owns (Starlight, mdBook, mkdocs). Once the user
-   reviews the skeletons they typically `git mv .heal/docs docs`
-   and set `scaffold_root = "docs"` so the next regeneration
-   lands directly in the published location. Whatever value
-   `scaffold_root` has on this run is the only tree the skill
-   writes to.
+1. **Configured root.** Read `[features.docs] scaffold_root` from
+   `.heal/config.toml` (default `.heal/docs/`). That default
+   keeps scaffold output under `.heal/` to avoid colliding with
+   an existing `docs/` tree (Starlight, mdBook, mkdocs); after
+   review users typically `git mv .heal/docs docs` and set
+   `scaffold_root = "docs"`. Whatever value is set on this run
+   is the only tree the skill writes to.
 2. **`[features.docs]` awareness.** Probe with
-   `heal status --feature docs --json`. If the docs family is off,
-   warn that the skeleton's frontmatter is consumer metadata for
-   that family — nothing is broken, but the observers won't see
-   the new pages until the family is enabled. Continue (this skill
-   doesn't depend on the family being on).
-3. **Existing tree mode — reconcile by default.** Inspect
-   `<scaffold_root>/`:
-   - **Empty / missing:** create the tree from scratch.
-   - **Non-empty:** the skill is **safe to re-run**. Do not
-     skip-everything by default; instead, **reconcile** (Phase
-     2 + Phase 3 below) so freshened codebase signal flows
-     into auto-managed sections without disturbing the user's
-     hand-edits.
-   - `--missing-only` flag: only emit pages that don't exist;
-     leave every existing file untouched. Use when the user
-     wants the skill to act as an "additive bootstrap" only.
-   - `--force` flag: regenerate all emit-set pages from
-     scratch, overriding hand-edits. Use this knowingly — it
-     is destructive of user work in those pages. The skill
-     still **never** touches files outside the emit set, even
-     under `--force`.
-   - In all modes, files **outside the emit set** (whatever
-     the user authored on their own — Quality Goals, Roadmap,
-     filed ADRs, runbooks, postmortems, etc.) are sacred. The
-     skill never deletes or rewrites them.
-4. **Clean worktree (recommended).** Not enforced — running on a
-   dirty tree is fine — but call out in the summary if there were
-   uncommitted changes when the skill ran, since the diff a
-   reviewer sees will mix unrelated work with scaffold output.
+   `heal status --feature docs --json`. If the family is off,
+   note in the summary that observers won't see the new pages
+   until enabled — but continue. This skill doesn't require the
+   family to be on.
+3. **Existing tree mode.** Inspect `<scaffold_root>/`:
+   - Empty / missing → emit from scratch.
+   - Non-empty → reconcile (Phase 2 + Phase 3).
+   - `--missing-only` → emit only missing pages; leave existing
+     files untouched.
+   - `--force` → regenerate emit-set pages from scratch,
+     overriding hand-edits in those pages.
+   - In **all** modes, files outside the emit set (user-authored
+     pages — Quality Goals, Roadmap, filed ADRs, runbooks, etc.)
+     are never touched.
+4. **Worktree state.** Dirty worktree is OK; mention it in the
+   summary so the reviewer knows the diff mixes unrelated work
+   with scaffold output.
 
 ## Procedure (Detect → Survey → Reconcile → Emit → Report)
 
-The five-phase shape is what makes the skill **safe to re-run**.
-First-run and Nth-run go through the same pipeline; the
-existing tree just becomes input that Phase 2 + Phase 3 reason
-about.
+First-run and Nth-run share the same pipeline; an existing tree
+becomes input that Phase 2 + Phase 3 reason about, which is what
+makes the skill safe to re-run.
 
 ### Phase 1 — Detect (codebase)
 
-Survey the project so the page plan reflects what's actually here.
-The detector reads, never writes.
+Survey the project so the page plan reflects what's actually
+here. Read-only.
 
 | Signal | What it tells the page plan |
 |---|---|
@@ -177,36 +150,26 @@ heading**:
 | Heading text matches a template heading **but** body has substantive hand-edits (extra paragraphs, custom subsections, code examples beyond the template, > ~30 % divergence from baseline) | **hand-authored** — preserve |
 | Heading is **not** in the template (user-added section) | **user-added** — preserve verbatim |
 
-The classification is **fuzzy** by design — the skill is an
-agent, not a regex. Read the file with intent: ask "did the
-team take ownership of this section?" not "does it match
-exactly?". When in doubt, classify as hand-authored. The cost
-of leaving a section stale on this run is small (next run can
-catch up); the cost of stomping a hand-edit is high.
+Classification is **fuzzy** — read the file with intent ("did
+the team take ownership of this section?"), not by regex match.
+When in doubt, classify as hand-authored: stomping a hand-edit
+is more expensive than leaving an auto-managed section stale
+for one run.
 
-Record each emitted page's per-section classification map.
-Phase 3 consumes it.
+Flag overrides:
 
-The flag overrides:
-
-- `--force`: skip Phase 2's per-section classification — every
-  emit-set page is treated as fully auto-managed. Hand-edits in
-  emit-set pages are overwritten. Files outside the emit set
-  remain untouched (this is non-negotiable).
-- `--missing-only`: skip Phase 2 entirely. Existing emit-set
-  pages are logged as `skipped (existing)` and Phase 4 emits
-  only the missing ones.
+- `--force`: skip per-section classification; treat every
+  emit-set page as fully auto-managed.
+- `--missing-only`: skip Phase 2 entirely; existing emit-set
+  pages are logged `skipped (existing)`.
 
 ### Phase 3 — Reconcile
 
-Combine Phase 1's codebase signal with Phase 2's existing-tree
-classification to decide, per page, what action to take. The
-decision is **detection-driven, not interactive**: each
+Combine Phase 1's codebase signal with Phase 2's classification
+to decide per-page action. Detection-driven, not interactive: a
 candidate page emits only when Phase 1 found enough signal to
-fill it with real content. No `AskUserQuestion` for tier
-selection. **No emission of skeleton-only pages.** The user
-reviews the emitted tree and removes pages they don't want;
-pages that don't apply are absent rather than empty.
+fill it with real content. Pages that don't apply are absent,
+not empty.
 
 Per-page action matrix (default mode, no flags):
 
@@ -219,20 +182,15 @@ Per-page action matrix (default mode, no flags):
 | Page doesn't apply (signal silent) | File doesn't exist | no-op |
 | Page doesn't apply | File exists | **preserve** — the user authored a page the skill would have skipped; never delete |
 
-This matrix is what makes the skill safe to invoke any number
-of times: re-runs flow current codebase signal into the
-auto-managed parts of the tree, and never overwrite user work.
-
 #### The emit gate
 
-For every candidate page, ask: *can the codebase fill ≥ ~50%
-of this page with detected content?*
+For every candidate page, ask: *can the codebase fill ≥ ~50% of
+this page with detected content?*
 
-- **Yes** → emit, auto-fill everything detectable, leave the
+- **Yes** → emit. Auto-fill everything detectable; leave
   remaining cells as `<not detected>`.
-- **No** → **skip**. Do not emit a skeleton; do not emit a
-  page that would ship as 80%+ TODO markers or `<not detected>`
-  cells. The user authors the page when they have the input.
+- **No** → skip. Do not emit a skeleton or a page that would
+  ship as 80%+ `<not detected>` cells.
 
 #### Always-emit pages (Tier 1 — codebase signal is rich)
 
@@ -268,53 +226,38 @@ the resulting auto-fill produces meaningful content.
 
 #### Pages the skill does **not** generate
 
-These page kinds are **not emitted** on first run, because
-their content is organisational / forward-looking / incident-
-reactive — the codebase has no signal that would let the skill
-fill them honestly. They appear in the user's wiki when the
-user authors them; the skill stays out of the way.
+These pages are not emitted on first run — their content is
+organisational, forward-looking, or incident-reactive, and the
+codebase has no signal to fill them honestly. The user authors
+them when ready (filing an ADR, agreeing on Quality Goals, etc.).
 
 - `strategy/quality-goals.md` — stakeholder priorities.
 - `architecture/bounded-contexts.md` — domain boundaries
-  (organisational, not structural; even a detected DDD layered
-  split doesn't give context names or relationships).
+  (organisational, not structural).
 - `decisions/roadmap.md` — forward planning.
-- `decisions/risks.md` — known issues; the user logs items as
-  they arise.
+- `decisions/risks.md` — known issues; logged as they arise.
 - `operations/service-overview.md` / `operations/slos.md` /
   `operations/oncall-onboarding.md` — owner / oncall / SLO
   targets / dashboards are organisational.
-- `operations/runbooks/index.md` + sample — runbooks are
-  written when an alert is configured. Until then, the page is
-  pure scaffolding.
-- `operations/postmortems/index.md` + template — postmortems
-  are written when an incident occurs. Until then, the page is
-  pure scaffolding.
-- `strategy/security.md` — threat model is human-curated; the
-  page would be 80%+ `<not detected>` cells on first run.
+- `operations/runbooks/index.md` + sample — written when an
+  alert is configured.
+- `operations/postmortems/index.md` + template — written when
+  an incident occurs.
+- `strategy/security.md` — threat model is human-curated.
 
-When the user is ready for one of these (e.g. they want to
-start filing ADRs, or the team has agreed Quality Goals), they
-create the file by hand — the skill's job is to land the
-codebase-derived baseline, not to seed empty boxes.
-
-The one exception: the **ADR template**
-(`decisions/0000-template.md`) carries `TODO(human):` markers
-in its Context / Decision / Consequences body sections. That
-template is the *only* place `TODO(human):` appears in this
-skill's output. The template is meaningful, not a skeleton —
-its purpose is "copy this file when you file ADR-NNNN," and
-the markers tell the writer what to author. Other templates
-(runbook sample, postmortem template) are not emitted by
-default; they're added when the user creates the matching
-operational pages.
+The single exception is the ADR template
+(`decisions/0000-template.md`), which ships with `TODO(human):`
+markers in its Context / Decision / Consequences sections. That
+template's purpose is "copy this when you file ADR-NNNN" — the
+markers tell the writer what to author. Other templates
+(runbook sample, postmortem template) are not emitted until the
+user creates the matching operational pages.
 
 ### Phase 4 — Emit
 
 For each page in the final plan, emit Markdown using
-`references/page-templates.md`. The frontmatter is intentionally
-minimal — one field — so regeneration doesn't accumulate
-state-management drift:
+`references/page-templates.md`. Frontmatter is one field — so
+regeneration doesn't accumulate state-management drift:
 
 ```yaml
 ---
@@ -322,70 +265,45 @@ title: <page title>
 ---
 ```
 
-Everything earlier drafts emitted (Diátaxis tag, audience list,
-freshness owner, last review, review cycle, related pages /
-code / ADRs) was either recoverable from `git log` or
-duplicating information already in the body. The recovery
-sources stay authoritative: `git log` for ownership and
-freshness, body Markdown links for navigation graph,
-`.heal/doc_pairs.json` for doc ⇔ src mapping. See
-`references/page-templates.md` §2 for the full rationale.
+Ownership and freshness recover from `git log`; navigation graph
+recovers from body Markdown links; doc ⇔ src mapping lives in
+`.heal/doc_pairs.json`. See `references/page-templates.md` §2.
 
-Body shape per template:
+Body content rules:
 
-- **Auto-fill aggressively.** The skill has read access to the
-  whole tree. For Module Map responsibilities, walk each
-  module's top-level doc comment / lib entry / package
-  description and write a one-line summary. For glossary
-  definitions, walk exported types' rustdoc / TSDoc / Python
-  docstrings. For container rationales, link to the language
-  ecosystem fact ("Rust + clap" rather than "TODO: rationale").
-  For Getting Started commands, derive from manifests directly.
-- **`TODO(human):` only inside the ADR template.** That's the
-  one and only file where the marker appears in this skill's
-  output. Other emitted pages either ship as auto-filled
-  content or, for cells the skill genuinely cannot fill,
-  `<not detected>`. **Never `TODO(human):` outside the ADR
-  template.**
-- **Empty over invented.** When the skill cannot infer a value
-  confidently (an SLO target, an oncall rotation name), the
-  page that would have carried that cell is *not emitted at
-  all* (per the emit gate). Do not fall back to inventing or
-  to dropping a `<not detected>` placeholder for the user to
-  fill — the rule is "skip the page, not skeleton it."
+- **Auto-fill aggressively.** Walk the tree for content: module
+  doc comments → Module Map summaries; exported-type docstrings
+  → glossary definitions; manifests → Getting Started commands;
+  ecosystem facts ("Rust + clap") → container rationales.
+- **`TODO(human):` only inside `decisions/0000-template.md`.**
+  Every other emitted page ships as auto-filled content or
+  `<not detected>` cells. Markers anywhere else violate the
+  autonomy contract.
+- **Empty over invented.** If the skill cannot fill a cell
+  honestly, the rule is "skip the page" — not "invent" and not
+  "drop a `<not detected>` placeholder for the user to fill."
 
-Page-emission rules:
+Emission rules:
 
-- **Atomic per file.** Write each page with a tmp-file + rename
-  (the same idiom `Config::save` uses). A SIGINT mid-emit must
-  not leave a half-written page.
-- **Per-section reconcile, not whole-file overwrite.** When
-  Phase 3's action for a page is "refresh" or "partial
-  refresh," walk the existing file section by section.
-  Regenerate the auto-managed sections in place; copy the
-  hand-authored / user-added sections through verbatim.
-  Re-assemble with the original section order preserved
-  (don't reshuffle sections the user re-ordered).
-- **Stable wording.** When refreshing an auto-managed section
-  whose underlying signal hasn't changed, emit byte-identical
-  output. Random reflow on every run is the diff-noise that
-  makes idempotent tools annoying. Read the existing section
-  first; if the auto-fill would produce the same content,
-  leave the bytes alone.
-- **No directory deletion.** Even with `--force`, the skill never
-  deletes a directory it didn't create in this run. Removing
-  human work is out of scope.
-- **No `index.md` magic.** When emitting under a subdirectory
-  (e.g. `operations/runbooks/`), also emit the directory's
-  `index.md` so the navigation has a parent to attach to.
-- **Cross-link via "See also".** Each page's body has a `## See
-  also` section listing forward links; emit every back-link
-  too (Feature Catalog ↔ ADR Index, Service Overview ↔ Runbook
-  Index, etc.). One-way links breed orphans.
-- **No DeepWiki sidecar by default.** A `.devin/wiki.json`
-  steering file is useful when the user runs DeepWiki, but
-  emitting one without prompting is over-reach. Mention as a
-  follow-up in the summary.
+- **Atomic.** Tmp-file + rename (same idiom as `Config::save`).
+  A SIGINT mid-emit must not leave a half-written page.
+- **Per-section reconcile.** For "refresh" / "partial refresh"
+  actions, walk the file section by section: regenerate
+  auto-managed sections in place, copy hand-authored /
+  user-added sections through verbatim, preserve the user's
+  section order.
+- **Stable bytes.** When a refresh would produce identical
+  content to what's on disk, leave the file untouched. Random
+  reflow on every run is friction nobody asked for.
+- **No deletion.** Even under `--force`, never delete a file
+  or directory the skill didn't create in this run.
+- **`index.md` per subdirectory.** Subdirectories
+  (`operations/runbooks/`, etc.) need an `index.md` so the
+  nav graph has a parent to attach to.
+- **Bidirectional "See also".** Forward links and back-links
+  both — one-way links breed orphans.
+- **No DeepWiki sidecar.** A `.devin/wiki.json` is over-reach
+  without prompting; mention as a follow-up in the summary.
 
 ### Phase 5 — Report
 
@@ -436,63 +354,34 @@ Doc scaffold (reconcile mode):
 
 ## Constraints
 
-- **Autonomous.** No `AskUserQuestion` for tier selection, no
-  per-page prompts. Detection signals decide what emits.
-- **No skeleton-only pages.** A page emits only when the
-  codebase can fill it with meaningful content. Pages that
-  would ship as a stack of `TODO(human):` markers or
-  `<not detected>` cells are simply not emitted — the user
-  authors them when they have the input. The wiki on day 1 is
-  smaller than the catalog's full range, on purpose.
-- **`TODO(human):` only inside the ADR template.** That single
-  file (`decisions/0000-template.md`) is the only place the
-  marker ever appears. Other operational templates (runbook
-  sample, postmortem template) are skipped on first run. New
-  `TODO(human):` markers anywhere else are a violation of the
-  autonomy contract.
-- **No invented values.** When the skill cannot fill a cell
-  honestly, the rule is "skip the page" — not "fall back to
-  `<not detected>` and emit anyway." Plausible-sounding made-
-  up content (invented owner names, made-up SLO numbers,
-  hand-waved security policy) is worse than an absent page;
-  see `.claude/docs/doc-scaffold-design.md` §6.3.
-- **Idempotent / safe to re-run.** Repeat invocations flow
-  current codebase signal into auto-managed sections without
-  disturbing hand-edits. Default mode reconciles per-section
-  (Phase 2 + Phase 3); `--missing-only` adds new pages only;
-  `--force` regenerates emit-set pages from scratch (overrides
-  hand-edits — explicit user choice). Files outside the emit
-  set are sacred in **all** modes — even `--force` never
-  touches them.
-- **Stable byte output when signal hasn't changed.** When a
-  refresh would produce the same content as what's already on
-  disk, leave the file untouched. Random reflow on every run
-  is friction nobody asked for.
-- **One scaffold root.** Pages all live under
-  `[features.docs] scaffold_root`. README and CONTRIBUTING are
-  the two repository-root exceptions (their convention is GitHub-
-  level, not Wiki-level).
-- **Page count ≤ 30.** Tier 1+2+3+4+5 maxima sum to 28; the
-  six-category top-level structure (Quick Start / Architecture /
-  Reference / Operations / Decisions / Contributing) keeps
-  navigation flat. If the user asks for more pages, push back —
-  large Wikis are read by no one (`references/wiki-organization.md`
-  §3).
-- **No deletion of human-authored files.** Even under `--force`,
-  the skill writes / overwrites generated pages; it does not
-  remove pages the user created themselves outside the page plan.
-- **English skeletons by default.** The skill's user-visible
-  prose, frontmatter keys, and `TODO(human):` markers are
-  English (workflow.md R6.1). When the project's existing docs
-  are in a non-English language, mention the locale split in the
-  summary so the user can decide whether to translate the
-  skeletons or write replacements in the project's language. Do
+- **Autonomous.** No `AskUserQuestion`, no per-page prompts —
+  detection signals decide what emits.
+- **No skeleton-only pages.** Pages that would ship as 80%+
+  `TODO(human):` or `<not detected>` cells are not emitted.
+  The user authors them when they have the input.
+- **`TODO(human):` only inside `decisions/0000-template.md`.**
+  Anywhere else violates the autonomy contract.
+- **No invented values.** Plausible-sounding made-up content
+  (owner names, SLO numbers, security policy) is worse than an
+  absent page. See `.claude/docs/doc-scaffold-design.md` §6.3.
+- **Idempotent.** Default mode reconciles per-section without
+  disturbing hand-edits. `--missing-only` adds new pages only;
+  `--force` regenerates emit-set pages from scratch. Files
+  outside the emit set are never touched, in any mode.
+- **One scaffold root.** All pages under
+  `[features.docs] scaffold_root` except `README.md` /
+  `CONTRIBUTING.md`, which are GitHub-level conventions at the
+  repo root.
+- **Page count ≤ 30.** Tier maxima sum to 28; large wikis read
+  by no one (`references/wiki-organization.md` §3). Push back
+  if the user asks for more.
+- **English skeletons.** User-visible prose, frontmatter keys,
+  and markers are English (workflow.md R6.1). When existing docs
+  are non-English, surface the locale split in the summary; do
   not auto-translate.
-- **Read-only on source.** This skill writes only Markdown
-  skeletons under `<scaffold_root>/` plus (conditionally) a root
-  `README.md` / `CONTRIBUTING.md` when those are missing. It
-  never edits source code, never edits `.heal/*` (the pair file
-  is `/heal-doc-pair-setup`'s job), never edits `config.toml`.
-- **No commits.** This skill produces files. Commit boundaries
-  are the user's choice — typically one commit per tier, or one
-  per phase, but the skill does not auto-commit.
+- **Read-only on source.** Writes Markdown under
+  `<scaffold_root>/` and (when missing) root `README.md` /
+  `CONTRIBUTING.md`. Never edits source, `.heal/*`, or
+  `config.toml`.
+- **No commits.** This skill produces files; commit boundaries
+  are the user's choice.
