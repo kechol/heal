@@ -2,256 +2,23 @@
 
 ## Unreleased
 
-### Features
+## v0.4.0 — 2026-05-06
 
-- **Bundled skills install for OpenAI Codex CLI alongside Claude
-  Code.** A new `SkillTarget` enum
-  (`crates/cli/src/skill_assets.rs`) makes the bundle
-  agent-neutral: the same source SKILL.md bytes serve every
-  supported agent, `heal init` decides per-target whether to
-  install. `SkillTarget::Claude` extracts to `<project>/.claude/skills/`
-  (Claude Code's project-scope discovery path) and `SkillTarget::Codex`
-  extracts to `<project>/.agents/skills/` (Codex's per-repo discovery
-  path — see <https://developers.openai.com/codex/skills>). `--yes`
-  installs for every detected agent's CLI on `PATH`; `--no-skills`
-  skips all; the interactive flow prompts once per detected target so
-  you can opt into one and skip the other. `.claude/settings.json`
-  legacy-hook sweeping still runs only for the Claude target —
-  Codex has no sibling settings file. Skill bodies were swept to
-  describe the host agent as a list ("Claude Code, Codex CLI, …")
-  rather than singling out one.
-
-- **`heal skills install / update / status / uninstall` now accept
-  `--target <detected|claude|codex|all>`.** `detected` (the new
-  default) operates on every agent whose CLI is on `PATH`, mirroring
-  `heal init`. `claude` / `codex` scope to a single agent's tree;
-  `all` operates on every known target regardless of CLI presence
-  (the pre-Codex blanket behavior). When the `Claude` target is in
-  scope, install / update sweep legacy `heal hook edit` /
-  `heal hook stop` entries from `.claude/settings.json` and
-  uninstall sweeps the pre-skills plugin/marketplace layout, exactly
-  as before; the `Codex` target has no sibling settings file. The
-  empty-resolution case (e.g. `--target detected` on a host without
-  any agent CLI) prints a one-line hint pointing at `--target all`.
-
-- **`heal metrics` section titles carry a `[Family]` prefix.** The
-  divider above each section is now `── [Code] Complexity ──`,
-  `── [Docs] Doc drift ──`, `── [Test] Coverage ──`, etc. Mirrors
-  `heal status`'s `═══ Code ═══` / `═══ Test ═══` / `═══ Docs ═══`
-  family banners so the user can scan a single line and tell which
-  family each block belongs to without remembering the metric →
-  family map. Family is derived from the `MetricKind` via
-  `Family::for_metric` (single source of truth) plus a new
-  `Family::label()` for the title-cased rendering. JSON output is
-  unaffected — the `metric` echo field still names the metric, no
-  family field added.
-
-- **`/heal-{code,doc,test}-patch` propose `heal mark accept` for
-  false positives.** Each patch loop now has a third branch
-  alongside allow-list / escalate-list: when reading the file
-  reveals the finding is the observer matching something it
-  shouldn't (generated code / parser tables for code; generic
-  English / external-tool / pair-coverage-gap / observer-slugify
-  divergence for docs; integration-suite-covered / environment-
-  gated skip / vendored generated bindings for test), the skill
-  asks the user via `AskUserQuestion` whether to record the
-  finding as accepted with a categorical reason string instead
-  of editing the source. Stops false positives from sticking
-  around in the cache run after run, and keeps the audit trail
-  in `accepted.json` grouped by categorical reason for later
-  review. Each skill ships a list of categorical reason strings
-  observed in this repo's own dogfooding so users have a
-  starting vocabulary.
-
-- **`heal diff` hides below-High entries by default; `--all`
-  surfaces them.** A noisy baseline used to drown the actionable
-  rows — every Resolved Medium/Ok diff entry rendered alongside
-  the High/Critical ones the user actually wanted to triage. The
-  human renderer now drops entries whose `from` and `to` Severity
-  both sit below High and prints a `[N entries below High hidden
-  — pass --all]` footer; `--all` keeps its old role (Improved /
-  Unchanged buckets) and additionally bypasses the new filter.
-  `--json` output is unfiltered either way — skills and CI keep
-  the full payload. Note this gate is intentionally **broader**
-  than `heal status`'s default (Critical OR High+hotspot): status
-  surfaces today's drain queue where hotspot is the priority
-  signal, diff surfaces changes between two refs where a plain-
-  High regression is itself worth seeing without the hotspot
-  decoration.
-- **`[features.test.coverage].post_commit_refresh` re-runs the
-  reporter from the post-commit hook so `lcov.info` stays fresh.**
-  When set, `heal hook commit` (the script `heal init` installs as
-  `.git/hooks/post-commit`) detaches the configured shell command
-  after writing its nudge — the user's commit flow returns
-  immediately, output is discarded. Pair it with the reporter
-  command from `/heal-test-reporter-setup` (`cargo llvm-cov ...`,
-  `pytest --cov ...`, `jest --coverage ...`, etc.) to keep the
-  next `heal status` reading current coverage. Skipped silently
-  when `[features.test]` or `[features.test.coverage]` is off, so
-  the field has no effect on projects that haven't opted into the
-  family.
-- **`doc_drift` resolver decomposes qualified-identifier mentions
-  before reporting a miss.** Tree-sitter splits trait methods
-  (`Feature::lower`), enum variants (`Severity::Medium`), field
-  accesses (`Finding.workspace`), and nested module paths
-  (`core::Error::Io`) into separate AST leaves — qualifier and
-  member each appear as their own token. The pre-fix resolver
-  required the joined string to match a single leaf, so every
-  qualified mention drifted on every Reference doc. The new
-  resolver tries the exact match first and, on miss, splits the
-  mention on `::` / `.` and accepts when **every** segment
-  appears in the paired srcs' leaf set. Universal across the six
-  supported languages — no per-language tree-sitter query was
-  added; the rule keys on the qualified-identifier shape that
-  is itself language-agnostic. doc_drift findings on this repo:
-  64 → 31 after the resolver change (combined with the
-  single-character / hex-fragment filter, 85 → 31).
-- **`doc_drift` extractor rejects single-character spans and
-  hex commit-sha fragments.** The doc-side identifier scan picked
-  up placeholder text (`X`, `Y`, `T`, `i`, `n` from "where `T` is
-  …" pattern descriptions) and partial commit shas (`89d849a`,
-  `c455dba`) embedded in changelog and PR-reference prose. Both
-  classes routinely failed source-tree resolution and produced
-  Critical drift findings that no doc edit would resolve. The
-  filter is universal — applied to both doc-side spans and src-side
-  AST leaves — and language-agnostic. The hex-fragment rejection
-  requires both `len ≥ 4` and at least one digit so all-letter
-  words that happen to share the hex alphabet (`face`, `bead`,
-  `cafe`) survive. No config knob; the rules apply to every
-  project running `[features.docs]`.
-- **`doc_link_health` opts deploy-side URLs out of source-tree
-  verification via `exclude_link_prefixes`.** Static-site
-  generators that rewrite paths at build time (Astro Starlight
-  `base:`, VitePress `base:`, Docusaurus `baseUrl`, mdBook
-  `url-prefix`) make doc authors write links matching the deploy
-  URL (`/heal/quick-start/`) — the observer can't resolve those
-  to source files without re-implementing the framework's
-  rewriting and index-file conventions. The new
-  `[features.docs.doc_link_health].exclude_link_prefixes` (default
-  empty `Vec<String>`) skips link targets whose prefix matches any
-  entry; the framework's own build-time link checker (`astro
-  build`, `vitepress build`) validates the same targets from the
-  deploy side, so coverage isn't lost. Empty-string entries are
-  ignored so a single accidental `""` doesn't silence the
-  observer. Additive — pre-existing configs keep the
-  every-link-checked behaviour.
-- **`todo_density` skips markers inside backtick-quoted spans by
-  default, with an opt-in `allowlist_paths` for whole-doc
-  exemption.** Reference pages that document the marker keywords
-  themselves (e.g. an observer reference describing what `TODO`
-  / `FIXME` / `XXX` / `TBD` mean) used to self-flag every
-  paragraph that quoted the keywords. The new
-  `[features.docs.todo_density]` block adds two knobs:
-  `ignore_in_inline_code` (default `true`) skips matches inside
-  single- or double-backtick spans, and `allowlist_paths`
-  (gitignore-syntax globs, default empty) skips matched docs
-  entirely. Markers in fenced code blocks were already excluded;
-  the new defaults extend that to inline code spans, which fits
-  how reference docs typically quote keywords. Severity floors
-  (≥3 Medium, ≥10 High) are unchanged. Additive — empty
-  `[features.docs.todo_density]` keeps the previous behaviour
-  apart from the inline-code skip default; flip
-  `ignore_in_inline_code = false` to restore the v0.3 counting.
-- **Bundled skills now respect `[project].response_language` and
-  the user's conversation language.** Every `/heal-*` skill body
-  carries an explicit "Output language" section with the same
-  resolution order: explicit in-conversation instruction → the
-  language the user is writing in → `[project].response_language`
-  in `.heal/config.toml` (free-form: `"Japanese"`, `"日本語"`,
-  `"ja"`, `"français"`) → English. Previously the setting only
-  governed `heal`'s own CLI renderings and skills followed their
-  own English-by-default convention; the new wording propagates
-  the team-wide language preference into every architectural
-  reading, TODO list, drain narration, scaffold report, and setup
-  prompt the bundled skills produce. Identifiers (command names,
-  config keys, file paths, `Finding.metric` strings, JSON field
-  names) and conventional-commit subject lines stay verbatim —
-  the contract is not translated. `/heal-setup` infers and
-  confirms `response_language` on first run when the user is
-  clearly writing in a non-English language so the rest of the
-  skill set picks the same default on subsequent runs.
-- **New skill: `/heal-doc-scaffold` — stand up the project's
-  documentation tree from scratch, autonomously, and safely
-  re-runnable.** Five-phase pipeline (Detect codebase → Survey
-  existing scaffold tree → Reconcile → Emit → Report) means
-  re-invocation is a first-class operation: re-runs flow fresh
-  codebase signal into auto-managed sections without disturbing
-  hand-edits. Per-section reconcile classifies each existing
-  section as auto-managed (refresh allowed), hand-authored
-  (preserve), or user-added (preserve verbatim). Files outside
-  the emit set are sacred in every mode, including `--force`.
-  The emit gate is **strict**: a page lands only when the
-  codebase can fill it with meaningful content. Tier 1 (README,
-  Wiki Index, System Context, Architecture Overview, Glossary,
-  Getting Started) always emits because every project has the
-  signal. Tier 2-3 pages (Module Map, Feature Catalog, ADR
-  Index + Template, Contributing, Runtime Views, API Reference,
-  Data Model, Deployment View, Crosscutting Concepts, Test
-  Strategy) emit when their detection trigger fires AND the
-  resulting page is mostly auto-fill. **Skeleton-only pages are
-  not emitted** — Quality Goals, Bounded Context Map, Roadmap,
-  Risk Register, Service Overview, SLO Doc, Runbooks,
-  Postmortems, On-call Onboarding, and Security Posture are
-  skipped on first run because their content is organisational
-  / forward-looking / incident-reactive; the user authors them
-  when they have the input. `TODO(human):` markers ship inside
-  exactly **one** file — the ADR template
-  (`decisions/0000-template.md`) — where the markers cue the
-  writer when copying the template to file the next ADR. No
-  `AskUserQuestion` calls; detection signals alone drive the
-  emit plan. Three flags govern existing-tree behaviour:
-  default = reconcile (per-section refresh + preserve);
-  `--missing-only` = additive bootstrap (only new files);
-  `--force` = regenerate emit-set pages from scratch (overrides
-  hand-edits — explicit user choice). Frontmatter on every
-  emitted page is one field (`title:`); earlier-draft
-  classification / state fields were dropped because each was
-  either recoverable from `git log` or duplicating body
-  content. Output lands under
-  `[features.docs] scaffold_root` (new field, default
-  `.heal/docs`). The skill is the bootstrap counterpart to
-  `/heal-doc-pair-setup` (mapping) / `/heal-doc-review` (audit)
-  / `/heal-doc-patch` (drain). New config field
-  `[features.docs] scaffold_root` is the only schema change —
-  consumer metadata for the skill (the HEAL binary never reads
-  or writes the scaffold tree itself), defaults to
-  `.heal/docs` so the first run doesn't collide with a
-  pre-existing `docs/`, and is intended to be promoted to
-  `"docs"` once the user reviews the output
-  (`git mv .heal/docs docs`). References:
-  `crates/cli/skills/heal-doc-scaffold/SKILL.md` plus
-  `references/{page-catalog,page-templates,wiki-organization}.md`;
-  the literature lineage (Diátaxis, DeepWiki, arc42, C4, DDD,
-  ADR, SRE) and the autonomy / minimal-frontmatter / no-
-  skeleton-pages / idempotent-reconcile rationale live in
-  `.claude/docs/doc-scaffold-design.md`.
-
-- **`heal init` no longer writes an empty `.heal/.gitignore`.** The
-  template only ever contained a `# Managed by heal init` comment —
-  the findings cache is tracked in git, so there was nothing for
-  the file to ignore. `heal init` (and `heal init --force`) skip
-  the write outright; existing `.heal/.gitignore` files are left
-  alone so users who customised the file keep their edits. Removing
-  the file by hand is a follow-up for teams that want to drop the
-  noise from `git status`.
-
-- **`heal init` writes `config.toml` in minimal form by default.**
-  Previously every fresh `.heal/config.toml` restated 80+ lines of
-  default values (`since_days = 90`, `enabled = true`, the full
-  `test_paths` and `lcov_paths` defaults, and so on) — verbose
-  enough that the few customizations a team actually sets drowned
-  in the noise. The default emit path now serializes only fields
-  that diverge from `Config::default()` and prunes empty tables.
-  A vanilla `Config::default()` round-trips to a near-empty file;
-  loaders fill the gaps via `#[serde(default)]`. Pass
-  `heal init --explicit` to keep the full long-form output for
-  discoverability ("which knobs exist?"). Implementation:
-  `Config::to_minimal_toml` walks the serialized
-  `toml::Value` tree against `Config::default()`'s tree via
-  `prune_against_default` and drops matching keys before re-
-  serializing; `Config::to_explicit_toml` is the unchanged
-  long-form path. Both round-trip, so the change is purely
-  cosmetic for the on-disk file and is **not** breaking.
+The optional-families release. Documentation and test quality
+move from planning into shipped observer families:
+`[features.docs]` lights up six observers (`doc_freshness`,
+`doc_drift`, `doc_coverage`, `doc_link_health`, `orphan_pages`,
+`todo_density`); `[features.test]` adds `coverage_pct` (lcov-fed)
+and `skip_ratio` with structural skip-marker detection; Hotspot
+fragments into per-family composites (code `hotspot`,
+`test_hotspot`, `doc_hotspot`) so each family's drain queue is
+independent. Bundled skills install for OpenAI Codex CLI
+alongside Claude Code. `heal status` and `heal metrics`
+reorganize around families with a new
+`--feature <code|test|docs>` filter; the old path-prefix usage
+of `--feature` moves to `--path`. Caches written by older HEAL
+versions silently invalidate; the next `heal status` rewrites
+under `FINDINGS_RECORD_VERSION = 4`.
 
 ### ⚠ BREAKING
 
@@ -519,6 +286,255 @@
   metric strings to their dispatch tables.
 
 ### Features
+
+- **Bundled skills install for OpenAI Codex CLI alongside Claude
+  Code.** A new `SkillTarget` enum
+  (`crates/cli/src/skill_assets.rs`) makes the bundle
+  agent-neutral: the same source SKILL.md bytes serve every
+  supported agent, `heal init` decides per-target whether to
+  install. `SkillTarget::Claude` extracts to `<project>/.claude/skills/`
+  (Claude Code's project-scope discovery path) and `SkillTarget::Codex`
+  extracts to `<project>/.agents/skills/` (Codex's per-repo discovery
+  path — see <https://developers.openai.com/codex/skills>). `--yes`
+  installs for every detected agent's CLI on `PATH`; `--no-skills`
+  skips all; the interactive flow prompts once per detected target so
+  you can opt into one and skip the other. `.claude/settings.json`
+  legacy-hook sweeping still runs only for the Claude target —
+  Codex has no sibling settings file. Skill bodies were swept to
+  describe the host agent as a list ("Claude Code, Codex CLI, …")
+  rather than singling out one.
+
+- **`heal skills install / update / status / uninstall` now accept
+  `--target <detected|claude|codex|all>`.** `detected` (the new
+  default) operates on every agent whose CLI is on `PATH`, mirroring
+  `heal init`. `claude` / `codex` scope to a single agent's tree;
+  `all` operates on every known target regardless of CLI presence
+  (the pre-Codex blanket behavior). When the `Claude` target is in
+  scope, install / update sweep legacy `heal hook edit` /
+  `heal hook stop` entries from `.claude/settings.json` and
+  uninstall sweeps the pre-skills plugin/marketplace layout, exactly
+  as before; the `Codex` target has no sibling settings file. The
+  empty-resolution case (e.g. `--target detected` on a host without
+  any agent CLI) prints a one-line hint pointing at `--target all`.
+
+- **`heal metrics` section titles carry a `[Family]` prefix.** The
+  divider above each section is now `── [Code] Complexity ──`,
+  `── [Docs] Doc drift ──`, `── [Test] Coverage ──`, etc. Mirrors
+  `heal status`'s `═══ Code ═══` / `═══ Test ═══` / `═══ Docs ═══`
+  family banners so the user can scan a single line and tell which
+  family each block belongs to without remembering the metric →
+  family map. Family is derived from the `MetricKind` via
+  `Family::for_metric` (single source of truth) plus a new
+  `Family::label()` for the title-cased rendering. JSON output is
+  unaffected — the `metric` echo field still names the metric, no
+  family field added.
+
+- **`/heal-{code,doc,test}-patch` propose `heal mark accept` for
+  false positives.** Each patch loop now has a third branch
+  alongside allow-list / escalate-list: when reading the file
+  reveals the finding is the observer matching something it
+  shouldn't (generated code / parser tables for code; generic
+  English / external-tool / pair-coverage-gap / observer-slugify
+  divergence for docs; integration-suite-covered / environment-
+  gated skip / vendored generated bindings for test), the skill
+  asks the user via `AskUserQuestion` whether to record the
+  finding as accepted with a categorical reason string instead
+  of editing the source. Stops false positives from sticking
+  around in the cache run after run, and keeps the audit trail
+  in `accepted.json` grouped by categorical reason for later
+  review. Each skill ships a list of categorical reason strings
+  observed in this repo's own dogfooding so users have a
+  starting vocabulary.
+
+- **`heal diff` hides below-High entries by default; `--all`
+  surfaces them.** A noisy baseline used to drown the actionable
+  rows — every Resolved Medium/Ok diff entry rendered alongside
+  the High/Critical ones the user actually wanted to triage. The
+  human renderer now drops entries whose `from` and `to` Severity
+  both sit below High and prints a `[N entries below High hidden
+  — pass --all]` footer; `--all` keeps its old role (Improved /
+  Unchanged buckets) and additionally bypasses the new filter.
+  `--json` output is unfiltered either way — skills and CI keep
+  the full payload. Note this gate is intentionally **broader**
+  than `heal status`'s default (Critical OR High+hotspot): status
+  surfaces today's drain queue where hotspot is the priority
+  signal, diff surfaces changes between two refs where a plain-
+  High regression is itself worth seeing without the hotspot
+  decoration.
+- **`[features.test.coverage].post_commit_refresh` re-runs the
+  reporter from the post-commit hook so `lcov.info` stays fresh.**
+  When set, `heal hook commit` (the script `heal init` installs as
+  `.git/hooks/post-commit`) detaches the configured shell command
+  after writing its nudge — the user's commit flow returns
+  immediately, output is discarded. Pair it with the reporter
+  command from `/heal-test-reporter-setup` (`cargo llvm-cov ...`,
+  `pytest --cov ...`, `jest --coverage ...`, etc.) to keep the
+  next `heal status` reading current coverage. Skipped silently
+  when `[features.test]` or `[features.test.coverage]` is off, so
+  the field has no effect on projects that haven't opted into the
+  family.
+- **`doc_drift` resolver decomposes qualified-identifier mentions
+  before reporting a miss.** Tree-sitter splits trait methods
+  (`Feature::lower`), enum variants (`Severity::Medium`), field
+  accesses (`Finding.workspace`), and nested module paths
+  (`core::Error::Io`) into separate AST leaves — qualifier and
+  member each appear as their own token. The pre-fix resolver
+  required the joined string to match a single leaf, so every
+  qualified mention drifted on every Reference doc. The new
+  resolver tries the exact match first and, on miss, splits the
+  mention on `::` / `.` and accepts when **every** segment
+  appears in the paired srcs' leaf set. Universal across the six
+  supported languages — no per-language tree-sitter query was
+  added; the rule keys on the qualified-identifier shape that
+  is itself language-agnostic. doc_drift findings on this repo:
+  64 → 31 after the resolver change (combined with the
+  single-character / hex-fragment filter, 85 → 31).
+- **`doc_drift` extractor rejects single-character spans and
+  hex commit-sha fragments.** The doc-side identifier scan picked
+  up placeholder text (`X`, `Y`, `T`, `i`, `n` from "where `T` is
+  …" pattern descriptions) and partial commit shas (`89d849a`,
+  `c455dba`) embedded in changelog and PR-reference prose. Both
+  classes routinely failed source-tree resolution and produced
+  Critical drift findings that no doc edit would resolve. The
+  filter is universal — applied to both doc-side spans and src-side
+  AST leaves — and language-agnostic. The hex-fragment rejection
+  requires both `len ≥ 4` and at least one digit so all-letter
+  words that happen to share the hex alphabet (`face`, `bead`,
+  `cafe`) survive. No config knob; the rules apply to every
+  project running `[features.docs]`.
+- **`doc_link_health` opts deploy-side URLs out of source-tree
+  verification via `exclude_link_prefixes`.** Static-site
+  generators that rewrite paths at build time (Astro Starlight
+  `base:`, VitePress `base:`, Docusaurus `baseUrl`, mdBook
+  `url-prefix`) make doc authors write links matching the deploy
+  URL (`/heal/quick-start/`) — the observer can't resolve those
+  to source files without re-implementing the framework's
+  rewriting and index-file conventions. The new
+  `[features.docs.doc_link_health].exclude_link_prefixes` (default
+  empty `Vec<String>`) skips link targets whose prefix matches any
+  entry; the framework's own build-time link checker (`astro
+  build`, `vitepress build`) validates the same targets from the
+  deploy side, so coverage isn't lost. Empty-string entries are
+  ignored so a single accidental `""` doesn't silence the
+  observer. Additive — pre-existing configs keep the
+  every-link-checked behaviour.
+- **`todo_density` skips markers inside backtick-quoted spans by
+  default, with an opt-in `allowlist_paths` for whole-doc
+  exemption.** Reference pages that document the marker keywords
+  themselves (e.g. an observer reference describing what `TODO`
+  / `FIXME` / `XXX` / `TBD` mean) used to self-flag every
+  paragraph that quoted the keywords. The new
+  `[features.docs.todo_density]` block adds two knobs:
+  `ignore_in_inline_code` (default `true`) skips matches inside
+  single- or double-backtick spans, and `allowlist_paths`
+  (gitignore-syntax globs, default empty) skips matched docs
+  entirely. Markers in fenced code blocks were already excluded;
+  the new defaults extend that to inline code spans, which fits
+  how reference docs typically quote keywords. Severity floors
+  (≥3 Medium, ≥10 High) are unchanged. Additive — empty
+  `[features.docs.todo_density]` keeps the previous behaviour
+  apart from the inline-code skip default; flip
+  `ignore_in_inline_code = false` to restore the v0.3 counting.
+- **Bundled skills now respect `[project].response_language` and
+  the user's conversation language.** Every `/heal-*` skill body
+  carries an explicit "Output language" section with the same
+  resolution order: explicit in-conversation instruction → the
+  language the user is writing in → `[project].response_language`
+  in `.heal/config.toml` (free-form: `"Japanese"`, `"日本語"`,
+  `"ja"`, `"français"`) → English. Previously the setting only
+  governed `heal`'s own CLI renderings and skills followed their
+  own English-by-default convention; the new wording propagates
+  the team-wide language preference into every architectural
+  reading, TODO list, drain narration, scaffold report, and setup
+  prompt the bundled skills produce. Identifiers (command names,
+  config keys, file paths, `Finding.metric` strings, JSON field
+  names) and conventional-commit subject lines stay verbatim —
+  the contract is not translated. `/heal-setup` infers and
+  confirms `response_language` on first run when the user is
+  clearly writing in a non-English language so the rest of the
+  skill set picks the same default on subsequent runs.
+- **New skill: `/heal-doc-scaffold` — stand up the project's
+  documentation tree from scratch, autonomously, and safely
+  re-runnable.** Five-phase pipeline (Detect codebase → Survey
+  existing scaffold tree → Reconcile → Emit → Report) means
+  re-invocation is a first-class operation: re-runs flow fresh
+  codebase signal into auto-managed sections without disturbing
+  hand-edits. Per-section reconcile classifies each existing
+  section as auto-managed (refresh allowed), hand-authored
+  (preserve), or user-added (preserve verbatim). Files outside
+  the emit set are sacred in every mode, including `--force`.
+  The emit gate is **strict**: a page lands only when the
+  codebase can fill it with meaningful content. Tier 1 (README,
+  Wiki Index, System Context, Architecture Overview, Glossary,
+  Getting Started) always emits because every project has the
+  signal. Tier 2-3 pages (Module Map, Feature Catalog, ADR
+  Index + Template, Contributing, Runtime Views, API Reference,
+  Data Model, Deployment View, Crosscutting Concepts, Test
+  Strategy) emit when their detection trigger fires AND the
+  resulting page is mostly auto-fill. **Skeleton-only pages are
+  not emitted** — Quality Goals, Bounded Context Map, Roadmap,
+  Risk Register, Service Overview, SLO Doc, Runbooks,
+  Postmortems, On-call Onboarding, and Security Posture are
+  skipped on first run because their content is organisational
+  / forward-looking / incident-reactive; the user authors them
+  when they have the input. `TODO(human):` markers ship inside
+  exactly **one** file — the ADR template
+  (`decisions/0000-template.md`) — where the markers cue the
+  writer when copying the template to file the next ADR. No
+  `AskUserQuestion` calls; detection signals alone drive the
+  emit plan. Three flags govern existing-tree behaviour:
+  default = reconcile (per-section refresh + preserve);
+  `--missing-only` = additive bootstrap (only new files);
+  `--force` = regenerate emit-set pages from scratch (overrides
+  hand-edits — explicit user choice). Frontmatter on every
+  emitted page is one field (`title:`); earlier-draft
+  classification / state fields were dropped because each was
+  either recoverable from `git log` or duplicating body
+  content. Output lands under
+  `[features.docs] scaffold_root` (new field, default
+  `.heal/docs`). The skill is the bootstrap counterpart to
+  `/heal-doc-pair-setup` (mapping) / `/heal-doc-review` (audit)
+  / `/heal-doc-patch` (drain). New config field
+  `[features.docs] scaffold_root` is the only schema change —
+  consumer metadata for the skill (the HEAL binary never reads
+  or writes the scaffold tree itself), defaults to
+  `.heal/docs` so the first run doesn't collide with a
+  pre-existing `docs/`, and is intended to be promoted to
+  `"docs"` once the user reviews the output
+  (`git mv .heal/docs docs`). References:
+  `crates/cli/skills/heal-doc-scaffold/SKILL.md` plus
+  `references/{page-catalog,page-templates,wiki-organization}.md`;
+  the literature lineage (Diátaxis, DeepWiki, arc42, C4, DDD,
+  ADR, SRE) and the autonomy / minimal-frontmatter / no-
+  skeleton-pages / idempotent-reconcile rationale live in
+  `.claude/docs/doc-scaffold-design.md`.
+
+- **`heal init` no longer writes an empty `.heal/.gitignore`.** The
+  template only ever contained a `# Managed by heal init` comment —
+  the findings cache is tracked in git, so there was nothing for
+  the file to ignore. `heal init` (and `heal init --force`) skip
+  the write outright; existing `.heal/.gitignore` files are left
+  alone so users who customised the file keep their edits. Removing
+  the file by hand is a follow-up for teams that want to drop the
+  noise from `git status`.
+
+- **`heal init` writes `config.toml` in minimal form by default.**
+  Previously every fresh `.heal/config.toml` restated 80+ lines of
+  default values (`since_days = 90`, `enabled = true`, the full
+  `test_paths` and `lcov_paths` defaults, and so on) — verbose
+  enough that the few customizations a team actually sets drowned
+  in the noise. The default emit path now serializes only fields
+  that diverge from `Config::default()` and prunes empty tables.
+  A vanilla `Config::default()` round-trips to a near-empty file;
+  loaders fill the gaps via `#[serde(default)]`. Pass
+  `heal init --explicit` to keep the full long-form output for
+  discoverability ("which knobs exist?"). Implementation:
+  `Config::to_minimal_toml` walks the serialized
+  `toml::Value` tree against `Config::default()`'s tree via
+  `prune_against_default` and drops matching keys before re-
+  serializing; `Config::to_explicit_toml` is the unchanged
+  long-form path. Both round-trip, so the change is purely
+  cosmetic for the on-disk file and is **not** breaking.
 
 - **`[features.docs]` (default disabled): documentation as a
   first-class observer family.** Opt-in feature flag in
