@@ -208,6 +208,7 @@ impl Feature for TestHotspotFeature {
 mod tests {
     use super::*;
     use crate::observer::code::churn::{ChurnReport, ChurnTotals, FileChurn};
+    #[cfg(feature = "lang-rust")]
     use crate::observer::test::coverage::{CoverageEntry, CoverageReport};
 
     fn churn_of(items: &[(&str, u32)]) -> ChurnReport {

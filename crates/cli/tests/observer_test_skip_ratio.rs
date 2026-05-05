@@ -4,7 +4,6 @@
 //! fallback calibration), and the `FeatureRegistry` wiring all line up.
 
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::PathBuf;
 
 use heal_cli::core::calibration::{
@@ -14,7 +13,7 @@ use heal_cli::core::config::{Config, TestConfig};
 use heal_cli::core::finding::Finding;
 use heal_cli::core::severity::Severity;
 use heal_cli::feature::FeatureRegistry;
-use heal_cli::observer::test::skip_ratio::{SkipRatioObserver, SkipRatioReport};
+use heal_cli::observer::test::skip_ratio::SkipRatioReport;
 use heal_cli::observers::ObserverReports;
 
 fn cfg_test_enabled() -> Config {
@@ -37,6 +36,9 @@ fn empty_reports() -> ObserverReports {
 ))]
 #[test]
 fn observer_walks_test_paths_and_emits_per_language_entries() {
+    use heal_cli::observer::test::skip_ratio::SkipRatioObserver;
+    use std::fs;
+
     let tmp = tempfile::TempDir::new().unwrap();
     let root = tmp.path();
 

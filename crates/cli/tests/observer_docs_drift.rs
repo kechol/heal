@@ -2,6 +2,7 @@
 //! tempdirs driving the doc-mention vs. src-AST diff.
 
 use heal_cli::core::doc_pairs::{DocPair, PairSource};
+#[cfg(feature = "lang-rust")]
 use heal_cli::core::finding::IntoFindings;
 use heal_cli::observer::docs::drift::DocDriftObserver;
 
