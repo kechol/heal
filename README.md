@@ -6,7 +6,7 @@
 LLM coding agents are usually reactive: a human files a task before the
 agent moves. Codebases, meanwhile, decay continuously — complexity
 creeps, hotspots shift, duplicates accumulate. heal closes that gap
-with an **observe → calibrate → check → fix** loop, turning codebase
+with an **observe → calibrate → status → drain** loop, turning codebase
 state changes into agent triggers.
 
 Documentation: <https://kechol.github.io/heal/>
@@ -19,12 +19,14 @@ Documentation: <https://kechol.github.io/heal/>
 | Churn / Change Coupling / Hotspot               | Language-agnostic — driven by `git log`, applies everywhere. |
 | Complexity (CCN + Cognitive) / Duplication       | TypeScript / JavaScript / Python / Go / Scala / Rust.      |
 | LCOM                                            | TypeScript / JavaScript / Python / Rust. (Go has no class scope; Scala awaits the LSP backend.) |
-| Docs (drift / freshness / coverage / orphans / TODO density) | Markdown / RST docs paired against the same set of source languages. Off by default — enable via `[features.docs]` in `.heal/config.toml`. |
+| Docs (drift / freshness / coverage / link health / orphans / TODO density / hotspot) | Markdown / RST docs paired against the same set of source languages. Off by default — enable via `[features.docs]` in `.heal/config.toml`. |
+| Test (coverage / skip ratio / hotspot)         | Any language whose reporter emits an `lcov.info`. Off by default — enable via `[features.test]` in `.heal/config.toml`. |
 
 Hotspot composes complexity with churn, so on a language without a
 tree-sitter grammar enabled it falls back to a churn-only signal.
 
-> ⚠️ **Status: v0.2 in progress.** macOS / Linux only.
+> ⚠️ **Status: v0.3 — `[features.docs]` and `[features.test]` are
+> opt-in beta.** macOS / Linux only.
 
 ## Install
 
@@ -46,7 +48,7 @@ Three commands inside any git repository:
 ```sh
 heal init                     # set up .heal/, calibrate, install hook, offer Claude skills
 heal status                    # render the Severity-grouped TODO list
-claude /heal-code-patch         # drain it, one finding per commit
+claude /heal-code-patch         # work through it, one fix per commit
 ```
 
 Full walkthrough: [Quick Start](https://kechol.github.io/heal/quick-start/).
@@ -56,10 +58,10 @@ Full walkthrough: [Quick Start](https://kechol.github.io/heal/quick-start/).
 Topical pages on the docs site:
 
 - [Concept](https://kechol.github.io/heal/concept/) — design idea in three minutes
-- [Metrics](https://kechol.github.io/heal/metrics/) — what each metric measures, how Severity is assigned
+- [Features](https://kechol.github.io/heal/features/) — Code (always on), Test, Docs
 - [CLI](https://kechol.github.io/heal/cli/) — every subcommand
-- [Configuration](https://kechol.github.io/heal/configuration/) — thresholds, toggles, calibration
-- [Claude skills](https://kechol.github.io/heal/claude-skills/) — `/heal-code-review`, `/heal-code-patch`, `/heal-cli`, `/heal-setup`
+- [Code › Metrics](https://kechol.github.io/heal/code/metrics/), [Code › Configuration](https://kechol.github.io/heal/code/configuration/), [Code › Skills](https://kechol.github.io/heal/code/skills/) — the always-on family
+- [Test › Skills](https://kechol.github.io/heal/test/skills/), [Docs › Skills](https://kechol.github.io/heal/docs/skills/) — the opt-in families' skills
 - [Architecture](https://kechol.github.io/heal/architecture/) — internals
 
 ## Development

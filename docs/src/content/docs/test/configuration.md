@@ -27,9 +27,15 @@ Defaults cover Rust / TypeScript / JavaScript / Python / Go / Scala
 test conventions and the four conventional `lcov.info` paths. Most
 projects don't need to override anything.
 
-If you don't have an `lcov.info` yet, run
-[`/heal-test-reporter-setup`](/heal/test/skills/#heal-test-reporter-setup-—-wire-up-lcov)
-— it inspects your stack and proposes the reporter wiring.
+If you don't have an `lcov.info` yet, run the bundled setup
+skill — it inspects your stack and proposes the reporter wiring.
+
+```sh
+claude /heal-test-reporter-setup
+```
+
+For the full skill contract see
+[Test › Skills](/heal/test/skills/#heal-test-reporter-setup-—-wire-up-lcov).
 
 ## `[features.test]`
 

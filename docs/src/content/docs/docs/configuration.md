@@ -19,10 +19,14 @@ For the bundled skills, see [Docs › Skills](/heal/docs/skills/).
 enabled = true
 ```
 
-Then run `/heal-doc-pair-setup` once to populate
-`.heal/doc_pairs.json`. heal is a read-only consumer of that file
-— see [`.heal/doc_pairs.json`](#heal-doc_pairsjson--the-pair-file)
+Then run the bundled pair-setup skill once to populate
+`.heal/doc_pairs.json`. heal is a read-only consumer of that
+file — see [`.heal/doc_pairs.json`](#heal-doc_pairsjson--the-pair-file)
 below.
+
+```sh
+claude /heal-doc-pair-setup
+```
 
 ## `[features.docs]`
 

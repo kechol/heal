@@ -7,14 +7,18 @@ description: "[features.docs] の有効化、standalone ドキュメントの選
 
 各メトリクスが捕まえる内容は [Docs › メトリクス](/heal/ja/docs/metrics/)、同梱スキルは [Docs › スキル](/heal/ja/docs/skills/) を参照。
 
-## サクッと有効化
+## 有効化の手順
 
 ```toml
 [features.docs]
 enabled = true
 ```
 
-その後 `/heal-doc-pair-setup` を 1 回実行して `.heal/doc_pairs.json` を populate します。heal はこのファイルの読み取り専用消費者です(下記の [`.heal/doc_pairs.json`](#heal-doc_pairsjson--ペアファイル) を参照)。
+このあと、同梱のペア設定スキルを 1 度実行して `.heal/doc_pairs.json` を生成します。heal はこのファイルの読み取り専用消費者です(下記の [`.heal/doc_pairs.json`](#heal-doc_pairsjson--ペアファイル) を参照)。
+
+```sh
+claude /heal-doc-pair-setup
+```
 
 ## `[features.docs]`
 

@@ -7,16 +7,18 @@ repository. Read this first; details live in linked files.
 
 HEAL is a Rust CLI (binary: `heal`, single crate `heal-cli`) that
 turns code-health signals into work for AI coding agents. It runs an
-observer pipeline (LOC, CCN/Cognitive, Churn, Change Coupling,
-Duplication, Hotspot, LCOM), classifies findings against per-codebase
-calibration, and surfaces them via `heal status` / `heal metrics` /
-`heal diff` plus four bundled Claude skills.
+observer pipeline (the always-on Code family — LOC, CCN/Cognitive,
+Churn, Change Coupling, Duplication, Hotspot, LCOM — plus the opt-in
+`[features.docs]` and `[features.test]` families), classifies findings
+against per-codebase calibration, and surfaces them via `heal status` /
+`heal metrics` / `heal diff` plus eleven bundled Claude skills (four
+code, four docs, three test).
 
 For the user-facing overview see [README.md](./README.md).
 
 ## This is a public OSS project
 
-The repo is published under the MIT license. **Every commit, PR,
+The repo is published under MIT OR Apache-2.0 (dual-licensed). **Every commit, PR,
 issue comment, and CHANGELOG line is public** the moment it lands on
 `origin/main` (or any pushed branch). Treat the repo accordingly.
 

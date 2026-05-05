@@ -15,7 +15,7 @@ to apply fixes).
 
 > _"Where is the codebase hard to change?"_
 
-The default observer family. Seven metrics — LOC, CCN, Cognitive
+The default observer family. Eight metrics — LOC, CCN, Cognitive
 Complexity, Churn, Change Coupling, Duplication, Hotspot, LCOM —
 calibrated to the codebase's own distribution and surfaced through
 `heal status`. The `🔥` Hotspot decoration highlights files that are
@@ -36,8 +36,9 @@ every observer turned on.
 > _"Which production code is dark to the test suite, and which tests
 > have drifted or are silently skipped?"_
 
-Adds three test-quality observers and tags every Finding with an
-`is_test_file` flag. The headline signal is **line coverage**, read
+Adds three test-quality observers and tags every reported item
+with an `is_test_file` flag. The headline signal is **line
+coverage**, read
 from an `lcov.info` produced by your existing reporter (`cargo
 llvm-cov`, `pytest --cov`, `nyc`, `scoverage`). Hotspot scoring
 gains a multiplier for uncovered files, so files that change a lot
@@ -61,21 +62,26 @@ enabled = true
 enabled = true
 ```
 
-If you don't have an `lcov.info` yet, run `/heal-test-reporter-setup`
-— it inspects your stack and proposes the reporter wiring.
+If you don't already have an `lcov.info` from your existing
+reporter, run the bundled setup skill. It inspects your stack and
+proposes the reporter wiring + CI integration.
+
+```sh
+claude /heal-test-reporter-setup
+```
 
 ## Docs (opt-in: `[features.docs]`)
 
 > _"Which documentation has drifted from the code it describes?"_
 
-Adds six doc-quality observers that compare paired documentation
+Adds seven doc-quality observers that compare paired documentation
 against its source: stale freshness, dangling identifiers, missing
-pairs, broken internal links, orphan pages, TODO marker density. A
-small JSON file (`.heal/doc_pairs.json`, generated once by
-`/heal-doc-pair-setup`) maps each doc to the source it describes.
-The Markdown / RST duplication pass turns on with this family too.
-Hotspot scoring gains a multiplier when a file's paired doc is
-stale.
+pairs, broken internal links, orphan pages, TODO marker density,
+plus a docs-family Hotspot composer. A small JSON file
+(`.heal/doc_pairs.json`, generated once by `/heal-doc-pair-setup`)
+maps each doc to the source it describes. The Markdown / RST
+duplication pass turns on with this family too. Hotspot scoring
+gains a multiplier when a file's paired doc is stale.
 
 | Page | Read this when… |
 |---|---|
@@ -90,8 +96,15 @@ Enable with:
 enabled = true
 ```
 
-External HTTP link checking and example-code execution stay out of
-scope — heal is local-only. CI tools like `lychee` cover those.
+Then run the bundled pair-setup skill once. It scans your source
+and doc trees, infers the doc ⇔ source pairings, and writes
+`.heal/doc_pairs.json`. Without that mapping the docs family has
+nothing to compare paired docs against, so this step is part of
+turning the family on, not an optional add-on.
+
+```sh
+claude /heal-doc-pair-setup
+```
 
 ## Picking what to enable
 
@@ -101,7 +114,7 @@ A typical adoption order:
    `/heal-code-review`, drain with `/heal-code-patch`. Once
    `Critical 🔥` is at zero, you have a baseline.
 2. **Add Test next** if you have (or can produce) an `lcov.info`.
-   `coverage_pct` and `skip_ratio` Findings turn "we should add
+   `coverage_pct` and `skip_ratio` reports turn "we should add
    tests" into a ranked queue.
 3. **Add Docs last** when documentation drift is a recurring
    surprise. Layer A pairing needs one upfront pass through
@@ -109,6 +122,6 @@ A typical adoption order:
    every `heal status`.
 
 Either opt-in family can be turned off later — set `enabled =
-false` and the next `heal status --refresh` drops those findings
-from the cache. Re-enabling brings them back without
+false` and the next `heal status --refresh` removes those items
+from the TODO list. Re-enabling brings them back without
 re-calibration.

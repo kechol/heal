@@ -100,7 +100,7 @@ The skill set is embedded in the `heal` binary at compile time, so
 in use. `update` is drift-aware: files that have been hand-edited are
 left in place (use `--force` to overwrite anyway).
 
-The bundled set ships ten skills, grouped by feature family:
+The bundled set ships eleven skills, grouped by feature family:
 
 **Code (always on):**
 
@@ -122,6 +122,8 @@ The bundled set ships ten skills, grouped by feature family:
 
 - `/heal-doc-pair-setup` (write `.heal/doc_pairs.json`) detects doc
   ⇔ src pairings.
+- `/heal-doc-scaffold` (write under `[features.docs] scaffold_root`)
+  stands up a fresh documentation tree from codebase signals alone.
 - `/heal-doc-review` (read-only) audits the docs slice through a
   Diátaxis lens.
 - `/heal-doc-patch` (write) drains broken internal links, dangling
@@ -242,9 +244,9 @@ complex functions, top hotspots, most-split classes. `--metric
   `change-coupling`, `duplication`, `hotspot`, `lcom`.
 - **`[features.docs]`** (when enabled): `doc-freshness`,
   `doc-drift`, `doc-coverage`, `doc-link-health`, `orphan-pages`,
-  `todo-density`.
+  `todo-density`, `doc-hotspot`.
 - **`[features.test]`** (when enabled): `coverage-pct`,
-  `skip-ratio`.
+  `skip-ratio`, `test-hotspot`.
 
 `--json` produces the same data as machine-readable JSON, suitable
 for piping into `jq`.

@@ -100,8 +100,13 @@ findings; pass `--refresh` to rescan first. Useful args:
 - `--refresh` — rescan and overwrite `.heal/findings/latest.json`.
 - `--all` — surface Medium and Ok tiers (default hides them).
 - `--severity {critical|high|medium|ok}` — restrict to one floor.
-- `--metric {ccn|cognitive|complexity|duplication|coupling|hotspot|lcom}` —
-  restrict to one metric (`complexity` = ccn+cognitive).
+- `--metric <NAME>` — restrict to one metric. Code-family values:
+  `ccn`, `cognitive`, `complexity` (ccn+cognitive), `duplication`,
+  `coupling` (`change_coupling` and its submetrics), `hotspot`,
+  `lcom`. `[features.docs]` values: `doc-freshness`, `doc-drift`,
+  `doc-coverage`, `doc-link-health`, `orphan-pages`, `todo-density`,
+  `doc-hotspot`. `[features.test]` values: `coverage-pct`,
+  `skip-ratio`, `test-hotspot`.
 - `--feature {code|test|docs}` — restrict to one metric family.
   `code` covers always-on observers; `test` covers `[features.test]`
   metrics; `docs` covers `[features.docs]` metrics. **Early-exit
@@ -119,9 +124,8 @@ Key fields:
 
 ```jsonc
 {
-  "version": 2,
-  "id": "01HZA…",                            // ULID, lexicographic = chronological
-  "started_at": "2026-04-28T09:00:00Z",
+  "version": 4,
+  "id": "9f8e7d6c5b4a3210",                  // FNV-1a hex of (head_sha, config_hash, worktree_clean)
   "head_sha": "deadbeef…",
   "worktree_clean": true,
   "config_hash": "…",
@@ -165,18 +169,20 @@ Unchanged. JSON shape:
 
 ```jsonc
 {
-  "from_ref": "HEAD",
-  "from_sha": "deadbeef…",
-  "from_started_at": "2026-04-28T09:00:00Z",
-  "to_started_at":   "2026-04-28T09:05:00Z",
-  "to_head_sha": "deadbeef…",
+  "from_ref":     "HEAD",
+  "from_sha":     "deadbeef…",
+  "to_head_sha":  "deadbeef…",
   "resolved":     [{ "finding_id": "ccn:…", "metric": "ccn", "file": "src/a.ts",
-                     "from_severity": "high", "to_severity": null, "hotspot": false }],
+                     "from_severity": "high", "to_severity": null,
+                     "from_hotspot": false, "hotspot": false }],
   "regressed":    [],
   "improved":     [],
   "new_findings": [],
   "unchanged":    [],
-  "progress_pct": 0.25
+  "progress_pct":     0.25,    // population-side: resolved.len() / from.findings.len()
+  "t0_total":         4,       // T0 (Critical AND hotspot) baseline count
+  "t0_resolved":      1,
+  "t0_progress_pct":  0.25     // t0_resolved / t0_total
 }
 ```
 

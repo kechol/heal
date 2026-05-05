@@ -9,7 +9,7 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 re-measures complexity, hotspots, and duplication, then hands the
 resulting TODO list to Claude — which drains it one fix per commit.
 The human steps out of the polling loop. This walkthrough sets that
-loop up in three commands.
+loop up end-to-end in about five minutes.
 
 ## Requirements
 
@@ -17,8 +17,9 @@ Before you start.
 
 - macOS or Linux
 - A git repository to evaluate
-- (Optional) [Claude Code](https://claude.com/code) CLI for the bundled
-  `/heal-code-review` and `/heal-code-patch` skills
+- (Optional) [Claude Code](https://claude.com/code) CLI for the
+  bundled `/heal-setup`, `/heal-code-review`, and `/heal-code-patch`
+  skills
 
 ## 1. Install
 
@@ -55,40 +56,78 @@ heal --version
 
 Method-by-method details: [Installation](/heal/installation/).
 
-## 2. Initialize the repository
+## 2. Bootstrap the repository
 
-One command sets up `.heal/`, calibrates, and installs the hook.
+One command sets up `.heal/` and installs the git hook.
 
 ```sh
 heal init
 ```
 
-Creates `.heal/`, calibrates from the initial scan, installs the
-post-commit hook, and (when `claude` is on your `PATH`) offers to
-extract the bundled plugin.
+Creates `.heal/` (config and calibration), installs the post-commit
+hook that flags the next Critical / High after every commit, and
+(when `claude` is on your `PATH`) offers to extract the bundled
+Claude skills into `.claude/skills/`.
 
-## 3. See the TODO list
+## 3. Tune strictness with `/heal-setup`
 
-The Severity-grouped findings, ready to act on.
+Optional but recommended on the first run. The bundled setup
+wizard surveys your codebase, picks a sensible strictness level,
+and offers to turn on the opt-in Test / Docs families.
+
+```sh
+claude /heal-setup
+```
+
+It asks Strict / Default / Lenient, updates `.heal/config.toml`,
+then chains into `/heal-doc-pair-setup` (writes
+`.heal/doc_pairs.json`) or `/heal-test-reporter-setup` (proposes
+the lcov reporter wiring) if you opt into either family. Re-run
+later when the codebase has shifted enough that the bar should
+move.
+
+## 4. See the TODO list
+
+The Severity-grouped TODO list, ready to act on.
 
 ```sh
 heal status
 ```
 
-Renders the per-file Severity-grouped TODO list and writes
-`.heal/findings/latest.json`. Filters and JSON output:
-[CLI › heal status](/heal/cli/#heal-status).
+Prints the per-file TODO list grouped by Severity. Filters and
+JSON output: [CLI › heal status](/heal/cli/#heal-status).
 
-## 4. Audit and drain with Claude
+## 5. Audit and drain with Claude
 
-Hand the cache to the bundled skills — one reads, one writes.
+Pick the bundled skill that matches what you want to do. Each
+feature family ships a read-only **review** skill (architectural
+audit, no writes) and a write **patch** skill (one commit per
+fix, refuses a dirty worktree).
 
 ```sh
-claude /heal-code-review    # read-only architectural audit
-claude /heal-code-patch      # drain the cache, one finding per commit
+# Always available — the always-on Code family:
+claude /heal-code-review     # what is HEAL really saying? Architectural read of the flagged code, prioritized refactor TODO list, no source writes.
+claude /heal-code-patch      # work through the TODO list mechanically: one fix per commit, in Severity order, never pushes or amends.
+
+# When [features.docs] is on:
+claude /heal-doc-review      # audit your docs through the Diátaxis lens — find where readers get lost.
+claude /heal-doc-patch       # auto-fix broken internal links, dangling identifiers, and orphan pages.
+
+# When [features.test] is on:
+claude /heal-test-review     # test-pyramid view of coverage gaps and silently-skipped tests.
+claude /heal-test-patch      # write the missing tests Claude flagged — one commit per uncovered hot path.
 ```
 
-Skill contracts: [Claude skills](/heal/claude-skills/).
+Two more, for less common situations:
+
+```sh
+claude /heal-doc-scaffold    # [features.docs]: stand up a fresh doc tree from codebase signals — useful on a project with no docs yet.
+claude /heal-cli             # ask Claude about the heal CLI itself — every flag and JSON shape, treated as a stable contract.
+```
+
+Skill contracts: [Code › Skills](/heal/code/skills/),
+[Docs › Skills](/heal/docs/skills/),
+[Test › Skills](/heal/test/skills/).
 
 ## Further reading
 
@@ -105,8 +144,8 @@ Topical pages on the docs site:
 When you're ready for more than the always-on Code family:
 
 - [Test › Configuration](/heal/test/configuration/) for `lcov.info`
-  ingestion and coverage / skip ratio findings.
+  ingestion and the coverage / skip-ratio reports it turns on.
 - [Docs › Configuration](/heal/docs/configuration/) for paired-doc
-  drift and broken-link findings.
+  drift and broken-link checks.
 
 If a step does not behave as documented, please [file an issue](https://github.com/kechol/heal/issues).

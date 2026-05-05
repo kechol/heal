@@ -6,9 +6,9 @@ description: Watch your codebase decay with every commit and hand the next refac
 import { LinkButton } from '@astrojs/starlight/components';
 
 `heal` watches your codebase decay between commits — complexity
-creep, hotspots, duplication — and turns each finding into a TODO
-your next Claude session can drain, one fix per commit. No human in
-the polling path.
+creep, hotspots, duplication — and turns every problem it spots
+into a TODO your next Claude session can work through, one fix per
+commit. No human in the polling path.
 
 <LinkButton href="/heal/quick-start/" icon="right-arrow">
   Quick Start (5 min)
@@ -25,10 +25,11 @@ same files get touched repeatedly, and duplicated blocks drift in.
 The agent doesn't observe these long-term shifts — without an
 external signal, the human is the only one tracking them.
 
-`heal` fills that gap. A git post-commit hook surfaces every Critical
-/ High finding right inside the commit output, and `heal status`
-hands the same findings to the bundled `/heal-code-patch` Claude
-skill, which drains them one finding per commit.
+`heal` fills that gap. A git post-commit hook surfaces every
+Critical / High problem right inside the commit output, and
+`heal status` lays out the same TODO list for the bundled
+`/heal-code-patch` Claude skill — which works through it one fix
+per commit.
 
 Three feature families shape what heal observes:
 

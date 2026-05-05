@@ -1,9 +1,9 @@
 ---
 title: Code · スキル
-description: 常時オンの Code ファミリ向け Claude Code スキル 4 種 — /heal-cli、/heal-setup、/heal-code-review、/heal-code-patch。
+description: 常時オン Code ファミリ向け Claude Code スキル 4 種 — /heal-cli、/heal-setup、/heal-code-review、/heal-code-patch。
 ---
 
-heal は Claude Code 向けスキルセットを同梱しているので、収集したメトリクスは Claude セッションへ自動的に流れます。リポジトリごとに 1 回だけインストールします:
+heal は Claude Code 向けスキルセットを同梱しているので、収集したメトリクスは Claude セッションへ自動的に流れます。リポジトリごとに 1 回インストールします:
 
 ```sh
 heal skills install
@@ -11,94 +11,67 @@ heal skills install
 
 このページは 4 つの Code ファミリスキルを扱います。doc 系は [Docs › スキル](/heal/ja/docs/skills/)、test 系は [Test › スキル](/heal/ja/test/skills/) を参照。
 
-```
-.claude/skills/
-├── heal-cli/
-├── heal-code-patch/
-├── heal-code-review/
-└── heal-setup/
-```
-
 スキルセットは `heal` バイナリに同梱されているので、インストールされるバージョンは常にバイナリと一致します。`heal` をアップグレードしたら `heal skills update` で更新します。
 
 ## `/heal-code-review` — 監査スキル
 
-読み取り専用です。`heal status --all --json` を取り込み、フラグ付きコードを深く読み、次の 2 つを返します:
+読み取り専用。`heal status --all --json` を取り込み、フラグ付きコードを深く読み、次の 2 つを返します:
 
-1. コードベースの **アーキテクチャ的読解** — findings を _システムとして_ 何を語っているか(支配的な軸: complexity、duplication、coupling、hub)。
-2. **優先順位付き TODO リスト** — デフォルトでは **T0(`must`)のみ**。T1(`should`)は別の「帯域があれば」セクションに、Advisory はカウントだけ表示します。
+1. **アーキテクチャ的読解** — findings を _システムとして_ 何を語っているか(支配的な軸: complexity、duplication、coupling、hub)。
+2. **優先順位付き TODO リスト** — デフォルトで T0 のみ。T1 は別の「帯域があれば」セクション、Advisory はカウントだけ表示。
 
-`/heal-code-review` は提案のみで、ソースは編集しません。チームが本質的(意図的に複雑な税金エンジン、手続き的に凝集したパーサコンビネータなど)と判断した findings には `heal mark accept` も推奨できます。
+ソースは編集しません。チームが「設計上のもので直さない」(意図的に複雑な税金エンジン、手続き的に凝集したパーサコンビネータなど)と判断した項目には `heal mark accept` も推奨できます。
 
-書き込み側のカウンターパートは `/heal-code-patch` です。
+レビューを読んで「これも直してほしい」と思ったら、その場で Claude Code に伝えれば対応に移れます(「最初の 3 件を直して」「Extract Function 系から片付けて」など)。機械的な修正は `/heal-code-patch` 経由に流れ、判断が要る項目は自動適用されず、あなたの指示を待ちます。
+
+### review と patch を分けている理由
+
+**Patch** が引き受けるのは機械的な修正です — 長い関数を Extract Function、重複したブロックを共有ヘルパへ、ドリフトしたテストをソースに合わせ直す。「どのファイルを触るか分かれば、手筋は明らか」というタイプ。
+
+**Review** はそれに加えて、**人間の判断が必要な項目** も拾い上げます — このハブは分割すべきか? この重複は実は別概念が同じ形に育ったものでは? — チームの文脈なしでは正解が決まらない問いです。だからレビューは提案して止まる。両者を 1 つのオート実行に混ぜると、判断のいる項目を取りこぼすか、機械的な山を放置するか、どちらかになります。
 
 トリガーフレーズ: 「review the codebase health」、「what does heal say?」、「where should we refactor?」、「/heal-code-review」。
 
 ## `/heal-code-patch` — 書き込みスキル
 
-`.heal/findings/latest.json` を Severity 順に 1 件ずつ drain し、修正ごとに 1 コミットします。
+`.heal/findings/latest.json` を Severity 順に 1 件ずつ消化し、修正ごとに 1 コミット。ループは **T0(`must`)のみ** 解消します。T1 / Advisory は表示するだけで自動解消はしません。
 
-事前チェック(失敗すると起動拒否):
+**事前チェック**(失敗すると起動拒否):
 
-1. **クリーンな worktree。** dirty な worktree はキャッシュの `worktree_clean = false` を意味し、記録された数値はディスク上のソースを反映していません。スキルは止まり、commit か stash を依頼します。
-2. **キャッシュ存在。** `latest.json` が無ければ `heal status --json` を 1 回走らせて埋めます。
-3. **キャリブレーション存在。** `calibration.toml` が無ければすべての Finding が `Severity::Ok` で、アクション可能なものはありません。
+- クリーンな worktree。
+- キャッシュ存在(欠けていれば `heal status --json` で埋める)。
+- Calibration の存在(無いとすべての Finding が `Severity::Ok` になり、対象がない)。
 
-ループは **T0(`must`)のみ** drain します。T1 / Advisory はレビュー用に表示しますが自動 drain はしません。T0 が空になったらセッションを終えます。
+**メトリクス別の手筋**(Fowler / Tornhill 語彙):
 
-メトリクス別に、確立されたリファクタ語彙(Fowler、Tornhill)へマッピングされます:
+| メトリクス | 主な手 |
+|---|---|
+| `ccn` / `cognitive` | Extract Function、Guard Clauses、Decompose Conditional |
+| `duplication` | Extract Function / Method、Pull Up Method、Rule of Three |
+| `change_coupling`(`.symmetric` 含む) | アーキテクチャの継ぎ目を可視化(coupling の自動修正は行わない) |
+| `lcom` | クラスタ境界に沿って Extract Class |
+| `hotspot` | Hotspot はフラグであって問題ではない。基底のメトリクスに対処 |
 
-| メトリクス                  | 主な手 |
-| --------------------------- | -------------------------------------------------------------------------------------- |
-| `ccn` / `cognitive`         | Extract Function、Replace Nested Conditional with Guard Clauses、Decompose Conditional |
-| `duplication`               | Extract Function / Method、Pull Up Method、Form Template Method、Rule of Three         |
-| `change_coupling`           | アーキテクチャの継ぎ目を可視化(coupling の自動修正は行わない)                       |
-| `change_coupling.symmetric` | 同上(強い「責務混在」シグナルは人間判断が必要)                                       |
-| `lcom`                      | クラスタ境界に沿ってクラスを分割(通常は Extract Class)                               |
-| `hotspot`                   | Hotspot はフラグであって問題そのものではない。基底にある CCN / dup / coupling に対処 |
+**制約**(スキルが強制): 1 finding = 1 commit、Conventional Commit subject + `Refs: F#<finding_id>` trailer、push / amend / `--no-verify` はしない。docs / test ファミリのメトリクスに属する findings はスキップ — そちらは `/heal-doc-patch` / `/heal-test-patch` の担当です。
 
-スキルが強制する制約:
-
-- 1 finding = 1 commit。findings 横断の squash はしません。
-- Conventional Commit の subject + body + `Refs: F#<finding_id>` トレーラ。
-- push しない、amend しない、`--no-verify` しない。
-- ループはキャッシュの境界で止まります。新たな findings は次の `heal status` 実行で取り込みます。
-
-`/heal-code-patch` は doc / test ファミリのメトリクスに属する findings をスキップします。それぞれ `/heal-doc-patch` と `/heal-test-patch` の担当です。
-
-トリガーフレーズ: 「fix the heal findings」、「drain the cache」、「work through the TODO list heal produced」、「/heal-code-patch」。
+トリガーフレーズ: 「fix the heal findings」、「drain the cache」、「work through the TODO list」、「/heal-code-patch」。
 
 ## `/heal-cli` — CLI リファレンス
 
-`heal` CLI の簡潔で完全なリファレンスです。各サブコマンド、各 `--json` の形、各コマンドが読み書きする `.heal/` ファイルを網羅しています。Claude が他のスキルから `heal` をシェル実行する前にこれを読み込むので、CLI 表面は `--help` テキストから推論する対象ではなく、安定した契約として扱われます。
+`heal` CLI の簡潔で完全なリファレンス。各サブコマンド、各 `--json` の形、各コマンドが読み書きする `.heal/` ファイルを網羅しています。Claude が他のスキルから `heal` をシェル実行する前にこれを読み込むので、CLI 表面は安定した契約として扱われます。
 
 ## `/heal-setup` — セットアップウィザード
 
-ワンショットのセットアップウィザードです。プロジェクトをキャリブレーションし、コードベースを見渡し、strictness レベル(Strict / Default / Lenient)を選んでもらって `.heal/config.toml` を書く/更新したあと、各オプション機能ファミリ(`[features.docs]`、`[features.test]`)を有効化するかを順に確認し、有効化する場合は対応するセットアップスキルを呼び出します。
+ワンショットのセットアップウィザード。プロジェクトを calibrate し、コードベースを見渡し、strictness レベル(Strict / Default / Lenient)を選んでもらって `.heal/config.toml` を書く / 更新したあと、`[features.docs]` / `[features.test]` の有効化を順に確認し、有効化する場合は対応するセットアップスキル(`/heal-doc-pair-setup` / `/heal-test-reporter-setup`)に連携します。
 
-使うタイミング:
+コードベースが大きく動いて基準を動かしたくなったとき、または Critical を持続的に解消し終えたときは再実行を — そういう局面では `heal calibrate --force` も推奨します。
 
-- heal を初めてセットアップするとき。
-- コードベースの構造変更(新しい vendored ツリー、レイヤ書き直しなど)の後。
-- すべての閾値を覚えていなくても品質バーを動かしたいとき。
-- `[features.*]` ブロックを手で書かずに docs / coverage の観測を有効化したいとき。
-
-`[features.docs]` を有効化した場合、`/heal-setup` はプロジェクトの実際のドキュメント配置から `[features.docs.standalone]` の include / exclude グロブを埋め、続けて `/heal-doc-pair-setup` を呼び出して `.heal/doc_pairs.json` を生成します。`[features.test]` を有効化した場合は、検出した言語スタックから `test_paths` と `lcov_paths` を埋め、続けて `/heal-test-reporter-setup` を呼び出して言語別の lcov レポータ設定を行います。
-
-`/heal-setup` はキャリブレーションのベースラインがドリフトして無視できなくなったときに `heal calibrate --force` も推奨します(ファイル数が大きく動いた、プロジェクトの速度に対してキャリブレーションが古い、Critical を持続的に drain し終えた、など)。
-
-## 更新
+## メンテナンス
 
 ```sh
-heal skills update
+heal skills update     # heal バイナリ更新後にリフレッシュ(ドリフト認識付き)
+heal skills status     # ドリフトしたファイルを一覧
+heal skills uninstall  # 同梱スキルをすべて削除
 ```
 
-`update` はドリフト認識付きで、手編集されたファイルはそのまま残します(警告付き)。`--force` ですべて上書きできます。`heal skills status` でドリフト状況を確認できます。
-
-## アンインストール
-
-```sh
-heal skills uninstall
-```
-
-`.claude/skills/heal-*` 配下のすべての同梱スキルディレクトリを削除します(展開されていれば doc / test ファミリも含む)。あなたが書いた兄弟スキルは残り、`.heal/` 配下のプロジェクトデータも基本的に手付かずです。
+`update` は手編集されたファイルをそのまま残します(警告付き)。`--force` で上書き可。`uninstall` は `.claude/skills/heal-*` 配下をすべて削除しますが、あなたが書いた兄弟スキルは残り、`.heal/` 配下のプロジェクトデータも基本的に手付かずです。

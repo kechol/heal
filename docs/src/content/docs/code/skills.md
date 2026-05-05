@@ -4,49 +4,56 @@ description: The four bundled Claude Code skills for the always-on Code family �
 ---
 
 heal ships a bundled set of Claude Code skills so the metrics it
-collects flow into Claude sessions. They're installed once per
+collects flow into Claude sessions. Install them once per
 repository:
 
 ```sh
 heal skills install
 ```
 
-This page covers the four Code-family skills. The doc-family skills
-live under [Docs › Skills](/heal/docs/skills/); the test-family
-skills under [Test › Skills](/heal/test/skills/).
-
-The four code-family skills:
-
-```
-.claude/skills/
-├── heal-cli/
-├── heal-code-patch/
-├── heal-code-review/
-└── heal-setup/
-```
+This page covers the four Code-family skills. The doc-family
+skills live under [Docs › Skills](/heal/docs/skills/); the
+test-family skills under [Test › Skills](/heal/test/skills/).
 
 The skill set is shipped inside the `heal` binary, so the version
-installed always matches the binary in use. After upgrading `heal`,
-run `heal skills update` to refresh.
+installed always matches the binary in use. After upgrading
+`heal`, run `heal skills update` to refresh.
 
 ## `/heal-code-review` — the audit skill
 
-Read-only. Reads `heal status --all --json`, deep-reads the flagged
-code, and returns:
+Read-only. Reads `heal status --all --json`, deep-reads the
+flagged code, and returns:
 
-1. An **architectural reading** of the codebase — what the findings
-   say _as a system_, not as a list (the dominant axis: complexity,
+1. An **architectural reading** — what the findings say
+   _as a system_, not as a list (the dominant axis: complexity,
    duplication, coupling, hub).
-2. A **prioritized TODO list** — drawn from **T0 (`must`) only** by
-   default. T1 (`should`) findings get an "If bandwidth permits"
-   section; Advisory findings are surfaced as a count only.
+2. A **prioritized TODO list** drawn from T0 only by default. T1
+   gets an "if bandwidth permits" section; Advisory is summarized
+   as a count.
 
-`/heal-code-review` proposes only — it never edits source. It can
-also recommend `heal mark accept` for findings the team has decided
-are intrinsic (a deliberately complex tax engine, a procedurally
-cohesive parser combinator).
+Never edits source. Can recommend `heal mark accept` for findings
+the team has decided are intrinsic — a deliberately complex tax
+engine, a procedurally cohesive parser combinator.
 
-The write counterpart is `/heal-code-patch`.
+After reading a review, you can act on any item right away — just
+ask Claude Code in the same session ("apply the first three",
+"let's fix the extract-function items"). Mechanical fixes get
+routed through `/heal-code-patch`; judgment-call items wait for
+your direction.
+
+### Why review and patch are split
+
+**Patch** handles the mechanical class — a long function that
+wants Extract Function, a duplicate that wants a shared helper, a
+drifted test that needs realignment. Steps that don't require
+domain knowledge.
+
+**Review** also surfaces the items that *do* need a human call —
+should this hub be split? is this duplication two different
+concepts that grew the same shape? is this complex function
+intrinsic to the problem or accidental? — so review proposes and
+stops. Mixing them into one auto-driver would either rush
+judgment calls or refuse to touch the mechanical pile.
 
 Trigger phrases: "review the codebase health", "what does heal
 say?", "where should we refactor?", "/heal-code-review".
@@ -54,106 +61,66 @@ say?", "where should we refactor?", "/heal-code-review".
 ## `/heal-code-patch` — the write skill
 
 Drains `.heal/findings/latest.json` one finding at a time, in
-Severity order, committing once per fix.
+Severity order, committing once per fix. The loop drains **T0
+(`must`) only**; T1 / Advisory are surfaced for review but never
+auto-drained.
 
-Pre-flight (refuses to start when these fail):
+**Pre-flight** (refuses to start otherwise):
 
-1. **Clean worktree.** A dirty worktree means the cache's
-   `worktree_clean = false` — the recorded numbers don't reflect the
-   on-disk source. The skill asks you to commit or stash first.
-2. **Cache exists.** If `latest.json` is missing, the skill runs
-   `heal status --json` once to populate it.
-3. **Calibration exists.** Without `calibration.toml`, every Finding
-   is `Severity::Ok` — nothing to act on.
+- Clean worktree.
+- Cache exists (runs `heal status --json` to populate if missing).
+- Calibration exists (without it every Finding is `Severity::Ok`
+  — nothing to act on).
 
-The loop drains **T0 (`must`) only**. T1 / Advisory are surfaced for
-review but never auto-drained — the session ends when T0 is empty
-rather than silently extending.
+**Per-metric moves** (Fowler / Tornhill vocabulary):
 
-Per-metric, the patch skill maps to established refactoring moves
-(Fowler, Tornhill):
+| Metric | Common move |
+|---|---|
+| `ccn` / `cognitive` | Extract Function, Guard Clauses, Decompose Conditional |
+| `duplication` | Extract Function / Method, Pull Up Method, Rule of Three |
+| `change_coupling` (incl. `.symmetric`) | Surface the architectural seam — patch never auto-fixes coupling |
+| `lcom` | Extract Class along the cluster boundary |
+| `hotspot` | Hotspot is a flag, not a problem — act on the underlying metric |
 
-| Metric                      | Common moves                                                                           |
-| --------------------------- | -------------------------------------------------------------------------------------- |
-| `ccn` / `cognitive`         | Extract Function, Replace Nested Conditional with Guard Clauses, Decompose Conditional |
-| `duplication`               | Extract Function / Method, Pull Up Method, Form Template Method, Rule of Three         |
-| `change_coupling`           | Surface the architectural seam — patch never auto-fixes coupling                        |
-| `change_coupling.symmetric` | Same — strong "responsibility mixing" signal needs a human call                          |
-| `lcom`                      | Split the class along the cluster boundary (usually Extract Class)                      |
-| `hotspot`                   | Hotspot is a flag, not a problem — act on the underlying CCN / dup / coupling          |
-
-Constraints (enforced by the skill):
-
-- One finding = one commit. No squashing across findings.
-- Conventional Commit subject + body + `Refs: F#<finding_id>`
-  trailer.
-- Never push, never amend, never `--no-verify`.
-- The loop stops at the cache boundary; new findings the user wants
-  addressed go into a fresh `heal status` run.
-
-`/heal-code-patch` skips findings whose metric belongs to the docs
-or test families — those are owned by `/heal-doc-patch` and
-`/heal-test-patch` respectively.
+**Constraints** (enforced by the skill): one finding = one
+commit, Conventional Commit subject + `Refs: F#<finding_id>`
+trailer, never push / amend / `--no-verify`. Findings whose
+metric belongs to the docs or test families are skipped — those
+go through `/heal-doc-patch` / `/heal-test-patch`.
 
 Trigger phrases: "fix the heal findings", "drain the cache",
-"work through the TODO list heal produced", "/heal-code-patch".
+"work through the TODO list", "/heal-code-patch".
 
 ## `/heal-cli` — CLI reference
 
 A concise, complete reference for the `heal` CLI — every
 subcommand, every `--json` shape, the `.heal/` files each command
-reads or writes. Claude loads it before shelling out to `heal` from
-any other skill so the CLI surface is treated as a stable contract,
-not inferred from `--help` text.
+reads or writes. Claude loads it before shelling out to `heal`
+from any other skill so the CLI surface is treated as a stable
+contract.
 
 ## `/heal-setup` — setup wizard
 
-One-shot setup wizard. It calibrates the project, surveys the
-codebase, asks for a strictness level (Strict / Default / Lenient),
-writes or updates `.heal/config.toml`, then asks whether to enable
-each optional feature family (`[features.docs]`, `[features.test]`)
-and chains to the companion setup skill if you opt in.
+One-shot setup wizard. Calibrates the project, surveys the
+codebase, asks for a strictness level (Strict / Default /
+Lenient), writes or updates `.heal/config.toml`, then offers to
+turn on `[features.docs]` / `[features.test]` and chain into the
+matching setup skill (`/heal-doc-pair-setup` /
+`/heal-test-reporter-setup`).
 
-Use it when:
+Re-run when the codebase shifts enough that the bar should move,
+or when every Critical has been drained for a sustained run —
+the skill recommends `heal calibrate --force` in those cases.
 
-- Setting heal up for the first time.
-- After a structural change to the codebase (a new vendored tree,
-  a layer rewrite).
-- When you want to shift the quality bar without remembering every
-  threshold.
-- When you want to turn on docs or coverage observers without
-  hand-editing `[features.*]` blocks.
-
-If you accept `[features.docs]`, `/heal-setup` populates the
-`[features.docs.standalone]` include / exclude globs from the
-project's actual doc layout and chains to `/heal-doc-pair-setup`
-to generate `.heal/doc_pairs.json`. If you accept `[features.test]`,
-it populates `test_paths` and `lcov_paths` from the detected
-language stack and chains to `/heal-test-reporter-setup` for the
-language-specific lcov reporter wiring.
-
-`/heal-setup` also recommends `heal calibrate --force` when the
-calibration baseline has drifted enough to matter — file count
-moved significantly, the calibration is old relative to project
-velocity, or every Critical has been drained for a sustained run.
-
-## Updating
+## Maintenance
 
 ```sh
-heal skills update
+heal skills update     # refresh after upgrading heal (drift-aware)
+heal skills status     # list drifted files
+heal skills uninstall  # remove every bundled skill
 ```
 
-`update` is drift-aware: files that have been hand-edited are left
-in place, with a warning. Pass `--force` to overwrite anyway.
-`heal skills status` lists which files have drifted.
-
-## Removing
-
-```sh
-heal skills uninstall
-```
-
-Removes every bundled skill directory under `.claude/skills/heal-*`
-— including the doc and test families if they were extracted.
-Sibling skills you authored survive, and project data under
-`.heal/` is otherwise untouched.
+`update` leaves hand-edited files in place with a warning; pass
+`--force` to overwrite. `uninstall` removes every
+`.claude/skills/heal-*` directory; sibling skills you authored
+survive, and project data under `.heal/` is untouched.

@@ -59,12 +59,23 @@ After `heal init`:
 ├── .git/hooks/post-commit         # one-line shim: calls `heal hook commit`
 │
 └── .claude/skills/                # Claude skills (after `heal skills install`)
-    ├── heal-cli/
+    ├── heal-cli/                  # Code family
     ├── heal-code-patch/
     ├── heal-code-review/
-    └── heal-setup/
-    # heal-doc-* / heal-test-* are also extracted when their feature is on.
+    ├── heal-setup/
+    ├── heal-doc-pair-setup/       # Docs family
+    ├── heal-doc-scaffold/
+    ├── heal-doc-review/
+    ├── heal-doc-patch/
+    ├── heal-test-reporter-setup/  # Test family
+    ├── heal-test-review/
+    └── heal-test-patch/
 ```
+
+All eleven bundled skills extract on `heal skills install`
+regardless of which feature families are enabled — turning
+`[features.docs]` or `[features.test]` on later then makes the
+already-installed skill body relevant without a re-extract.
 
 `config.toml`, `calibration.toml`, and the `findings/` directory
 are all tracked in git. Teammates on the same commit share the
@@ -85,9 +96,13 @@ same Severity ladder and the same drain queue.
 | `.claude/skills/heal-*/`         | `heal skills install`                              | Once; updated with `heal skills update`.    |
 
 There is no event log, no monthly rotation, no `.heal/snapshots/`,
-`.heal/logs/`, `.heal/docs/`, or `.heal/reports/` directory. heal
-keeps only the current state plus the small audit trail in
-`regressed.jsonl`.
+`.heal/logs/`, or `.heal/reports/` directory. heal keeps only the
+current state plus the small audit trail in `regressed.jsonl`.
+
+`.heal/docs/` is the one exception: when `/heal-doc-scaffold` runs,
+it writes the generated documentation tree to the directory named by
+`[features.docs] scaffold_root` (default `.heal/docs/`). HEAL
+itself only ever **reads** that tree — the skill is the only writer.
 
 ## The findings cache
 
@@ -100,7 +115,7 @@ writer of `accepted.json`.
 
 ```json
 {
-  "version": 3,
+  "version": 4,
   "id": "9f8e7d6c5b4a3210", // FNV-1a hex of (head_sha, config_hash, worktree_clean)
   "head_sha": "a0a6d1a…",
   "worktree_clean": true,
