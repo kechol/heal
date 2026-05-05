@@ -645,9 +645,10 @@ landed.
 
 ## Adding a new observer (checklist)
 
-1. Add `crate::observer::<m>` module with a `*Observer`, a `*Report`, a
-   `*Config` (in `core::config` with `Toggle` impl), and an
-   `IntoFindings` impl on the report.
+1. Add `crate::observer::<m>` module with a `*Observer`, a `*Report`,
+   a `*Config` (in `core::config` with a `pub enabled: bool` field
+   plus a manual `Default` matching the serde-default body — see
+   invariants.md R8), and an `IntoFindings` impl on the report.
 2. Wire into `observers::run_all` in dependency order.
 3. Add a Feature in `crate::feature::FeatureRegistry::builtin()` with
    correct emission ordering.
