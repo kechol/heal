@@ -499,14 +499,29 @@ fn render_tier_section(
         by_file.entry(&f.location.file).or_default().push(f);
     }
     for (file, fs) in &by_file {
-        let summary = fs
-            .iter()
-            .map(|f| f.short_label())
-            .collect::<Vec<_>>()
-            .join("  ");
+        let summary = group_labels(fs.iter().map(|f| f.short_label())).join("  ");
         writeln!(out, "  {}  {summary}", file.display())?;
     }
     Ok(())
+}
+
+/// Run-length-encode adjacent identical labels into `label(N)` form so
+/// the per-file summary stays readable when one metric fires many times
+/// (e.g. 13× `doc_drift` on a heavy reference doc, 5× `coupled` on a
+/// frequently-edited central file). Singletons stay bare. Adjacency is
+/// the right granularity because `render_tier_section` already sorts
+/// findings by metric before grouping by file.
+fn group_labels<I: IntoIterator<Item = String>>(labels: I) -> Vec<String> {
+    let mut out: Vec<(String, usize)> = Vec::new();
+    for label in labels {
+        match out.last_mut() {
+            Some(last) if last.0 == label => last.1 += 1,
+            _ => out.push((label, 1)),
+        }
+    }
+    out.into_iter()
+        .map(|(s, n)| if n > 1 { format!("{s}({n})") } else { s })
+        .collect()
 }
 
 /// Accepted-finding tally for the header line. `Accepted: N
@@ -920,6 +935,72 @@ mod tests {
         assert!(
             out.contains("T1 0 findings (0 files)"),
             "empty T1 must still render explicitly:\n{out}",
+        );
+    }
+
+    #[test]
+    fn group_labels_collapses_adjacent_repeats() {
+        // Heavy reference docs trigger many doc_drift findings on the
+        // same file; without grouping the per-file line becomes
+        // `doc_drift  doc_drift  doc_drift  …` which is unreadable.
+        let labels = vec![
+            "coupled".to_owned(),
+            "coupled".to_owned(),
+            "coupled".to_owned(),
+            "duplication".to_owned(),
+            "duplication".to_owned(),
+            "LCOM=4".to_owned(),
+        ];
+        assert_eq!(
+            super::group_labels(labels),
+            vec![
+                "coupled(3)".to_owned(),
+                "duplication(2)".to_owned(),
+                "LCOM=4".to_owned(),
+            ],
+        );
+    }
+
+    #[test]
+    fn group_labels_keeps_singletons_bare() {
+        let labels = vec![
+            "CCN=36".to_owned(),
+            "Cognitive=58".to_owned(),
+            "duplication".to_owned(),
+        ];
+        assert_eq!(
+            super::group_labels(labels),
+            vec![
+                "CCN=36".to_owned(),
+                "Cognitive=58".to_owned(),
+                "duplication".to_owned(),
+            ],
+        );
+    }
+
+    #[test]
+    fn render_groups_repeated_metric_per_file() {
+        // 13 same-metric findings on one file should print as
+        // `duplication(13)`, not 13 space-separated copies. Mirrors the
+        // motivating user report (where doc_drift was the offender —
+        // same rendering path, but the Code family is always enabled
+        // so the test doesn't need a tweaked Config).
+        let findings: Vec<Finding> = (0..13)
+            .map(|i| {
+                let mut f = finding("duplication", "src/heavy.rs", Severity::Critical, false);
+                f.id = format!("duplication:src/heavy.rs:{i}");
+                f
+            })
+            .collect();
+        let rec = record(findings);
+        let out = render_to_string(&rec, &default_filters());
+        assert!(
+            out.contains("duplication(13)"),
+            "expected grouped duplication(13) in output:\n{out}",
+        );
+        assert!(
+            !out.contains("duplication  duplication"),
+            "raw repeated labels must not appear after grouping:\n{out}",
         );
     }
 }
