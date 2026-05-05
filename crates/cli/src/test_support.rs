@@ -8,6 +8,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
+use crate::core::config::Config;
+use crate::core::HealPaths;
+
 /// Resolve `git`'s absolute path once and cache it. Other inline tests
 /// (`init::tests::handle_skills_install_*`) mutate `PATH` to drive the
 /// `claude` lookup logic, which races with `Command::new("git")`'s
@@ -69,4 +72,21 @@ pub(crate) fn commit(cwd: &Path, file: &str, body: &str, email: &str, msg: &str)
             msg,
         ],
     );
+}
+
+/// Initialize a tempdir as a one-commit git repo with `lib.rs` containing
+/// `source`, then materialize `.heal/` and persist a default `Config`.
+/// Returns the resolved [`HealPaths`] so callers can target
+/// `.heal/config.toml` / `.heal/findings/` without rederiving them.
+///
+/// Replaces the per-module `init_project` helpers that previously
+/// duplicated this exact sequence across `commands/calibrate.rs`,
+/// `commands/hook.rs`, and `commands/metrics/mod.rs` tests.
+pub(crate) fn init_project_with_config(dir: &Path, source: &str) -> HealPaths {
+    init_repo(dir);
+    commit(dir, "lib.rs", source, "tester@example.com", "init");
+    let paths = HealPaths::new(dir);
+    paths.ensure().unwrap();
+    Config::default().save(&paths.config()).unwrap();
+    paths
 }

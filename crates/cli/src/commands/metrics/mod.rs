@@ -190,23 +190,14 @@ fn build_json(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::config::Config;
     use crate::observers::run_all;
-    use crate::test_support::{commit, init_repo};
+    use crate::test_support::init_project_with_config;
     use tempfile::TempDir;
 
     fn init_project(dir: &Path) {
-        init_repo(dir);
-        commit(
-            dir,
-            "lib.rs",
-            "pub fn add(a: i32, b: i32) -> i32 { a + b }\n",
-            "solo@example.com",
-            "init",
-        );
-        let paths = HealPaths::new(dir);
-        paths.ensure().unwrap();
-        Config::default().save(&paths.config()).unwrap();
+        // Path-only delegation: every caller below uses HealPaths::new
+        // independently, so we discard the returned handle.
+        let _ = init_project_with_config(dir, "pub fn add(a: i32, b: i32) -> i32 { a + b }\n");
     }
 
     #[test]

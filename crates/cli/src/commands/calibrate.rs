@@ -132,16 +132,14 @@ struct CalibrateReport<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::config::Config;
-    use crate::test_support::{commit, init_repo};
+    use crate::test_support::init_project_with_config;
     use tempfile::TempDir;
 
     fn init_project(dir: &Path) {
-        init_repo(dir);
-        commit(dir, "main.rs", "fn main() {}\n", "solo@example.com", "init");
-        let paths = HealPaths::new(dir);
-        paths.ensure().unwrap();
-        Config::default().save(&paths.config()).unwrap();
+        // Path-only delegation: every caller below uses HealPaths::new
+        // independently, so we discard the returned handle to keep the
+        // existing call sites unchanged.
+        let _ = init_project_with_config(dir, "fn main() {}\n");
     }
 
     #[test]

@@ -172,24 +172,29 @@ fn write_nudge(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{commit, init_repo};
+    use crate::core::config::Config;
+    use crate::test_support::init_project_with_config;
     use tempfile::TempDir;
+
+    /// Run the full nudge harness against an already-initialized project
+    /// and return the captured `write_nudge` output. Centralised because
+    /// every nudge test runs the same `run_all → classify → write_nudge`
+    /// pipeline; only the calibration step and assertions vary.
+    fn nudge_output(dir: &Path, paths: &HealPaths, cfg: &Config) -> String {
+        let reports = run_all(dir, cfg, None, None);
+        let (calibration, findings) = classify_with_calibration(paths, cfg, &reports);
+        let mut buf: Vec<u8> = Vec::new();
+        write_nudge(calibration.as_ref(), cfg, &findings, &mut buf).unwrap();
+        String::from_utf8(buf).unwrap()
+    }
 
     #[test]
     fn commit_runs_observers_without_writing_snapshots() {
         let dir = TempDir::new().unwrap();
-        init_repo(dir.path());
-        commit(
-            dir.path(),
-            "lib.rs",
-            "fn ok() {}\n",
-            "alice@example.com",
-            "feat: add ok",
-        );
-        let paths = HealPaths::new(dir.path());
-        paths.ensure().unwrap();
-        // Commit hook needs `.heal/config.toml` to drive observers; init flow
-        // would normally create it, but we exercise the hook in isolation.
+        let paths = init_project_with_config(dir.path(), "fn ok() {}\n");
+        // Commit hook needs `.heal/config.toml` to drive observers;
+        // overwrite the default-saved config with an empty file to
+        // exercise the empty-config branch in isolation.
         std::fs::write(paths.config(), "").unwrap();
 
         run(dir.path(), HookEvent::Commit).unwrap();
@@ -218,22 +223,10 @@ mod tests {
     #[test]
     fn nudge_is_silent_without_calibration() {
         let dir = TempDir::new().unwrap();
-        init_repo(dir.path());
-        commit(dir.path(), "lib.rs", "fn ok(){}\n", "a@b.c", "init");
-        let paths = HealPaths::new(dir.path());
-        paths.ensure().unwrap();
-        let cfg = crate::core::config::Config::default();
-        cfg.save(&paths.config()).unwrap();
-        let reports = run_all(dir.path(), &cfg, None, None);
-        let (calibration, findings) = classify_with_calibration(&paths, &cfg, &reports);
-
-        let mut buf: Vec<u8> = Vec::new();
-        write_nudge(calibration.as_ref(), &cfg, &findings, &mut buf).unwrap();
-        assert!(
-            buf.is_empty(),
-            "no calibration → no nudge, got: {}",
-            String::from_utf8_lossy(&buf),
-        );
+        let paths = init_project_with_config(dir.path(), "fn ok(){}\n");
+        let cfg = Config::default();
+        let out = nudge_output(dir.path(), &paths, &cfg);
+        assert!(out.is_empty(), "no calibration → no nudge, got: {out}");
     }
 
     #[cfg(feature = "lang-rust")]
@@ -241,27 +234,18 @@ mod tests {
     fn nudge_summarises_critical_count_in_one_line() {
         // Synthesize a project where the only function trips the
         // calibration's floor, so write_nudge has something to surface.
-        let dir = TempDir::new().unwrap();
-        init_repo(dir.path());
         // A nest of `if`s drives CCN past the FLOOR_CCN=25 threshold.
         let mut src = String::from("fn busy(x: i32) -> i32 {\n");
         for _ in 0..30 {
             src.push_str("    if x > 0 { return x; }\n");
         }
         src.push_str("    0\n}\n");
-        commit(dir.path(), "lib.rs", &src, "a@b.c", "init");
-
-        let paths = HealPaths::new(dir.path());
-        paths.ensure().unwrap();
-        let cfg = crate::core::config::Config::default();
-        cfg.save(&paths.config()).unwrap();
+        let dir = TempDir::new().unwrap();
+        let paths = init_project_with_config(dir.path(), &src);
+        let cfg = Config::default();
         crate::commands::calibrate::run(dir.path(), false, false).unwrap();
-        let reports = run_all(dir.path(), &cfg, None, None);
-        let (calibration, findings) = classify_with_calibration(&paths, &cfg, &reports);
 
-        let mut buf: Vec<u8> = Vec::new();
-        write_nudge(calibration.as_ref(), &cfg, &findings, &mut buf).unwrap();
-        let out = String::from_utf8(buf).unwrap();
+        let out = nudge_output(dir.path(), &paths, &cfg);
         assert_eq!(
             out.lines().count(),
             1,
@@ -284,19 +268,11 @@ mod tests {
     #[test]
     fn nudge_says_clean_when_no_critical_or_high() {
         let dir = TempDir::new().unwrap();
-        init_repo(dir.path());
-        commit(dir.path(), "lib.rs", "fn ok() {}\n", "a@b.c", "init");
-        let paths = HealPaths::new(dir.path());
-        paths.ensure().unwrap();
-        let cfg = crate::core::config::Config::default();
-        cfg.save(&paths.config()).unwrap();
+        let paths = init_project_with_config(dir.path(), "fn ok() {}\n");
+        let cfg = Config::default();
         crate::commands::calibrate::run(dir.path(), false, false).unwrap();
-        let reports = run_all(dir.path(), &cfg, None, None);
-        let (calibration, findings) = classify_with_calibration(&paths, &cfg, &reports);
 
-        let mut buf: Vec<u8> = Vec::new();
-        write_nudge(calibration.as_ref(), &cfg, &findings, &mut buf).unwrap();
-        let out = String::from_utf8(buf).unwrap();
+        let out = nudge_output(dir.path(), &paths, &cfg);
         assert_eq!(out.trim_end(), "heal: recorded · clean");
     }
 }
