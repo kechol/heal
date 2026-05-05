@@ -26,3 +26,7 @@ Cargo.lock.bk
 docs/node_modules/
 docs/dist/
 docs/.astro/
+
+# test coverage
+lcov.info
+coverage/

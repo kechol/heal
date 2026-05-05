@@ -63,8 +63,9 @@ Index: [.claude/rules/README.md](./.claude/rules/README.md).
 
 ## Toolchain & commands
 
-Rust pinned via [mise](https://mise.jdx.dev) (`mise.toml`). `cargo` is
-on `PATH` (via mise activation) or at `~/.cargo/bin/cargo`.
+Rust 1.85+ (MSRV in `Cargo.toml` `workspace.package.rust-version`).
+`cargo` on `PATH` via the standard rustup install, or at
+`~/.cargo/bin/cargo`.
 
 ```sh
 cargo build  --workspace

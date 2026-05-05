@@ -30,7 +30,8 @@ Dirty worktrees are never considered fresh.
 - Workspace-wide `clippy::pedantic = warn`, plus `-D warnings` in CI.
 - Don't suppress workspace-wide. Localised `#[allow(clippy::<lint>)]`
   with a one-line comment is the right level.
-- Toolchain pinned via mise (`mise.toml`). Bump in its own PR.
+- MSRV set via `workspace.package.rust-version` in `Cargo.toml`.
+  Bump in its own PR.
 - `cargo deny check` runs in CI; new deps may need a `deny.toml`
   exception (prefer dropping the dep over adding an exception).
 
