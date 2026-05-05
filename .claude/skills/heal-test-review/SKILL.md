@@ -47,8 +47,8 @@ Write the architectural reading and the TODO list in the user's
 language. Resolution order:
 
 1. Explicit instruction in the current conversation.
-2. The language the user is writing in (Claude Code's conversation
-   language).
+2. The language the user is writing in (the chat conversation
+   language exposed by the host agent — Claude Code, Codex CLI, …).
 3. `[project].response_language` in `.heal/config.toml` (free-form:
    `"Japanese"`, `"日本語"`, `"ja"`, `"français"`).
 4. English (fallback).

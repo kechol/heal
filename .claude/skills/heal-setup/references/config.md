@@ -46,8 +46,8 @@ single optional key.
 
 `response_language` is the **project-wide default** every bundled
 heal skill consults. Resolution order inside each skill: explicit
-in-conversation instruction → Claude Code's conversation language
-→ this setting → English. Setting it once means teammates and CI
+in-conversation instruction → host agent's conversation language
+(Claude Code, Codex CLI, …) → this setting → English. Setting it once means teammates and CI
 agents on the same `.heal/config.toml` produce reports, TODO lists,
 and per-finding narration in the same language without each user
 re-asking.

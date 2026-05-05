@@ -30,8 +30,8 @@ Conventions used below:
 Match the user's language for prose. Resolution order:
 
 1. Explicit instruction in the current conversation.
-2. The language the user is writing in (Claude Code's conversation
-   language).
+2. The language the user is writing in (the chat conversation
+   language exposed by the host agent — Claude Code, Codex CLI, …).
 3. `[project].response_language` in `.heal/config.toml` (free-form:
    `"Japanese"`, `"日本語"`, `"ja"`, `"français"` — passed verbatim to
    the model).
@@ -244,12 +244,16 @@ JSON:
 ### `heal init [--force] [--yes|--no-skills] [--json]`
 
 One-time setup: `.heal/` layout, default `config.toml`, post-commit
-hook, initial scan + calibration, optional Claude-skills install.
+hook, initial scan + calibration, optional skills install — once per
+detected agent (Claude Code → `.claude/skills/`, Codex CLI →
+`.agents/skills/`).
 
 - `--force` overwrites an existing `config.toml` and refreshes the hook
-  (preserving the user-marker check).
+  (preserving the user-marker check). Also re-runs the skill extract in
+  `Update { force: true }` mode for every detected agent.
 - `--yes` / `--no-skills` skip the interactive plugin prompt — pass one
-  in non-TTY contexts.
+  in non-TTY contexts. `--yes` installs for **every** detected agent;
+  `--no-skills` skips them all.
 - `--json` emits a typed install report:
 
 ```jsonc
@@ -260,18 +264,32 @@ hook, initial scan + calibration, optional Claude-skills install.
   "config":       { "path": "…/.heal/config.toml",      "action": "wrote" },
   "calibration_path": "…/.heal/calibration.toml",
   "post_commit_hook": { "path": "…/.git/hooks/post-commit", "action": "installed" },
-  "skills": {
-    "dest": "…/.claude/skills",
-    "action": "installed",                // or declined / suppressed_by_flag / skipped_*
-    "added": 42, "updated": 0, "unchanged": 0
-  },
+  "skills": [
+    {
+      "target": "claude",
+      "dest":   "…/.claude/skills",
+      "action": "installed",              // or declined / suppressed_by_flag / skipped_*
+      "added": 11, "updated": 0, "unchanged": 0
+    },
+    {
+      "target": "codex",
+      "dest":   "…/.agents/skills",
+      "action": "skipped_not_installed",
+      "agent":  "codex"
+    }
+  ],
   "severity_counts": { "critical": 0, "high": 0, "medium": 0, "ok": 0 }
 }
 ```
 
 `config.action` ∈ `wrote | overwrote | kept_existing`.
 `post_commit_hook.action` ∈ `installed | overwrote | refreshed | skipped_no_repo | skipped_user_hook`.
-`skills.action` ∈ `installed | declined | suppressed_by_flag | skipped_no_claude | skipped_non_interactive`.
+`skills[].target` ∈ `claude | codex` (always present in
+`SkillTarget::ALL` order — one entry per agent HEAL knows about).
+`skills[].action` ∈ `installed | declined | suppressed_by_flag |
+skipped_not_installed | skipped_non_interactive`. The
+`skipped_not_installed` variant carries an `agent` field naming the
+missing executable (e.g. `"claude"`, `"codex"`).
 
 ### `heal metrics [--metric <NAME>] [--json]`
 
@@ -285,10 +303,15 @@ event log to compare against.
 
 Manage the bundled skill set under `<project>/.claude/skills/`. Each
 top-level child of the embedded tree (`heal-cli`, `heal-setup`,
-`heal-code-review`, `heal-code-patch`) extracts to a sibling directory
-under `.claude/skills/`. HEAL no longer registers any Claude Code
-hooks; install/uninstall sweep stale `heal hook edit` / `heal hook
-stop` entries from `.claude/settings.json` if present.
+`heal-code-review`, `heal-code-patch`, …) extracts to a sibling
+directory under `.claude/skills/`. HEAL no longer registers any Claude
+Code hooks; install/uninstall sweep stale `heal hook edit` / `heal
+hook stop` entries from `.claude/settings.json` if present.
+
+**v0.4 caveat:** these subcommands operate only on the Claude target.
+For Codex (`.agents/skills/`) use `heal init --force --yes` to refresh
+both targets in lockstep. Multi-target support for the explicit
+`heal skills *` group is tracked as follow-up.
 
 There is no sidecar manifest. Each `SKILL.md` carries a `metadata:`
 block in its YAML frontmatter (`heal-version`, `heal-source`); drift
