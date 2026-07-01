@@ -14,12 +14,12 @@
   },
   "dependencies": {
     "@astrojs/check": "^0.9.4",
-    "@astrojs/starlight": "^0.41.0",
+    "@astrojs/starlight": "^0.41.1",
     "astro": "^6.4.7",
     "sharp": "^0.35.2",
     "typescript": "^5.9.3"
   },
   "devDependencies": {
-    "prettier": "^3.8.4"
+    "prettier": "^3.9.4"
   }
 }
