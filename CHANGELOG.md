@@ -14,6 +14,24 @@
   `accepted` field on each `DiffEntry` (curr-biased, omitted when
   false).
 
+### Fixes
+
+- **`[features.test.coverage].lcov_paths` reads every existing file
+  instead of first-match-wins (#29).** In a polyglot monorepo where
+  each package emits its own `lcov.info`, only the first existing
+  path was parsed and the rest were silently dropped — N-1 packages
+  lost their coverage findings even with every path configured.
+  Every existing file is now read and merged (cross-file collisions
+  max-merge, the same rule as duplicate records inside one file).
+  `SF:` paths written relative to a package root (vitest, jest,
+  scoverage) resolve against the lcov file's own directory tree, so
+  per-package files work without a hand-rolled merge script.
+  Existing-but-unreadable files now warn on stderr instead of
+  disappearing. The `coverage_pct` JSON gains an additive `sources`
+  list naming every merged file; the singular `source` field stays
+  as the first entry for back-compat. Single-package projects see
+  identical output.
+
 ## v0.5.0 — 2026-07-08
 
 ### ⚠ BREAKING

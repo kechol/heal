@@ -93,9 +93,16 @@ lcov_paths = [
   `[features.test]` on but `[features.test.coverage]` off when you
   want `is_test_file` tagging and `skip_ratio` without yet wiring
   up a reporter.
-- `lcov_paths` — project-relative paths probed in order. **First
-  existing file wins**; the rest are ignored. Missing files are
-  silent — no warning at startup.
+- `lcov_paths` — project-relative paths probed in order. **Every
+  existing file is read and merged**, so a polyglot monorepo can
+  list one `lcov.info` per package and each one counts. When two
+  files describe the same source file, counters take the max
+  (mirroring how duplicate records inside one lcov file merge).
+  Missing files are silent — no warning at startup; files that
+  exist but can't be read warn on stderr. `SF:` paths that a
+  reporter wrote relative to its package root (vitest, jest,
+  scoverage) are resolved against the lcov file's own directory
+  tree, so per-package files "just work" without a merge script.
 - `post_commit_refresh` (default unset) — optional shell command
   the post-commit hook spawns in the background to re-run your
   reporter after every commit. The process is detached and its

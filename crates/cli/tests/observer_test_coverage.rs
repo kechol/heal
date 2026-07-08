@@ -26,7 +26,9 @@ fn cfg_test_coverage_enabled() -> Config {
 }
 
 #[test]
-fn picks_first_existing_lcov_path() {
+fn single_existing_lcov_path_reads_as_before() {
+    // Single-package projects: one path matches, missing candidates
+    // stay silent — identical output to the pre-merge behavior.
     let dir = tempfile::tempdir().unwrap();
     write(
         dir.path(),
@@ -42,6 +44,96 @@ fn picks_first_existing_lcov_path() {
     let report = CoverageObserver::from_config(&cfg).scan(dir.path());
     assert_eq!(report.entries.len(), 1);
     assert_eq!(report.source.unwrap(), PathBuf::from("coverage/lcov.info"));
+    assert_eq!(report.sources, vec![PathBuf::from("coverage/lcov.info")]);
+}
+
+#[test]
+fn merges_every_existing_lcov_path() {
+    // Polyglot monorepo: every package emits its own lcov.info and
+    // every one of them must count — the old first-match-wins probe
+    // silently dropped all but the first (issue #29).
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "pkg-a/coverage/lcov.info",
+        "SF:pkg-a/src/a.ts\nLF:10\nLH:5\nend_of_record\n",
+    );
+    write(
+        dir.path(),
+        "pkg-b/coverage/lcov.info",
+        "SF:pkg-b/src/b.ts\nLF:8\nLH:2\nend_of_record\n",
+    );
+    let mut cfg = cfg_test_coverage_enabled();
+    cfg.features.test.coverage.lcov_paths = vec![
+        "lcov.info".to_owned(), // missing — silent
+        "pkg-a/coverage/lcov.info".to_owned(),
+        "pkg-b/coverage/lcov.info".to_owned(),
+    ];
+    let report = CoverageObserver::from_config(&cfg).scan(dir.path());
+    assert_eq!(report.entries.len(), 2, "both packages must survive");
+    let paths: Vec<_> = report.entries.iter().map(|e| e.path.clone()).collect();
+    assert!(paths.contains(&PathBuf::from("pkg-a/src/a.ts")));
+    assert!(paths.contains(&PathBuf::from("pkg-b/src/b.ts")));
+    assert_eq!(
+        report.sources,
+        vec![
+            PathBuf::from("pkg-a/coverage/lcov.info"),
+            PathBuf::from("pkg-b/coverage/lcov.info"),
+        ],
+    );
+    // Back-compat: `source` is the first file that was read.
+    assert_eq!(
+        report.source.unwrap(),
+        PathBuf::from("pkg-a/coverage/lcov.info")
+    );
+}
+
+#[test]
+fn resolves_package_relative_sf_paths() {
+    // vitest / jest / scoverage run from the package root and emit
+    // `SF:` paths relative to the package, not the repo. The resolver
+    // probes the lcov file's ancestor directories for a path that
+    // exists on disk.
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "pkg-a/src/foo.ts", "export const x = 1;\n");
+    write(
+        dir.path(),
+        "pkg-a/coverage/lcov.info",
+        "SF:src/foo.ts\nLF:4\nLH:1\nend_of_record\n",
+    );
+    let mut cfg = cfg_test_coverage_enabled();
+    cfg.features.test.coverage.lcov_paths = vec!["pkg-a/coverage/lcov.info".to_owned()];
+    let report = CoverageObserver::from_config(&cfg).scan(dir.path());
+    assert_eq!(report.entries.len(), 1);
+    assert_eq!(report.entries[0].path, PathBuf::from("pkg-a/src/foo.ts"));
+}
+
+#[test]
+fn colliding_entries_across_files_max_merge() {
+    // A hand-merged root lcov.info can coexist with the per-package
+    // file it was built from; counters max-merge (same rule as
+    // duplicate `SF` records within one file) instead of aliasing or
+    // double-counting.
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "lcov.info",
+        "SF:pkg-a/src/a.ts\nLF:10\nLH:4\nend_of_record\n",
+    );
+    write(
+        dir.path(),
+        "pkg-a/coverage/lcov.info",
+        "SF:pkg-a/src/a.ts\nLF:10\nLH:7\nend_of_record\n",
+    );
+    let mut cfg = cfg_test_coverage_enabled();
+    cfg.features.test.coverage.lcov_paths = vec![
+        "lcov.info".to_owned(),
+        "pkg-a/coverage/lcov.info".to_owned(),
+    ];
+    let report = CoverageObserver::from_config(&cfg).scan(dir.path());
+    assert_eq!(report.entries.len(), 1);
+    assert_eq!(report.entries[0].lines_hit, 7);
+    assert!((report.entries[0].line_coverage_pct - 70.0).abs() < 1e-9);
 }
 
 #[test]
@@ -101,6 +193,7 @@ end_of_record
 fn ratio_for_returns_coverage_ratio() {
     let report = CoverageReport {
         source: None,
+        sources: Vec::new(),
         entries: vec![heal_cli::observer::test::coverage::CoverageEntry {
             path: PathBuf::from("src/lib.rs"),
             lines_found: 10,

@@ -234,6 +234,7 @@ mod tests {
     fn cov_of(items: &[(&str, f64)]) -> CoverageReport {
         CoverageReport {
             source: None,
+            sources: Vec::new(),
             entries: items
                 .iter()
                 .map(|(p, pct)| CoverageEntry {

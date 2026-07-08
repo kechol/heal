@@ -30,8 +30,10 @@ production-side severities independently.
 
 > _"Which production code is dark to the test suite?"_
 
-Per-source-file line coverage parsed from the first existing
-`lcov.info` in `[features.test.coverage].lcov_paths`. Findings are
+Per-source-file line coverage parsed from every existing
+`lcov.info` in `[features.test.coverage].lcov_paths`, merged into
+one view (a polyglot monorepo lists one file per package and each
+one counts). Findings are
 emitted only for files with `< 100%` coverage. Calibration stores
 **inverted values** (`100 - coverage_pct`) so the same "value
 reaches p95 → Critical" cascade applies as for the rest of the
