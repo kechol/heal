@@ -123,9 +123,7 @@ writer of `accepted.json`.
   "worktree_clean": true,
   "config_hash": "9f8e7d6c5b4a3210", // FNV-1a over config + calibration
   "severity_counts": { "critical": 2, "high": 5, "medium": 12, "ok": 84 },
-  "findings": [
-    /* Vec<Finding> */
-  ]
+  "findings": [/* Vec<Finding> */]
 }
 ```
 
