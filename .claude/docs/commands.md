@@ -247,7 +247,9 @@ since calibration".
 
 Two paths (`commands/diff.rs`):
 
-1. **Cache hit** — `latest.json.head_sha` matches resolved ref → read
+1. **Cache hit** — `latest.json` is a clean scan of the resolved ref
+   under the current `config_hash` (full `(head_sha, config_hash,
+   worktree_clean)` triple, mirroring `is_fresh_against`) → read
    directly. Fast.
 2. **Worktree fallback** — when no cache match:
    - LOC gate: scan current worktree LOC. If
@@ -278,13 +280,19 @@ Two paths (`commands/diff.rs`):
 `DiffEntry.from_hotspot` mirrors the baseline-side hotspot flag so
 the T0 calc is precise. The legacy `hotspot` field remains and is
 curr-biased (curr.hotspot when present, else prev.hotspot) for
-back-compat with existing skill consumers.
+back-compat with existing skill consumers. `DiffEntry.accepted` is
+curr-biased the same way (curr.accepted when present, else
+prev.accepted; `skip_serializing_if`-defaulted) — it drives the
+human renderer's `📌 accepted` marker and the `--hide-accepted`
+filter. `from_accepted` stays baseline-side for the T0 exclusion.
 
 **Output:**
 
 - Text: bucket sections, then a two-line progress block —
   `Progress (T0 drain): X / Y resolved → Z% complete` foregrounded,
-  `Population: X / Y resolved (Z%)` underneath.
+  `Population: X / Y resolved (Z%)` underneath. Accepted entries
+  carry `📌 accepted`; `--hide-accepted` drops them (with a
+  `[N accepted entries hidden]` footer). JSON is never filtered.
 - JSON: `DiffReport { from_ref, from_sha, buckets..., progress_pct,
   t0_total, t0_resolved, t0_progress_pct, workspace? }`.
 
