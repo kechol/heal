@@ -121,7 +121,9 @@ pub fn head_commit_info(root: &Path) -> Option<CommitInfo> {
     Some(CommitInfo {
         sha: oid.to_string(),
         parent_sha,
-        author_email: author.email().map(str::to_string),
+        // git2 0.21 returns `Result<&str, _>` (Err on non-UTF-8),
+        // where 0.20 returned `Option<&str>` — same "absent" semantics.
+        author_email: author.email().ok().map(str::to_string),
         message_summary,
         files_changed,
         insertions,
