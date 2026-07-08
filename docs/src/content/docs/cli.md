@@ -212,6 +212,7 @@ heal diff main                         # live vs main
 heal diff v0.2.1                       # live vs the v0.2.1 tag
 heal diff HEAD~5                       # live vs 5 commits back
 heal diff --all                        # also surface Improved + Unchanged + below-High entries
+heal diff --hide-accepted              # drop rows already accepted via `heal mark accept`
 heal diff --no-pager                   # write straight to stdout (skip the pager)
 heal diff --json                       # machine-readable shape
 ```
@@ -236,6 +237,14 @@ rows otherwise) and prints a `[N entries below High hidden — pass
 --all]` footer. `--all` bypasses the filter alongside surfacing the
 Improved / Unchanged buckets. The `--json` payload is unfiltered
 either way — skills and CI keep seeing every row.
+
+Findings the team has acknowledged via `heal mark accept` render
+with a `📌 accepted` marker, so a New or Regressed row reads as
+"known, not actionable" at a glance. Pass `--hide-accepted` to drop
+those rows entirely and see only the actionable view; a `[N accepted
+entries hidden]` footer keeps the count visible. The two filters are
+independent — `--all --hide-accepted` shows every severity but still
+skips accepted rows.
 
 For very large repos the comparison can be expensive; `[diff]` in
 `config.toml` exposes a LOC ceiling that switches to a manual

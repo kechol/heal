@@ -25,7 +25,13 @@
 //! `[policy.drain]`), and a secondary `Population` line over the whole
 //! baseline that includes Advisory churn. JSON shape is stable for
 //! skills and CI; new fields (`t0_resolved`, `t0_total`,
-//! `t0_progress_pct`, `DiffEntry.from_hotspot`) are additive.
+//! `t0_progress_pct`, `DiffEntry.from_hotspot`,
+//! `DiffEntry.accepted`) are additive.
+//!
+//! Findings the team acknowledged via `heal mark accept` render with
+//! a `📌 accepted` marker so a New / Regressed row reads as "known,
+//! not actionable"; `--hide-accepted` drops those rows from the human
+//! renderer entirely (JSON is unaffected).
 //!
 //! The human renderer hides entries whose `from` and `to` Severity
 //! both sit below High by default — typical baselines drown the
@@ -68,14 +74,9 @@ use crate::observers::build_record;
 /// the code without parsing stderr.
 pub const DIFF_LOC_THRESHOLD_EXIT_CODE: i32 = 2;
 
-pub fn run(
-    project: &Path,
-    revspec: Option<&str>,
-    workspace: Option<&str>,
-    show_all: bool,
-    as_json: bool,
-    no_pager: bool,
-) -> Result<()> {
+pub fn run(project: &Path, args: &crate::cli::DiffArgs) -> Result<()> {
+    let revspec = args.revspec.as_deref();
+    let workspace = args.workspace.as_deref();
     let paths = HealPaths::new(project);
     let cfg = load_from_project(project).with_context(|| {
         format!(
@@ -116,7 +117,7 @@ pub fn run(
     to_record.apply_accepted(&accepted_map);
 
     let diff = compute_diff(&from_record, &to_record, workspace, &cfg.policy.drain);
-    if as_json {
+    if args.json {
         super::emit_json(&DiffReport {
             from_ref: &resolved_ref,
             from_sha: &target_sha,
@@ -127,7 +128,7 @@ pub fn run(
         return Ok(());
     }
 
-    write_through_pager(no_pager, |out, colorize| {
+    write_through_pager(args.no_pager, |out, colorize| {
         render_diff(
             &resolved_ref,
             &target_sha,
@@ -135,7 +136,8 @@ pub fn run(
             &from_record,
             &to_record,
             &diff,
-            show_all,
+            args.all,
+            args.hide_accepted,
             colorize,
             out,
         )
@@ -307,6 +309,7 @@ pub(crate) struct Diff {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[allow(clippy::struct_excessive_bools)] // each bool is an independent wire field
 pub(crate) struct DiffEntry {
     pub finding_id: String,
     pub metric: String,
@@ -330,6 +333,14 @@ pub(crate) struct DiffEntry {
     /// Skipped from JSON when false to keep the wire shape terse.
     #[serde(default, skip_serializing_if = "crate::core::finding::is_false")]
     pub from_accepted: bool,
+    /// Curr-side `accepted` flag when the finding still exists in
+    /// `to`, otherwise the baseline-side flag (same curr-biased rule
+    /// as `hotspot`). Lets consumers — and the human renderer's
+    /// `📌 accepted` marker — distinguish a genuinely actionable New /
+    /// Regressed entry from one the team already acknowledged via
+    /// `heal mark accept`. Skipped from JSON when false.
+    #[serde(default, skip_serializing_if = "crate::core::finding::is_false")]
+    pub accepted: bool,
 }
 
 impl DiffEntry {
@@ -343,6 +354,7 @@ impl DiffEntry {
             from_hotspot: prev.hotspot,
             hotspot: curr.map_or(prev.hotspot, |c| c.hotspot),
             from_accepted: prev.accepted,
+            accepted: curr.map_or(prev.accepted, |c| c.accepted),
         }
     }
     fn from_new(curr: &Finding) -> Self {
@@ -355,6 +367,7 @@ impl DiffEntry {
             from_hotspot: false,
             hotspot: curr.hotspot,
             from_accepted: false,
+            accepted: curr.accepted,
         }
     }
 }
@@ -454,6 +467,7 @@ fn render_diff(
     to: &FindingsRecord,
     diff: &Diff,
     show_all: bool,
+    hide_accepted: bool,
     colorize: bool,
     out: &mut (impl Write + ?Sized),
 ) -> Result<()> {
@@ -475,6 +489,7 @@ fn render_diff(
     writeln!(out)?;
 
     let mut hidden_low_severity = 0usize;
+    let mut hidden_accepted = 0usize;
     let always_visible: [(&str, &str, &[DiffEntry]); 3] = [
         ("✅ Resolved", ANSI_GREEN, &diff.resolved),
         ("⚠️  Regressed", ANSI_RED, &diff.regressed),
@@ -486,7 +501,9 @@ fn render_diff(
             color,
             items,
             show_all,
+            hide_accepted,
             &mut hidden_low_severity,
+            &mut hidden_accepted,
             colorize,
             out,
         )?;
@@ -501,7 +518,9 @@ fn render_diff(
                 color,
                 items,
                 true,
+                hide_accepted,
                 &mut hidden_low_severity,
+                &mut hidden_accepted,
                 colorize,
                 out,
             )?;
@@ -521,9 +540,24 @@ fn render_diff(
             )?;
         }
     }
+    if hidden_accepted > 0 {
+        writeln!(
+            out,
+            "  [{hidden_accepted} accepted entries hidden — drop --hide-accepted]"
+        )?;
+    }
     writeln!(out)?;
-    let resolved = diff.resolved.len();
-    let total = scoped_count(&from.findings, workspace);
+    render_progress(diff, scoped_count(&from.findings, workspace), out)?;
+    Ok(())
+}
+
+/// The two-line progress block: T0 drain foregrounded, whole-population
+/// ratio underneath.
+fn render_progress(
+    diff: &Diff,
+    total: usize,
+    out: &mut (impl Write + ?Sized),
+) -> std::io::Result<()> {
     if diff.t0_total == 0 {
         writeln!(out, "  Progress (T0 drain):  no T0 findings in baseline")?;
     } else {
@@ -544,7 +578,7 @@ fn render_diff(
         writeln!(
             out,
             "  Population:           {} / {} resolved ({:.0}%)",
-            resolved,
+            diff.resolved.len(),
             total,
             diff.progress_pct * 100.0,
         )?;
@@ -568,20 +602,31 @@ fn render_bucket(
     color: &str,
     items: &[DiffEntry],
     show_all: bool,
+    hide_accepted: bool,
     hidden_low_severity: &mut usize,
+    hidden_accepted: &mut usize,
     colorize: bool,
     out: &mut (impl Write + ?Sized),
 ) -> std::io::Result<()> {
-    if show_all {
-        return write_bucket(label, color, items.iter(), items.len(), colorize, out);
+    // `--hide-accepted` and the below-High gate are independent
+    // filters: `--all` lifts the severity gate but acknowledged
+    // entries stay hidden as long as the flag is on.
+    let mut items: Vec<&DiffEntry> = items.iter().collect();
+    if hide_accepted {
+        let before = items.len();
+        items.retain(|e| !e.accepted);
+        *hidden_accepted += before - items.len();
     }
-    let visible: Vec<&DiffEntry> = items.iter().filter(|e| is_high_or_critical(e)).collect();
-    *hidden_low_severity += items.len() - visible.len();
+    if !show_all {
+        let before = items.len();
+        items.retain(|e| is_high_or_critical(e));
+        *hidden_low_severity += before - items.len();
+    }
     write_bucket(
         label,
         color,
-        visible.iter().copied(),
-        visible.len(),
+        items.iter().copied(),
+        items.len(),
         colorize,
         out,
     )
@@ -608,7 +653,8 @@ fn write_bucket<'a>(
             (None, None) => String::new(),
         };
         let hot = if e.hotspot { " 🔥" } else { "" };
-        writeln!(out, "  {} {} {arrow}{hot}", e.metric, e.file)?;
+        let pin = if e.accepted { " 📌 accepted" } else { "" };
+        writeln!(out, "  {} {} {arrow}{hot}{pin}", e.metric, e.file)?;
     }
     Ok(())
 }
@@ -840,6 +886,7 @@ mod tests {
             &diff,
             false,
             false,
+            false,
             &mut buf,
         )
         .unwrap();
@@ -872,6 +919,7 @@ mod tests {
             &diff,
             true,
             false,
+            false,
             &mut buf,
         )
         .unwrap();
@@ -883,6 +931,95 @@ mod tests {
         assert!(
             !out.contains("entries below High hidden"),
             "--all must drop the hidden-count footer: {out}",
+        );
+    }
+
+    #[test]
+    fn accepted_state_propagates_into_diff_entries() {
+        let mut accepted_new = finding("acc", Severity::Critical);
+        accepted_new.accepted = true;
+        let plain_new = finding("plain", Severity::High);
+        let from = record(Vec::new());
+        let to = record(vec![accepted_new.clone(), plain_new.clone()]);
+        let diff = compute_diff(&from, &to, None, &PolicyDrainConfig::default());
+
+        assert_eq!(diff.new_findings.len(), 2);
+        let by_file = |needle: &str| {
+            diff.new_findings
+                .iter()
+                .find(|e| e.file.contains(needle))
+                .unwrap()
+        };
+        assert!(by_file("acc").accepted, "curr-side accept must carry over");
+        assert!(!by_file("plain").accepted);
+        // Baseline side of a New entry is always unaccepted.
+        assert!(!by_file("acc").from_accepted);
+    }
+
+    #[test]
+    fn render_marks_accepted_entries_with_pin() {
+        let mut accepted_new = finding("acc", Severity::Critical);
+        accepted_new.accepted = true;
+        let from = record(Vec::new());
+        let to = record(vec![accepted_new]);
+        let diff = compute_diff(&from, &to, None, &PolicyDrainConfig::default());
+
+        let mut buf: Vec<u8> = Vec::new();
+        render_diff(
+            "HEAD",
+            "deadbeefdeadbeef",
+            None,
+            &from,
+            &to,
+            &diff,
+            false,
+            false,
+            false,
+            &mut buf,
+        )
+        .unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(
+            out.contains("src/acc.ts (new Critical) 📌 accepted"),
+            "accepted entry must carry the pin marker: {out}",
+        );
+    }
+
+    #[test]
+    fn render_hide_accepted_drops_entries_and_reports_count() {
+        let mut accepted_new = finding("acc", Severity::Critical);
+        accepted_new.accepted = true;
+        let plain_new = finding("plain", Severity::High);
+        let from = record(Vec::new());
+        let to = record(vec![accepted_new, plain_new]);
+        let diff = compute_diff(&from, &to, None, &PolicyDrainConfig::default());
+
+        let mut buf: Vec<u8> = Vec::new();
+        render_diff(
+            "HEAD",
+            "deadbeefdeadbeef",
+            None,
+            &from,
+            &to,
+            &diff,
+            false,
+            true,
+            false,
+            &mut buf,
+        )
+        .unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(
+            !out.contains("src/acc.ts"),
+            "--hide-accepted must drop the accepted entry: {out}",
+        );
+        assert!(
+            out.contains("src/plain.ts"),
+            "actionable entry must stay visible: {out}",
+        );
+        assert!(
+            out.contains("1 accepted entries hidden — drop --hide-accepted"),
+            "footer must report the hidden-accepted count: {out}",
         );
     }
 

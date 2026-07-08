@@ -142,27 +142,33 @@ Key fields:
 }
 ```
 
-### `heal diff [<git-ref>] [--all] [--json]`
+### `heal diff [<git-ref>] [--all] [--hide-accepted] [--json]`
 
 Diff the current findings against a `FindingsRecord` for the resolved
-git ref. Default ref is `HEAD`: "how does my live worktree compare to
-the last commit?"
+git ref. Default ref is the calibration baseline SHA (recorded by
+`heal init` / `heal calibrate --force`), falling back to `HEAD` when
+no baseline is recorded: "how much have we drained since
+calibration?"
 
 `<git-ref>` accepts anything `git rev-parse` understands —
 `HEAD`, `main`, `v0.2.1`, `HEAD~3`, or a (partial / full) SHA. If
-`.heal/findings/latest.json` already corresponds to the resolved ref
-(matching `head_sha`), `heal diff` reads it directly. On a miss it
-materialises the source at the ref via `git worktree add --detach`,
-runs the observer pipeline there using the *current* `config.toml` /
-`calibration.toml` (apples-to-apples), and tears the worktree down on
-exit. Gated by `[diff].max_loc_threshold` (default `200_000` LOC) —
-over the threshold the command exits with code 2 and prints a manual
-two-branch recipe. The right-hand side is always a fresh in-memory
-scan of the current worktree (never persisted).
+`.heal/findings/latest.json` is a clean scan of the resolved ref
+under the current config + calibration (the full `(head_sha,
+config_hash, worktree_clean)` triple), `heal diff` reads it directly.
+On a miss it materialises the source at the ref via `git worktree
+add --detach`, runs the observer pipeline there using the *current*
+`config.toml` / `calibration.toml` (apples-to-apples), and tears the
+worktree down on exit. Gated by `[diff].max_loc_threshold` (default
+`200_000` LOC) — over the threshold the command exits with code 2
+and prints a manual two-branch recipe. The right-hand side is always
+a fresh in-memory scan of the current worktree (never persisted).
 
 Buckets: Resolved / Regressed / Improved / New / Unchanged, plus a
 progress percentage. Pass `--all` to also surface Improved +
-Unchanged. JSON shape:
+Unchanged. Entries whose current finding is accepted (via
+`heal mark accept`) render with a `📌 accepted` marker;
+`--hide-accepted` drops them from the human output entirely (JSON is
+never filtered). JSON shape:
 
 ```jsonc
 {
@@ -174,7 +180,8 @@ Unchanged. JSON shape:
                      "from_hotspot": false, "hotspot": false }],
   "regressed":    [],
   "improved":     [],
-  "new_findings": [],
+  "new_findings": [],            // entries carry "accepted": true when the
+                                 // current finding is accepted (omitted when false)
   "unchanged":    [],
   "progress_pct":     0.25,    // population-side: resolved.len() / from.findings.len()
   "t0_total":         4,       // T0 (Critical AND hotspot) baseline count
