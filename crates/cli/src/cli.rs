@@ -422,6 +422,7 @@ pub struct StatusArgs {
 /// baseline SHA (recorded by `heal init` / `heal calibrate --force`),
 /// falling back to `HEAD` when no baseline is recorded.
 #[derive(Debug, clap::Args)]
+#[allow(clippy::struct_excessive_bools)] // every flag is independent CLI surface
 pub struct DiffArgs {
     /// Git revision to diff against. Resolves against the local repo;
     /// the matching `FindingsRecord` must already exist in
@@ -444,6 +445,12 @@ pub struct DiffArgs {
     /// Emit the diff as JSON on stdout. Stable contract for skills.
     #[arg(long)]
     pub json: bool,
+    /// Hide entries whose current finding is `accepted` (recorded via
+    /// `heal mark accept`) from the human renderer, leaving only
+    /// actionable rows. The JSON output is unaffected — accepted
+    /// entries stay in the payload with their `accepted` flag set.
+    #[arg(long)]
+    pub hide_accepted: bool,
     /// Skip the pager and write directly to stdout. By default
     /// `heal diff` pipes through `$PAGER` (or `less`) when stdout is
     /// a terminal. Has no effect with `--json` or when stdout is not
@@ -569,14 +576,7 @@ impl Cli {
                 no_pager,
             ),
             Command::Status(args) => commands::status::run(&project, &args),
-            Command::Diff(args) => commands::diff::run(
-                &project,
-                args.revspec.as_deref(),
-                args.workspace.as_deref(),
-                args.all,
-                args.json,
-                args.no_pager,
-            ),
+            Command::Diff(args) => commands::diff::run(&project, &args),
             Command::Mark { action } => match action {
                 MarkAction::Fix {
                     finding_id,

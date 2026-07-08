@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Features
+
+- **`heal diff` surfaces the accept state (#30).** Findings the team
+  acknowledged via `heal mark accept` now render with a
+  `📌 accepted` marker in the New / Regressed / Improved / Unchanged
+  buckets, so an acknowledged entry no longer reads as actionable.
+  A new `--hide-accepted` flag drops those rows from the human
+  output entirely (with a `[N accepted entries hidden]` footer);
+  the `--json` payload is never filtered and gains an additive
+  `accepted` field on each `DiffEntry` (curr-biased, omitted when
+  false).
+
 ## v0.5.0 — 2026-07-08
 
 ### ⚠ BREAKING
