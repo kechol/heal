@@ -121,7 +121,7 @@ Key fields:
 
 ```jsonc
 {
-  "version": 4,
+  "version": 5,
   "id": "9f8e7d6c5b4a3210",                  // FNV-1a hex of (head_sha, config_hash, worktree_clean)
   "head_sha": "deadbeef…",
   "worktree_clean": true,

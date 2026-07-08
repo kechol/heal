@@ -2,7 +2,7 @@
 name: heal-test-patch
 description: Drain `[features.test]` findings from the cache, applying mechanical fixes (writing missing unit tests for uncovered hot paths, aligning drifted tests, re-enabling skipped tests whose reason no longer holds) one finding per commit. Refuses to start on a dirty worktree, runs the test suite for every commit, refuses to weaken assertions or skip flakes. Does NOT push or open PRs. Trigger on "fix the test findings", "drain the test cache", "add tests heal flagged", "/heal-test-patch".
 metadata:
-  heal-version: 0.3.2
+  heal-version: 0.4.0
   heal-source: bundled
 ---
 

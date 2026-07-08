@@ -2,7 +2,7 @@
 name: heal-doc-patch
 description: Drain `[features.docs]` findings from the cache, applying mechanical fixes (broken internal links, dangling identifier deletions, orphan-page registration, resolvable TODO markers) one finding per commit. Refuses to start on a dirty worktree. Does NOT push or open PRs. Trigger on "fix the doc findings", "drain the doc cache", "patch stale docs", "/heal-doc-patch".
 metadata:
-  heal-version: 0.3.2
+  heal-version: 0.4.0
   heal-source: bundled
 ---
 

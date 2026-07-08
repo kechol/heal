@@ -100,7 +100,7 @@ pub fn run(
         primary_language,
         severity_counts,
     } = run_initial_scan(project, &paths)?;
-    let skills_outcomes = handle_skills_install(project, &paths, force, yes, no_skills)?;
+    let skills_outcomes = handle_skills_install(project, &paths, force, yes, no_skills, as_json)?;
     // Surface workspace manifests only when no `[[project.workspaces]]`
     // block exists yet; once the user declares them, the hint becomes
     // noise. Empty list = solo package or already-declared workspaces.
@@ -444,12 +444,14 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<InitialScan> {
 /// skills tree (overwriting drift / locally edited files) so a binary
 /// upgrade actually picks up the latest skill set. When off, leave
 /// existing files alone (initial-install behavior).
+#[allow(clippy::fn_params_excessive_bools)]
 fn handle_skills_install(
     project: &Path,
     paths: &HealPaths,
     force: bool,
     yes: bool,
     no_skills: bool,
+    as_json: bool,
 ) -> Result<Vec<SkillsTargetOutcome>> {
     // Snapshot detection up-front so the per-target loop sees a stable
     // view; also lets tests stub the detection without mutating
@@ -459,26 +461,48 @@ fn handle_skills_install(
         .iter()
         .map(|&t| (t, agent_on_path(t)))
         .collect();
-    handle_skills_install_with(project, paths, force, yes, no_skills, &detected)
+    // `--json` promises pure JSON on stdout — never prompt, even on a
+    // TTY. Machine callers opt into installation with `--yes`.
+    let interactive = !as_json && std::io::stdin().is_terminal();
+    handle_skills_install_with(
+        project,
+        paths,
+        force,
+        yes,
+        no_skills,
+        interactive,
+        &detected,
+    )
 }
 
+#[allow(clippy::fn_params_excessive_bools)]
 fn handle_skills_install_with(
     project: &Path,
     paths: &HealPaths,
     force: bool,
     yes: bool,
     no_skills: bool,
+    interactive: bool,
     detected: &[(SkillTarget, bool)],
 ) -> Result<Vec<SkillsTargetOutcome>> {
     let mut outcomes = Vec::with_capacity(detected.len());
     for &(target, on_path) in detected {
-        let action = decide_target(project, paths, target, force, yes, no_skills, on_path)?;
+        let action = decide_target(
+            project,
+            paths,
+            target,
+            force,
+            yes,
+            no_skills,
+            interactive,
+            on_path,
+        )?;
         outcomes.push(SkillsTargetOutcome { target, action });
     }
     Ok(outcomes)
 }
 
-#[allow(clippy::fn_params_excessive_bools)]
+#[allow(clippy::fn_params_excessive_bools, clippy::too_many_arguments)]
 fn decide_target(
     project: &Path,
     paths: &HealPaths,
@@ -486,6 +510,7 @@ fn decide_target(
     force: bool,
     yes: bool,
     no_skills: bool,
+    interactive: bool,
     on_path: bool,
 ) -> Result<SkillsAction> {
     if no_skills {
@@ -499,7 +524,7 @@ fn decide_target(
     if yes {
         return install_skills_for(project, paths, target, force);
     }
-    if std::io::stdin().is_terminal() {
+    if interactive {
         if confirm_skills_install(target)? {
             install_skills_for(project, paths, target, force)
         } else {
@@ -720,9 +745,16 @@ mod tests {
         let paths = HealPaths::new(project);
         paths.ensure().unwrap();
         // `--no-skills` must short-circuit before detection matters.
-        let outcomes =
-            handle_skills_install_with(project, &paths, false, false, true, &detected(true, true))
-                .unwrap();
+        let outcomes = handle_skills_install_with(
+            project,
+            &paths,
+            false,
+            false,
+            true,
+            false,
+            &detected(true, true),
+        )
+        .unwrap();
         assert_eq!(outcomes.len(), SkillTarget::ALL.len());
         for outcome in &outcomes {
             assert_eq!(outcome.action, SkillsAction::SuppressedByFlag);
@@ -736,9 +768,16 @@ mod tests {
         let project = dir.path();
         let paths = HealPaths::new(project);
         paths.ensure().unwrap();
-        let outcomes =
-            handle_skills_install_with(project, &paths, false, true, false, &detected(true, true))
-                .unwrap();
+        let outcomes = handle_skills_install_with(
+            project,
+            &paths,
+            false,
+            true,
+            false,
+            false,
+            &detected(true, true),
+        )
+        .unwrap();
         assert_eq!(outcomes.len(), SkillTarget::ALL.len());
         for outcome in &outcomes {
             assert!(
@@ -763,9 +802,16 @@ mod tests {
         let project = dir.path();
         let paths = HealPaths::new(project);
         paths.ensure().unwrap();
-        let outcomes =
-            handle_skills_install_with(project, &paths, false, true, false, &detected(false, true))
-                .unwrap();
+        let outcomes = handle_skills_install_with(
+            project,
+            &paths,
+            false,
+            true,
+            false,
+            false,
+            &detected(false, true),
+        )
+        .unwrap();
 
         let claude = outcomes
             .iter()
@@ -800,6 +846,7 @@ mod tests {
             false,
             true,
             false,
+            false,
             &detected(false, false),
         )
         .unwrap();
@@ -811,6 +858,33 @@ mod tests {
                 target = outcome.target,
                 action = outcome.action,
             );
+            assert!(!outcome.target.dest(project).exists());
+        }
+    }
+
+    #[test]
+    fn handle_skills_install_non_interactive_skips_instead_of_prompting() {
+        // The `--json` path resolves to `interactive = false` even on a
+        // TTY (see `handle_skills_install`); with agents detected and
+        // no `--yes`, every target must skip — a prompt here would
+        // corrupt the JSON contract on stdout and block on stdin.
+        let dir = TempDir::new().unwrap();
+        let project = dir.path();
+        let paths = HealPaths::new(project);
+        paths.ensure().unwrap();
+        let outcomes = handle_skills_install_with(
+            project,
+            &paths,
+            false,
+            false,
+            false,
+            false,
+            &detected(true, true),
+        )
+        .unwrap();
+        assert_eq!(outcomes.len(), SkillTarget::ALL.len());
+        for outcome in &outcomes {
+            assert_eq!(outcome.action, SkillsAction::SkippedNonInteractive);
             assert!(!outcome.target.dest(project).exists());
         }
     }

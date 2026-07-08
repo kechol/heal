@@ -97,7 +97,7 @@ heal status  ──►  calibration.toml で Finding を分類
 
 ```json
 {
-  "version": 4,
+  "version": 5,
   "id": "9f8e7d6c5b4a3210", // (head_sha, config_hash, worktree_clean) の FNV-1a hex
   "head_sha": "a0a6d1a…",
   "worktree_clean": true,

@@ -2,7 +2,7 @@
 name: heal-code-review
 description: Read every finding produced by `heal status --all --feature code --json`, deeply investigate the user's codebase, and return one architectural reading plus a prioritized refactor TODO list — grounded in the metric literature and module-depth / layering / DDD vocabulary. Works on any language and shape of project; respects the codebase's existing design. Read-only — proposes only. The write counterpart is `/heal-code-patch`. Trigger on "what does heal say?", "review the codebase health", "where should we refactor?", "/heal-code-review".
 metadata:
-  heal-version: 0.3.2
+  heal-version: 0.4.0
   heal-source: bundled
 ---
 

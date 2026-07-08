@@ -117,7 +117,7 @@ writer of `accepted.json`.
 
 ```json
 {
-  "version": 4,
+  "version": 5,
   "id": "9f8e7d6c5b4a3210", // FNV-1a hex of (head_sha, config_hash, worktree_clean)
   "head_sha": "a0a6d1a…",
   "worktree_clean": true,

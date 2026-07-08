@@ -381,10 +381,11 @@ pub(crate) fn canonical_user_bytes<'a>(
 }
 
 fn write_asset(target: &Path, body: &[u8]) -> Result<()> {
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
-    }
-    std::fs::write(target, body).with_context(|| format!("writing {}", target.display()))?;
+    // atomic_write, not std::fs::write: a SIGINT mid-write would leave
+    // a truncated file that drift detection then misreads as a user
+    // edit, blocking auto-refresh of that asset forever.
+    crate::core::fs::atomic_write(target, body)
+        .with_context(|| format!("writing {}", target.display()))?;
     Ok(())
 }
 

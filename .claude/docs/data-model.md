@@ -75,10 +75,10 @@ The full result of one `heal status` run. Written to
 see identical drain queues without re-scanning.
 
 ```rust
-pub const FINDINGS_RECORD_VERSION: u32 = 3;
+pub const FINDINGS_RECORD_VERSION: u32 = 5;
 
 pub struct FindingsRecord {
-    pub version: u32,                // currently 3
+    pub version: u32,                // currently 5
     pub id: String,                  // FNV-1a hex of (head_sha, config_hash, worktree_clean)
     pub head_sha: Option<String>,    // None outside git or HEAD unborn
     pub worktree_clean: bool,
@@ -102,7 +102,7 @@ byte-identical content, keeping `git status` clean.
 
 ### Schema versioning
 
-`FINDINGS_RECORD_VERSION` is currently **3**. v1 → v2 renamed
+`FINDINGS_RECORD_VERSION` is currently **5**. v1 → v2 renamed
 `check_id → id` and `regressed_check_id → regressed_in_record_id`.
 v2 → v3 (Unreleased v0.4 cycle) bundles every new addition since
 v0.3.2: the `[features.docs]` family of metric strings
@@ -110,9 +110,19 @@ v0.3.2: the `[features.docs]` family of metric strings
 `orphan_pages`, `todo_density`), the `[features.test]` family
 (`coverage_pct`, `change_coupling.drift`, `skip_ratio`), and the
 new `Finding.is_test_file: bool` flag (default `false`,
-`skip_serializing_if`-defaulted). The cycle never shipped an
-intermediate v4 / v5 stamp — every addition rolls into the same
-v3.
+`skip_serializing_if`-defaulted). v3 → v4 (same Unreleased v0.4
+cycle) added the per-family hotspot metrics (`test_hotspot`,
+`doc_hotspot`) and re-targeted `Finding.hotspot` to be per-family —
+a `coverage_pct` Finding now takes `hotspot=true` from the
+test-family index rather than the code-family one. The JSON shape
+is unchanged (still a single `bool`); the meaning is not, hence
+the bump. v4 → v5 (Unreleased) changed content-seed strategies:
+the change-coupling family drops the raw co-change `count` from
+its seed (the count drifts with every rescan, so ids churned and
+`fixed.json` / `heal diff` mis-reconciled), and `ccn` /
+`cognitive` / `lcom` seeds gain an occurrence ordinal so two
+same-name same-span functions (or same-name class scopes) in one
+file no longer collide to a single id.
 
 `read_latest` peeks at the version field first and returns `Ok(None)`
 on **any mismatch** — the next run silently rewrites under the new

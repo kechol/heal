@@ -33,7 +33,7 @@ deserialises as garbage. The one exception is `regressed.jsonl`
 ## R3. Schema-versioned shapes bump on any contract change
 
 `FindingsRecord` is versioned by `FINDINGS_RECORD_VERSION` (currently
-`4`). Bump on:
+`5`). Bump on:
 
 - A field rename.
 - A field semantic change (units, sentinel meaning).

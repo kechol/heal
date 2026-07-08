@@ -191,10 +191,18 @@ pub(crate) fn split_link_target(target: &str) -> (&str, &str) {
 
 /// Resolve `target` against the directory containing `doc_path`,
 /// collapsing `./` and `../` segments. Both inputs are project-
-/// relative; the result stays project-relative.
+/// relative; the result stays project-relative. A leading `/` is
+/// root-relative (GitHub renders `[x](/CONTRIBUTING.md)` from the
+/// repo root, not the referring doc's directory); SSG deploy-path
+/// links that don't exist in the repo are the province of
+/// `exclude_link_prefixes`, not this resolver.
 #[must_use]
 pub(crate) fn resolve_relative(doc_path: &Path, target: &str) -> PathBuf {
-    let parent = doc_path.parent().map(Path::to_path_buf).unwrap_or_default();
+    let parent = if target.starts_with('/') {
+        PathBuf::new()
+    } else {
+        doc_path.parent().map(Path::to_path_buf).unwrap_or_default()
+    };
     let mut out: Vec<&str> = parent
         .iter()
         .filter_map(|os| os.to_str())
@@ -307,6 +315,21 @@ mod tests {
         assert_eq!(
             resolve_relative(from, "deep/nested.md"),
             PathBuf::from("docs/sub/deep/nested.md")
+        );
+    }
+
+    #[test]
+    fn resolve_relative_treats_leading_slash_as_project_root() {
+        // GitHub-style root-relative link: resolves from the repo
+        // root, not the referring doc's directory.
+        let from = Path::new("docs/sub/page.md");
+        assert_eq!(
+            resolve_relative(from, "/CONTRIBUTING.md"),
+            PathBuf::from("CONTRIBUTING.md")
+        );
+        assert_eq!(
+            resolve_relative(from, "/docs/other.md"),
+            PathBuf::from("docs/other.md")
         );
     }
 }

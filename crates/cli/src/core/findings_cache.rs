@@ -67,8 +67,13 @@ use crate::core::severity::SeverityCounts;
 /// per-family — a `coverage_pct` Finding now picks up `hotspot=true`
 /// from the test-family index rather than the code-family one. The
 /// JSON shape is unchanged (still a single `bool`); the meaning is
-/// not, hence the bump.
-pub const FINDINGS_RECORD_VERSION: u32 = 4;
+/// not, hence the bump. v5 changed the content-seed strategy for the
+/// change-coupling family (the raw co-change `count` — which drifts
+/// with every rescan — is dropped from the seed) and added collision
+/// ordinals to the `ccn` / `cognitive` / `lcom` seeds; every
+/// change-coupling `Finding.id` changes once, so old caches must
+/// invalidate rather than mis-reconcile against the new ids.
+pub const FINDINGS_RECORD_VERSION: u32 = 5;
 
 /// One execution of `heal status`. The unit of read in the cache:
 /// `latest.json` holds the single most-recent record. `heal diff` reads

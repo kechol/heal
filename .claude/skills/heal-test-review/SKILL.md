@@ -2,7 +2,7 @@
 name: heal-test-review
 description: Read every finding from the `[features.test]` observer family produced by `heal status --feature test --json`, deeply investigate the user's tests and codebase through the test-pyramid lens, and return one architectural reading plus a prioritized test-fix TODO list. Read-only — proposes only. The write counterpart is `/heal-test-patch`. Trigger on "review the test health", "what does heal say about my tests", "where should we add tests", "which tests should we unskip", "/heal-test-review".
 metadata:
-  heal-version: 0.3.2
+  heal-version: 0.4.0
   heal-source: bundled
 ---
 

@@ -7,8 +7,9 @@
 //!
 //! Two paths:
 //!
-//! 1. **Cache hit.** `latest.json.head_sha` matches the resolved ref
-//!    → read the cached `FindingsRecord` directly. Fast.
+//! 1. **Cache hit.** `latest.json` was scanned clean at the resolved
+//!    ref under the current `config_hash` → read the cached
+//!    `FindingsRecord` directly. Fast.
 //! 2. **Worktree fallback.** `git worktree add --detach <tempdir> <sha>`
 //!    materialises the source at the ref, runs the observer pipeline
 //!    against it (using the *current* `config.toml`/`calibration.toml`
@@ -39,7 +40,7 @@
 //! a plain-High regression is itself worth seeing even without the
 //! hotspot decoration.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -52,7 +53,7 @@ use crate::core::accepted::read_accepted;
 use crate::core::calibration::Calibration;
 use crate::core::config::{load_from_project, Config, DrainTier, PolicyDrainConfig};
 use crate::core::finding::Finding;
-use crate::core::findings_cache::{read_latest, FindingsRecord};
+use crate::core::findings_cache::{config_hash_from_paths, read_latest, FindingsRecord};
 use crate::core::severity::Severity;
 use crate::core::term::{
     ansi_wrap, write_through_pager, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW,
@@ -142,9 +143,10 @@ pub fn run(
 }
 
 /// Build the "from" `FindingsRecord`. Prefers the cached `latest.json` when
-/// its `head_sha` matches the target; otherwise materialises the source
-/// at `<sha>` in a tempdir-backed `git worktree` and runs the observer
-/// pipeline against it (after the LOC threshold check).
+/// it was scanned clean at the target sha under the current config +
+/// calibration; otherwise materialises the source at `<sha>` in a
+/// tempdir-backed `git worktree` and runs the observer pipeline against
+/// it (after the LOC threshold check).
 fn load_or_recompute_from(
     project: &Path,
     paths: &HealPaths,
@@ -152,9 +154,17 @@ fn load_or_recompute_from(
     revspec: &str,
     target_sha: &str,
 ) -> Result<FindingsRecord> {
-    if let Some(record) =
-        read_latest(&paths.findings_latest())?.filter(|r| r.head_sha.as_deref() == Some(target_sha))
-    {
+    // Same gate as `is_fresh_against`, minus the live-worktree term:
+    // the "from" baseline only needs the cached record to be a clean
+    // scan of the target sha under today's config_hash — whether the
+    // *current* worktree is dirty doesn't invalidate it. Without the
+    // config_hash term, a `heal calibrate --force` between the cached
+    // scan and this diff would compare stale-classified findings
+    // against a freshly classified "to", producing spurious buckets.
+    let cfg_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
+    if let Some(record) = read_latest(&paths.findings_latest())?.filter(|r| {
+        r.worktree_clean && r.head_sha.as_deref() == Some(target_sha) && r.config_hash == cfg_hash
+    }) {
         return Ok(record);
     }
     enforce_loc_threshold(project, cfg, revspec);
@@ -361,13 +371,17 @@ pub(crate) fn compute_diff(
             Some(ws) => f.workspace.as_deref() == Some(ws),
         }
     };
-    let from_by_id: HashMap<&str, &Finding> = from
+    // BTreeMap, not HashMap: bucket order falls out of map iteration,
+    // and the JSON arrays must be byte-stable across runs / teammates.
+    // Ids sort as `<metric>:<file>:<symbol>:<hash>`, grouping entries
+    // by metric then file.
+    let from_by_id: BTreeMap<&str, &Finding> = from
         .findings
         .iter()
         .filter(|f| in_scope(f))
         .map(|f| (f.id.as_str(), f))
         .collect();
-    let to_by_id: HashMap<&str, &Finding> = to
+    let to_by_id: BTreeMap<&str, &Finding> = to
         .findings
         .iter()
         .filter(|f| in_scope(f))
@@ -870,6 +884,72 @@ mod tests {
             !out.contains("entries below High hidden"),
             "--all must drop the hidden-count footer: {out}",
         );
+    }
+
+    #[test]
+    fn from_cache_requires_matching_config_hash_and_clean_scan() {
+        use crate::core::config::Config;
+        use crate::core::findings_cache::{config_hash_from_paths, write_record};
+        use crate::test_support::{commit, init_repo};
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit(
+            dir.path(),
+            "lib.rs",
+            "fn ok() {}\n",
+            "tester@example.com",
+            "init",
+        );
+        let head_sha = git::head_sha(dir.path()).expect("head sha after first commit");
+        let paths = HealPaths::new(dir.path());
+        paths.ensure().unwrap();
+        Config::default().save(&paths.config()).unwrap();
+        let cfg = load_from_project(dir.path()).unwrap();
+        let cfg_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
+        let has_marker = |r: &FindingsRecord| {
+            r.findings
+                .iter()
+                .any(|f| f.location.file.to_string_lossy().contains("marker"))
+        };
+
+        // Clean scan at the target sha under today's config hash →
+        // the cached record is reused as-is (the synthetic marker
+        // finding proves no recompute ran).
+        let cached = FindingsRecord::new(
+            Some(head_sha.clone()),
+            true,
+            cfg_hash.clone(),
+            vec![finding("marker", Severity::High)],
+        );
+        write_record(&paths.findings_latest(), &cached).unwrap();
+        let got = load_or_recompute_from(dir.path(), &paths, &cfg, "HEAD", &head_sha).unwrap();
+        assert!(has_marker(&got), "matching triple must reuse the cache");
+
+        // Same sha, different config hash (e.g. after `heal calibrate
+        // --force`) → the cached classification is stale; recompute.
+        let stale_cfg = FindingsRecord::new(
+            Some(head_sha.clone()),
+            true,
+            "0123456789abcdef".into(),
+            vec![finding("marker", Severity::High)],
+        );
+        write_record(&paths.findings_latest(), &stale_cfg).unwrap();
+        let got = load_or_recompute_from(dir.path(), &paths, &cfg, "HEAD", &head_sha).unwrap();
+        assert!(!has_marker(&got), "config drift must force a recompute");
+
+        // Same sha + config but the cached scan ran on a dirty
+        // worktree → its findings don't reflect the committed source.
+        let dirty = FindingsRecord::new(
+            Some(head_sha.clone()),
+            false,
+            cfg_hash,
+            vec![finding("marker", Severity::High)],
+        );
+        write_record(&paths.findings_latest(), &dirty).unwrap();
+        let got = load_or_recompute_from(dir.path(), &paths, &cfg, "HEAD", &head_sha).unwrap();
+        assert!(!has_marker(&got), "dirty-scan cache must force a recompute");
     }
 
     #[test]

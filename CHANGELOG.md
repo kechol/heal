@@ -2,6 +2,86 @@
 
 ## Unreleased
 
+### ⚠ BREAKING
+
+- **Change-coupling `Finding.id`s are now stable across rescans;
+  `FINDINGS_RECORD_VERSION` bumped to 5.** The content seed for the
+  `change_coupling` family embedded the raw co-change count, which
+  grows with every new co-changing commit and even drifts with the
+  wall-clock `since_days` window — so the same logical coupling got
+  a fresh id on nearly every rescan, and `fixed.json` / `heal diff`
+  treated it as a new finding while silently "resolving" the old
+  one. The count is gone from the seed (the file pair alone
+  identifies the finding). The `ccn` / `cognitive` / `lcom` seeds
+  additionally gain an occurrence ordinal so two same-name,
+  same-span functions in one file (e.g. one-line `fn new` in two
+  `impl` blocks) no longer collide to a single id; non-colliding
+  ids are unchanged.
+  **Migration:** none to perform by hand — caches written by older
+  versions silently invalidate and the next `heal status` rewrites
+  under the new schema. Entries in `.heal/findings/fixed.json`
+  keyed by old change-coupling ids will no longer match and are
+  pruned on the next reconcile.
+
+### Fixes
+
+- **`heal diff` output order is deterministic.** Bucket entries
+  (`resolved` / `regressed` / `improved` / `new` / `unchanged`)
+  were produced in `HashMap` iteration order, which changes between
+  invocations — two runs on the same commit could print (and emit
+  via `--json`) differently ordered arrays. Buckets now iterate a
+  `BTreeMap`, so entries sort by finding id.
+- **`heal diff` no longer reuses a cached baseline computed under a
+  different config or calibration.** The "from" record accepted any
+  `latest.json` whose `head_sha` matched the target ref, even when
+  `config.toml` / `calibration.toml` had changed since (e.g. after
+  `heal calibrate --force`) or the cached scan ran on a dirty
+  worktree — producing spurious regressed/improved rows that were
+  pure classification drift. The cache gate now checks the full
+  `(head_sha, config_hash, worktree_clean)` triple, matching
+  `heal status`.
+- **`heal init --json` never prompts.** With an agent CLI on `PATH`,
+  a TTY on stdin, and neither `--yes` nor `--no-skills`, the
+  skills-install confirmation prompt was printed to stdout ahead of
+  the JSON report — corrupting the machine-readable contract and
+  blocking on stdin. JSON mode now reports
+  `skills[].action = "skipped_non_interactive"` instead; pass
+  `--yes` to install skills from scripts.
+- **Rust `skip_ratio` counts scoped test attributes.**
+  `#[tokio::test]`, `#[async_std::test]`, and other
+  `path::test`-style attributes were not recognized as tests (only
+  bare `#[test]` was), so async-test files were dropped from the
+  metric entirely — or worse, a mixed file counted sibling
+  `#[ignore]`s against a too-small test total, pushing the skip
+  ratio past 100%.
+- **Per-metric drain-policy overrides: the sub-metric level wins.**
+  When both `[policy.drain.metrics."<parent>.<sub>"]` and
+  `[policy.drain.metrics.<parent>]` defined the same field, the
+  parent's `must` / `should` silently overwrote the sub-metric's
+  more specific value, misrouting findings between drain tiers.
+- **Skill files are extracted atomically.** `heal skills install` /
+  `update` wrote skill bodies with a plain `std::fs::write`; an
+  interrupt mid-write left a truncated file that drift detection
+  then misread as a user edit, blocking further auto-refresh of
+  that file. Extraction now goes through the same atomic
+  write-rename used for every other mutable state file.
+- **Root-relative doc links resolve from the project root.**
+  `doc_link_health` and `orphan_pages` resolved a GitHub-style
+  `[x](/CONTRIBUTING.md)` link against the referring doc's
+  directory instead of the repo root, reporting existing targets
+  as broken. Deploy-path links that don't exist in the repo remain
+  the province of `exclude_link_prefixes`.
+
+### Performance
+
+- **Complexity, Duplication, and LCOM share one walk + parse pass.**
+  The three tree-sitter-backed observers visit the identical file
+  universe (same excludes, same workspace scope) but each re-read
+  and re-parsed every source file independently — up to 3× the
+  parse cost per `heal status`. The orchestrator now walks and
+  parses once, feeding all three accumulators per file. Reports
+  are byte-identical to the previous per-observer scans.
+
 ## v0.4.0 — 2026-05-06
 
 The optional-families release. Documentation and test quality

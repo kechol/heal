@@ -40,9 +40,7 @@ use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
-use crate::observer::code::complexity::{parse, ParsedFile};
-use crate::observer::shared::lang::Language;
-use crate::observer::shared::walk::{walk_supported_files_under, ExcludeMatcher};
+use crate::observer::code::complexity::ParsedFile;
 use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
 
@@ -105,41 +103,43 @@ impl DuplicationObserver {
 
     #[must_use]
     pub fn scan(&self, root: &Path) -> DuplicationReport {
+        let Some(mut acc) = self.accumulator() else {
+            return DuplicationReport {
+                min_tokens: self.min_tokens,
+                ..DuplicationReport::default()
+            };
+        };
+        crate::observer::code::scan_source_tree(
+            root,
+            &self.excluded,
+            self.workspace.as_deref(),
+            None,
+            Some(&mut acc),
+            None,
+        );
+        self.finish(acc)
+    }
+
+    /// Streaming half of [`Self::scan`]: `None` when the observer is
+    /// disabled or the window is zero (matching `scan`'s early
+    /// return), otherwise an accumulator the orchestrator feeds from
+    /// the shared walk+parse pass.
+    pub(crate) fn accumulator(&self) -> Option<DuplicationAccumulator> {
+        (self.enabled && self.min_tokens > 0).then(|| DuplicationAccumulator {
+            window: self.min_tokens as usize,
+            files: Vec::new(),
+        })
+    }
+
+    /// Detection half of [`Self::scan`]: runs Rabin-Karp block
+    /// detection over the accumulated code tokens, the optional
+    /// Markdown pass, and the file-level rollup.
+    pub(crate) fn finish(&self, acc: DuplicationAccumulator) -> DuplicationReport {
         let mut report = DuplicationReport {
             min_tokens: self.min_tokens,
             ..DuplicationReport::default()
         };
-        if !self.enabled || self.min_tokens == 0 {
-            return report;
-        }
-        let matcher = ExcludeMatcher::compile(root, &self.excluded)
-            .expect("exclude patterns validated at config load");
-        let window = self.min_tokens as usize;
-        let mut files: Vec<FileTokens> = Vec::new();
-        for path in walk_supported_files_under(root, &matcher, self.workspace.as_deref()) {
-            let Some(lang) = Language::from_path(&path) else {
-                continue;
-            };
-            let Ok(source) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let Ok(parsed) = parse(source, lang) else {
-                continue;
-            };
-            let (hashes, lines) = collect_tokens(&parsed);
-            if hashes.len() < window {
-                continue;
-            }
-            let rel = path
-                .strip_prefix(root)
-                .map(Path::to_path_buf)
-                .unwrap_or(path);
-            files.push(FileTokens {
-                path: rel,
-                hashes,
-                lines,
-            });
-        }
+        let DuplicationAccumulator { window, files } = acc;
 
         let mut all_blocks: Vec<DuplicateBlock> = Vec::new();
         let mut all_files: Vec<FileTokens> = Vec::new();
@@ -198,6 +198,28 @@ impl DuplicationObserver {
         report.blocks = all_blocks;
         report.files = files_summary;
         report
+    }
+}
+
+/// Per-file accumulator behind [`DuplicationObserver::scan`]; fed by
+/// the shared walk+parse pass (see
+/// [`crate::observer::code::scan_source_tree`]).
+pub(crate) struct DuplicationAccumulator {
+    window: usize,
+    files: Vec<FileTokens>,
+}
+
+impl DuplicationAccumulator {
+    pub(crate) fn add(&mut self, rel: &Path, parsed: &ParsedFile) {
+        let (hashes, lines) = collect_tokens(parsed);
+        if hashes.len() < self.window {
+            return;
+        }
+        self.files.push(FileTokens {
+            path: rel.to_path_buf(),
+            hashes,
+            lines,
+        });
     }
 }
 

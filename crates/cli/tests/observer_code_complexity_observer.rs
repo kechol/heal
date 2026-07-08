@@ -170,3 +170,58 @@ fn from_config_inherits_excludes_and_toggles() {
     assert!(observer.ccn_enabled);
     assert!(observer.cognitive_enabled);
 }
+
+#[test]
+fn into_findings_disambiguates_same_name_same_span_functions() {
+    use heal_cli::core::finding::IntoFindings;
+    use heal_cli::observer::code::complexity::{
+        ComplexityReport, ComplexityTotals, FileComplexity, FunctionMetric,
+    };
+
+    // Two functions sharing name AND span in one file (e.g. one-line
+    // `fn new` in two different impl blocks). `Finding::make_id`
+    // doesn't hash the line, so without the seed's occurrence ordinal
+    // both would collide to a single id and shadow each other in
+    // id-keyed consumers.
+    let fun = |start: u32| FunctionMetric {
+        name: "new".to_owned(),
+        start_line: start,
+        end_line: start,
+        ccn: 2,
+        cognitive: 1,
+    };
+    let report = ComplexityReport {
+        files: vec![FileComplexity {
+            path: "src/foo.rs".into(),
+            language: "rust".to_owned(),
+            functions: vec![fun(10), fun(50)],
+        }],
+        totals: ComplexityTotals {
+            files: 1,
+            functions: 2,
+            max_ccn: 2,
+            max_cognitive: 1,
+        },
+    };
+    let findings = report.into_findings();
+    // Two functions x (ccn + cognitive).
+    assert_eq!(findings.len(), 4);
+    let ids = |metric: &str| -> Vec<&str> {
+        findings
+            .iter()
+            .filter(|f| f.metric == metric)
+            .map(|f| f.id.as_str())
+            .collect()
+    };
+    let ccn_ids = ids("ccn");
+    assert_eq!(ccn_ids.len(), 2);
+    assert_ne!(ccn_ids[0], ccn_ids[1]);
+    let cog_ids = ids("cognitive");
+    assert_ne!(cog_ids[0], cog_ids[1]);
+    // Deterministic: recomputing yields identical ids in order.
+    let again = report.into_findings();
+    let all = |fs: &[heal_cli::core::finding::Finding]| -> Vec<String> {
+        fs.iter().map(|f| f.id.clone()).collect()
+    };
+    assert_eq!(all(&findings), all(&again));
+}

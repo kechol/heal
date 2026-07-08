@@ -1225,24 +1225,27 @@ impl PolicyDrainConfig {
     /// override see the global lists. Sub-metrics (`change_coupling.symmetric`)
     /// fall back to their parent (`change_coupling`) before going global.
     fn specs_for(&self, metric: &str) -> (&[DrainSpec], &[DrainSpec]) {
-        let mut must: &[DrainSpec] = &self.must;
-        let mut should: &[DrainSpec] = &self.should;
+        let mut must: Option<&[DrainSpec]> = None;
+        let mut should: Option<&[DrainSpec]> = None;
         let override_chain =
             std::iter::once(metric).chain(metric.split_once('.').map(|(parent, _)| parent));
         for key in override_chain {
             if let Some(ov) = self.metrics.get(key) {
-                if let Some(m) = ov.must.as_ref() {
-                    must = m;
+                // The sub-metric key is visited before its parent; a field
+                // already resolved at the more specific level must not be
+                // overwritten by the parent's value.
+                if must.is_none() {
+                    must = ov.must.as_deref();
                 }
-                if let Some(s) = ov.should.as_ref() {
-                    should = s;
+                if should.is_none() {
+                    should = ov.should.as_deref();
                 }
-                if ov.must.is_some() && ov.should.is_some() {
+                if must.is_some() && should.is_some() {
                     break;
                 }
             }
         }
-        (must, should)
+        (must.unwrap_or(&self.must), should.unwrap_or(&self.should))
     }
 }
 

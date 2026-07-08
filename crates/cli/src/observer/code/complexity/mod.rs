@@ -14,6 +14,7 @@ mod ccn;
 mod cognitive;
 mod observer;
 
+pub(crate) use observer::ComplexityAccumulator;
 pub use observer::{
     ComplexityFeature, ComplexityMetric, ComplexityObserver, ComplexityReport, ComplexityTotals,
     FileComplexity, FunctionFinding,

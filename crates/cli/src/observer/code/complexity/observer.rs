@@ -11,9 +11,8 @@ use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
-use crate::observer::code::complexity::{analyze, parse, FunctionMetric};
+use crate::observer::code::complexity::{analyze, FunctionMetric, ParsedFile};
 use crate::observer::shared::lang::Language;
-use crate::observer::shared::walk::{walk_supported_files_under, ExcludeMatcher};
 use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
 
@@ -50,45 +49,64 @@ impl ComplexityObserver {
     /// Returns `ComplexityReport::default()` if both toggles are disabled.
     #[must_use]
     pub fn scan(&self, root: &Path) -> ComplexityReport {
-        if !self.ccn_enabled && !self.cognitive_enabled {
+        let Some(mut acc) = self.accumulator() else {
             return ComplexityReport::default();
-        }
+        };
+        crate::observer::code::scan_source_tree(
+            root,
+            &self.excluded,
+            self.workspace.as_deref(),
+            Some(&mut acc),
+            None,
+            None,
+        );
+        acc.finish()
+    }
 
-        let matcher = ExcludeMatcher::compile(root, &self.excluded)
-            .expect("exclude patterns validated at config load");
-        let mut files: Vec<FileComplexity> = Vec::new();
-        let mut totals = ComplexityTotals::default();
-        for path in walk_supported_files_under(root, &matcher, self.workspace.as_deref()) {
-            let lang = Language::from_path(&path).expect("walker filters by Language::from_path");
-            let Ok(source) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let Ok(parsed) = parse(source, lang) else {
-                continue;
-            };
-            let metrics = analyze(&parsed);
-            if metrics.is_empty() {
-                continue;
-            }
-            for fun in &metrics {
-                totals.functions += 1;
-                totals.max_ccn = totals.max_ccn.max(fun.ccn);
-                totals.max_cognitive = totals.max_cognitive.max(fun.cognitive);
-            }
-            let rel = path
-                .strip_prefix(root)
-                .map(Path::to_path_buf)
-                .unwrap_or(path);
-            files.push(FileComplexity {
-                path: rel,
-                language: lang.name().to_string(),
-                functions: metrics,
-            });
-        }
-        totals.files = files.len();
+    /// Streaming half of [`Self::scan`]: `None` when both toggles are
+    /// disabled, otherwise an accumulator the orchestrator feeds from
+    /// the shared walk+parse pass (see
+    /// [`crate::observer::code::scan_source_tree`]).
+    pub(crate) fn accumulator(&self) -> Option<ComplexityAccumulator> {
+        (self.ccn_enabled || self.cognitive_enabled).then(ComplexityAccumulator::default)
+    }
+}
 
-        files.sort_by(|a, b| a.path.cmp(&b.path));
-        ComplexityReport { files, totals }
+/// Per-file accumulator behind [`ComplexityObserver::scan`]. Split out
+/// so Complexity / Duplication / LCOM can share one walk+parse pass —
+/// each observer used to re-read and re-parse every source file
+/// independently, tripling the tree-sitter cost per run.
+#[derive(Default)]
+pub(crate) struct ComplexityAccumulator {
+    files: Vec<FileComplexity>,
+    totals: ComplexityTotals,
+}
+
+impl ComplexityAccumulator {
+    pub(crate) fn add(&mut self, rel: &Path, lang: Language, parsed: &ParsedFile) {
+        let metrics = analyze(parsed);
+        if metrics.is_empty() {
+            return;
+        }
+        for fun in &metrics {
+            self.totals.functions += 1;
+            self.totals.max_ccn = self.totals.max_ccn.max(fun.ccn);
+            self.totals.max_cognitive = self.totals.max_cognitive.max(fun.cognitive);
+        }
+        self.files.push(FileComplexity {
+            path: rel.to_path_buf(),
+            language: lang.name().to_string(),
+            functions: metrics,
+        });
+    }
+
+    pub(crate) fn finish(mut self) -> ComplexityReport {
+        self.totals.files = self.files.len();
+        self.files.sort_by(|a, b| a.path.cmp(&b.path));
+        ComplexityReport {
+            files: self.files,
+            totals: self.totals,
+        }
     }
 }
 
@@ -179,17 +197,47 @@ impl Observer for ComplexityObserver {
     }
 }
 
+/// Per-function content-seed suffixes for one file's complexity
+/// findings. The base is the function's line span, so a function moved
+/// to a different line keeps its id as long as its size is unchanged.
+/// `Finding::make_id` doesn't hash `location.line`, so two functions
+/// sharing name AND span in the same file (e.g. one-line `fn new` in
+/// two different impl blocks) would otherwise collide to one id and
+/// silently shadow each other in every id-keyed consumer (`fixed.json`
+/// reconciliation, `heal diff` buckets). An occurrence ordinal is
+/// appended from the second repeat on; first occurrences keep the
+/// plain-span seed, so pre-existing non-colliding ids are unchanged.
+fn function_seed_suffixes(functions: &[FunctionMetric]) -> Vec<String> {
+    let mut seen: std::collections::HashMap<(&str, u32), u32> = std::collections::HashMap::new();
+    functions
+        .iter()
+        .map(|fun| {
+            let span = fun.end_line.saturating_sub(fun.start_line);
+            let ordinal = seen
+                .entry((fun.name.as_str(), span))
+                .and_modify(|n| *n += 1)
+                .or_insert(0);
+            if *ordinal == 0 {
+                format!("{span}")
+            } else {
+                format!("{span}:{ordinal}")
+            }
+        })
+        .collect()
+}
+
 impl IntoFindings for ComplexityReport {
     /// CCN and Cognitive are calibrated as separate metrics (TODO
     /// §Severity), so each function above zero on either axis becomes
-    /// its own finding. The content seed is the function span size, so
+    /// its own finding. The content seed is the function span size
+    /// (plus a collision ordinal — see [`function_seed_suffixes`]), so
     /// a function moved to a different line still hashes the same as
     /// long as its size is unchanged.
     fn into_findings(&self) -> Vec<Finding> {
         let mut out = Vec::with_capacity(self.totals.functions);
         for file in &self.files {
-            for fun in &file.functions {
-                let span = fun.end_line.saturating_sub(fun.start_line);
+            let seeds = function_seed_suffixes(&file.functions);
+            for (fun, seed) in file.functions.iter().zip(&seeds) {
                 let location = Location {
                     file: file.path.clone(),
                     line: Some(fun.start_line),
@@ -200,7 +248,7 @@ impl IntoFindings for ComplexityReport {
                         "ccn",
                         location.clone(),
                         format!("CCN={} {} ({})", fun.ccn, fun.name, file.language),
-                        &format!("ccn:{span}"),
+                        &format!("ccn:{seed}"),
                     ));
                 }
                 if fun.cognitive > 0 {
@@ -211,7 +259,7 @@ impl IntoFindings for ComplexityReport {
                             "Cognitive={} {} ({})",
                             fun.cognitive, fun.name, file.language
                         ),
-                        &format!("cognitive:{span}"),
+                        &format!("cognitive:{seed}"),
                     ));
                 }
             }
@@ -252,8 +300,8 @@ impl Feature for ComplexityFeature {
             let metrics = cal.metrics_for_file(&file.path, workspaces);
             let cal_ccn = metrics.ccn.as_ref();
             let cal_cog = metrics.cognitive.as_ref();
-            for fun in &file.functions {
-                let span = fun.end_line.saturating_sub(fun.start_line);
+            let seeds = function_seed_suffixes(&file.functions);
+            for (fun, seed) in file.functions.iter().zip(&seeds) {
                 let location = Location {
                     file: file.path.clone(),
                     line: Some(fun.start_line),
@@ -264,7 +312,7 @@ impl Feature for ComplexityFeature {
                         "ccn",
                         location.clone(),
                         format!("CCN={} {} ({})", fun.ccn, fun.name, file.language),
-                        &format!("ccn:{span}"),
+                        &format!("ccn:{seed}"),
                     );
                     let sev = cal_ccn.map_or(Severity::Ok, |c| c.classify(f64::from(fun.ccn)));
                     out.push(decorate(f, sev, hotspot));
@@ -277,7 +325,7 @@ impl Feature for ComplexityFeature {
                             "Cognitive={} {} ({})",
                             fun.cognitive, fun.name, file.language
                         ),
-                        &format!("cognitive:{span}"),
+                        &format!("cognitive:{seed}"),
                     );
                     let sev =
                         cal_cog.map_or(Severity::Ok, |c| c.classify(f64::from(fun.cognitive)));

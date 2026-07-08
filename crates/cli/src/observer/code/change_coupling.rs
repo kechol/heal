@@ -375,6 +375,16 @@ impl Observer for ChangeCouplingObserver {
     }
 }
 
+/// Content seed for every change-coupling finding. The pair itself is
+/// already fully identified by `(metric, location.file = a, symbol = b)`,
+/// so the seed carries no extra information — it must stay **constant**.
+/// The previous seed embedded the raw co-change `count`, which changes
+/// with every new co-changing commit (and even with the wall-clock
+/// `since_days` window), so the id churned on nearly every rescan and
+/// `fixed.json` / `heal diff` treated the same logical coupling as a
+/// new finding each time.
+const PAIR_SEED: &str = "pair";
+
 impl IntoFindings for ChangeCouplingReport {
     /// `a` (lex-smaller, already canonical) is the primary
     /// `location.file`; the partner `b` is the primary's `symbol` (so
@@ -407,7 +417,7 @@ impl IntoFindings for ChangeCouplingReport {
                     pair.a.display(),
                     b_str,
                 );
-                Finding::new(metric, primary, summary, &format!("count:{}", pair.count))
+                Finding::new(metric, primary, summary, PAIR_SEED)
                     .with_locations(vec![Location::file(pair.b.clone())])
             })
             .collect()
@@ -664,11 +674,7 @@ impl Feature for ChangeCouplingFeature {
                     _ => Finding::METRIC_CHANGE_COUPLING_EXPECTED,
                 };
                 finding.metric = metric.into();
-                finding.id = Finding::make_id(
-                    &finding.metric,
-                    &finding.location,
-                    &format!("count:{}", pair.count),
-                );
+                finding.id = Finding::make_id(&finding.metric, &finding.location, PAIR_SEED);
                 out.push(decorate(finding, Severity::Medium, hotspot));
                 continue;
             }
@@ -692,11 +698,8 @@ impl Feature for ChangeCouplingFeature {
                         // own bucket. Default policy parks
                         // `change_coupling.cross_workspace` in Advisory.
                         finding.metric = Finding::METRIC_CHANGE_COUPLING_CROSS_WORKSPACE.into();
-                        finding.id = Finding::make_id(
-                            &finding.metric,
-                            &finding.location,
-                            &format!("count:{}", pair.count),
-                        );
+                        finding.id =
+                            Finding::make_id(&finding.metric, &finding.location, PAIR_SEED);
                     }
                 }
             }
@@ -735,6 +738,19 @@ mod pair_class_tests {
             since_days: 90,
             min_coupling: 3,
         }
+    }
+
+    #[test]
+    fn finding_id_is_stable_across_count_changes() {
+        // The co-change count grows with every new co-changing commit
+        // and drifts with the wall-clock `since_days` window. If it
+        // fed the content seed, the same logical coupling would get a
+        // fresh id on nearly every rescan and `fixed.json` / `heal
+        // diff` reconciliation would never match.
+        let then = report(vec![pair("src/a.ts", "src/b.ts", 5)]).into_findings();
+        let now = report(vec![pair("src/a.ts", "src/b.ts", 9)]).into_findings();
+        assert_eq!(then.len(), 1);
+        assert_eq!(then[0].id, now[0].id);
     }
 
     #[test]

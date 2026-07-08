@@ -46,9 +46,10 @@ use crate::core::config::Config;
 use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
-use crate::observer::code::complexity::{parse, ParsedFile};
+#[cfg(test)]
+use crate::observer::code::complexity::parse;
+use crate::observer::code::complexity::ParsedFile;
 use crate::observer::shared::lang::Language;
-use crate::observer::shared::walk::{walk_supported_files_under, ExcludeMatcher};
 use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
 
@@ -76,35 +77,39 @@ impl LcomObserver {
 
     #[must_use]
     pub fn scan(&self, root: &Path) -> LcomReport {
+        let Some(mut acc) = self.accumulator() else {
+            return LcomReport {
+                min_cluster_count: self.min_cluster_count,
+                ..LcomReport::default()
+            };
+        };
+        crate::observer::code::scan_source_tree(
+            root,
+            &self.excluded,
+            self.workspace.as_deref(),
+            None,
+            None,
+            Some(&mut acc),
+        );
+        self.finish(acc)
+    }
+
+    /// Streaming half of [`Self::scan`]: `None` when the observer is
+    /// disabled, otherwise an accumulator the orchestrator feeds from
+    /// the shared walk+parse pass (see
+    /// [`crate::observer::code::scan_source_tree`]).
+    pub(crate) fn accumulator(&self) -> Option<LcomAccumulator> {
+        self.enabled.then(LcomAccumulator::default)
+    }
+
+    /// Rollup half of [`Self::scan`]: sorts the accumulated classes
+    /// and computes the totals.
+    pub(crate) fn finish(&self, acc: LcomAccumulator) -> LcomReport {
         let mut report = LcomReport {
             min_cluster_count: self.min_cluster_count,
+            classes: acc.classes,
             ..LcomReport::default()
         };
-        if !self.enabled {
-            return report;
-        }
-        let matcher = ExcludeMatcher::compile(root, &self.excluded)
-            .expect("exclude patterns validated at config load");
-        for path in walk_supported_files_under(root, &matcher, self.workspace.as_deref()) {
-            let Some(lang) = Language::from_path(&path) else {
-                continue;
-            };
-            if !lang.supports_lcom() {
-                continue;
-            }
-            let Ok(source) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let Ok(parsed) = parse(source, lang) else {
-                continue;
-            };
-            let rel = path
-                .strip_prefix(root)
-                .map_or_else(|_| path.clone(), Path::to_path_buf);
-            for class in classes_in(&parsed, &rel) {
-                report.classes.push(class);
-            }
-        }
         report.classes.sort_by(|a, b| {
             b.cluster_count
                 .cmp(&a.cluster_count)
@@ -127,6 +132,22 @@ impl LcomObserver {
         };
         report.totals = totals;
         report
+    }
+}
+
+/// Per-file accumulator behind [`LcomObserver::scan`]; fed by the
+/// shared walk+parse pass.
+#[derive(Default)]
+pub(crate) struct LcomAccumulator {
+    classes: Vec<ClassLcom>,
+}
+
+impl LcomAccumulator {
+    pub(crate) fn add(&mut self, rel: &Path, lang: Language, parsed: &ParsedFile) {
+        if !lang.supports_lcom() {
+            return;
+        }
+        self.classes.extend(classes_in(parsed, rel));
     }
 }
 
@@ -189,7 +210,16 @@ pub struct MethodCluster {
 }
 
 impl IntoFindings for LcomReport {
+    /// `Finding::make_id` doesn't hash `location.line`, and two class
+    /// scopes in one file can share a name (Rust: `impl Foo` plus
+    /// `impl SomeTrait for Foo` both surface as `Foo`). When such
+    /// scopes also tie on `(cluster_count, method_count)` their ids
+    /// would collide and silently shadow each other in id-keyed
+    /// consumers, so an occurrence ordinal is appended from the second
+    /// repeat on. First occurrences keep the plain seed, so
+    /// pre-existing non-colliding ids are unchanged.
     fn into_findings(&self) -> Vec<Finding> {
+        let mut occurrences: HashMap<(&Path, &str, u32, u32), u32> = HashMap::new();
         self.classes
             .iter()
             .filter(|c| c.cluster_count >= self.min_cluster_count.max(1))
@@ -203,7 +233,20 @@ impl IntoFindings for LcomReport {
                     line: Some(c.start_line),
                     symbol: Some(c.class_name.clone()),
                 };
-                let seed = format!("lcom:{}:{}", c.cluster_count, c.method_count);
+                let ordinal = occurrences
+                    .entry((
+                        c.file.as_path(),
+                        c.class_name.as_str(),
+                        c.cluster_count,
+                        c.method_count,
+                    ))
+                    .and_modify(|n| *n += 1)
+                    .or_insert(0);
+                let seed = if *ordinal == 0 {
+                    format!("lcom:{}:{}", c.cluster_count, c.method_count)
+                } else {
+                    format!("lcom:{}:{}:{ordinal}", c.cluster_count, c.method_count)
+                };
                 Finding::new("lcom", location, summary, &seed)
             })
             .collect()
@@ -638,6 +681,36 @@ impl Feature for LcomFeature {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn into_findings_disambiguates_same_name_class_scopes() {
+        // Two scopes with the same class name, cluster count, and
+        // method count in one file (Rust: `impl Foo` + `impl Trait
+        // for Foo`) must not collide to one id — `make_id` doesn't
+        // hash the line, so the seed carries an occurrence ordinal.
+        let class = |start: u32| ClassLcom {
+            file: PathBuf::from("src/foo.rs"),
+            language: "rust".to_owned(),
+            class_name: "Foo".to_owned(),
+            start_line: start,
+            end_line: start + 3,
+            method_count: 2,
+            cluster_count: 2,
+            clusters: Vec::new(),
+        };
+        let report = LcomReport {
+            classes: vec![class(10), class(50)],
+            totals: LcomTotals::default(),
+            min_cluster_count: 2,
+        };
+        let findings = report.into_findings();
+        assert_eq!(findings.len(), 2);
+        assert_ne!(findings[0].id, findings[1].id);
+        // Deterministic: recomputing yields identical ids in order.
+        let again = report.into_findings();
+        assert_eq!(findings[0].id, again[0].id);
+        assert_eq!(findings[1].id, again[1].id);
+    }
 
     #[cfg(feature = "lang-typescript")]
     fn run_ts(source: &str) -> Vec<ClassLcom> {

@@ -2,7 +2,7 @@
 name: heal-code-patch
 description: Drain the cache produced by `heal status`, fixing one finding per commit in Severity order, until the cache is empty or the user stops. Writes code, runs tests, and commits — does NOT push or open PRs. Refuses to start on a dirty worktree. Trigger on "fix the heal findings", "drain the cache", "work through the TODO list heal produced", "/heal-code-patch".
 metadata:
-  heal-version: 0.3.2
+  heal-version: 0.4.0
   heal-source: bundled
 ---
 

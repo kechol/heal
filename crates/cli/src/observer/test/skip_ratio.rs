@@ -211,15 +211,25 @@ fn count_rust(parsed: &ParsedFile) -> SkipCounts {
         }
         let mut cur = node.walk();
         for child in node.named_children(&mut cur) {
-            if child.kind() == "identifier" {
-                let text = child.utf8_text(parsed.source.as_bytes()).unwrap_or("");
-                match text {
-                    "test" => counts.total_tests += 1,
-                    "ignore" => counts.skipped_tests += 1,
-                    _ => {}
-                }
-                break;
+            // The attribute path is either a bare `identifier` (`#[test]`,
+            // `#[ignore]`) or a `scoped_identifier` (`#[tokio::test]`,
+            // `#[async_std::test]`); for the scoped form the trailing
+            // `name` segment is what identifies the test macro.
+            let name_node = match child.kind() {
+                "identifier" => Some(child),
+                "scoped_identifier" => child.child_by_field_name("name"),
+                _ => None,
+            };
+            let Some(name_node) = name_node else {
+                continue;
+            };
+            let text = name_node.utf8_text(parsed.source.as_bytes()).unwrap_or("");
+            match text {
+                "test" => counts.total_tests += 1,
+                "ignore" => counts.skipped_tests += 1,
+                _ => {}
             }
+            break;
         }
     });
     counts
@@ -548,6 +558,37 @@ mod tests {
         let counts = count_rust(&parsed);
         assert_eq!(counts.total_tests, 3);
         assert_eq!(counts.skipped_tests, 2);
+    }
+
+    #[cfg(feature = "lang-rust")]
+    #[test]
+    fn rust_counts_scoped_test_attributes() {
+        // `#[tokio::test]` / `#[async_std::test]` parse as
+        // `scoped_identifier` attribute paths, not bare `identifier`s.
+        // Missing them undercounts `total_tests` while sibling
+        // `#[ignore]`s still count, which can push skip_pct past 100%.
+        let parsed = parse(
+            "
+                #[tokio::test]
+                async fn async_ok() {}
+
+                #[tokio::test]
+                #[ignore]
+                async fn async_skipped() {}
+
+                #[async_std::test]
+                async fn async_std_ok() {}
+
+                #[test]
+                fn plain_ok() {}
+            "
+            .to_owned(),
+            Language::Rust,
+        )
+        .unwrap();
+        let counts = count_rust(&parsed);
+        assert_eq!(counts.total_tests, 4);
+        assert_eq!(counts.skipped_tests, 1);
     }
 
     #[cfg(feature = "lang-python")]

@@ -150,11 +150,6 @@ pub(crate) fn run_all(
         LocReport::default()
     };
     let complexity_observer = ComplexityObserver::from_config(cfg).with_workspace(ws_buf.clone());
-    let complexity = if want(MetricKind::Complexity) {
-        complexity_observer.scan(project)
-    } else {
-        ComplexityReport::default()
-    };
     let churn = (want(MetricKind::Churn) && cfg.metrics.is_enabled("churn")).then(|| {
         ChurnObserver::from_config(cfg)
             .with_workspace(ws_buf.clone())
@@ -218,8 +213,13 @@ pub(crate) fn run_all(
     } else {
         Vec::new()
     };
-    let duplication = (want(MetricKind::Duplication) && cfg.metrics.is_enabled("duplication"))
-        .then(|| {
+    // One shared walk feeds Complexity, Duplication, and LCOM (see
+    // `observer::code::scan_source_tree`): the three observers visit
+    // the identical file universe (same excludes, same workspace
+    // scope), and per-file tree-sitter parsing dominates their cost —
+    // scanning them separately paid that parse up to three times.
+    let duplication_observer =
+        (want(MetricKind::Duplication) && cfg.metrics.is_enabled("duplication")).then(|| {
             let docs_inputs = if cfg.features.docs.enabled && !standalone_docs.is_empty() {
                 Some(DocsDuplicationInputs {
                     min_tokens: cfg.metrics.duplication.docs_min_tokens,
@@ -231,8 +231,39 @@ pub(crate) fn run_all(
             DuplicationObserver::from_config(cfg)
                 .with_workspace(ws_buf.clone())
                 .with_docs(docs_inputs)
-                .scan(project)
         });
+    let lcom_observer = (want(MetricKind::Lcom) && cfg.metrics.is_enabled("lcom"))
+        .then(|| LcomObserver::from_config(cfg).with_workspace(ws_buf.clone()));
+    let mut complexity_acc = if want(MetricKind::Complexity) {
+        complexity_observer.accumulator()
+    } else {
+        None
+    };
+    let mut duplication_acc = duplication_observer
+        .as_ref()
+        .and_then(DuplicationObserver::accumulator);
+    let mut lcom_acc = lcom_observer.as_ref().and_then(LcomObserver::accumulator);
+    crate::observer::code::scan_source_tree(
+        project,
+        &complexity_observer.excluded,
+        ws_buf.as_deref(),
+        complexity_acc.as_mut(),
+        duplication_acc.as_mut(),
+        lcom_acc.as_mut(),
+    );
+    let complexity = complexity_acc.map_or_else(
+        ComplexityReport::default,
+        crate::observer::code::complexity::ComplexityAccumulator::finish,
+    );
+    let duplication = duplication_observer.map(|o| match duplication_acc.take() {
+        Some(acc) => o.finish(acc),
+        // Enabled but zero window: `scan` returns the shell report.
+        None => crate::observer::code::duplication::DuplicationReport {
+            min_tokens: o.min_tokens,
+            ..Default::default()
+        },
+    });
+    let lcom = lcom_observer.map(|o| o.finish(lcom_acc.take().unwrap_or_default()));
     // Resolve the live pair list once and share across every Layer A
     // observer. `live_pairs` does an existence check per doc + per src,
     // so calling it three times (freshness, drift, coverage) burned
@@ -262,11 +293,6 @@ pub(crate) fn run_all(
         )),
         _ => None,
     };
-    let lcom = (want(MetricKind::Lcom) && cfg.metrics.is_enabled("lcom")).then(|| {
-        LcomObserver::from_config(cfg)
-            .with_workspace(ws_buf)
-            .scan(project)
-    });
     let doc_freshness = (want(MetricKind::DocFreshness) && doc_pairs.is_some()).then(|| {
         DocFreshnessObserver::from_config_and_pairs(cfg, live_pairs.clone()).scan(project)
     });

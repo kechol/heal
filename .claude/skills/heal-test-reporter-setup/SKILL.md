@@ -2,7 +2,7 @@
 name: heal-test-reporter-setup
 description: Detect the project's language stack (Rust / Python / JS-TS / Go / Scala or mixed), then with per-step `AskUserQuestion` approval install the lcov reporter, flip `[features.test.coverage].enabled` in `.heal/config.toml`, run the reporter, optionally wire `[features.test.coverage].post_commit_refresh` so HEAL's post-commit hook re-runs the reporter in the background, and verify HEAL picks up the resulting `lcov.info`. Edits `.heal/config.toml` and runs install / reporter commands; CI workflow edits stay a copy-pasteable proposal. Trigger on "set up coverage reporting", "configure lcov for heal", "wire up coverage", "refresh lcov on every commit", "/heal-test-reporter-setup".
 metadata:
-  heal-version: 0.3.2
+  heal-version: 0.4.0
   heal-source: bundled
 ---
 

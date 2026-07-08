@@ -2,7 +2,7 @@
 name: heal-doc-scaffold
 description: Stand up a project's documentation tree from scratch — autonomously, from codebase signals alone (no `AskUserQuestion` calls). Emits **only** pages the codebase can fill meaningfully: container lists, module responsibilities, glossary seeds, getting-started commands, API references, ER tables, runtime sequence diagrams, contributing rules — all derived from manifests, source comments, IaC, and CI configs. Pages whose value comes from organisational decisions (Quality Goals, Bounded Context Map, Roadmap, Service Overview, SLOs, Runbooks, Postmortems, Security Posture) are **not generated as skeletons** — they're skipped on first run and added when the user has the relevant input. `TODO(human):` markers ship in only one file: the ADR template (`decisions/0000-template.md`). Output lands under `[features.docs] scaffold_root` (default `.heal/docs/`). Default mode reconciles an existing tree (refreshes auto-managed sections, preserves hand-edits); `--missing-only` only adds new pages; `--force` regenerates emit-set pages from scratch. Trigger on "scaffold the docs tree", "generate the wiki", "build the documentation from scratch", "/heal-doc-scaffold".
 metadata:
-  heal-version: 0.3.2
+  heal-version: 0.4.0
   heal-source: bundled
 ---
 

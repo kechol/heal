@@ -2,7 +2,7 @@
 name: heal-doc-review
 description: Read every finding from the `[features.docs]` observer family produced by `heal status --feature docs --json`, deeply investigate the user's docs and codebase through a Diátaxis lens, and return one architectural reading plus a prioritized doc-fix TODO list. Read-only — proposes only. The write counterpart is `/heal-doc-patch`. Trigger on "review the docs health", "what does heal say about my docs", "where should we fix documentation", "/heal-doc-review".
 metadata:
-  heal-version: 0.3.2
+  heal-version: 0.4.0
   heal-source: bundled
 ---
 

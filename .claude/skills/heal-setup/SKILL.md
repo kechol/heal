@@ -2,7 +2,7 @@
 name: heal-setup
 description: One-shot setup wizard. Calibrates the codebase, surveys its shape, writes `.heal/config.toml` at a strictness level the user picks (Strict / Default / Lenient), and asks whether to enable the optional `[features.docs]` and `[features.test]` families — chaining to `/heal-doc-pair-setup` and `/heal-test-reporter-setup` when the user opts in. Read-only on the codebase; writes only `.heal/config.toml`. Trigger on "set up heal", "configure heal", "tune heal thresholds", "make heal stricter / more lenient", "enable heal docs", "enable heal coverage", "/heal-setup".
 metadata:
-  heal-version: 0.3.2
+  heal-version: 0.4.0
   heal-source: bundled
 ---
 

@@ -2,7 +2,7 @@
 name: heal-doc-pair-setup
 description: Scan the source tree and doc tree, detect doc ⇔ src pairs using mention-based regex, directory-mirror heuristics, and (optionally) LLM inference, then write `.heal/doc_pairs.json` as the SSoT for the `[features.docs]` observer family. Read-only on the codebase; writes only `.heal/doc_pairs.json`. Trigger on "set up doc pairs", "generate doc_pairs.json", "initialize heal docs", "/heal-doc-pair-setup".
 metadata:
-  heal-version: 0.3.2
+  heal-version: 0.4.0
   heal-source: bundled
 ---
 
