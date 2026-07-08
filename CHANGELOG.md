@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.5.0 — 2026-07-08
+
 ### ⚠ BREAKING
 
 - **Change-coupling `Finding.id`s are now stable across rescans;
@@ -71,6 +73,11 @@
   directory instead of the repo root, reporting existing targets
   as broken. Deploy-path links that don't exist in the repo remain
   the province of `exclude_link_prefixes`.
+- **Author email of the HEAD commit is read correctly under git2
+  0.21.** The `git2` bump changed `Signature::email()` from
+  `Option<&str>` to `Result<&str, _>`; the churn/coupling commit
+  reader now maps the new shape, preserving the "absent on
+  non-UTF-8" behavior.
 
 ### Performance
 
@@ -81,6 +88,16 @@
   parse cost per `heal status`. The orchestrator now walks and
   parses once, feeding all three accumulators per file. Reports
   are byte-identical to the previous per-observer scans.
+
+### Chore
+
+- Bump `crossbeam-epoch` to 0.9.20, clearing RUSTSEC-2026-0204
+  (invalid pointer dereference in the `fmt::Pointer` impl for
+  `Atomic` / `Shared`), pulled in transitively via `tokei` →
+  `ignore` / `rayon`.
+- Bump `git2` to 0.21 and `tree-sitter` to the latest patch-minor
+  group, alongside the routine `docs/` and CI-action dependency
+  updates.
 
 ## v0.4.0 — 2026-05-06
 
