@@ -103,9 +103,7 @@ heal status  ──►  calibration.toml で Finding を分類
   "worktree_clean": true,
   "config_hash": "9f8e7d6c5b4a3210", // config + calibration の FNV-1a
   "severity_counts": { "critical": 2, "high": 5, "medium": 12, "ok": 84 },
-  "findings": [
-    /* Vec<Finding> */
-  ]
+  "findings": [/* Vec<Finding> */]
 }
 ```
 
