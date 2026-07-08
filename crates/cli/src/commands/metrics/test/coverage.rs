@@ -24,8 +24,17 @@ impl MetricSection for CoveragePctSection {
         }
         let top_n = ctx.cfg.metrics.top_n;
         write_section_header("Coverage", self.metric(), ctx, w)?;
-        if let Some(src) = report.source.as_ref() {
-            writeln!(w, "  source: {}", src.display())?;
+        // One merged lcov file renders as before; a polyglot monorepo
+        // with several per-package files lists them all.
+        match report.sources.as_slice() {
+            [] => {}
+            [only] => writeln!(w, "  source: {}", only.display())?,
+            many => {
+                writeln!(w, "  sources ({} lcov files merged):", many.len())?;
+                for src in many {
+                    writeln!(w, "    - {}", src.display())?;
+                }
+            }
         }
         let uncovered = report.uncovered_count();
         writeln!(

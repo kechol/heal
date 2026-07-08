@@ -30,4 +30,18 @@ pub enum Error {
     },
 }
 
+impl Error {
+    /// True for an [`Error::Io`] wrapping `NotFound` — the "file simply
+    /// isn't there" case that probing callers (e.g. the coverage
+    /// observer's `lcov_paths` loop) treat as a silent skip, as opposed
+    /// to a permission or encoding failure worth surfacing.
+    #[must_use]
+    pub fn is_not_found(&self) -> bool {
+        matches!(
+            self,
+            Self::Io { source, .. } if source.kind() == std::io::ErrorKind::NotFound
+        )
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;

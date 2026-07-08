@@ -352,7 +352,7 @@ applies. `TestCoverageConfig.lcov_paths` defaults to `lcov.info`,
 | `[features.test]` | `enabled` | `false` | Master switch for the test family. |
 | `[features.test]` | `test_paths` | language conventions | gitignore-syntax globs. |
 | `[features.test.coverage]` | `enabled` | `false` | Sub-feature switch for lcov ingestion. |
-| `[features.test.coverage]` | `lcov_paths` | 4 conventional paths | First existing wins. |
+| `[features.test.coverage]` | `lcov_paths` | 4 conventional paths | Every existing file read + merged. |
 | `[features.test.coverage]` | `post_commit_refresh` | unset | Optional shell command the post-commit hook spawns detached to refresh `lcov.info` after each commit. |
 | `[diff]` | `max_loc_threshold` | `200_000` | exit 2 above this. |
 

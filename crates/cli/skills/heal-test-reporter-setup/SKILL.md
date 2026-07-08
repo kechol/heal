@@ -49,9 +49,10 @@ not the commands.
 
 ## Mental model
 
-The HEAL observer reads `lcov.info` from one of the configured
-`lcov_paths`. Default search order (set in
-`[features.test.coverage]`):
+The HEAL observer reads **every** existing `lcov.info` named by the
+configured `lcov_paths` and merges them — a polyglot monorepo lists
+one path per package and each one counts. Default search order (set
+in `[features.test.coverage]`):
 
 ```toml
 lcov_paths = [
@@ -62,10 +63,11 @@ lcov_paths = [
 ]
 ```
 
-The skill makes sure **at least one of these paths** holds a
-current `lcov.info` after the project's test run. The right
-reporter is the one whose default output matches; when it
-doesn't, extend `lcov_paths` rather than fight the tool.
+The skill makes sure **every package's reporter output** lands at
+one of these paths after the project's test run — add one entry per
+package in a monorepo. The right reporter is the one whose default
+output matches; when it doesn't, extend `lcov_paths` rather than
+fight the tool.
 
 ## Pre-flight
 

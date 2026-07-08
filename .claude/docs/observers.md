@@ -546,8 +546,15 @@ summing — additive sums double-count overlapping coverage.
 
 ### `observer/test/coverage.rs` (`coverage_pct`)
 
-**What:** per-source-file line coverage percentage, from the
-first existing `lcov.info` in `[features.test.coverage].lcov_paths`.
+**What:** per-source-file line coverage percentage, merged from
+**every** existing lcov file in
+`[features.test.coverage].lcov_paths` (first-match-wins pre-dates
+monorepo support; per-package files each count now). Cross-file
+collisions max-merge, mirroring the duplicate-`SF` rule inside one
+file. `SF:` paths that don't exist root-relative are resolved by
+probing the lcov file's ancestor directories (reporters run from a
+package root emit package-relative paths). Existing-but-unreadable
+files warn on stderr; missing files stay silent.
 **Default probe order:** `lcov.info`, `coverage/lcov.info`,
 `target/llvm-cov/lcov.info`, `coverage/lcov-report/lcov.info`.
 **Severity:** classified against `[calibration.coverage_pct]`

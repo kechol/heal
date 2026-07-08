@@ -69,7 +69,7 @@ lcov_paths = [
 ```
 
 - `enabled`(デフォルト `false`) — サブ機能スイッチ。`[features.test]` はオン、`[features.test.coverage]` はオフのまま、というのも有効です(`is_test_file` タグ付けと `skip_ratio` だけ使い、リポータ配線は後で行う、というケース)。
-- `lcov_paths` — プロジェクト相対のパスを順に探索します。**最初に存在するファイルが勝ち**、残りは無視されます。欠けているファイルは silent で、起動時に警告は出ません。
+- `lcov_paths` — プロジェクト相対のパスを順に探索します。**存在するファイルはすべて読み込んでマージ**するので、多言語モノレポならパッケージごとの `lcov.info` を列挙すればどれも集計に入ります。複数のファイルが同じソースファイルを記述している場合、カウンタは max を取ります(1ファイル内の重複レコードのマージと同じルール)。欠けているファイルは silent で警告は出ません。存在するのに読めないファイルは stderr に警告を出します。リポータがパッケージルート相対で書いた `SF:` パス(vitest、jest、scoverage など)は lcov ファイル自身のディレクトリ階層に対して解決されるので、パッケージごとのファイルはマージスクリプトなしでそのまま動きます。
 - `post_commit_refresh`(デフォルト未設定) — post-commit フックがバックグラウンドで実行するシェルコマンド。プロセスは detach され、出力は破棄されるので、コミットフローは待たされません。`/heal-test-reporter-setup` が提案するリポータコマンド(`cargo llvm-cov --workspace --lcov --output-path lcov.info --locked --ignore-run-fail`、`pytest --cov=...` など)をそのまま入れておくと、次の `heal status` が常に最新の `lcov.info` を読みます。`[features.test]` または `[features.test.coverage]` がオフのときは silent でスキップされます。
 
 heal は CI / ローカルリポータが書き出したものを読みます。デフォルトの探索順がカバーするのは:
