@@ -550,6 +550,7 @@ dependencies = [
  "git2",
  "ignore",
  "include_dir",
+ "rustix",
  "serde",
  "serde_json",
  "tempfile",

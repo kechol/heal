@@ -24,6 +24,7 @@
 //! a missing `LF`/`LH` is recovered from the `DA` lines when present.
 
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use crate::core::error::{Error, Result};
@@ -79,6 +80,17 @@ impl LcovReport {
         let raw = fs::read_to_string(path).map_err(|e| Error::Io {
             path: path.to_path_buf(),
             source: e,
+        })?;
+        Ok(Self::parse(&raw))
+    }
+
+    /// Parse an already-opened LCOV handle. Observation callers use this
+    /// entry point so a no-follow open is not weakened by reopening a path.
+    pub fn read_file(mut file: fs::File, display_path: &Path) -> Result<Self> {
+        let mut raw = String::new();
+        file.read_to_string(&mut raw).map_err(|source| Error::Io {
+            path: display_path.to_path_buf(),
+            source,
         })?;
         Ok(Self::parse(&raw))
     }

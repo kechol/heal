@@ -24,6 +24,7 @@ chrono = { version = "0.4", features = ["serde", "clock"] }
 include_dir = "0.7"
 flate2 = "1.0"
 tempfile = "3"
+rustix = { version = "1.1", features = ["fs"] }
 tokei = { version = "14", default-features = false }
 tree-sitter = "0.26"
 tree-sitter-typescript = "0.23"

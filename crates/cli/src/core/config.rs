@@ -4,7 +4,8 @@
 //! schema errors instead of silently dropping settings.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::fs::File;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -1543,41 +1544,81 @@ fn validate_observation_path(label: &str, value: &str) -> std::result::Result<()
     Ok(())
 }
 
-/// Resolve a configured observation input without allowing a symlink to move
-/// any path component outside the project. Missing components are allowed so
-/// an unwired reporter remains a normal `missing` observation.
-pub(crate) fn resolve_observation_path(
+/// Open a configured observation input relative to a trusted project directory
+/// without following symlinks. Missing components return `None` so an unwired
+/// reporter remains a normal `missing` observation.
+pub(crate) fn open_observation_file(
     project_root: &Path,
     label: &str,
     value: &str,
-) -> std::result::Result<PathBuf, String> {
+) -> std::result::Result<Option<File>, String> {
     validate_observation_path(label, value)?;
-    let relative = Path::new(value);
-    let candidate = project_root.join(relative);
-    let mut current = project_root.to_path_buf();
-    for component in relative.components() {
-        if matches!(component, std::path::Component::CurDir) {
-            continue;
-        }
-        current.push(component.as_os_str());
-        match std::fs::symlink_metadata(&current) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(format!(
-                    "{label} `{value}` must not traverse symlink component `{}`",
-                    current.display()
-                ));
-            }
-            Ok(_) => {}
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => break,
+    open_relative_nofollow(project_root, Path::new(value)).map_err(|err| {
+        format!("{label} `{value}` could not be opened without following symlink components: {err}")
+    })
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn open_relative_nofollow(project_root: &Path, relative: &Path) -> std::io::Result<Option<File>> {
+    open_relative_nofollow_with(project_root, relative, |_| {})
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn open_relative_nofollow_with(
+    project_root: &Path,
+    relative: &Path,
+    mut before_component_open: impl FnMut(usize),
+) -> std::io::Result<Option<File>> {
+    use rustix::fs::{openat, Mode, OFlags};
+
+    let names: Vec<_> = relative
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(name) => Some(name.to_os_string()),
+            std::path::Component::CurDir => None,
+            _ => unreachable!("observation path validated before opening"),
+        })
+        .collect();
+    let mut directory = File::open(project_root)?;
+    for (index, name) in names.iter().enumerate() {
+        before_component_open(index);
+        let is_last = index + 1 == names.len();
+        let flags = OFlags::RDONLY
+            | OFlags::NOFOLLOW
+            | OFlags::CLOEXEC
+            | if is_last {
+                OFlags::empty()
+            } else {
+                OFlags::DIRECTORY
+            };
+        let opened = match openat(&directory, name, flags, Mode::empty()) {
+            Ok(fd) => File::from(fd),
             Err(err) => {
-                return Err(format!(
-                    "could not inspect {label} `{value}` at `{}`: {err}",
-                    current.display()
-                ));
+                if err == rustix::io::Errno::NOENT {
+                    return Ok(None);
+                }
+                return Err(err.into());
             }
+        };
+        if is_last {
+            return Ok(Some(opened));
         }
+        directory = opened;
     }
-    Ok(candidate)
+    Ok(None)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn open_relative_nofollow(project_root: &Path, relative: &Path) -> std::io::Result<Option<File>> {
+    let path = project_root.join(relative);
+    match std::fs::symlink_metadata(&path) {
+        Ok(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "race-safe observation inputs are unsupported on this platform",
+        )),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
+    }
 }
 
 /// Rewrite a workspace-relative `.gitignore` line so it works as a
@@ -1622,7 +1663,7 @@ pub(crate) fn validate_observation_paths_at(
     project_root: &Path,
     config_path: &Path,
 ) -> Result<()> {
-    resolve_observation_path(
+    open_observation_file(
         project_root,
         "[features.docs].pairs_path",
         &cfg.features.docs.pairs_path,
@@ -1635,7 +1676,7 @@ pub(crate) fn validate_observation_paths_at(
             .iter()
             .enumerate()
             .try_for_each(|(index, value)| {
-                resolve_observation_path(
+                open_observation_file(
                     project_root,
                     &format!("[features.test.coverage].lcov_paths[{index}]"),
                     value,
@@ -1800,4 +1841,55 @@ pub fn assign_workspace<'a>(file: &Path, workspaces: &'a [WorkspaceOverlay]) -> 
         }
     }
     best
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod nofollow_tests {
+    use super::*;
+    use std::io::Read;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn final_component_replacement_is_not_followed() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("lcov.info"), "inside").unwrap();
+        std::fs::write(outside.path().join("lcov.info"), "outside").unwrap();
+
+        let result = open_relative_nofollow_with(root.path(), Path::new("lcov.info"), |index| {
+            if index == 0 {
+                std::fs::remove_file(root.path().join("lcov.info")).unwrap();
+                symlink(
+                    outside.path().join("lcov.info"),
+                    root.path().join("lcov.info"),
+                )
+                .unwrap();
+            }
+        });
+
+        assert!(result.is_err(), "final symlink replacement must not open");
+    }
+
+    #[test]
+    fn opened_parent_handle_survives_path_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("reports")).unwrap();
+        std::fs::write(root.path().join("reports/lcov.info"), "inside").unwrap();
+        std::fs::write(outside.path().join("lcov.info"), "outside").unwrap();
+
+        let mut file =
+            open_relative_nofollow_with(root.path(), Path::new("reports/lcov.info"), |index| {
+                if index == 1 {
+                    std::fs::rename(root.path().join("reports"), root.path().join("held")).unwrap();
+                    symlink(outside.path(), root.path().join("reports")).unwrap();
+                }
+            })
+            .unwrap()
+            .expect("original file remains reachable through opened parent fd");
+        let mut body = String::new();
+        file.read_to_string(&mut body).unwrap();
+
+        assert_eq!(body, "inside");
+    }
 }

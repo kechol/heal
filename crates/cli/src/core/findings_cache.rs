@@ -40,13 +40,14 @@
 //!     `regressed.jsonl` so the renderer can warn the user.
 
 use std::collections::BTreeMap;
+use std::io::Read;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::core::accepted::AcceptedDrift;
-use crate::core::config::{resolve_observation_path, Config};
+use crate::core::config::{open_observation_file, Config};
 use crate::core::error::{Error, Result};
 use crate::core::finding::{CoverageObservation, Finding};
 use crate::core::hash::{fnv1a_64_chunked, fnv1a_hex};
@@ -363,6 +364,28 @@ pub fn observation_hash_from_paths(
         }
     }
 
+    fn push_observation_file(
+        chunks: &mut Vec<Vec<u8>>,
+        label: &str,
+        logical_path: &str,
+        mut file: Option<std::fs::File>,
+    ) {
+        chunks.push(label.as_bytes().to_vec());
+        chunks.push(logical_path.as_bytes().to_vec());
+        let Some(file) = file.as_mut() else {
+            chunks.push(b"missing".to_vec());
+            return;
+        };
+        let mut bytes = Vec::new();
+        match file.read_to_end(&mut bytes) {
+            Ok(_) => {
+                chunks.push(b"present".to_vec());
+                chunks.push(bytes);
+            }
+            Err(_) => chunks.push(b"unreadable".to_vec()),
+        }
+    }
+
     let mut chunks = Vec::new();
     push_file(&mut chunks, "config", ".heal/config.toml", config);
     push_file(
@@ -373,16 +396,16 @@ pub fn observation_hash_from_paths(
     );
     if cfg.features.docs.enabled {
         let rel = &cfg.features.docs.pairs_path;
-        let path = resolve_observation_path(observation_root, "[features.docs].pairs_path", rel)
+        let file = open_observation_file(observation_root, "[features.docs].pairs_path", rel)
             .map_err(|message| Error::ConfigInvalid {
                 path: config.to_path_buf(),
                 message,
             })?;
-        push_file(&mut chunks, "doc_pairs", rel, &path);
+        push_observation_file(&mut chunks, "doc_pairs", rel, file);
     }
     if cfg.features.test.enabled && cfg.features.test.coverage.enabled {
         for (index, rel) in cfg.features.test.coverage.lcov_paths.iter().enumerate() {
-            let path = resolve_observation_path(
+            let file = open_observation_file(
                 observation_root,
                 &format!("[features.test.coverage].lcov_paths[{index}]"),
                 rel,
@@ -391,7 +414,7 @@ pub fn observation_hash_from_paths(
                 path: config.to_path_buf(),
                 message,
             })?;
-            push_file(&mut chunks, "lcov", rel, &path);
+            push_observation_file(&mut chunks, "lcov", rel, file);
         }
     }
     let refs: Vec<&[u8]> = chunks.iter().map(Vec::as_slice).collect();
@@ -779,6 +802,34 @@ mod tests {
         .unwrap();
         let present = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
         assert_ne!(missing, present);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn observation_hash_rejects_symlinked_lcov_input() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let config = tmp.path().join("config.toml");
+        let calibration = tmp.path().join("calibration.toml");
+        std::fs::write(&config, b"cfg").unwrap();
+        std::fs::write(&calibration, b"cal").unwrap();
+        std::fs::write(outside.path().join("lcov.info"), b"external").unwrap();
+        symlink(
+            outside.path().join("lcov.info"),
+            tmp.path().join("lcov.info"),
+        )
+        .unwrap();
+        let mut cfg = Config::default();
+        cfg.features.test.enabled = true;
+        cfg.features.test.coverage.enabled = true;
+        cfg.features.test.coverage.lcov_paths = vec!["lcov.info".into()];
+
+        let error = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("symlink component"), "{error}");
     }
 
     #[test]

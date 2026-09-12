@@ -85,6 +85,7 @@ tree-sitter-rust = { workspace = true, optional = true }
 ignore = { workspace = true }
 git2 = { workspace = true }
 tempfile = { workspace = true }
+rustix = { workspace = true }
 
 [dev-dependencies]
 git2 = { workspace = true }

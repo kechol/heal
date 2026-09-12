@@ -93,19 +93,20 @@ impl CoverageObserver {
             // returns `Err(NotFound)` for missing files, which we treat
             // identically to "no record" without paying a stat() per
             // candidate.
-            let path = match crate::core::config::resolve_observation_path(
+            let file = match crate::core::config::open_observation_file(
                 root,
                 &format!("[features.test.coverage].lcov_paths[{index}]"),
                 rel,
             ) {
-                Ok(path) => path,
+                Ok(Some(file)) => file,
+                Ok(None) => continue,
                 Err(err) => {
                     eprintln!("heal: warning: skipping lcov file {rel}: {err}");
                     unreadable_sources.push(PathBuf::from(rel));
                     continue;
                 }
             };
-            let parsed = match LcovReport::read(&path) {
+            let parsed = match LcovReport::read_file(file, Path::new(rel)) {
                 Ok(parsed) => parsed,
                 Err(err) => {
                     if !err.is_not_found() {
@@ -463,6 +464,33 @@ mod tests {
         assert_eq!(report.entries[0].lines_hit, 0);
         assert!((report.entries[0].line_coverage_pct - 0.0).abs() < 1e-9);
         assert_eq!(report.source.as_deref(), Some(Path::new("lcov.info")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_lcov_is_read_error_without_external_entries() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("src")).unwrap();
+        fs::write(tmp.path().join("src/lib.rs"), "pub fn live() {}\n").unwrap();
+        fs::write(
+            outside.path().join("lcov.info"),
+            "SF:src/lib.rs\nLF:1\nLH:0\nend_of_record\n",
+        )
+        .unwrap();
+        symlink(
+            outside.path().join("lcov.info"),
+            tmp.path().join("lcov.info"),
+        )
+        .unwrap();
+
+        let report = CoverageObserver::from_config(&cfg_enabled()).scan(tmp.path());
+        assert_eq!(report.state, CoverageObservationState::ReadError);
+        assert_eq!(report.unreadable_sources, vec![PathBuf::from("lcov.info")]);
+        assert!(report.sources.is_empty());
+        assert!(report.entries.is_empty());
     }
 
     #[test]
