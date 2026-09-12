@@ -59,7 +59,7 @@ use crate::core::accepted::read_accepted;
 use crate::core::accepted::AcceptedDrift;
 use crate::core::calibration::Calibration;
 use crate::core::config::{load_from_project, Config, DrainTier, PolicyDrainConfig};
-use crate::core::finding::Finding;
+use crate::core::finding::{CoverageObservation, Finding};
 use crate::core::findings_cache::{read_latest_if_fresh, FindingsRecord};
 use crate::core::severity::Severity;
 use crate::core::term::{
@@ -125,6 +125,8 @@ pub fn run(project: &Path, args: &crate::cli::DiffArgs) -> Result<()> {
             from_sha: &target_sha,
             to_head_sha: to_record.head_sha.as_deref(),
             workspace,
+            from_coverage_observation: scoped_coverage_observation(&from_record, workspace),
+            to_coverage_observation: scoped_coverage_observation(&to_record, workspace),
             accepted_rereview,
             buckets: &diff,
         });
@@ -277,6 +279,10 @@ struct DiffReport<'a> {
     /// terse.
     #[serde(skip_serializing_if = "Option::is_none")]
     workspace: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    from_coverage_observation: Option<CoverageObservation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    to_coverage_observation: Option<CoverageObservation>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     accepted_rereview: Vec<AcceptedDrift>,
     #[serde(flatten)]
@@ -488,8 +494,8 @@ fn render_diff(
         to.head_sha.as_deref().unwrap_or("∅"),
         scoped_count(&to.findings, workspace),
     )?;
-    render_coverage_guidance("from", from, colorize, out)?;
-    render_coverage_guidance("to", to, colorize, out)?;
+    render_coverage_guidance("from", from, workspace, colorize, out)?;
+    render_coverage_guidance("to", to, workspace, colorize, out)?;
     render_accepted_rereview(to, workspace, colorize, out)?;
     writeln!(out)?;
 
@@ -598,11 +604,12 @@ fn render_accepted_rereview(
 fn render_coverage_guidance(
     side: &str,
     record: &FindingsRecord,
+    workspace: Option<&str>,
     colorize: bool,
     out: &mut (impl Write + ?Sized),
 ) -> std::io::Result<()> {
-    let Some(guidance) = record
-        .coverage_observation
+    let observation = scoped_coverage_observation(record, workspace);
+    let Some(guidance) = observation
         .as_ref()
         .and_then(crate::core::finding::CoverageObservation::guidance)
     else {
@@ -613,6 +620,15 @@ fn render_coverage_guidance(
         "  {} {side}: {guidance}",
         ansi_wrap(ANSI_YELLOW, "measurement:", colorize),
     )
+}
+
+fn scoped_coverage_observation(
+    record: &FindingsRecord,
+    workspace: Option<&str>,
+) -> Option<CoverageObservation> {
+    record.coverage_observation.as_ref().map(|observation| {
+        workspace.map_or_else(|| observation.clone(), |ws| observation.scoped_to(ws))
+    })
 }
 
 /// The two-line progress block: T0 drain foregrounded, whole-population
@@ -757,7 +773,7 @@ mod tests {
 
     #[test]
     fn diff_surfaces_coverage_provenance_per_side() {
-        let record = FindingsRecord::new(Some("abc".into()), true, "h".into(), Vec::new())
+        let from = FindingsRecord::new(Some("abc".into()), true, "h".into(), Vec::new())
             .with_coverage_observation(Some(CoverageObservation {
                 state: CoverageObservationState::Missing,
                 configured_sources: vec!["lcov.info".into()],
@@ -765,10 +781,37 @@ mod tests {
                 unreadable_sources: Vec::new(),
                 unmeasured_files: vec!["src/lib.rs".into()],
             }));
+        let to = FindingsRecord::new(Some("def".into()), true, "h".into(), Vec::new())
+            .with_coverage_observation(Some(CoverageObservation {
+                state: CoverageObservationState::Complete,
+                configured_sources: vec!["lcov.info".into()],
+                sources: vec!["lcov.info".into()],
+                unreadable_sources: Vec::new(),
+                unmeasured_files: Vec::new(),
+            }));
         let mut out = Vec::new();
-        render_coverage_guidance("from", &record, false, &mut out).unwrap();
+        render_coverage_guidance("from", &from, None, false, &mut out).unwrap();
         let out = String::from_utf8(out).unwrap();
         assert!(out.contains("measurement: from: coverage unmeasured"));
+
+        let diff = Diff::default();
+        let report = DiffReport {
+            from_ref: "HEAD",
+            from_sha: "abc",
+            to_head_sha: to.head_sha.as_deref(),
+            workspace: None,
+            from_coverage_observation: scoped_coverage_observation(&from, None),
+            to_coverage_observation: scoped_coverage_observation(&to, None),
+            accepted_rereview: Vec::new(),
+            buckets: &diff,
+        };
+        let json = serde_json::to_value(report).unwrap();
+        assert_eq!(json["from_coverage_observation"]["state"], "missing");
+        assert_eq!(json["to_coverage_observation"]["state"], "complete");
+        assert_eq!(
+            json["from_coverage_observation"]["unmeasured_files"][0],
+            "src/lib.rs"
+        );
     }
 
     #[test]
@@ -813,6 +856,8 @@ mod tests {
             from_sha: "deadbeefdeadbeef",
             to_head_sha: to.head_sha.as_deref(),
             workspace: None,
+            from_coverage_observation: None,
+            to_coverage_observation: None,
             accepted_rereview: scoped_accepted_rereview(&to, None),
             buckets: &diff,
         };
