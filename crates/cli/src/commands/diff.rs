@@ -59,7 +59,7 @@ use crate::core::accepted::read_accepted;
 use crate::core::calibration::Calibration;
 use crate::core::config::{load_from_project, Config, DrainTier, PolicyDrainConfig};
 use crate::core::finding::Finding;
-use crate::core::findings_cache::{config_hash_from_paths, read_latest, FindingsRecord};
+use crate::core::findings_cache::{observation_hash_from_paths, read_latest, FindingsRecord};
 use crate::core::severity::Severity;
 use crate::core::term::{
     ansi_wrap, write_through_pager, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW,
@@ -156,18 +156,19 @@ fn load_or_recompute_from(
     revspec: &str,
     target_sha: &str,
 ) -> Result<FindingsRecord> {
-    // Same gate as `is_fresh_against`, minus the live-worktree term:
-    // the "from" baseline only needs the cached record to be a clean
-    // scan of the target sha under today's config_hash — whether the
-    // *current* worktree is dirty doesn't invalidate it. Without the
-    // config_hash term, a `heal calibrate --force` between the cached
-    // scan and this diff would compare stale-classified findings
-    // against a freshly classified "to", producing spurious buckets.
-    let cfg_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
-    if let Some(record) = read_latest(&paths.findings_latest())?.filter(|r| {
-        r.worktree_clean && r.head_sha.as_deref() == Some(target_sha) && r.config_hash == cfg_hash
-    }) {
-        return Ok(record);
+    // Reuse can be proven only when the target is the checked-out HEAD:
+    // enabled LCOV/doc-pair inputs may be ignored by git, so the current
+    // worktree cannot stand in for an older ref's observation inputs.
+    if git::head_sha(project).as_deref() == Some(target_sha) {
+        let cfg_hash =
+            observation_hash_from_paths(project, cfg, &paths.config(), &paths.calibration());
+        if let Some(record) = read_latest(&paths.findings_latest())?.filter(|r| {
+            r.worktree_clean
+                && r.head_sha.as_deref() == Some(target_sha)
+                && r.config_hash == cfg_hash
+        }) {
+            return Ok(record);
+        }
     }
     enforce_loc_threshold(project, cfg, revspec);
     recompute_at_ref(project, paths, cfg, target_sha)
@@ -1026,7 +1027,7 @@ mod tests {
     #[test]
     fn from_cache_requires_matching_config_hash_and_clean_scan() {
         use crate::core::config::Config;
-        use crate::core::findings_cache::{config_hash_from_paths, write_record};
+        use crate::core::findings_cache::{observation_hash_from_paths, write_record};
         use crate::test_support::{commit, init_repo};
         use tempfile::TempDir;
 
@@ -1044,7 +1045,8 @@ mod tests {
         paths.ensure().unwrap();
         Config::default().save(&paths.config()).unwrap();
         let cfg = load_from_project(dir.path()).unwrap();
-        let cfg_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
+        let cfg_hash =
+            observation_hash_from_paths(dir.path(), &cfg, &paths.config(), &paths.calibration());
         let has_marker = |r: &FindingsRecord| {
             r.findings
                 .iter()
@@ -1087,6 +1089,65 @@ mod tests {
         write_record(&paths.findings_latest(), &dirty).unwrap();
         let got = load_or_recompute_from(dir.path(), &paths, &cfg, "HEAD", &head_sha).unwrap();
         assert!(!has_marker(&got), "dirty-scan cache must force a recompute");
+    }
+
+    #[test]
+    fn old_ref_never_reuses_current_lcov_as_baseline_input() {
+        use crate::core::config::Config;
+        use crate::core::findings_cache::{observation_hash_from_paths, write_record};
+        use crate::test_support::{commit, init_repo};
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit(
+            dir.path(),
+            "lib.rs",
+            "fn old() {}\n",
+            "tester@example.com",
+            "old",
+        );
+        let old_sha = git::head_sha(dir.path()).unwrap();
+        commit(
+            dir.path(),
+            "lib.rs",
+            "fn current() {}\n",
+            "tester@example.com",
+            "current",
+        );
+
+        let paths = HealPaths::new(dir.path());
+        paths.ensure().unwrap();
+        let mut config = Config::default();
+        config.features.test.enabled = true;
+        config.features.test.coverage.enabled = true;
+        config.features.test.coverage.lcov_paths = vec!["lcov.info".into()];
+        config.save(&paths.config()).unwrap();
+        std::fs::write(
+            dir.path().join("lcov.info"),
+            "SF:lib.rs\nLF:1\nLH:0\nend_of_record\n",
+        )
+        .unwrap();
+        let cfg = load_from_project(dir.path()).unwrap();
+        let current_input_hash =
+            observation_hash_from_paths(dir.path(), &cfg, &paths.config(), &paths.calibration());
+        let cached = FindingsRecord::new(
+            Some(old_sha.clone()),
+            true,
+            current_input_hash,
+            vec![finding("marker", Severity::High)],
+        );
+        write_record(&paths.findings_latest(), &cached).unwrap();
+
+        let got = load_or_recompute_from(dir.path(), &paths, &cfg, &old_sha, &old_sha).unwrap();
+        assert!(
+            !got.findings.iter().any(|f| f.metric == "marker"),
+            "an old ref must be rescanned in its own worktree"
+        );
+        assert!(
+            got.findings.iter().all(|f| f.metric != "coverage_pct"),
+            "current-worktree lcov must not be treated as old-ref coverage"
+        );
     }
 
     #[test]

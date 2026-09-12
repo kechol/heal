@@ -712,8 +712,12 @@ pub(crate) fn build_record(
     };
     let reports = run_all(scan_root, cfg, None, None);
     let findings = classify(&reports, cal_ref, cfg);
-    let config_hash =
-        crate::core::findings_cache::config_hash_from_paths(&paths.config(), &paths.calibration());
+    let config_hash = crate::core::findings_cache::observation_hash_from_paths(
+        scan_root,
+        cfg,
+        &paths.config(),
+        &paths.calibration(),
+    );
     crate::core::findings_cache::FindingsRecord::new(
         head_sha,
         worktree_clean,

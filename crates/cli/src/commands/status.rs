@@ -34,7 +34,7 @@ use crate::core::calibration::{FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_OK_CCN, FLOOR_O
 use crate::core::config::{load_from_project, Config, DrainTier, PolicyDrainConfig};
 use crate::core::finding::Finding;
 use crate::core::findings_cache::{
-    config_hash_from_paths, read_latest, reconcile_fixed, write_record, FindingsRecord,
+    observation_hash_from_paths, read_latest, reconcile_fixed, write_record, FindingsRecord,
     RegressedEntry,
 };
 use crate::core::severity::Severity;
@@ -55,6 +55,28 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     })?;
 
     let filters = Filters::from_args(args);
+    let cfg = load_from_project(project).with_context(|| {
+        format!(
+            "loading {} (run `heal init` first?)",
+            paths.config().display(),
+        )
+    })?;
+
+    // Early-exit when `--feature <disabled>` would otherwise produce
+    // empty output. Skills (`/heal-test-patch`, `/heal-doc-patch`,
+    // …) shell out with `--feature <family>` and read the exit code:
+    // a non-zero exit here is the contract for "this family is off
+    // in `.heal/config.toml`, stop now".
+    if let Some(family) = filters.family {
+        if !family.is_enabled(&cfg) {
+            eprintln!(
+                "heal status: --feature {0} requested but `[features.{0}].enabled = false`. \
+                 Edit `.heal/config.toml` (or run `/heal-setup`) to enable the family before re-running.",
+                family.name(),
+            );
+            std::process::exit(1);
+        }
+    }
 
     // Cache reuse hinges on `(head_sha, config_hash, worktree_clean)` —
     // the same triple that drives `FindingsRecord.id` — so a stale
@@ -65,7 +87,8 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     // see the previous owner's state until they remembered to refresh.
     let head_sha = git::head_sha(project);
     let worktree_clean = git::worktree_clean(project).unwrap_or(false);
-    let cfg_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
+    let cfg_hash =
+        observation_hash_from_paths(project, &cfg, &paths.config(), &paths.calibration());
     let cached = if args.refresh {
         None
     } else {
@@ -76,46 +99,8 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     };
     let must_scan = cached.is_none();
 
-    // Load config only when it's actually needed: a fresh scan needs
-    // it for `build_record`, the textual renderer needs it for
-    // `policy.drain` + override notes, and `--feature` needs it to
-    // gate against the relevant `[features.<f>].enabled` switch. The
-    // JSON path with a cache hit and no `--feature` filter pays
-    // none of these costs.
-    let need_cfg = must_scan || !args.json || args.feature.is_some();
-    let cfg = if need_cfg {
-        Some(load_from_project(project).with_context(|| {
-            format!(
-                "loading {} (run `heal init` first?)",
-                paths.config().display(),
-            )
-        })?)
-    } else {
-        None
-    };
-
-    // Early-exit when `--feature <disabled>` would otherwise produce
-    // empty output. Skills (`/heal-test-patch`, `/heal-doc-patch`,
-    // …) shell out with `--feature <family>` and read the exit code:
-    // a non-zero exit here is the contract for "this family is off
-    // in `.heal/config.toml`, stop now".
-    if let Some(family) = filters.family {
-        let cfg_ref = cfg
-            .as_ref()
-            .expect("cfg loaded above when --feature is set");
-        if !family.is_enabled(cfg_ref) {
-            eprintln!(
-                "heal status: --feature {0} requested but `[features.{0}].enabled = false`. \
-                 Edit `.heal/config.toml` (or run `/heal-setup`) to enable the family before re-running.",
-                family.name(),
-            );
-            std::process::exit(1);
-        }
-    }
-
     let (mut record, regressed) = if must_scan {
-        let cfg = cfg.as_ref().expect("cfg loaded above when must_scan");
-        let record = build_record(project, &paths, cfg, head_sha, worktree_clean);
+        let record = build_record(project, &paths, &cfg, head_sha, worktree_clean);
         write_record(&paths.findings_latest(), &record)?;
         let regs = reconcile_fixed(
             &paths.findings_fixed(),
@@ -164,7 +149,6 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
         }
         return Ok(());
     }
-    let cfg = cfg.expect("cfg loaded above when not args.json");
     write_through_pager(args.no_pager, |out, colorize| {
         render(&record, &regressed, &filters, &cfg, colorize, out)
     })

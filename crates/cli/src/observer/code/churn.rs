@@ -69,7 +69,10 @@ impl ChurnObserver {
             return report;
         };
 
-        let cutoff_secs = since_cutoff(self.since_days);
+        let Ok(head_commit) = repo.head().and_then(|head| head.peel_to_commit()) else {
+            return report;
+        };
+        let cutoff_secs = since_cutoff(head_commit.time().seconds(), self.since_days);
         let Ok(mut revwalk) = repo.revwalk() else {
             return report;
         };

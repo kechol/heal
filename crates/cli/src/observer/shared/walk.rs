@@ -8,7 +8,6 @@
 //! `.dockerignore`, ripgrep, etc.
 
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use ignore::WalkBuilder;
@@ -149,21 +148,29 @@ pub(crate) fn path_under(path: &Path, target: Option<&Path>) -> bool {
 }
 
 /// Unix-second cutoff for git-history observers: "anything older than
-/// `since_days` is out of scope". Returns `i64::MIN` if the system clock is
-/// before the epoch (effectively "no cutoff") so every commit is admitted.
+/// `since_days` before the observed ref is out of scope". Anchoring the
+/// window to the ref's commit time keeps a scan stable across execution days.
 #[must_use]
-pub(crate) fn since_cutoff(since_days: u32) -> i64 {
-    let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) else {
-        return i64::MIN;
-    };
-    let secs = i64::try_from(now.as_secs()).unwrap_or(i64::MAX);
-    secs.saturating_sub(i64::from(since_days).saturating_mul(86_400))
+pub(crate) fn since_cutoff(reference_secs: i64, since_days: u32) -> i64 {
+    reference_secs.saturating_sub(i64::from(since_days).saturating_mul(86_400))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn since_cutoff_is_anchored_to_observed_ref() {
+        let commit_time = 2_000_000_000;
+        assert_eq!(since_cutoff(commit_time, 90), 1_992_224_000);
+        assert_eq!(since_cutoff(commit_time, 0), commit_time);
+    }
+
+    #[test]
+    fn since_cutoff_saturates_for_extreme_windows() {
+        assert_eq!(since_cutoff(i64::MIN + 10, u32::MAX), i64::MIN);
+    }
 
     #[test]
     fn path_under_returns_true_when_target_unset() {

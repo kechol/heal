@@ -44,6 +44,7 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::core::config::Config;
 use crate::core::error::{Error, Result};
 use crate::core::finding::Finding;
 use crate::core::hash::{fnv1a_64_chunked, fnv1a_hex};
@@ -72,8 +73,10 @@ use crate::core::severity::SeverityCounts;
 /// with every rescan — is dropped from the seed) and added collision
 /// ordinals to the `ccn` / `cognitive` / `lcom` seeds; every
 /// change-coupling `Finding.id` changes once, so old caches must
-/// invalidate rather than mis-reconcile against the new ids.
-pub const FINDINGS_RECORD_VERSION: u32 = 5;
+/// invalidate rather than mis-reconcile against the new ids. v6 expands
+/// `config_hash` to include enabled non-git observation inputs (doc pairs
+/// and LCOV payloads), including their path and missing/readable state.
+pub const FINDINGS_RECORD_VERSION: u32 = 6;
 
 /// One execution of `heal status`. The unit of read in the cache:
 /// `latest.json` holds the single most-recent record. `heal diff` reads
@@ -93,9 +96,9 @@ pub struct FindingsRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub head_sha: Option<String>,
     pub worktree_clean: bool,
-    /// Hex digest of `(config.toml || calibration.toml)`. Two runs at
-    /// the same `head_sha` but different configs / calibrations produce
-    /// different hashes and thus distinct records.
+    /// Hex digest of configuration, calibration, and enabled non-git
+    /// observation inputs. Two runs at the same `head_sha` with different
+    /// rules, doc pairs, or LCOV payloads produce distinct records.
     pub config_hash: String,
     pub severity_counts: SeverityCounts,
     /// Per-workspace tally when `[[project.workspaces]]` is declared,
@@ -289,6 +292,59 @@ pub fn config_hash_from_paths(config: &Path, calibration: &Path) -> String {
     let cfg = std::fs::read(config).unwrap_or_default();
     let cal = std::fs::read(calibration).unwrap_or_default();
     config_hash(&cfg, &cal)
+}
+
+/// Hash every input that can change a full observer run without changing
+/// `head_sha` or dirtying the worktree. The serialized field remains named
+/// `config_hash` to preserve the three-part cache key; its v6 semantics cover
+/// enabled doc-pair and LCOV inputs as well as config/calibration bytes.
+///
+/// Each file contributes a stable logical path plus one of `present`,
+/// `missing`, or `unreadable`. Absolute host paths and mtimes never enter the
+/// digest, so identical checkouts remain byte-for-byte reproducible.
+#[must_use]
+pub fn observation_hash_from_paths(
+    observation_root: &Path,
+    cfg: &Config,
+    config: &Path,
+    calibration: &Path,
+) -> String {
+    fn push_file(chunks: &mut Vec<Vec<u8>>, label: &str, logical_path: &str, path: &Path) {
+        chunks.push(label.as_bytes().to_vec());
+        chunks.push(logical_path.as_bytes().to_vec());
+        match std::fs::read(path) {
+            Ok(bytes) => {
+                chunks.push(b"present".to_vec());
+                chunks.push(bytes);
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                chunks.push(b"missing".to_vec());
+            }
+            Err(_) => {
+                chunks.push(b"unreadable".to_vec());
+            }
+        }
+    }
+
+    let mut chunks = Vec::new();
+    push_file(&mut chunks, "config", ".heal/config.toml", config);
+    push_file(
+        &mut chunks,
+        "calibration",
+        ".heal/calibration.toml",
+        calibration,
+    );
+    if cfg.features.docs.enabled {
+        let rel = &cfg.features.docs.pairs_path;
+        push_file(&mut chunks, "doc_pairs", rel, &observation_root.join(rel));
+    }
+    if cfg.features.test.enabled && cfg.features.test.coverage.enabled {
+        for rel in &cfg.features.test.coverage.lcov_paths {
+            push_file(&mut chunks, "lcov", rel, &observation_root.join(rel));
+        }
+    }
+    let refs: Vec<&[u8]> = chunks.iter().map(Vec::as_slice).collect();
+    fnv1a_hex(fnv1a_64_chunked(&refs))
 }
 
 /// Atomically write `record` to `latest_path` (i.e.
@@ -540,6 +596,82 @@ mod tests {
         let a = config_hash(b"foo", b"bar");
         let b = config_hash(b"foo", b"bar");
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn observation_hash_tracks_lcov_create_update_and_delete() {
+        let tmp = TempDir::new().unwrap();
+        let config = tmp.path().join("config.toml");
+        let calibration = tmp.path().join("calibration.toml");
+        std::fs::write(&config, b"cfg").unwrap();
+        std::fs::write(&calibration, b"cal").unwrap();
+        let mut cfg = Config::default();
+        cfg.features.test.enabled = true;
+        cfg.features.test.coverage.enabled = true;
+        cfg.features.test.coverage.lcov_paths = vec!["ignored/lcov.info".into()];
+
+        let missing = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration);
+        std::fs::create_dir(tmp.path().join("ignored")).unwrap();
+        std::fs::write(tmp.path().join("ignored/lcov.info"), b"SF:src/a.rs\n").unwrap();
+        let created = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration);
+        assert_ne!(missing, created);
+
+        std::fs::write(tmp.path().join("ignored/lcov.info"), b"SF:src/b.rs\n").unwrap();
+        let updated = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration);
+        assert_ne!(created, updated);
+
+        std::fs::remove_file(tmp.path().join("ignored/lcov.info")).unwrap();
+        let deleted = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration);
+        assert_eq!(missing, deleted);
+    }
+
+    #[test]
+    fn observation_hash_tracks_paths_and_only_enabled_inputs() {
+        let tmp = TempDir::new().unwrap();
+        let config = tmp.path().join("config.toml");
+        let calibration = tmp.path().join("calibration.toml");
+        std::fs::write(&config, b"cfg").unwrap();
+        std::fs::write(&calibration, b"cal").unwrap();
+        std::fs::write(tmp.path().join("a.info"), b"same").unwrap();
+        std::fs::write(tmp.path().join("b.info"), b"same").unwrap();
+
+        let cfg = Config::default();
+        let disabled = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration);
+        std::fs::write(tmp.path().join("a.info"), b"changed while disabled").unwrap();
+        assert_eq!(
+            disabled,
+            observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration)
+        );
+
+        let mut enabled = cfg;
+        enabled.features.test.enabled = true;
+        enabled.features.test.coverage.enabled = true;
+        enabled.features.test.coverage.lcov_paths = vec!["a.info".into()];
+        let path_a = observation_hash_from_paths(tmp.path(), &enabled, &config, &calibration);
+        enabled.features.test.coverage.lcov_paths = vec!["b.info".into()];
+        let path_b = observation_hash_from_paths(tmp.path(), &enabled, &config, &calibration);
+        assert_ne!(path_a, path_b, "logical input path is part of the hash");
+    }
+
+    #[test]
+    fn observation_hash_tracks_enabled_doc_pairs() {
+        let tmp = TempDir::new().unwrap();
+        let config = tmp.path().join("config.toml");
+        let calibration = tmp.path().join("calibration.toml");
+        std::fs::write(&config, b"cfg").unwrap();
+        std::fs::write(&calibration, b"cal").unwrap();
+        let mut cfg = Config::default();
+        cfg.features.docs.enabled = true;
+        cfg.features.docs.pairs_path = "pairs.json".into();
+
+        let missing = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration);
+        std::fs::write(
+            tmp.path().join("pairs.json"),
+            b"{\"version\":1,\"pairs\":[]}",
+        )
+        .unwrap();
+        let present = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration);
+        assert_ne!(missing, present);
     }
 
     #[test]
