@@ -100,7 +100,7 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     let must_scan = cached.is_none();
 
     let (mut record, regressed) = if must_scan {
-        let record = build_record(project, &paths, &cfg, head_sha, worktree_clean);
+        let record = build_record(project, &paths, &cfg, head_sha, worktree_clean)?;
         write_record(&paths.findings_latest(), &record)?;
         let regs = reconcile_fixed(
             &paths.findings_fixed(),

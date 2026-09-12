@@ -6,6 +6,8 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use anyhow::{bail, Result};
+
 use crate::core::calibration::{
     Calibration, CalibrationMeta, HotspotCalibration, MetricCalibration, MetricCalibrations,
     MetricFloors, FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_DUPLICATION_PCT, FLOOR_OK_CCN,
@@ -699,7 +701,7 @@ pub(crate) fn build_record(
     cfg: &Config,
     head_sha: Option<String>,
     worktree_clean: bool,
-) -> crate::core::findings_cache::FindingsRecord {
+) -> Result<crate::core::findings_cache::FindingsRecord> {
     let calibration = Calibration::load(&paths.calibration())
         .ok()
         .map(|c| c.with_overrides(cfg));
@@ -710,22 +712,43 @@ pub(crate) fn build_record(
         owned = Calibration::default();
         &owned
     };
-    let reports = run_all(scan_root, cfg, None, None);
+    let (reports, config_hash) = observe_with_stable_hash(
+        || {
+            crate::core::findings_cache::observation_hash_from_paths(
+                scan_root,
+                cfg,
+                &paths.config(),
+                &paths.calibration(),
+            )
+        },
+        || run_all(scan_root, cfg, None, None),
+    )?;
     let findings = classify(&reports, cal_ref, cfg);
     let coverage_observation = reports.coverage.as_ref().map(CoverageReport::observation);
-    let config_hash = crate::core::findings_cache::observation_hash_from_paths(
-        scan_root,
-        cfg,
-        &paths.config(),
-        &paths.calibration(),
-    );
-    crate::core::findings_cache::FindingsRecord::new(
+    Ok(crate::core::findings_cache::FindingsRecord::new(
         head_sha,
         worktree_clean,
         config_hash,
         findings,
     )
-    .with_coverage_observation(coverage_observation)
+    .with_coverage_observation(coverage_observation))
+}
+
+const MAX_STABLE_OBSERVATION_ATTEMPTS: usize = 3;
+
+fn observe_with_stable_hash<T>(
+    mut observation_hash: impl FnMut() -> String,
+    mut observe: impl FnMut() -> T,
+) -> Result<(T, String)> {
+    for _ in 0..MAX_STABLE_OBSERVATION_ATTEMPTS {
+        let before = observation_hash();
+        let observed = observe();
+        let after = observation_hash();
+        if before == after {
+            return Ok((observed, before));
+        }
+    }
+    bail!("observation inputs changed while HEAL was scanning; retry when they are stable")
 }
 
 fn non_empty(values: &[f64]) -> bool {
@@ -750,6 +773,42 @@ mod tests {
     use std::collections::HashSet;
     use std::path::PathBuf;
 
+    #[test]
+    fn observation_retries_until_its_hash_is_stable() {
+        use std::cell::RefCell;
+        use std::collections::VecDeque;
+
+        let hashes = RefCell::new(VecDeque::from(["old", "new", "new", "new"]));
+        let scans = std::cell::Cell::new(0usize);
+        let (value, hash) = observe_with_stable_hash(
+            || hashes.borrow_mut().pop_front().unwrap().to_owned(),
+            || {
+                scans.set(scans.get() + 1);
+                scans.get()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(value, 2);
+        assert_eq!(hash, "new");
+        assert_eq!(scans.get(), 2);
+    }
+
+    #[test]
+    fn observation_fails_after_repeated_input_changes() {
+        let next = std::cell::Cell::new(0usize);
+        let err = observe_with_stable_hash(
+            || {
+                next.set(next.get() + 1);
+                next.get().to_string()
+            },
+            || (),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("inputs changed"));
+        assert_eq!(next.get(), MAX_STABLE_OBSERVATION_ATTEMPTS * 2);
+    }
     /// Synthesize a small but representative `ObserverReports` +
     /// `Calibration` pair. The numbers are picked so each metric has at
     /// least one non-Ok finding under the calibration's breaks.

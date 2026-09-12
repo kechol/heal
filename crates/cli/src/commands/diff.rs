@@ -108,7 +108,7 @@ pub fn run(project: &Path, args: &crate::cli::DiffArgs) -> Result<()> {
         load_or_recompute_from(project, &paths, &cfg, &resolved_ref, &target_sha)?;
     let to_head_sha = git::head_sha(project);
     let to_clean = git::worktree_clean(project).unwrap_or(false);
-    let mut to_record = build_record(project, &paths, &cfg, to_head_sha, to_clean);
+    let mut to_record = build_record(project, &paths, &cfg, to_head_sha, to_clean)?;
 
     // The baseline uses **today's** accepted-finding decisions —
     // apples-to-apples with the "to" view, same principle as
@@ -214,13 +214,7 @@ fn recompute_at_ref(
     let workdir = tmp.path().join("heal-diff");
     let _guard = WorktreeGuard::add(project, &workdir, target_sha)?;
     // A fresh `git worktree add --detach` is clean by construction.
-    Ok(build_record(
-        &workdir,
-        paths,
-        cfg,
-        Some(target_sha.to_owned()),
-        true,
-    ))
+    build_record(&workdir, paths, cfg, Some(target_sha.to_owned()), true)
 }
 
 /// RAII handle for a transient `git worktree`. `add` runs
