@@ -306,6 +306,7 @@ pub(super) fn render(
             ANSI_CYAN,
             &accepted_items,
             filters.top,
+            false,
             colorize,
             out,
         )?;
@@ -523,7 +524,7 @@ fn render_family(
     colorize: bool,
     out: &mut (impl Write + ?Sized),
 ) -> Result<usize> {
-    let mut buckets: BTreeMap<(u8, Severity, bool), Vec<&Finding>> = BTreeMap::new();
+    let mut buckets: BTreeMap<(u8, Severity), Vec<&Finding>> = BTreeMap::new();
     for f in items {
         let tier = match drain.tier_for(f) {
             Some(DrainTier::Must) => 0,
@@ -531,10 +532,7 @@ fn render_family(
             Some(DrainTier::Advisory) => 2,
             None => 3,
         };
-        buckets
-            .entry((tier, f.severity, f.hotspot))
-            .or_default()
-            .push(*f);
+        buckets.entry((tier, f.severity)).or_default().push(*f);
     }
     let tier_order: &[(u8, &str, bool)] = &[
         (0, "T0 Must drain", true),
@@ -542,44 +540,46 @@ fn render_family(
         (2, "Advisory", show_low),
         (3, "", show_low),
     ];
-    let severity_order: &[(Severity, bool, &str, &str)] = &[
-        (Severity::Critical, true, "🔴 Critical 🔥", ANSI_RED),
-        (Severity::Critical, false, "🔴 Critical", ANSI_RED),
-        (Severity::High, true, "🟠 High 🔥", ANSI_YELLOW),
-        (Severity::High, false, "🟠 High", ANSI_YELLOW),
-        (Severity::Medium, true, "🟡 Medium 🔥", ANSI_YELLOW),
-        (Severity::Medium, false, "🟡 Medium", ANSI_YELLOW),
-        (Severity::Ok, true, "✅ Ok 🔥", ANSI_CYAN),
-        (Severity::Ok, false, "✅ Ok", ANSI_GREEN),
+    let severity_order: &[(Severity, &str, &str)] = &[
+        (Severity::Critical, "🔴 Critical", ANSI_RED),
+        (Severity::High, "🟠 High", ANSI_YELLOW),
+        (Severity::Medium, "🟡 Medium", ANSI_YELLOW),
+        (Severity::Ok, "✅ Ok", ANSI_GREEN),
     ];
     let mut hidden = 0usize;
     for (tier, tier_label, visible) in tier_order {
-        for (sev, hot, label, color) in severity_order {
-            let Some(items) = buckets.get(&(*tier, *sev, *hot)) else {
+        for (sev, label, color) in severity_order {
+            let Some(items) = buckets.get(&(*tier, *sev)) else {
                 continue;
             };
             if !*visible {
                 hidden += items.len();
                 continue;
             }
-            let suffix = if tier_label.is_empty() {
+            let hotspot = if items.iter().all(|finding| finding.hotspot) {
+                " 🔥"
+            } else {
+                ""
+            };
+            let tier_suffix = if tier_label.is_empty() {
                 String::new()
             } else {
                 format!(" [{tier_label}]")
             };
-            let full_label = format!("{label}{suffix}");
-            render_tier_section(&full_label, color, items, top, colorize, out)?;
+            let full_label = format!("{label}{hotspot}{tier_suffix}");
+            render_tier_section(&full_label, color, items, top, true, colorize, out)?;
         }
     }
     Ok(hidden)
 }
 
-/// Render a drain-tier section with internal Severity 🔥 sort.
+/// Render a section, preserving Tier/Severity buckets when already fixed.
 fn render_tier_section(
     label: &str,
     color: &str,
     items: &[&Finding],
     top: Option<usize>,
+    tier_and_severity_fixed: bool,
     colorize: bool,
     out: &mut (impl Write + ?Sized),
 ) -> std::io::Result<()> {
@@ -591,9 +591,14 @@ fn render_tier_section(
     // a bucket, use the same-family hotspot score before deterministic
     // metric / path / id ties. Missing scores sort last.
     sorted.sort_by(|a, b| {
-        b.severity
-            .cmp(&a.severity)
-            .then_with(|| b.hotspot.cmp(&a.hotspot))
+        let prefix = if tier_and_severity_fixed {
+            std::cmp::Ordering::Equal
+        } else {
+            b.severity
+                .cmp(&a.severity)
+                .then_with(|| b.hotspot.cmp(&a.hotspot))
+        };
+        prefix
             .then_with(|| match (b.hotspot_score, a.hotspot_score) {
                 (Some(b), Some(a)) => b.total_cmp(&a),
                 (Some(_), None) => std::cmp::Ordering::Less,
@@ -623,9 +628,17 @@ fn render_tier_section(
             by_file.push((&f.location.file, vec![f]));
         }
     }
+    let mark_hotspot_rows = tier_and_severity_fixed
+        && items.iter().any(|finding| finding.hotspot)
+        && items.iter().any(|finding| !finding.hotspot);
     for (file, fs) in by_file {
         let summary = group_labels(fs.iter().map(|f| f.short_label())).join("  ");
-        writeln!(out, "  {}  {summary}", file.display())?;
+        let hotspot = if mark_hotspot_rows && fs.iter().any(|finding| finding.hotspot) {
+            " 🔥"
+        } else {
+            ""
+        };
+        writeln!(out, "  {}{hotspot}  {summary}", file.display())?;
     }
     Ok(())
 }
@@ -870,7 +883,14 @@ mod tests {
 
         let rec = record(vec![
             finding("ccn", "src/critical.rs", Severity::Critical, false),
-            finding("cognitive", "src/high.rs", Severity::High, false),
+            scored_finding("cognitive", "src/high.rs", Severity::High, false, 90.0),
+            scored_finding(
+                "cognitive",
+                "src/hot-but-lower.rs",
+                Severity::High,
+                true,
+                10.0,
+            ),
         ]);
         let mut cfg = Config::default();
         cfg.policy.drain.metrics.insert(
@@ -886,6 +906,7 @@ mod tests {
 
         let out = render_with_config(&rec, &default_filters(), &cfg);
         assert!(out.find("src/high.rs").unwrap() < out.find("src/critical.rs").unwrap());
+        assert!(out.find("src/high.rs").unwrap() < out.find("src/hot-but-lower.rs").unwrap());
         assert!(out.contains("High [T0 Must drain]"), "{out}");
         assert!(out.contains("Critical [T1 Should drain]"), "{out}");
     }
