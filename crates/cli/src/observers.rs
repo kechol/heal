@@ -702,17 +702,7 @@ pub(crate) fn build_record(
     head_sha: Option<String>,
     worktree_clean: bool,
 ) -> Result<crate::core::findings_cache::FindingsRecord> {
-    let calibration = Calibration::load(&paths.calibration())
-        .ok()
-        .map(|c| c.with_overrides(cfg));
-    let owned;
-    let cal_ref = if let Some(c) = calibration.as_ref() {
-        c
-    } else {
-        owned = Calibration::default();
-        &owned
-    };
-    let (reports, config_hash) = observe_with_stable_hash(
+    let ((findings, coverage_observation), config_hash) = observe_with_stable_hash(
         || {
             crate::core::findings_cache::observation_hash_from_paths(
                 scan_root,
@@ -721,10 +711,21 @@ pub(crate) fn build_record(
                 &paths.calibration(),
             )
         },
-        || run_all(scan_root, cfg, None, None),
+        || {
+            let observed_cfg = Config::load(&paths.config())?;
+            if observed_cfg != *cfg {
+                bail!("configuration changed after HEAL loaded it; retry when it is stable");
+            }
+            let calibration = Calibration::load(&paths.calibration())
+                .ok()
+                .map(|c| c.with_overrides(&observed_cfg))
+                .unwrap_or_default();
+            let reports = run_all(scan_root, &observed_cfg, None, None);
+            let findings = classify(&reports, &calibration, &observed_cfg);
+            let coverage_observation = reports.coverage.as_ref().map(CoverageReport::observation);
+            Ok((findings, coverage_observation))
+        },
     )?;
-    let findings = classify(&reports, cal_ref, cfg);
-    let coverage_observation = reports.coverage.as_ref().map(CoverageReport::observation);
     Ok(crate::core::findings_cache::FindingsRecord::new(
         head_sha,
         worktree_clean,
@@ -738,11 +739,11 @@ const MAX_STABLE_OBSERVATION_ATTEMPTS: usize = 3;
 
 fn observe_with_stable_hash<T>(
     mut observation_hash: impl FnMut() -> String,
-    mut observe: impl FnMut() -> T,
+    mut observe: impl FnMut() -> Result<T>,
 ) -> Result<(T, String)> {
     for _ in 0..MAX_STABLE_OBSERVATION_ATTEMPTS {
         let before = observation_hash();
-        let observed = observe();
+        let observed = observe()?;
         let after = observation_hash();
         if before == after {
             return Ok((observed, before));
@@ -784,7 +785,7 @@ mod tests {
             || hashes.borrow_mut().pop_front().unwrap().to_owned(),
             || {
                 scans.set(scans.get() + 1);
-                scans.get()
+                Ok(scans.get())
             },
         )
         .unwrap();
@@ -802,13 +803,28 @@ mod tests {
                 next.set(next.get() + 1);
                 next.get().to_string()
             },
-            || (),
+            || Ok(()),
         )
         .unwrap_err();
 
         assert!(err.to_string().contains("inputs changed"));
         assert_eq!(next.get(), MAX_STABLE_OBSERVATION_ATTEMPTS * 2);
     }
+
+    #[test]
+    fn record_build_rejects_config_changed_after_caller_load() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let paths = crate::core::HealPaths::new(tmp.path());
+        paths.ensure().unwrap();
+        let disk_cfg = Config::default();
+        disk_cfg.save(&paths.config()).unwrap();
+        let mut stale_cfg = disk_cfg;
+        stale_cfg.metrics.top_n = 99;
+
+        let err = build_record(tmp.path(), &paths, &stale_cfg, None, true).unwrap_err();
+        assert!(err.to_string().contains("configuration changed"));
+    }
+
     /// Synthesize a small but representative `ObserverReports` +
     /// `Calibration` pair. The numbers are picked so each metric has at
     /// least one non-Ok finding under the calibration's breaks.

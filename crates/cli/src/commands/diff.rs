@@ -60,7 +60,7 @@ use crate::core::accepted::AcceptedDrift;
 use crate::core::calibration::Calibration;
 use crate::core::config::{load_from_project, Config, DrainTier, PolicyDrainConfig};
 use crate::core::finding::Finding;
-use crate::core::findings_cache::{observation_hash_from_paths, read_latest, FindingsRecord};
+use crate::core::findings_cache::{read_latest_if_fresh, FindingsRecord};
 use crate::core::severity::Severity;
 use crate::core::term::{
     ansi_wrap, write_through_pager, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW,
@@ -163,13 +163,15 @@ fn load_or_recompute_from(
     // enabled LCOV/doc-pair inputs may be ignored by git, so the current
     // worktree cannot stand in for an older ref's observation inputs.
     if git::head_sha(project).as_deref() == Some(target_sha) {
-        let cfg_hash =
-            observation_hash_from_paths(project, cfg, &paths.config(), &paths.calibration());
-        if let Some(record) = read_latest(&paths.findings_latest())?.filter(|r| {
-            r.worktree_clean
-                && r.head_sha.as_deref() == Some(target_sha)
-                && r.config_hash == cfg_hash
-        }) {
+        if let Some(record) = read_latest_if_fresh(
+            &paths.findings_latest(),
+            project,
+            cfg,
+            &paths.config(),
+            &paths.calibration(),
+            Some(target_sha),
+            true,
+        )? {
             return Ok(record);
         }
     }

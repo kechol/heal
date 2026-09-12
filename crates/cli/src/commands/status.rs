@@ -34,8 +34,7 @@ use crate::core::calibration::{FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_OK_CCN, FLOOR_O
 use crate::core::config::{load_from_project, Config, DrainTier, PolicyDrainConfig};
 use crate::core::finding::Finding;
 use crate::core::findings_cache::{
-    observation_hash_from_paths, read_latest, reconcile_fixed, write_record, FindingsRecord,
-    RegressedEntry,
+    read_latest_if_fresh, reconcile_fixed, write_record, FindingsRecord, RegressedEntry,
 };
 use crate::core::severity::Severity;
 use crate::core::term::{
@@ -87,15 +86,18 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     // see the previous owner's state until they remembered to refresh.
     let head_sha = git::head_sha(project);
     let worktree_clean = git::worktree_clean(project).unwrap_or(false);
-    let cfg_hash =
-        observation_hash_from_paths(project, &cfg, &paths.config(), &paths.calibration());
     let cached = if args.refresh {
         None
     } else {
-        read_latest(&paths.findings_latest())
-            .ok()
-            .flatten()
-            .filter(|r| r.is_fresh_against(head_sha.as_deref(), &cfg_hash, worktree_clean))
+        read_latest_if_fresh(
+            &paths.findings_latest(),
+            project,
+            &cfg,
+            &paths.config(),
+            &paths.calibration(),
+            head_sha.as_deref(),
+            worktree_clean,
+        )?
     };
     let must_scan = cached.is_none();
 

@@ -430,6 +430,29 @@ pub fn read_latest(latest_path: &Path) -> Result<Option<FindingsRecord>> {
     Ok(Some(record))
 }
 
+/// Read `latest.json` only when the observation boundary stayed stable while
+/// the cache and parsed config were inspected. A semantic config change after
+/// the caller loaded `cfg` forces the scan path, where `build_record` reports
+/// the race instead of mixing rules and observations.
+pub fn read_latest_if_fresh(
+    latest_path: &Path,
+    observation_root: &Path,
+    cfg: &Config,
+    config_path: &Path,
+    calibration_path: &Path,
+    head_sha: Option<&str>,
+    worktree_clean: bool,
+) -> Result<Option<FindingsRecord>> {
+    let before = observation_hash_from_paths(observation_root, cfg, config_path, calibration_path);
+    let observed_cfg = Config::load(config_path)?;
+    let candidate = read_latest(latest_path)?;
+    let after = observation_hash_from_paths(observation_root, cfg, config_path, calibration_path);
+    if before != after || observed_cfg != *cfg {
+        return Ok(None);
+    }
+    Ok(candidate.filter(|record| record.is_fresh_against(head_sha, &before, worktree_clean)))
+}
+
 /// Bounded map of "skill committed a fix" markers, keyed by
 /// `Finding.id`. Atomically rewritten on every mutation — the file is
 /// short (one entry per outstanding fix claim) so the cost is
@@ -739,6 +762,35 @@ mod tests {
         .unwrap();
         let present = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration);
         assert_ne!(missing, present);
+    }
+
+    #[test]
+    fn cache_reuse_rejects_config_parsed_before_a_semantic_change() {
+        let tmp = TempDir::new().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        let calibration_path = tmp.path().join("calibration.toml");
+        let latest_path = tmp.path().join("latest.json");
+        let disk_cfg = Config::default();
+        disk_cfg.save(&config_path).unwrap();
+
+        let mut stale_cfg = disk_cfg;
+        stale_cfg.metrics.top_n = 99;
+        let hash =
+            observation_hash_from_paths(tmp.path(), &stale_cfg, &config_path, &calibration_path);
+        let record = FindingsRecord::new(Some("abc".into()), true, hash, Vec::new());
+        write_record(&latest_path, &record).unwrap();
+
+        let reused = read_latest_if_fresh(
+            &latest_path,
+            tmp.path(),
+            &stale_cfg,
+            &config_path,
+            &calibration_path,
+            Some("abc"),
+            true,
+        )
+        .unwrap();
+        assert!(reused.is_none());
     }
 
     #[test]
