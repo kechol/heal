@@ -20,8 +20,9 @@
 //! `--all` is passed; the footer surfaces a "next steps" line pointing
 //! at `claude /heal-code-patch` for the Must-drain queue.
 //!
-//! `--json` emits the `FindingsRecord` in the exact shape of `latest.json`
-//! so skills and CI scripts have one stable contract.
+//! `--json` emits the `FindingsRecord` schema used by `latest.json`, after
+//! overlaying the current accepted state and accepted re-review notices.
+//! Requested finding/workspace filters are applied to that invocation's view.
 
 use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
@@ -257,7 +258,7 @@ pub(super) fn render(
     let show_low = filters.all || matches!(filters.severity, Some(Severity::Medium | Severity::Ok));
 
     // Partition by family first, then bucket each family's findings by
-    // (severity, hotspot). Per-family rendering is the v0.4 contract:
+    // effective drain Tier and Severity. Per-family rendering is the v0.4 contract:
     // each family's drain queue is independent (matching the per-family
     // patch skills and the per-family `HotspotIndex` decoration), so a
     // global Severity ordering would mix Test and Code Critical 🔥

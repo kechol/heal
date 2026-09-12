@@ -24,8 +24,9 @@
 //! [`is_fresh_against`] returns true when `(head_sha, config_hash,
 //! worktree_clean)` matches the supplied baseline — `heal status` short-
 //! circuits on a fresh cache and reuses the latest record. Dirty
-//! worktrees never count as fresh (any untracked file invalidates the
-//! cache; we cannot trust the on-disk numbers).
+//! worktrees never count as fresh: tracked modifications and non-ignored
+//! untracked files fail the clean gate, while configured ignored
+//! observation inputs are tracked by `config_hash` content/state.
 //!
 //! ## fixed.json reconciliation
 //!

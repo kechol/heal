@@ -53,9 +53,9 @@ pub enum FeatureKind {
 /// the [`Family::Code`] index. Also surfaced to user-facing
 /// `--feature` filters in the v0.4 status / metrics flow.
 ///
-/// Variant order is the canonical render order (Code → Test → Docs)
-/// — `BTreeMap<Family, _>` iteration relies on the derived `Ord`
-/// matching that order.
+/// Variant order is the canonical render order (Code → Test → Docs).
+/// The renderer names that order explicitly and tests keep it aligned
+/// with the derived `Ord` used by family-keyed maps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Family {
     Code,
@@ -319,17 +319,17 @@ pub trait Feature: Send + Sync {
     ) -> Vec<Finding>;
 }
 
-/// Static registry of every builtin Feature. The order is the order
-/// findings are emitted in `Vec<Finding>` — same-Severity tiebreakers
-/// in the renderer fall back to it for determinism.
+/// Static registry of every builtin Feature. The order is the stable
+/// machine-record emission order; human status independently sorts by
+/// family, effective Tier, Severity, score, metric, path, and id.
 pub struct FeatureRegistry {
     features: Vec<Box<dyn Feature>>,
 }
 
 impl FeatureRegistry {
-    /// All builtin Features. Order matters — same-Severity ties in the
-    /// renderer fall back to it for stable output. Append new Features
-    /// at the end to keep that contract.
+    /// All builtin Features. Order matters for stable serialized finding
+    /// arrays. Append new Features at the end unless a schema migration
+    /// deliberately changes that machine-output contract.
     #[must_use]
     pub fn builtin() -> Self {
         use crate::observer::code::change_coupling::ChangeCouplingFeature;
@@ -451,8 +451,8 @@ mod tests {
     fn builtin_registry_emits_one_feature_per_metric() {
         let r = FeatureRegistry::builtin();
         let names: Vec<&str> = r.iter().map(|f| f.meta().name).collect();
-        // Order is the public emission contract — tests / renderer rely
-        // on it for stable Finding ordering. Docs Features sit between
+        // Order is the stable machine-record emission contract. The human
+        // renderer applies its own work-order sort. Docs Features sit between
         // code and test so the v0.2 emission order for code metrics is
         // preserved; per-family hotspots (`doc_hotspot`, `test_hotspot`)
         // sit at the end of their own family blocks.

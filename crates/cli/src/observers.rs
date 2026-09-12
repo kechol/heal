@@ -609,9 +609,9 @@ fn build_metric_calibrations(
     // Per-family hotspots: same `HotspotCalibration` shape as code
     // hotspot, anchored on `FLOOR_OK_TEST_HOTSPOT` /
     // `FLOOR_OK_DOC_HOTSPOT`. The floor is intentionally low — high
-    // floors silently block legitimate hot files from drain queues,
-    // whereas low floors only over-decorate in tiny projects, which
-    // calibration percentiles still gate.
+    // floors silently block legitimate hot files from drain queues.
+    // Cohorts of 1–4 use this absolute floor alone; cohorts of at least
+    // five additionally require the calibrated p90 threshold.
     let test_hotspot = reports.test_hotspot.as_ref().and_then(|h| {
         let scores: Vec<f64> = h
             .entries

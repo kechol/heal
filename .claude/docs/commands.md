@@ -147,8 +147,12 @@ swallowed → exit 0.
      file counts are unique-`location.file` sets per tier.
    - `Population: [critical] N [high] N [medium] N [ok] N` — the raw
      severity distribution, demoted to context.
-2. Regressed section (re-detected after `mark fix`).
-3. Per-family blocks (`═══ Code ═══`, `═══ Test ═══`, `═══ Docs ═══`)
+2. Coverage measurement guidance when configured LCOV input is missing,
+   unreadable, or covers only part of the production-source universe.
+3. Regressed section (re-detected after `mark fix`).
+4. Accepted re-review notice when an accepted finding increased Severity
+   or changed from non-hotspot to hotspot. Acceptance remains in place.
+5. Per-family blocks (`═══ Code ═══`, `═══ Test ═══`, `═══ Docs ═══`)
    — each family orders by effective Drain Tier, then Severity, then
    descending family-local `hotspot_score` (deterministic metric/path/id ties), and ends
    with a `Next: claude /heal-{code,test,doc}-patch` hint. Empty
@@ -158,9 +162,9 @@ swallowed → exit 0.
    `--feature <FAMILY>`, sibling banners are suppressed entirely;
    when the requested family itself is disabled, `run()` exits 1
    before reaching the renderer.
-4. Cross-family `Hidden: N findings across families` footer (when
+6. Cross-family `Hidden: N findings across families` footer (when
    not `--all` and lower-severity rows were dropped).
-5. Accepted section (only with `--all`).
+7. Accepted section (only with `--all`).
 
 **Filters:**
 
@@ -184,7 +188,10 @@ swallowed → exit 0.
 - `--all` — show Medium/Ok and low-Severity hotspots.
 - `--top <N>` — cap each rendered Tier/Severity bucket.
 
-**Output (JSON):** raw `FindingsRecord` (the on-disk shape).
+**Output (JSON):** the `FindingsRecord` schema used on disk, with the current
+accepted state and ephemeral `accepted_rereview` notices overlaid. Finding and
+workspace filters narrow this invocation's payload; it is therefore not a
+byte-for-byte dump of `latest.json`.
 
 **Exit:** 0 success (broken pipe included); error otherwise.
 

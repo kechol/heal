@@ -84,10 +84,10 @@ pub const FLOOR_OK_HOTSPOT: f64 = 22.0;
 /// coverage = decent" gives the gap floor, and any file touched at
 /// least once in the churn window is considered active. Below this
 /// product the file is either dormant or already nearly-fully tested,
-/// so the percentile classifier shouldn't promote it to hot.
-/// Erring low is safe (calibration percentiles still gate the upper
-/// end); erring high silently drops legitimate test-debt hotspots
-/// from the drain queue.
+/// so the classifier shouldn't promote it to hot. Erring low is safe:
+/// cohorts of at least five still require p90, while cohorts of 1–4
+/// intentionally use the absolute floor alone. Erring high silently
+/// drops legitimate test-debt hotspots from the drain queue.
 pub const FLOOR_OK_TEST_HOTSPOT: f64 = 25.0;
 
 /// `[calibration.doc_hotspot]` graduation gate for the per-pair
