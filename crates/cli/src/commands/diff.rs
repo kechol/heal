@@ -1224,7 +1224,8 @@ mod tests {
         Config::default().save(&paths.config()).unwrap();
         let cfg = load_from_project(dir.path()).unwrap();
         let cfg_hash =
-            observation_hash_from_paths(dir.path(), &cfg, &paths.config(), &paths.calibration());
+            observation_hash_from_paths(dir.path(), &cfg, &paths.config(), &paths.calibration())
+                .unwrap();
         let has_marker = |r: &FindingsRecord| {
             r.findings
                 .iter()
@@ -1308,7 +1309,8 @@ mod tests {
         .unwrap();
         let cfg = load_from_project(dir.path()).unwrap();
         let current_input_hash =
-            observation_hash_from_paths(dir.path(), &cfg, &paths.config(), &paths.calibration());
+            observation_hash_from_paths(dir.path(), &cfg, &paths.config(), &paths.calibration())
+                .unwrap();
         let cached = FindingsRecord::new(
             Some(old_sha.clone()),
             true,
@@ -1326,6 +1328,67 @@ mod tests {
             got.findings.iter().all(|f| f.metric != "coverage_pct"),
             "current-worktree lcov must not be treated as old-ref coverage"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn old_ref_rejects_symlinked_observation_parent() {
+        use crate::core::config::Config;
+        use crate::test_support::{commit, git as run_git, init_repo};
+        use std::os::unix::fs::symlink;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        std::fs::write(outside.path().join("lcov.info"), "external").unwrap();
+        init_repo(dir.path());
+        commit(
+            dir.path(),
+            "lib.rs",
+            "fn old() {}\n",
+            "tester@example.com",
+            "old source",
+        );
+        symlink(outside.path(), dir.path().join("reports")).unwrap();
+        run_git(dir.path(), &["add", "reports"]);
+        run_git(
+            dir.path(),
+            &[
+                "-c",
+                "user.email=tester@example.com",
+                "-c",
+                "user.name=tester",
+                "commit",
+                "-q",
+                "-m",
+                "symlinked report",
+            ],
+        );
+        let old_sha = git::head_sha(dir.path()).unwrap();
+
+        run_git(dir.path(), &["rm", "-q", "reports"]);
+        std::fs::create_dir(dir.path().join("reports")).unwrap();
+        commit(
+            dir.path(),
+            "reports/.keep",
+            "",
+            "tester@example.com",
+            "replace report symlink",
+        );
+
+        let paths = HealPaths::new(dir.path());
+        paths.ensure().unwrap();
+        let mut config = Config::default();
+        config.features.test.enabled = true;
+        config.features.test.coverage.enabled = true;
+        config.features.test.coverage.lcov_paths = vec!["reports/lcov.info".into()];
+        config.save(&paths.config()).unwrap();
+        let cfg = load_from_project(dir.path()).unwrap();
+
+        let error = load_or_recompute_from(dir.path(), &paths, &cfg, &old_sha, &old_sha)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("symlink component"), "{error}");
     }
 
     #[test]

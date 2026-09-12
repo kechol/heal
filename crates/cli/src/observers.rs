@@ -704,18 +704,23 @@ pub(crate) fn build_record(
 ) -> Result<crate::core::findings_cache::FindingsRecord> {
     let ((findings, coverage_observation), config_hash) = observe_with_stable_hash(
         || {
-            crate::core::findings_cache::observation_hash_from_paths(
+            Ok(crate::core::findings_cache::observation_hash_from_paths(
                 scan_root,
                 cfg,
                 &paths.config(),
                 &paths.calibration(),
-            )
+            )?)
         },
         || {
             let observed_cfg = Config::load(&paths.config())?;
             if observed_cfg != *cfg {
                 bail!("configuration changed after HEAL loaded it; retry when it is stable");
             }
+            crate::core::config::validate_observation_paths_at(
+                &observed_cfg,
+                scan_root,
+                &paths.config(),
+            )?;
             let calibration = Calibration::load(&paths.calibration())
                 .ok()
                 .map(|c| c.with_overrides(&observed_cfg))
@@ -738,13 +743,13 @@ pub(crate) fn build_record(
 const MAX_STABLE_OBSERVATION_ATTEMPTS: usize = 3;
 
 fn observe_with_stable_hash<T>(
-    mut observation_hash: impl FnMut() -> String,
+    mut observation_hash: impl FnMut() -> Result<String>,
     mut observe: impl FnMut() -> Result<T>,
 ) -> Result<(T, String)> {
     for _ in 0..MAX_STABLE_OBSERVATION_ATTEMPTS {
-        let before = observation_hash();
+        let before = observation_hash()?;
         let observed = observe()?;
-        let after = observation_hash();
+        let after = observation_hash()?;
         if before == after {
             return Ok((observed, before));
         }
@@ -782,7 +787,7 @@ mod tests {
         let hashes = RefCell::new(VecDeque::from(["old", "new", "new", "new"]));
         let scans = std::cell::Cell::new(0usize);
         let (value, hash) = observe_with_stable_hash(
-            || hashes.borrow_mut().pop_front().unwrap().to_owned(),
+            || Ok(hashes.borrow_mut().pop_front().unwrap().to_owned()),
             || {
                 scans.set(scans.get() + 1);
                 Ok(scans.get())
@@ -801,7 +806,7 @@ mod tests {
         let err = observe_with_stable_hash(
             || {
                 next.set(next.get() + 1);
-                next.get().to_string()
+                Ok(next.get().to_string())
             },
             || Ok(()),
         )

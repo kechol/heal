@@ -4,7 +4,7 @@
 //! schema errors instead of silently dropping settings.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -1543,6 +1543,43 @@ fn validate_observation_path(label: &str, value: &str) -> std::result::Result<()
     Ok(())
 }
 
+/// Resolve a configured observation input without allowing a symlink to move
+/// any path component outside the project. Missing components are allowed so
+/// an unwired reporter remains a normal `missing` observation.
+pub(crate) fn resolve_observation_path(
+    project_root: &Path,
+    label: &str,
+    value: &str,
+) -> std::result::Result<PathBuf, String> {
+    validate_observation_path(label, value)?;
+    let relative = Path::new(value);
+    let candidate = project_root.join(relative);
+    let mut current = project_root.to_path_buf();
+    for component in relative.components() {
+        if matches!(component, std::path::Component::CurDir) {
+            continue;
+        }
+        current.push(component.as_os_str());
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(format!(
+                    "{label} `{value}` must not traverse symlink component `{}`",
+                    current.display()
+                ));
+            }
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => break,
+            Err(err) => {
+                return Err(format!(
+                    "could not inspect {label} `{value}` at `{}`: {err}",
+                    current.display()
+                ));
+            }
+        }
+    }
+    Ok(candidate)
+}
+
 /// Rewrite a workspace-relative `.gitignore` line so it works as a
 /// project-root-relative pattern. `!`-negation is preserved by stripping
 /// it before translation and re-attaching it after; comments and empty
@@ -1574,7 +1611,42 @@ pub(crate) fn translate_workspace_pattern(workspace_path: &str, line: &str) -> S
 
 /// Convenience: load from `.heal/config.toml` under a project root.
 pub fn load_from_project(project_root: &Path) -> Result<Config> {
-    Config::load(&crate::core::paths::HealPaths::new(project_root).config())
+    let config_path = crate::core::paths::HealPaths::new(project_root).config();
+    let cfg = Config::load(&config_path)?;
+    validate_observation_paths_at(&cfg, project_root, &config_path)?;
+    Ok(cfg)
+}
+
+pub(crate) fn validate_observation_paths_at(
+    cfg: &Config,
+    project_root: &Path,
+    config_path: &Path,
+) -> Result<()> {
+    resolve_observation_path(
+        project_root,
+        "[features.docs].pairs_path",
+        &cfg.features.docs.pairs_path,
+    )
+    .and_then(|_| {
+        cfg.features
+            .test
+            .coverage
+            .lcov_paths
+            .iter()
+            .enumerate()
+            .try_for_each(|(index, value)| {
+                resolve_observation_path(
+                    project_root,
+                    &format!("[features.test.coverage].lcov_paths[{index}]"),
+                    value,
+                )
+                .map(|_| ())
+            })
+    })
+    .map_err(|message| Error::ConfigInvalid {
+        path: config_path.to_path_buf(),
+        message,
+    })
 }
 
 /// Reject malformed `[[project.workspaces]]` entries before they reach

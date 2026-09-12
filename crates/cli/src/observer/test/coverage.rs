@@ -88,12 +88,24 @@ impl CoverageObserver {
         // ordering must not depend on lcov_paths probe order.
         let mut merged: std::collections::BTreeMap<PathBuf, CoverageEntry> =
             std::collections::BTreeMap::new();
-        for rel in &self.lcov_paths {
+        for (index, rel) in self.lcov_paths.iter().enumerate() {
             // Skip the explicit `exists()` precheck — `LcovReport::read`
             // returns `Err(NotFound)` for missing files, which we treat
             // identically to "no record" without paying a stat() per
             // candidate.
-            let parsed = match LcovReport::read(&root.join(rel)) {
+            let path = match crate::core::config::resolve_observation_path(
+                root,
+                &format!("[features.test.coverage].lcov_paths[{index}]"),
+                rel,
+            ) {
+                Ok(path) => path,
+                Err(err) => {
+                    eprintln!("heal: warning: skipping lcov file {rel}: {err}");
+                    unreadable_sources.push(PathBuf::from(rel));
+                    continue;
+                }
+            };
+            let parsed = match LcovReport::read(&path) {
                 Ok(parsed) => parsed,
                 Err(err) => {
                     if !err.is_not_found() {

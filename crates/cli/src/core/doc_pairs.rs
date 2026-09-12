@@ -122,7 +122,15 @@ impl DocPairsFile {
     /// error: the contract is "stale shape ⇒ rerun the generator",
     /// matching `findings_cache::read_latest`.
     pub fn read(project: &Path, pairs_path: &str) -> Result<Option<Self>> {
-        let abs = project.join(pairs_path);
+        let abs = crate::core::config::resolve_observation_path(
+            project,
+            "[features.docs].pairs_path",
+            pairs_path,
+        )
+        .map_err(|message| Error::ConfigInvalid {
+            path: project.join(".heal/config.toml"),
+            message,
+        })?;
         let raw = match std::fs::read_to_string(&abs) {
             Ok(s) => s,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),

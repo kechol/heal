@@ -46,7 +46,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::core::accepted::AcceptedDrift;
-use crate::core::config::Config;
+use crate::core::config::{resolve_observation_path, Config};
 use crate::core::error::{Error, Result};
 use crate::core::finding::{CoverageObservation, Finding};
 use crate::core::hash::{fnv1a_64_chunked, fnv1a_hex};
@@ -346,7 +346,7 @@ pub fn observation_hash_from_paths(
     cfg: &Config,
     config: &Path,
     calibration: &Path,
-) -> String {
+) -> Result<String> {
     fn push_file(chunks: &mut Vec<Vec<u8>>, label: &str, logical_path: &str, path: &Path) {
         chunks.push(label.as_bytes().to_vec());
         chunks.push(logical_path.as_bytes().to_vec());
@@ -374,15 +374,29 @@ pub fn observation_hash_from_paths(
     );
     if cfg.features.docs.enabled {
         let rel = &cfg.features.docs.pairs_path;
-        push_file(&mut chunks, "doc_pairs", rel, &observation_root.join(rel));
+        let path = resolve_observation_path(observation_root, "[features.docs].pairs_path", rel)
+            .map_err(|message| Error::ConfigInvalid {
+                path: config.to_path_buf(),
+                message,
+            })?;
+        push_file(&mut chunks, "doc_pairs", rel, &path);
     }
     if cfg.features.test.enabled && cfg.features.test.coverage.enabled {
-        for rel in &cfg.features.test.coverage.lcov_paths {
-            push_file(&mut chunks, "lcov", rel, &observation_root.join(rel));
+        for (index, rel) in cfg.features.test.coverage.lcov_paths.iter().enumerate() {
+            let path = resolve_observation_path(
+                observation_root,
+                &format!("[features.test.coverage].lcov_paths[{index}]"),
+                rel,
+            )
+            .map_err(|message| Error::ConfigInvalid {
+                path: config.to_path_buf(),
+                message,
+            })?;
+            push_file(&mut chunks, "lcov", rel, &path);
         }
     }
     let refs: Vec<&[u8]> = chunks.iter().map(Vec::as_slice).collect();
-    fnv1a_hex(fnv1a_64_chunked(&refs))
+    Ok(fnv1a_hex(fnv1a_64_chunked(&refs)))
 }
 
 /// Atomically write `record` to `latest_path` (i.e.
@@ -444,10 +458,10 @@ pub fn read_latest_if_fresh(
     head_sha: Option<&str>,
     worktree_clean: bool,
 ) -> Result<Option<FindingsRecord>> {
-    let before = observation_hash_from_paths(observation_root, cfg, config_path, calibration_path);
+    let before = observation_hash_from_paths(observation_root, cfg, config_path, calibration_path)?;
     let observed_cfg = Config::load(config_path)?;
     let candidate = read_latest(latest_path)?;
-    let after = observation_hash_from_paths(observation_root, cfg, config_path, calibration_path);
+    let after = observation_hash_from_paths(observation_root, cfg, config_path, calibration_path)?;
     if before != after || observed_cfg != *cfg {
         return Ok(None);
     }
@@ -701,18 +715,18 @@ mod tests {
         cfg.features.test.coverage.enabled = true;
         cfg.features.test.coverage.lcov_paths = vec!["ignored/lcov.info".into()];
 
-        let missing = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration);
+        let missing = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
         std::fs::create_dir(tmp.path().join("ignored")).unwrap();
         std::fs::write(tmp.path().join("ignored/lcov.info"), b"SF:src/a.rs\n").unwrap();
-        let created = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration);
+        let created = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
         assert_ne!(missing, created);
 
         std::fs::write(tmp.path().join("ignored/lcov.info"), b"SF:src/b.rs\n").unwrap();
-        let updated = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration);
+        let updated = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
         assert_ne!(created, updated);
 
         std::fs::remove_file(tmp.path().join("ignored/lcov.info")).unwrap();
-        let deleted = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration);
+        let deleted = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
         assert_eq!(missing, deleted);
     }
 
@@ -727,20 +741,23 @@ mod tests {
         std::fs::write(tmp.path().join("b.info"), b"same").unwrap();
 
         let cfg = Config::default();
-        let disabled = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration);
+        let disabled =
+            observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
         std::fs::write(tmp.path().join("a.info"), b"changed while disabled").unwrap();
         assert_eq!(
             disabled,
-            observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration)
+            observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap()
         );
 
         let mut enabled = cfg;
         enabled.features.test.enabled = true;
         enabled.features.test.coverage.enabled = true;
         enabled.features.test.coverage.lcov_paths = vec!["a.info".into()];
-        let path_a = observation_hash_from_paths(tmp.path(), &enabled, &config, &calibration);
+        let path_a =
+            observation_hash_from_paths(tmp.path(), &enabled, &config, &calibration).unwrap();
         enabled.features.test.coverage.lcov_paths = vec!["b.info".into()];
-        let path_b = observation_hash_from_paths(tmp.path(), &enabled, &config, &calibration);
+        let path_b =
+            observation_hash_from_paths(tmp.path(), &enabled, &config, &calibration).unwrap();
         assert_ne!(path_a, path_b, "logical input path is part of the hash");
     }
 
@@ -755,13 +772,13 @@ mod tests {
         cfg.features.docs.enabled = true;
         cfg.features.docs.pairs_path = "pairs.json".into();
 
-        let missing = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration);
+        let missing = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
         std::fs::write(
             tmp.path().join("pairs.json"),
             b"{\"version\":1,\"pairs\":[]}",
         )
         .unwrap();
-        let present = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration);
+        let present = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
         assert_ne!(missing, present);
     }
 
@@ -777,7 +794,8 @@ mod tests {
         let mut stale_cfg = disk_cfg;
         stale_cfg.metrics.top_n = 99;
         let hash =
-            observation_hash_from_paths(tmp.path(), &stale_cfg, &config_path, &calibration_path);
+            observation_hash_from_paths(tmp.path(), &stale_cfg, &config_path, &calibration_path)
+                .unwrap();
         let record = FindingsRecord::new(Some("abc".into()), true, hash, Vec::new());
         write_record(&latest_path, &record).unwrap();
 
