@@ -102,7 +102,7 @@ only escalate-list findings remain.
 
 Within a drain Tier, choose higher Severity first and then descending
 `hotspot_score` within the Test family. Missing scores sort last; ties
-use path then finding id. This mirrors human `heal status`; do not mix
+use metric, path, then finding id. This mirrors human `heal status`; do not mix
 Test scores with Code/Docs scores or construct a combined score.
 
 ## Allow-list (apply mechanically)

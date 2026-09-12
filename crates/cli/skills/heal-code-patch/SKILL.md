@@ -139,7 +139,7 @@ ask before applying.
 
 Within T0, iterate by Severity first (`Critical 🔥` first), then by
 descending `hotspot_score` among findings in that same family and
-Severity. Missing scores sort last; ties use path then finding id.
+Severity. Missing scores sort last; ties use metric, path, then finding id.
 This is the same order as the human `heal status` output. Do not mix
 raw scores across Code/Test/Docs or invent a combined score. Skip
 findings already present in `.heal/findings/fixed.json` (match by

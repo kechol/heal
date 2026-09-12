@@ -513,7 +513,7 @@ fn render_one_family(
 }
 
 /// Render one family's findings by effective drain tier, then by
-/// `(Severity, hotspot)`. Returns the number hidden behind the `--all`
+/// Severity. Returns the number hidden behind the `--all`
 /// gate so the caller can roll a single "Hidden: N across families"
 /// footer instead of one per family.
 fn render_family(
@@ -601,8 +601,8 @@ fn render_tier_section(
         prefix
             .then_with(|| match (b.hotspot_score, a.hotspot_score) {
                 (Some(b), Some(a)) => b.total_cmp(&a),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (Some(_), None) => std::cmp::Ordering::Greater,
+                (None, Some(_)) => std::cmp::Ordering::Less,
                 (None, None) => std::cmp::Ordering::Equal,
             })
             .then_with(|| a.metric.cmp(&b.metric))
@@ -610,9 +610,6 @@ fn render_tier_section(
             .then_with(|| a.id.cmp(&b.id))
     });
     let total = sorted.len();
-    if let Some(n) = top {
-        sorted.truncate(n);
-    }
     writeln!(out, "{} ({})", ansi_wrap(color, label, colorize), total)?;
     // Preserve the score-ranked first occurrence when folding multiple
     // findings into one file row. A BTreeMap here would silently restore
@@ -627,6 +624,9 @@ fn render_tier_section(
         } else {
             by_file.push((&f.location.file, vec![f]));
         }
+    }
+    if let Some(n) = top {
+        by_file.truncate(n);
     }
     let mark_hotspot_rows = tier_and_severity_fixed
         && items.iter().any(|finding| finding.hotspot)
@@ -972,6 +972,37 @@ mod tests {
         let top = render_to_string(&rec, &filters);
         assert!(top.contains("src/z-high.rs"), "{top}");
         assert!(!top.contains("src/a-low.rs"), "{top}");
+    }
+
+    #[test]
+    fn top_counts_file_rows_after_regrouping() {
+        let mut repeated =
+            scored_finding("cognitive", "src/z-high.rs", Severity::Critical, true, 90.0);
+        repeated.id.push_str(":second");
+        let rec = record(vec![
+            scored_finding("ccn", "src/z-high.rs", Severity::Critical, true, 100.0),
+            repeated,
+            scored_finding("ccn", "src/a-next.rs", Severity::Critical, true, 80.0),
+            scored_finding("ccn", "src/b-hidden.rs", Severity::Critical, true, 70.0),
+        ]);
+        let mut filters = default_filters();
+        filters.top = Some(2);
+
+        let out = render_to_string(&rec, &filters);
+        assert_eq!(out.matches("src/z-high.rs").count(), 1, "{out}");
+        assert!(out.contains("src/a-next.rs"), "{out}");
+        assert!(!out.contains("src/b-hidden.rs"), "{out}");
+    }
+
+    #[test]
+    fn missing_hotspot_score_sorts_after_scored_findings() {
+        let rec = record(vec![
+            finding("ccn", "src/a-missing.rs", Severity::Critical, true),
+            scored_finding("ccn", "src/z-scored.rs", Severity::Critical, true, 1.0),
+        ]);
+
+        let out = render_to_string(&rec, &default_filters());
+        assert!(out.find("src/z-scored.rs").unwrap() < out.find("src/a-missing.rs").unwrap());
     }
 
     #[test]

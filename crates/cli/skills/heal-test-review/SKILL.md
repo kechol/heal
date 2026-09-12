@@ -182,7 +182,7 @@ under `/heal-test-patch`:
 
 First preserve HEAL's Tier and Severity order, then sort by descending
 `hotspot_score` within the Test family. Missing scores sort last; ties
-use path then finding id. This mirrors human `heal status`; do not mix
+use metric, path, then finding id. This mirrors human `heal status`; do not mix
 raw scores across families or invent a combined score. The categories
 below decide how an item is handled, not a different numeric ranking.
 
