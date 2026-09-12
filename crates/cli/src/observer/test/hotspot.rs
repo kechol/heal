@@ -59,7 +59,7 @@ pub fn compose(churn: &ChurnReport, coverage: Option<&CoverageReport>) -> TestHo
     };
 
     let mut entries: Vec<TestHotspotEntry> = Vec::new();
-    for measured in &cov.entries {
+    for measured in cov.measured_production_entries() {
         let Some(language) = Language::from_path(&measured.path) else {
             continue;
         };
@@ -215,6 +215,7 @@ mod tests {
     #[cfg(feature = "lang-rust")]
     fn cov_of(items: &[(&str, f64)]) -> CoverageReport {
         CoverageReport {
+            production_files: items.iter().map(|(p, _)| PathBuf::from(p)).collect(),
             entries: items
                 .iter()
                 .map(|(p, pct)| CoverageEntry {
@@ -240,6 +241,18 @@ mod tests {
         assert_eq!(report.entries.len(), 1);
         assert_eq!(report.entries[0].path.to_string_lossy(), "src/tested.rs");
         assert!((report.entries[0].score - 100.0).abs() < f64::EPSILON);
+    }
+
+    #[cfg(feature = "lang-rust")]
+    #[test]
+    fn lcov_entry_outside_production_universe_cannot_become_hotspot() {
+        let churn = churn_of(&[("src/live.rs", 5), ("tests/helper.rs", 20)]);
+        let mut cov = cov_of(&[("src/live.rs", 80.0), ("tests/helper.rs", 0.0)]);
+        cov.production_files = vec![PathBuf::from("src/live.rs")];
+
+        let report = compose(&churn, Some(&cov));
+        assert_eq!(report.entries.len(), 1);
+        assert_eq!(report.entries[0].path, PathBuf::from("src/live.rs"));
     }
 
     #[cfg(feature = "lang-rust")]

@@ -30,6 +30,7 @@ fn single_existing_lcov_path_reads_as_before() {
     // Single-package projects: one path matches, missing candidates
     // stay silent — identical output to the pre-merge behavior.
     let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "src/lib.rs", "pub fn live() {}\n");
     write(
         dir.path(),
         "coverage/lcov.info",
@@ -53,6 +54,8 @@ fn merges_every_existing_lcov_path() {
     // every one of them must count — the old first-match-wins probe
     // silently dropped all but the first (issue #29).
     let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "pkg-a/src/a.ts", "export const a = 1;\n");
+    write(dir.path(), "pkg-b/src/b.ts", "export const b = 1;\n");
     write(
         dir.path(),
         "pkg-a/coverage/lcov.info",
@@ -115,6 +118,7 @@ fn colliding_entries_across_files_max_merge() {
     // duplicate `SF` records within one file) instead of aliasing or
     // double-counting.
     let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "pkg-a/src/a.ts", "export const a = 1;\n");
     write(
         dir.path(),
         "lcov.info",
@@ -159,7 +163,7 @@ fn partial_report_lists_only_unmeasured_production_sources() {
     write(
         dir.path(),
         "lcov.info",
-        "SF:src/measured.rs\nLF:1\nLH:0\nend_of_record\nSF:src/full.rs\nLF:1\nLH:1\nend_of_record\n",
+        "SF:src/measured.rs\nLF:1\nLH:0\nend_of_record\nSF:tests/helper.rs\nLF:1\nLH:0\nend_of_record\nSF:generated/output.rs\nLF:1\nLH:0\nend_of_record\nSF:excluded/skip.rs\nLF:1\nLH:0\nend_of_record\nSF:src/deleted.rs\nLF:1\nLH:0\nend_of_record\n",
     );
     let mut cfg = cfg_test_coverage_enabled();
     cfg.git.exclude_paths = vec!["excluded/**".into()];
@@ -174,11 +178,11 @@ fn partial_report_lists_only_unmeasured_production_sources() {
         entry.path.as_path() == Path::new("src/measured.rs")
             && entry.line_coverage_pct.abs() < f64::EPSILON
     }));
+    assert_eq!(report.entries.len(), 1);
     assert!(report
-        .entries
+        .into_findings()
         .iter()
-        .any(|entry| entry.path.as_path() == Path::new("src/full.rs")
-            && (entry.line_coverage_pct - 100.0).abs() < f64::EPSILON));
+        .all(|finding| finding.location.file == Path::new("src/measured.rs")));
 }
 
 #[test]
@@ -209,6 +213,8 @@ fn returns_empty_when_feature_disabled() {
 #[test]
 fn into_findings_skips_fully_covered_files() {
     let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "src/full.rs", "pub fn full() {}\n");
+    write(dir.path(), "src/half.rs", "pub fn half() {}\n");
     write(
         dir.path(),
         "lcov.info",
@@ -238,6 +244,7 @@ end_of_record
 #[test]
 fn ratio_for_returns_coverage_ratio() {
     let report = CoverageReport {
+        production_files: vec![PathBuf::from("src/lib.rs")],
         entries: vec![heal_cli::observer::test::coverage::CoverageEntry {
             path: PathBuf::from("src/lib.rs"),
             lines_found: 10,

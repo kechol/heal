@@ -118,6 +118,13 @@ impl CoverageObserver {
                 merge_entry(&mut merged, normalised, entry);
             }
         }
+        // LCOV can contain test files, generated files, deleted files, or
+        // paths excluded by project policy. The walked production universe is
+        // authoritative; report entries outside it are provenance noise, not
+        // actionable coverage observations.
+        let production_set: std::collections::HashSet<&Path> =
+            production_files.iter().map(PathBuf::as_path).collect();
+        merged.retain(|path, _| production_set.contains(path.as_path()));
         let entries: Vec<CoverageEntry> = merged.into_values().collect();
         let measured: std::collections::HashSet<&Path> =
             entries.iter().map(|entry| entry.path.as_path()).collect();
@@ -252,6 +259,17 @@ pub struct CoverageReport {
 }
 
 impl CoverageReport {
+    /// Measured entries that belong to the observer's production universe.
+    /// Consumers use this boundary even though `scan` already filters entries,
+    /// so manually assembled/internal reports cannot bypass file-role policy.
+    pub(crate) fn measured_production_entries(&self) -> impl Iterator<Item = &CoverageEntry> {
+        let production: std::collections::HashSet<&Path> =
+            self.production_files.iter().map(PathBuf::as_path).collect();
+        self.entries
+            .iter()
+            .filter(move |entry| production.contains(entry.path.as_path()))
+    }
+
     #[must_use]
     pub fn observation(&self) -> CoverageObservation {
         CoverageObservation {
@@ -267,8 +285,7 @@ impl CoverageReport {
     /// mention it.
     #[must_use]
     pub fn ratio_for(&self, path: &Path) -> Option<f64> {
-        self.entries
-            .iter()
+        self.measured_production_entries()
             .find(|e| e.path == path)
             .map(|e| e.line_coverage_pct / 100.0)
     }
@@ -278,8 +295,7 @@ impl CoverageReport {
     #[must_use]
     pub fn worst_n(&self, n: usize) -> Vec<&CoverageEntry> {
         let mut top: Vec<&CoverageEntry> = self
-            .entries
-            .iter()
+            .measured_production_entries()
             .filter(|e| e.line_coverage_pct < 100.0)
             .collect();
         top.sort_by(|a, b| {
@@ -294,8 +310,7 @@ impl CoverageReport {
     /// Number of files with sub-100% coverage.
     #[must_use]
     pub fn uncovered_count(&self) -> usize {
-        self.entries
-            .iter()
+        self.measured_production_entries()
             .filter(|e| e.line_coverage_pct < 100.0)
             .count()
     }
@@ -333,8 +348,7 @@ fn entry_finding(entry: &CoverageEntry) -> Finding {
 
 impl IntoFindings for CoverageReport {
     fn into_findings(&self) -> Vec<Finding> {
-        self.entries
-            .iter()
+        self.measured_production_entries()
             // Fully-covered files aren't signal — emitting them would
             // dwarf the actual gaps. `ratio_for` still surfaces them
             // for downstream consumers that need the raw ratio.
@@ -376,8 +390,7 @@ impl Feature for CoverageFeature {
             .as_ref()
             .unwrap_or(&FALLBACK_CALIBRATION);
         report
-            .entries
-            .iter()
+            .measured_production_entries()
             .filter(|e| e.line_coverage_pct < 100.0)
             .map(|entry| {
                 let inverted = 100.0 - entry.line_coverage_pct;
@@ -426,6 +439,8 @@ mod tests {
     #[test]
     fn parses_lcov_when_enabled() {
         let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("src")).unwrap();
+        fs::write(tmp.path().join("src/lib.rs"), "pub fn live() {}\n").unwrap();
         fixture(
             &tmp,
             "SF:src/lib.rs\nDA:1,0\nDA:2,0\nDA:3,0\nLF:3\nLH:0\nend_of_record\n",
@@ -441,6 +456,9 @@ mod tests {
     #[test]
     fn emits_findings_only_for_uncovered_files() {
         let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("src")).unwrap();
+        fs::write(tmp.path().join("src/full.rs"), "pub fn full() {}\n").unwrap();
+        fs::write(tmp.path().join("src/half.rs"), "pub fn half() {}\n").unwrap();
         fixture(
             &tmp,
             "\
@@ -478,6 +496,7 @@ end_of_record
     #[test]
     fn ratio_for_returns_none_for_unknown_path() {
         let report = CoverageReport {
+            production_files: vec![PathBuf::from("src/lib.rs")],
             entries: vec![CoverageEntry {
                 path: PathBuf::from("src/lib.rs"),
                 lines_found: 10,
