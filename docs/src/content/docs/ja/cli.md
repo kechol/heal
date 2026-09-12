@@ -205,6 +205,8 @@ heal は **絶対に** 自動で recalibrate しません。コードベース�
 
 スクリプト用の契約は `heal status --json` です。直接オンディスク状態を覗きたい場合は、`.heal/findings/` 配下にフラットな成果物が 3 つ置かれています:
 
+2 つの JSON 表示は意図的に byte-for-byte では一致しません。`latest.json` はオブザーバの生レコードです。`heal status --json` は同じレコードschemaを使い、現在の accepted 状態と一時的な `accepted_rereview` 通知をoverlayしたうえで、指定された workspace、feature、metric、path、Severity のfilterを適用します。
+
 | ファイル                         | 役割                                                                      |
 | -------------------------------- | ------------------------------------------------------------------------- |
 | `.heal/findings/latest.json`     | 現在の TODO — fresh なら再利用し、stale/欠落時または `--refresh` で置換。 |

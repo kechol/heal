@@ -333,6 +333,12 @@ this command. Put `floor_critical` / `floor_ok` overrides in
 at the on-disk state directly, three flat files live under
 `.heal/findings/`:
 
+The two JSON views intentionally are not byte-for-byte identical.
+`latest.json` is the raw observer record. `heal status --json` uses the
+same record schema, then overlays the current accepted state and the
+ephemeral `accepted_rereview` notices, and applies any requested
+workspace, feature, metric, path, and Severity filters.
+
 | File                             | Purpose                                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------------------------- |
 | `.heal/findings/latest.json`     | Current TODO — reused when fresh; replaced when stale/missing or forced with `--refresh`. |
