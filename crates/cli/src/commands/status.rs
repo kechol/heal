@@ -509,10 +509,10 @@ fn render_one_family(
     Ok(hidden)
 }
 
-/// Render one family's findings as the per-`(Severity, hotspot)`
-/// bucket cascade. Returns the number of findings hidden behind the
-/// `--all` gate so the caller can roll a single "Hidden: N across
-/// families" footer instead of one per family.
+/// Render one family's findings by effective drain tier, then by
+/// `(Severity, hotspot)`. Returns the number hidden behind the `--all`
+/// gate so the caller can roll a single "Hidden: N across families"
+/// footer instead of one per family.
 fn render_family(
     items: &[&Finding],
     drain: &PolicyDrainConfig,
@@ -521,48 +521,53 @@ fn render_family(
     colorize: bool,
     out: &mut (impl Write + ?Sized),
 ) -> Result<usize> {
-    let mut buckets: BTreeMap<(Severity, bool), Vec<&Finding>> = BTreeMap::new();
+    let mut buckets: BTreeMap<(u8, Severity, bool), Vec<&Finding>> = BTreeMap::new();
     for f in items {
-        buckets.entry((f.severity, f.hotspot)).or_default().push(*f);
+        let tier = match drain.tier_for(f) {
+            Some(DrainTier::Must) => 0,
+            Some(DrainTier::Should) => 1,
+            Some(DrainTier::Advisory) => 2,
+            None => 3,
+        };
+        buckets
+            .entry((tier, f.severity, f.hotspot))
+            .or_default()
+            .push(*f);
     }
-    let order: &[(Severity, bool, &str, &str, bool)] = &[
-        (Severity::Critical, true, "🔴 Critical 🔥", ANSI_RED, true),
-        (Severity::Critical, false, "🔴 Critical", ANSI_RED, true),
-        (Severity::High, true, "🟠 High 🔥", ANSI_YELLOW, true),
-        (Severity::High, false, "🟠 High", ANSI_YELLOW, show_low),
-        (
-            Severity::Medium,
-            true,
-            "🟡 Medium 🔥",
-            ANSI_YELLOW,
-            show_low,
-        ),
-        (Severity::Medium, false, "🟡 Medium", ANSI_YELLOW, show_low),
-        (Severity::Ok, true, "✅ Ok 🔥", ANSI_CYAN, show_low),
-        (Severity::Ok, false, "✅ Ok", ANSI_GREEN, show_low),
+    let tier_order: &[(u8, &str, bool)] = &[
+        (0, "T0 Must drain", true),
+        (1, "T1 Should drain", true),
+        (2, "Advisory", show_low),
+        (3, "", show_low),
+    ];
+    let severity_order: &[(Severity, bool, &str, &str)] = &[
+        (Severity::Critical, true, "🔴 Critical 🔥", ANSI_RED),
+        (Severity::Critical, false, "🔴 Critical", ANSI_RED),
+        (Severity::High, true, "🟠 High 🔥", ANSI_YELLOW),
+        (Severity::High, false, "🟠 High", ANSI_YELLOW),
+        (Severity::Medium, true, "🟡 Medium 🔥", ANSI_YELLOW),
+        (Severity::Medium, false, "🟡 Medium", ANSI_YELLOW),
+        (Severity::Ok, true, "✅ Ok 🔥", ANSI_CYAN),
+        (Severity::Ok, false, "✅ Ok", ANSI_GREEN),
     ];
     let mut hidden = 0usize;
-    for (sev, hot, label, color, visible) in order {
-        let Some(items) = buckets.get(&(*sev, *hot)) else {
-            continue;
-        };
-        if !*visible {
-            hidden += items.len();
-            continue;
+    for (tier, tier_label, visible) in tier_order {
+        for (sev, hot, label, color) in severity_order {
+            let Some(items) = buckets.get(&(*tier, *sev, *hot)) else {
+                continue;
+            };
+            if !*visible {
+                hidden += items.len();
+                continue;
+            }
+            let suffix = if tier_label.is_empty() {
+                String::new()
+            } else {
+                format!(" [{tier_label}]")
+            };
+            let full_label = format!("{label}{suffix}");
+            render_tier_section(&full_label, color, items, top, colorize, out)?;
         }
-        let suffix = drain
-            .tier_for(items[0])
-            .map(|t| {
-                let name = match t {
-                    DrainTier::Must => "T0 Must drain",
-                    DrainTier::Should => "T1 Should drain",
-                    DrainTier::Advisory => "Advisory",
-                };
-                format!(" [{name}]")
-            })
-            .unwrap_or_default();
-        let full_label = format!("{label}{suffix}");
-        render_tier_section(&full_label, color, items, top, colorize, out)?;
     }
     Ok(hidden)
 }
@@ -802,9 +807,13 @@ mod tests {
     }
 
     fn render_to_string(record: &FindingsRecord, filters: &Filters) -> String {
-        let mut buf = Vec::new();
         let cfg = Config::default();
-        render(record, &[], filters, &cfg, false, &mut buf).unwrap();
+        render_with_config(record, filters, &cfg)
+    }
+
+    fn render_with_config(record: &FindingsRecord, filters: &Filters, cfg: &Config) -> String {
+        let mut buf = Vec::new();
+        render(record, &[], filters, cfg, false, &mut buf).unwrap();
         String::from_utf8(buf).unwrap()
     }
 
@@ -851,6 +860,52 @@ mod tests {
         assert!(out.contains("[T1 Should drain]"), "T1 tier suffix:\n{out}");
         assert!(out.contains("src/hot.ts"));
         assert!(out.contains("src/cool.ts"));
+    }
+
+    #[test]
+    fn effective_drain_tier_precedes_severity() {
+        use crate::core::config::{DrainSpec, HotspotMatch, PolicyDrainMetricOverride};
+
+        let rec = record(vec![
+            finding("ccn", "src/critical.rs", Severity::Critical, false),
+            finding("cognitive", "src/high.rs", Severity::High, false),
+        ]);
+        let mut cfg = Config::default();
+        cfg.policy.drain.metrics.insert(
+            "cognitive".to_owned(),
+            PolicyDrainMetricOverride {
+                must: Some(vec![DrainSpec {
+                    severity: Severity::High,
+                    hotspot: HotspotMatch::Any,
+                }]),
+                should: Some(Vec::new()),
+            },
+        );
+
+        let out = render_with_config(&rec, &default_filters(), &cfg);
+        assert!(out.find("src/high.rs").unwrap() < out.find("src/critical.rs").unwrap());
+        assert!(out.contains("High [T0 Must drain]"), "{out}");
+        assert!(out.contains("Critical [T1 Should drain]"), "{out}");
+    }
+
+    #[test]
+    fn cross_workspace_advisory_obeys_all_gate() {
+        let rec = record(vec![finding(
+            Finding::METRIC_CHANGE_COUPLING_CROSS_WORKSPACE,
+            "src/coupled.rs",
+            Severity::Critical,
+            true,
+        )]);
+
+        let default = render_to_string(&rec, &default_filters());
+        assert!(!default.contains("src/coupled.rs"), "{default}");
+        assert!(default.contains("Hidden: 1 finding"), "{default}");
+
+        let mut filters = default_filters();
+        filters.all = true;
+        let all = render_to_string(&rec, &filters);
+        assert!(all.contains("Critical 🔥 [Advisory]"), "{all}");
+        assert!(all.contains("src/coupled.rs"), "{all}");
     }
 
     #[test]
