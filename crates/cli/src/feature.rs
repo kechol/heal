@@ -171,6 +171,9 @@ impl HotspotIndex {
     ) -> Self {
         let mut by_path: std::collections::HashMap<PathBuf, f64> = std::collections::HashMap::new();
         for (path, score) in entries {
+            if !score.is_finite() {
+                continue;
+            }
             by_path
                 .entry(path)
                 .and_modify(|v| {
@@ -240,6 +243,25 @@ impl HotspotIndex {
         }
     }
 
+    #[must_use]
+    fn score(&self, path: &Path) -> Option<f64> {
+        self.by_path.get(path).copied()
+    }
+
+    /// Highest score attached to a Finding's primary or secondary
+    /// locations. Every score comes from this index's single family.
+    #[must_use]
+    pub(crate) fn max_location_score(
+        &self,
+        primary: &Location,
+        locations: &[Location],
+    ) -> Option<f64> {
+        std::iter::once(primary)
+            .chain(locations)
+            .filter_map(|location| self.score(&location.file))
+            .max_by(f64::total_cmp)
+    }
+
     /// Convenience: a Finding's primary file or any of its
     /// `locations` is hot. `pub(crate)` because [`decorate`] is the
     /// only intended consumer; if v0.3 features need it, the contract
@@ -260,6 +282,7 @@ impl HotspotIndex {
 pub fn decorate(mut f: Finding, severity: Severity, hotspot: &HotspotIndex) -> Finding {
     f.severity = severity;
     f.hotspot = hotspot.any_location_hot(&f.location, &f.locations);
+    f.hotspot_score = hotspot.max_location_score(&f.location, &f.locations);
     f
 }
 
@@ -554,5 +577,34 @@ mod tests {
         let index = HotspotIndex::for_test(None, &calibration);
 
         assert!(!index.is_hot(Path::new("src/unmeasured.rs")));
+    }
+
+    #[test]
+    fn decoration_uses_the_highest_score_across_all_locations() {
+        let primary = Location::file(PathBuf::from("src/primary.rs"));
+        let secondary = Location::file(PathBuf::from("src/hottest.rs"));
+        let calibration = HotspotCalibration {
+            p50: 10.0,
+            p75: 20.0,
+            p90: 50.0,
+            p95: 90.0,
+            floor_ok: Some(FLOOR_OK_HOTSPOT),
+        };
+        let index = HotspotIndex::from_entries(
+            [
+                (primary.file.clone(), 30.0),
+                (secondary.file.clone(), 100.0),
+                (PathBuf::from("src/non-finite.rs"), f64::NAN),
+            ],
+            Some(calibration),
+        );
+        let finding = Finding::new("duplication", primary, "duplicate".into(), "seed")
+            .with_locations(vec![secondary]);
+        let decorated = decorate(finding.clone(), Severity::Critical, &index);
+
+        assert!(decorated.hotspot);
+        assert_eq!(decorated.hotspot_score, Some(100.0));
+        assert_eq!(decorated.id, finding.id);
+        assert_eq!(index.score(Path::new("src/non-finite.rs")), None);
     }
 }

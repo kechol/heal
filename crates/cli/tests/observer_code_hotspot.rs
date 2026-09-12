@@ -116,6 +116,34 @@ fn compose_applies_weights() {
 }
 
 #[test]
+fn positive_weight_changes_preserve_rank_order() {
+    let churn = churn_report(&[("src/a.rs", 10), ("src/b.rs", 2)]);
+    let complexity = complexity_report(&[("src/a.rs", &[5]), ("src/b.rs", &[20])]);
+    let baseline = compose(&churn, &complexity, HotspotWeights::default());
+    let scaled = compose(
+        &churn,
+        &complexity,
+        HotspotWeights {
+            churn: 7.0,
+            complexity: 3.0,
+        },
+    );
+
+    assert_eq!(
+        baseline
+            .entries
+            .iter()
+            .map(|entry| &entry.path)
+            .collect::<Vec<_>>(),
+        scaled
+            .entries
+            .iter()
+            .map(|entry| &entry.path)
+            .collect::<Vec<_>>(),
+    );
+}
+
+#[test]
 fn compose_drops_files_missing_one_signal() {
     let churn = churn_report(&[("only_churn.rs", 5), ("both.rs", 3)]);
     let complexity = complexity_report(&[("both.rs", &[4]), ("only_complex.rs", &[10])]);

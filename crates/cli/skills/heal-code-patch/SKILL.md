@@ -97,7 +97,7 @@ patterns, end the session with a summary and recommend the user run
 
 ```
 while there are non-Ok findings in the cache:
-    pick the next one (Severity order: Critical🔥 → Critical → High🔥 → High → Medium)
+    pick the first item in HEAL's Tier → Severity → hotspot_score order
         # skip findings where `accepted == true` — the team has already
         # decided these are intrinsic; refactoring them is out of scope
         # for this skill. They show up under `📌 Accepted` in
@@ -137,9 +137,13 @@ ask before applying.
    Treat as advisory; surface the trade-off and ask before draining.
 3. **Advisory** — anything else above Ok. Never drain in-loop.
 
-Within T0, iterate in `Severity 🔥` order: `Critical 🔥` first, then
-any other entries the user's `must` policy admits. Skip findings
-already present in `.heal/findings/fixed.json` (match by `finding_id`).
+Within T0, iterate by Severity first (`Critical 🔥` first), then by
+descending `hotspot_score` among findings in that same family and
+Severity. Missing scores sort last; ties use path then finding id.
+This is the same order as the human `heal status` output. Do not mix
+raw scores across Code/Test/Docs or invent a combined score. Skip
+findings already present in `.heal/findings/fixed.json` (match by
+`finding_id`).
 
 When T0 is empty, end the session — do **not** silently extend into T1
 or Advisory. Surface the remaining tiers in the summary, recommend the

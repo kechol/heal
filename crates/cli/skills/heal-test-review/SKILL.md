@@ -180,6 +180,12 @@ Build a prioritized TODO list. Order matters — drain the
 high-value, low-effort items first so the cache empties faster
 under `/heal-test-patch`:
 
+First preserve HEAL's Tier and Severity order, then sort by descending
+`hotspot_score` within the Test family. Missing scores sort last; ties
+use path then finding id. This mirrors human `heal status`; do not mix
+raw scores across families or invent a combined score. The categories
+below decide how an item is handled, not a different numeric ranking.
+
 1. **Mechanical wins (allow-list).** Findings whose fix is
    obviously deterministic — adding a unit test for an uncovered
    hot path with documented behavior, aligning a drifted test

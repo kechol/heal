@@ -108,7 +108,7 @@ impl CoverageObservation {
 /// representative in `location` and the rest in `locations`; the id
 /// is derived from `location` + a metric-specific content seed so
 /// alternative orderings of the same set hash identically.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Finding {
     pub id: String,
     pub metric: String,
@@ -116,6 +116,12 @@ pub struct Finding {
     pub severity: Severity,
     #[serde(default)]
     pub hotspot: bool,
+    /// Raw score from the finding's own family-specific hotspot index.
+    /// Used only as a tiebreaker after drain Tier and Severity; scores
+    /// from different families are not comparable. Not part of the
+    /// stable finding id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hotspot_score: Option<f64>,
     /// Workspace path (project-root relative) when the finding's
     /// `location.file` lives under a declared `[[project.workspaces]]`
     /// entry. `None` for files outside every declared workspace, or
@@ -175,6 +181,7 @@ impl Finding {
             metric: metric.to_owned(),
             severity: Severity::Ok,
             hotspot: false,
+            hotspot_score: None,
             workspace: None,
             location,
             locations: Vec::new(),
@@ -441,6 +448,7 @@ mod tests {
             metric: "ccn".into(),
             severity: Severity::Ok,
             hotspot: false,
+            hotspot_score: None,
             workspace: None,
             location: loc("src/foo.rs", Some("bar"), Some(1)),
             locations: vec![],
@@ -453,7 +461,39 @@ mod tests {
         assert!(!json.contains("locations"));
         assert!(!json.contains("fix_hint"));
         assert!(!json.contains("workspace"));
+        assert!(!json.contains("hotspot_score"));
         assert!(!json.contains("accepted"));
         assert!(!json.contains("is_test_file"));
+    }
+
+    #[test]
+    fn finding_serialises_hotspot_score_when_present() {
+        let mut f = Finding::new(
+            "ccn",
+            loc("src/foo.rs", Some("bar"), Some(1)),
+            "CCN=42".into(),
+            "seed",
+        );
+        f.hotspot_score = Some(123.5);
+
+        let json = serde_json::to_value(&f).unwrap();
+        assert_eq!(json["hotspot_score"], 123.5);
+        assert_eq!(Finding::make_id("ccn", &f.location, "seed"), f.id);
+    }
+
+    #[test]
+    fn finding_without_hotspot_score_deserialises_for_backward_compatibility() {
+        let json = r#"{
+            "id":"ccn:src/foo.rs:bar:deadbeef",
+            "metric":"ccn",
+            "severity":"critical",
+            "hotspot":true,
+            "location":{"file":"src/foo.rs","line":1,"symbol":"bar"},
+            "summary":"CCN=42"
+        }"#;
+
+        let finding: Finding = serde_json::from_str(json).unwrap();
+        assert_eq!(finding.hotspot_score, None);
+        assert!(finding.hotspot);
     }
 }

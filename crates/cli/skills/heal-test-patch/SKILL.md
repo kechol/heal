@@ -80,7 +80,7 @@ test fixes different.
 
 ```
 while there are non-Ok [features.test] findings in the cache:
-    pick the next one (Severity order: Critical🔥 → Critical → High🔥 → High → Medium)
+    pick the first item in HEAL's Tier → Severity → hotspot_score order
         skip findings where `accepted == true`
     read the source / test
     decide: allow-list (apply) / false-positive (propose accept) / escalate-list (stop)?
@@ -99,6 +99,11 @@ while there are non-Ok [features.test] findings in the cache:
 
 Stop conditions: test slice of cache empty, user interrupts, or
 only escalate-list findings remain.
+
+Within a drain Tier, choose higher Severity first and then descending
+`hotspot_score` within the Test family. Missing scores sort last; ties
+use path then finding id. This mirrors human `heal status`; do not mix
+Test scores with Code/Docs scores or construct a combined score.
 
 ## Allow-list (apply mechanically)
 

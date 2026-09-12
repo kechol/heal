@@ -544,25 +544,43 @@ fn render_tier_section(
         return Ok(());
     }
     let mut sorted: Vec<&Finding> = items.to_vec();
-    // Severity desc, then 🔥 first within same Severity, then by metric
-    // / file for deterministic output.
+    // Tier and Severity are fixed by the enclosing bucket cascade. Within
+    // a bucket, use the same-family hotspot score before deterministic
+    // metric / path / id ties. Missing scores sort last.
     sorted.sort_by(|a, b| {
         b.severity
             .cmp(&a.severity)
             .then_with(|| b.hotspot.cmp(&a.hotspot))
+            .then_with(|| match (b.hotspot_score, a.hotspot_score) {
+                (Some(b), Some(a)) => b.total_cmp(&a),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            })
             .then_with(|| a.metric.cmp(&b.metric))
             .then_with(|| a.location.file.cmp(&b.location.file))
+            .then_with(|| a.id.cmp(&b.id))
     });
     let total = sorted.len();
     if let Some(n) = top {
         sorted.truncate(n);
     }
     writeln!(out, "{} ({})", ansi_wrap(color, label, colorize), total)?;
-    let mut by_file: BTreeMap<&PathBuf, Vec<&Finding>> = BTreeMap::new();
-    for f in &sorted {
-        by_file.entry(&f.location.file).or_default().push(f);
+    // Preserve the score-ranked first occurrence when folding multiple
+    // findings into one file row. A BTreeMap here would silently restore
+    // lexical path order and discard the work-order signal.
+    let mut by_file: Vec<(&PathBuf, Vec<&Finding>)> = Vec::new();
+    for f in sorted {
+        if let Some((_, findings)) = by_file
+            .iter_mut()
+            .find(|(file, _)| *file == &f.location.file)
+        {
+            findings.push(f);
+        } else {
+            by_file.push((&f.location.file, vec![f]));
+        }
     }
-    for (file, fs) in &by_file {
+    for (file, fs) in by_file {
         let summary = group_labels(fs.iter().map(|f| f.short_label())).join("  ");
         writeln!(out, "  {}  {summary}", file.display())?;
     }
@@ -730,6 +748,18 @@ mod tests {
         f
     }
 
+    fn scored_finding(
+        metric: &str,
+        file: &str,
+        severity: Severity,
+        hotspot: bool,
+        score: f64,
+    ) -> Finding {
+        let mut f = finding(metric, file, severity, hotspot);
+        f.hotspot_score = Some(score);
+        f
+    }
+
     fn record(findings: Vec<Finding>) -> FindingsRecord {
         FindingsRecord::new(Some("abc1234".into()), true, "h".into(), findings)
     }
@@ -784,6 +814,69 @@ mod tests {
         assert!(out.contains("[T1 Should drain]"), "T1 tier suffix:\n{out}");
         assert!(out.contains("src/hot.ts"));
         assert!(out.contains("src/cool.ts"));
+    }
+
+    #[test]
+    fn same_bucket_renders_higher_hotspot_score_before_lexical_path() {
+        let rec = record(vec![
+            scored_finding("ccn", "src/a-low.rs", Severity::Critical, true, 30.0),
+            scored_finding("ccn", "src/z-high.rs", Severity::Critical, true, 90.0),
+        ]);
+        let out = render_to_string(&rec, &default_filters());
+
+        assert!(out.find("src/z-high.rs").unwrap() < out.find("src/a-low.rs").unwrap());
+    }
+
+    #[test]
+    fn equal_hotspot_scores_use_deterministic_path_order() {
+        let rec = record(vec![
+            scored_finding("ccn", "src/z.rs", Severity::Critical, true, 90.0),
+            scored_finding("ccn", "src/a.rs", Severity::Critical, true, 90.0),
+        ]);
+        let out = render_to_string(&rec, &default_filters());
+
+        assert!(out.find("src/a.rs").unwrap() < out.find("src/z.rs").unwrap());
+    }
+
+    #[test]
+    fn regrouping_and_top_preserve_score_order() {
+        let mut repeated =
+            scored_finding("cognitive", "src/z-high.rs", Severity::Critical, true, 90.0);
+        repeated.id.push_str(":second");
+        let rec = record(vec![
+            scored_finding("ccn", "src/a-low.rs", Severity::Critical, true, 30.0),
+            scored_finding("ccn", "src/z-high.rs", Severity::Critical, true, 90.0),
+            repeated,
+        ]);
+        let out = render_to_string(&rec, &default_filters());
+        assert!(out.find("src/z-high.rs").unwrap() < out.find("src/a-low.rs").unwrap());
+        assert_eq!(out.matches("src/z-high.rs").count(), 1, "{out}");
+
+        let mut filters = default_filters();
+        filters.top = Some(1);
+        let top = render_to_string(&rec, &filters);
+        assert!(top.contains("src/z-high.rs"), "{top}");
+        assert!(!top.contains("src/a-low.rs"), "{top}");
+    }
+
+    #[test]
+    fn accepted_finding_does_not_displace_active_score_order() {
+        let mut accepted = scored_finding(
+            "ccn",
+            "src/z-accepted.rs",
+            Severity::Critical,
+            true,
+            1_000.0,
+        );
+        accepted.accepted = true;
+        let rec = record(vec![
+            accepted,
+            scored_finding("ccn", "src/a-active.rs", Severity::Critical, true, 30.0),
+        ]);
+        let out = render_to_string(&rec, &default_filters());
+
+        assert!(out.contains("src/a-active.rs"), "{out}");
+        assert!(!out.contains("src/z-accepted.rs"), "{out}");
     }
 
     #[test]

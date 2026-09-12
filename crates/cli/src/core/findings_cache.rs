@@ -77,8 +77,10 @@ use crate::core::severity::SeverityCounts;
 /// `config_hash` to include enabled non-git observation inputs (doc pairs
 /// and LCOV payloads), including their path and missing/readable state.
 /// v7 adds `coverage_observation`, separating missing/partial reporter
-/// provenance from measured `coverage_pct` findings.
-pub const FINDINGS_RECORD_VERSION: u32 = 7;
+/// provenance from measured `coverage_pct` findings. v8 adds the optional
+/// per-finding `hotspot_score` used for deterministic within-family work
+/// order; the score does not affect IDs, Severity, or drain Tier.
+pub const FINDINGS_RECORD_VERSION: u32 = 8;
 
 /// One execution of `heal status`. The unit of read in the cache:
 /// `latest.json` holds the single most-recent record. `heal diff` reads

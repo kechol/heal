@@ -218,9 +218,12 @@ highest-Severity items individually.
 - **Advisory** — everything else above `Severity::Ok`. Mention as a
   count, never as TODO entries.
 
-Within T0, sort `Critical 🔥` first. Cap the TODO list at the top 8 —
-beyond that the list dilutes. If the user asked for "everything", you
-may extend into T1; never auto-extend into Advisory.
+Within T0, sort higher Severity first, then descending `hotspot_score`
+within the Code family. Missing scores sort last; ties use path then
+finding id. This is the same order as human `heal status`; never mix raw
+scores across families or invent a combined score. Cap the TODO list at
+the top 8 — beyond that the list dilutes. If the user asked for
+"everything", you may extend into T1; never auto-extend into Advisory.
 
 Each entry is exactly **5 lines**:
 

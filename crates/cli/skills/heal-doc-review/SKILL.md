@@ -122,6 +122,12 @@ Build a prioritized TODO list. The order matters — drain the
 high-value, low-effort items first so the cache empties faster
 under `/heal-doc-patch`:
 
+First preserve HEAL's Tier and Severity order, then sort by descending
+`hotspot_score` within the Docs family. Missing scores sort last; ties
+use path then finding id. This mirrors human `heal status`; do not mix
+raw scores across families or invent a combined score. The categories
+below decide how an item is handled, not a different numeric ranking.
+
 1. **Mechanical wins (allow-list).** Findings whose fix is
    obviously deterministic — broken internal links, dangling
    identifiers in fenced code blocks (deleting them as obsolete
