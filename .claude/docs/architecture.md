@@ -56,9 +56,12 @@ commands::status::run
   ↓
 read_latest_if_fresh(.heal/findings/latest.json) (unless --refresh)
   ↓
-fresh HEAD/clean gate + observation-input config_hash?
-  ├── yes → render cached record (fast path)
-  └── no  → continue
+fresh HEAD/clean gate + config/calibration/observation-input hash?
+  ├── yes → cached raw record; skip scan and continue at accepted overlay
+  └── no / --refresh → stable scan below
+  ↓
+stable input window begins: hash before → load current Config + existing
+Calibration (normal status does not build or rewrite calibration)
   ↓
 observers::run_all(project, cfg, only=None, workspace=None)
   ├── LocObserver               (always)
@@ -78,11 +81,12 @@ observers::run_all(project, cfg, only=None, workspace=None)
   └── CoverageObserver,         ([features.test] / .test.coverage)
       SkipRatioObserver
   ↓
-observers::build_calibration(reports, config)
-  → MetricCalibration per metric (global + per-workspace)
-  ↓
 feature::FeatureRegistry::builtin().lower_all(reports, cfg, cal)
   → Vec<Finding> with severity + hotspot flag
+  ↓
+hash observation inputs after scan
+  ├── changed → retry full window up to 3 times, then stop without writing
+  └── stable  → continue
   ↓
 FindingsRecord { id (FNV-1a of head+config+clean), head_sha, config_hash,
                  worktree_clean, severity_counts, workspaces, findings }
@@ -92,7 +96,10 @@ fs::atomic_write → .heal/findings/latest.json
 reconcile_fixed(fixed.json, regressed.jsonl, &record)
   → re-detected fixes move to regressed.jsonl, dropped from fixed.json
   ↓
-render → spawn pager (stdout TTY && !--no-pager && !--json)
+read accepted.json → overlay accepted state + ephemeral re-review notices
+  (latest.json remains raw observer truth)
+  ↓
+render or filtered JSON → spawn pager (stdout TTY && !--no-pager && !--json)
 ```
 
 ## End-to-end flow: `heal diff <ref>`

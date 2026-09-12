@@ -110,7 +110,7 @@ heal status --refresh                    # 再スキャンしてキャッシュ�
 heal status --metric lcom                # LCOM の Finding のみ
 heal status --metric coverage-pct        # カバレッジ findings のみ（[features.test]）
 heal status --metric doc-drift           # doc-drift findings のみ（[features.docs]）
-heal status --severity critical          # Critical のみ（`--all` で以上を含む）
+heal status --severity high              # High と Critical（--all でもこの下限は下がらない）
 heal status --feature code               # code ファミリのみ表示(test / docs を抑制)
 heal status --feature test               # test ファミリのみ([features.test])
 heal status --feature docs               # docs ファミリのみ([features.docs])
@@ -128,6 +128,8 @@ stdout がターミナルのときは `$PAGER`(または `less`)にパイプし�
 鮮度は HEAD と clean-worktree gate だけでなく、有効な非 git 観測入力も含めて判定します。ignored な LCOV や doc-pair を更新すると、HEAD が同じでも cache は無効です。mtime と checkout の絶対パスは使いません。human/JSON の coverage provenance は `missing` / `read_error` / `partial` / `complete` を区別します。LCOV にない production ファイルは未計測であり、0% とは判定せず reporter/package scope の確認へ案内します。
 
 出力は Finding を有効 Drain Tier と Severity でグループ化し(低優先度セクションは `--all` が必要)、ファイル単位に 1 行へ集約します。Hotspot は全行 hot のセクションまたは混在行の `🔥` で表示します。優先順は Tier、Severity、同一ファミリの `hotspot_score` 降順、metric/path/id の tie-break です。Code、Test、Docs の生スコアは相互比較せず、確率や修正効果の保証でもありません。
+
+`--severity` は常に最小 Severity の下限です。`--all` はその下限以上にある通常非表示のセクションを表示できますが、下限未満の finding は復元しません。
 
 ## `heal diff`
 

@@ -165,7 +165,7 @@ heal status --refresh                    # re-scan and overwrite the cache
 heal status --metric lcom                # only LCOM findings
 heal status --metric coverage-pct        # only coverage findings ([features.test])
 heal status --metric doc-drift           # only doc-drift findings ([features.docs])
-heal status --severity critical          # only Critical (and above with --all)
+heal status --severity high              # High and Critical; --all does not lower this floor
 heal status --feature code               # only the code family (drop test / docs)
 heal status --feature test               # only the test family ([features.test])
 heal status --feature docs               # only the docs family ([features.docs])
@@ -202,6 +202,9 @@ Priority is Tier, Severity, then descending
 family-local `hotspot_score`, with metric/path/id tie-breakers. Code,
 Test, and Docs scores are never compared with one another, and the
 score is not a probability or guaranteed payoff.
+
+`--severity` is always a minimum floor. `--all` can reveal otherwise-hidden
+sections at or above that floor, but it never restores findings below it.
 
 ## `heal diff`
 
