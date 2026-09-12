@@ -144,7 +144,10 @@ the design tree with the user.
 
 ### Phase 1 — Explore
 
-1. **Capture the cache.** Read the full `FindingsRecord` JSON.
+1. **Capture the cache.** Read the full `FindingsRecord` JSON. Exclude every
+   finding with `accepted=true` before clustering or ranking. Keep
+   `accepted_rereview` notices informational; they do not requeue accepted
+   findings.
 2. **Cluster the findings.**
    - **By file.** Multiple findings on one path → architectural
      target.

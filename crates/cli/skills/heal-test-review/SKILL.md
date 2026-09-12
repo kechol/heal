@@ -122,7 +122,9 @@ The shapes a `[features.test]` cache typically reveals:
 
 ### Phase 1 — Read
 
-For each `[features.test]` finding:
+Exclude every finding with `accepted=true` before ranking. Keep any
+`accepted_rereview` notice informational; it does not requeue the accepted
+finding. For each remaining `[features.test]` finding:
 
 1. Note `metric`, `severity`, `hotspot`, `is_test_file`, primary
    location, and secondary locations. The `is_test_file` flag
