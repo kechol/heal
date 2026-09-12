@@ -235,6 +235,12 @@ pub(super) fn render(
     let summary = drain_summary(&record.findings, drain);
     let accepted = accepted_summary(&record.findings);
     render_header(record, &summary, &accepted, cfg, filters, colorize, out)?;
+    if filters
+        .family
+        .is_none_or(|family| family == crate::feature::Family::Test)
+    {
+        render_coverage_observation(record, colorize, out)?;
+    }
     render_regressed_banner(regressed, colorize, out)?;
 
     let show_low = filters.all || matches!(filters.severity, Some(Severity::Medium | Severity::Ok));
@@ -300,6 +306,27 @@ pub(super) fn render(
         )?;
     }
 
+    Ok(())
+}
+
+fn render_coverage_observation(
+    record: &FindingsRecord,
+    colorize: bool,
+    out: &mut (impl Write + ?Sized),
+) -> Result<()> {
+    let Some(guidance) = record
+        .coverage_observation
+        .as_ref()
+        .and_then(crate::core::finding::CoverageObservation::guidance)
+    else {
+        return Ok(());
+    };
+    writeln!(
+        out,
+        "  {} {guidance}",
+        ansi_wrap(ANSI_YELLOW, "measurement:", colorize),
+    )?;
+    writeln!(out)?;
     Ok(())
 }
 
@@ -675,7 +702,7 @@ fn override_notes(cfg: &Config) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::finding::Location;
+    use crate::core::finding::{CoverageObservation, CoverageObservationState, Location};
     use std::path::PathBuf;
 
     fn finding(metric: &str, file: &str, severity: Severity, hotspot: bool) -> Finding {
@@ -757,6 +784,27 @@ mod tests {
         assert!(out.contains("[T1 Should drain]"), "T1 tier suffix:\n{out}");
         assert!(out.contains("src/hot.ts"));
         assert!(out.contains("src/cool.ts"));
+    }
+
+    #[test]
+    fn coverage_measurement_gap_is_guidance_not_drain_work() {
+        let rec = record(Vec::new()).with_coverage_observation(Some(CoverageObservation {
+            state: CoverageObservationState::Partial,
+            configured_sources: vec!["lcov.info".into()],
+            sources: vec!["lcov.info".into()],
+            unreadable_sources: Vec::new(),
+            unmeasured_files: vec!["src/unlisted.rs".into()],
+        }));
+        let out = render_to_string(&rec, &default_filters());
+        assert!(out.contains("measurement: coverage partial"), "{out}");
+        assert!(out.contains("T0 0 findings"), "{out}");
+
+        let json = serde_json::to_value(&rec).unwrap();
+        assert_eq!(json["coverage_observation"]["state"], "partial");
+        assert_eq!(
+            json["coverage_observation"]["unmeasured_files"][0],
+            "src/unlisted.rs"
+        );
     }
 
     #[test]

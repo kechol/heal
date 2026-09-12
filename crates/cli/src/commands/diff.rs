@@ -487,6 +487,8 @@ fn render_diff(
         to.head_sha.as_deref().unwrap_or("∅"),
         scoped_count(&to.findings, workspace),
     )?;
+    render_coverage_guidance("from", from, colorize, out)?;
+    render_coverage_guidance("to", to, colorize, out)?;
     writeln!(out)?;
 
     let mut hidden_low_severity = 0usize;
@@ -550,6 +552,26 @@ fn render_diff(
     writeln!(out)?;
     render_progress(diff, scoped_count(&from.findings, workspace), out)?;
     Ok(())
+}
+
+fn render_coverage_guidance(
+    side: &str,
+    record: &FindingsRecord,
+    colorize: bool,
+    out: &mut (impl Write + ?Sized),
+) -> std::io::Result<()> {
+    let Some(guidance) = record
+        .coverage_observation
+        .as_ref()
+        .and_then(crate::core::finding::CoverageObservation::guidance)
+    else {
+        return Ok(());
+    };
+    writeln!(
+        out,
+        "  {} {side}: {guidance}",
+        ansi_wrap(ANSI_YELLOW, "measurement:", colorize),
+    )
 }
 
 /// The two-line progress block: T0 drain foregrounded, whole-population
@@ -671,7 +693,7 @@ fn is_high_or_critical(e: &DiffEntry) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::finding::{Finding, Location};
+    use crate::core::finding::{CoverageObservation, CoverageObservationState, Finding, Location};
     use crate::core::findings_cache::FindingsRecord;
     use crate::core::severity::Severity;
     use std::path::PathBuf;
@@ -689,6 +711,22 @@ mod tests {
         );
         f.severity = severity;
         f
+    }
+
+    #[test]
+    fn diff_surfaces_coverage_provenance_per_side() {
+        let record = FindingsRecord::new(Some("abc".into()), true, "h".into(), Vec::new())
+            .with_coverage_observation(Some(CoverageObservation {
+                state: CoverageObservationState::Missing,
+                configured_sources: vec!["lcov.info".into()],
+                sources: Vec::new(),
+                unreadable_sources: Vec::new(),
+                unmeasured_files: vec!["src/lib.rs".into()],
+            }));
+        let mut out = Vec::new();
+        render_coverage_guidance("from", &record, false, &mut out).unwrap();
+        let out = String::from_utf8(out).unwrap();
+        assert!(out.contains("measurement: from: coverage unmeasured"));
     }
 
     fn record(findings: Vec<Finding>) -> FindingsRecord {

@@ -23,7 +23,7 @@ use std::process::{Command, Stdio};
 use crate::core::accepted::{decorate_findings, read_accepted};
 use crate::core::calibration::Calibration;
 use crate::core::config::{load_from_project, Config};
-use crate::core::finding::Finding;
+use crate::core::finding::{CoverageObservation, Finding};
 use crate::core::severity::Severity;
 use crate::core::term::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW};
 use crate::core::HealPaths;
@@ -71,6 +71,7 @@ fn run_commit(project: &Path, paths: &HealPaths) -> Result<()> {
         calibration.as_ref(),
         &cfg,
         &findings,
+        reports.coverage.as_ref().map(|r| r.observation()).as_ref(),
         &mut std::io::stdout(),
     )
     .ok();
@@ -133,6 +134,7 @@ fn write_nudge(
     calibration: Option<&Calibration>,
     cfg: &Config,
     findings: &[Finding],
+    coverage: Option<&CoverageObservation>,
     out: &mut impl Write,
 ) -> Result<()> {
     if calibration.is_none() {
@@ -154,6 +156,7 @@ fn write_nudge(
             "heal: recorded · {}",
             ansi_wrap(ANSI_GREEN, "clean", colorize),
         )?;
+        write_coverage_nudge(coverage, colorize, out)?;
         return Ok(());
     }
 
@@ -196,6 +199,23 @@ fn write_nudge(
             )?;
         }
     }
+    write_coverage_nudge(coverage, colorize, out)?;
+    Ok(())
+}
+
+fn write_coverage_nudge(
+    coverage: Option<&CoverageObservation>,
+    colorize: bool,
+    out: &mut impl Write,
+) -> Result<()> {
+    let Some(guidance) = coverage.and_then(CoverageObservation::guidance) else {
+        return Ok(());
+    };
+    writeln!(
+        out,
+        "         · {}",
+        ansi_wrap(ANSI_YELLOW, &guidance, colorize),
+    )?;
     Ok(())
 }
 
@@ -214,7 +234,15 @@ mod tests {
         let reports = run_all(dir, cfg, None, None);
         let (calibration, findings) = classify_with_calibration(paths, cfg, &reports);
         let mut buf: Vec<u8> = Vec::new();
-        write_nudge(calibration.as_ref(), cfg, &findings, &mut buf).unwrap();
+        let coverage = reports.coverage.as_ref().map(|r| r.observation());
+        write_nudge(
+            calibration.as_ref(),
+            cfg,
+            &findings,
+            coverage.as_ref(),
+            &mut buf,
+        )
+        .unwrap();
         String::from_utf8(buf).unwrap()
     }
 
@@ -374,5 +402,21 @@ mod tests {
 
         let out = nudge_output(dir.path(), &paths, &cfg);
         assert_eq!(out.trim_end(), "heal: recorded · clean");
+    }
+
+    #[test]
+    fn nudge_surfaces_missing_coverage_without_creating_a_finding() {
+        let dir = TempDir::new().unwrap();
+        let paths = init_project_with_config(dir.path(), "fn ok() {}\n");
+        let mut cfg = Config::default();
+        cfg.features.test.enabled = true;
+        cfg.features.test.coverage.enabled = true;
+        cfg.features.test.coverage.lcov_paths = vec!["missing.info".into()];
+        cfg.save(&paths.config()).unwrap();
+        crate::commands::calibrate::run(dir.path(), false, false).unwrap();
+
+        let out = nudge_output(dir.path(), &paths, &cfg);
+        assert!(out.contains("coverage unmeasured"), "{out}");
+        assert!(out.starts_with("heal: recorded · clean"), "{out}");
     }
 }

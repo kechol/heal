@@ -9,11 +9,9 @@
 //!
 //! `compose` is a pure function over already-computed reports so
 //! `heal status` can reuse the work the Churn and Coverage observers
-//! already did. Files absent from the lcov payload but present in
-//! `ChurnReport` are treated as 100% gap (= untested) — this is the
-//! whole point: lcov reporters routinely omit zero-coverage files,
-//! and "actively edited and never tested" is exactly the case the
-//! metric exists to surface.
+//! already did. Files absent from the lcov payload remain unmeasured
+//! and do not enter this ranking; only an explicit measured 0% is a
+//! 100% gap.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -25,6 +23,7 @@ use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Family, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 use crate::observer::code::churn::ChurnReport;
+use crate::observer::shared::file_role::{file_role, FileRole};
 use crate::observer::shared::lang::Language;
 use crate::observer::test::coverage::CoverageReport;
 use crate::observers::ObserverReports;
@@ -44,14 +43,9 @@ impl TestHotspotObserver {
 }
 
 /// Pure composer over already-computed `ChurnReport` and
-/// `CoverageReport`. Universe = the union of both, restricted to
-/// paths whose extension `Language::from_path` recognises (so doc /
-/// asset / lockfile churn rows can't pollute the ranking even when
-/// they fail to appear in lcov).
-///
-/// Files that pass the universe filter but appear in neither report,
-/// or whose `commits = 0`, score zero and are dropped. Files at
-/// `coverage = 100%` likewise score zero (gap = 0) and are dropped.
+/// `CoverageReport`. Only LCOV-listed production files can enter the
+/// ranking: absence means "unmeasured", not 0% coverage. Files with no
+/// churn or `coverage = 100%` score zero and are dropped.
 #[must_use]
 pub fn compose(churn: &ChurnReport, coverage: Option<&CoverageReport>) -> TestHotspotReport {
     let mut churn_by_path: BTreeMap<PathBuf, u32> = BTreeMap::new();
@@ -60,41 +54,29 @@ pub fn compose(churn: &ChurnReport, coverage: Option<&CoverageReport>) -> TestHo
             churn_by_path.insert(f.path.clone(), f.commits);
         }
     }
-    let mut gap_by_path: BTreeMap<PathBuf, f64> = BTreeMap::new();
-    if let Some(cov) = coverage {
-        for entry in &cov.entries {
-            if Language::from_path(&entry.path).is_none() {
-                continue;
-            }
-            let gap = (100.0 - entry.line_coverage_pct).max(0.0);
-            gap_by_path.insert(entry.path.clone(), gap);
-        }
-    }
+    let Some(cov) = coverage else {
+        return TestHotspotReport::default();
+    };
 
     let mut entries: Vec<TestHotspotEntry> = Vec::new();
-    let mut universe: Vec<PathBuf> = churn_by_path.keys().cloned().collect();
-    for path in gap_by_path.keys() {
-        if !churn_by_path.contains_key(path) {
-            universe.push(path.clone());
+    for measured in &cov.entries {
+        let Some(language) = Language::from_path(&measured.path) else {
+            continue;
+        };
+        if file_role(&measured.path, Some(language.name())) != FileRole::Source {
+            continue;
         }
-    }
-
-    for path in &universe {
-        let commits = churn_by_path.get(path).copied().unwrap_or(0);
+        let commits = churn_by_path.get(&measured.path).copied().unwrap_or(0);
         if commits == 0 {
             continue;
         }
-        // Coverage absence => assume untested. This is load-bearing:
-        // many lcov reporters omit zero-coverage files entirely, and
-        // the "edited a lot, never tested" case is the metric's
-        // single most important target.
-        let gap = gap_by_path.get(path).copied().unwrap_or(100.0);
+        let gap = (100.0 - measured.line_coverage_pct).max(0.0);
         if gap <= 0.0 {
             continue;
         }
         let score = f64::from(commits) * gap;
         entries.push(TestHotspotEntry {
-            path: path.clone(),
+            path: measured.path.clone(),
             churn_commits: commits,
             uncov_pct: gap,
             score,
@@ -233,8 +215,6 @@ mod tests {
     #[cfg(feature = "lang-rust")]
     fn cov_of(items: &[(&str, f64)]) -> CoverageReport {
         CoverageReport {
-            source: None,
-            sources: Vec::new(),
             entries: items
                 .iter()
                 .map(|(p, pct)| CoverageEntry {
@@ -247,24 +227,19 @@ mod tests {
                     line_coverage_pct: *pct,
                 })
                 .collect(),
+            ..CoverageReport::default()
         }
     }
 
     #[cfg(feature = "lang-rust")]
     #[test]
-    fn churn_with_no_coverage_entry_treated_as_fully_uncovered() {
-        // src/orphan.rs is touched but lcov never mentioned it — the
-        // exact failure mode the metric exists to surface.
+    fn churn_with_no_coverage_entry_stays_unmeasured() {
         let churn = churn_of(&[("src/orphan.rs", 5), ("src/tested.rs", 5)]);
         let cov = cov_of(&[("src/tested.rs", 80.0)]);
         let report = compose(&churn, Some(&cov));
-        // orphan: commits=5 × gap=100 = 500
-        // tested: commits=5 × gap=20  = 100
-        // orphan should rank above tested.
-        assert_eq!(report.entries[0].path.to_string_lossy(), "src/orphan.rs");
-        assert!((report.entries[0].score - 500.0).abs() < f64::EPSILON);
-        assert_eq!(report.entries[1].path.to_string_lossy(), "src/tested.rs");
-        assert!((report.entries[1].score - 100.0).abs() < f64::EPSILON);
+        assert_eq!(report.entries.len(), 1);
+        assert_eq!(report.entries[0].path.to_string_lossy(), "src/tested.rs");
+        assert!((report.entries[0].score - 100.0).abs() < f64::EPSILON);
     }
 
     #[cfg(feature = "lang-rust")]

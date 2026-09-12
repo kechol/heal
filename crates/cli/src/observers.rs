@@ -73,9 +73,9 @@ pub struct ObserverReports {
     pub todo_density: Option<TodoDensityReport>,
     /// Per-source-file line coverage parsed from an externally-generated
     /// lcov.info file. `None` whenever `[features.test.coverage]` is
-    /// disabled, the user is running a single-metric scan that doesn't
-    /// need it, or the configured `lcov_paths` resolve to nothing on
-    /// disk.
+    /// disabled or the user is running a single-metric scan that doesn't
+    /// need it. An enabled scan with no readable report is retained with
+    /// explicit missing/read-error provenance.
     pub coverage: Option<CoverageReport>,
     /// Per-test-file skipped-test ratio. `None` whenever
     /// `[features.test]` is disabled or no `test_paths` are configured.
@@ -712,6 +712,7 @@ pub(crate) fn build_record(
     };
     let reports = run_all(scan_root, cfg, None, None);
     let findings = classify(&reports, cal_ref, cfg);
+    let coverage_observation = reports.coverage.as_ref().map(CoverageReport::observation);
     let config_hash = crate::core::findings_cache::observation_hash_from_paths(
         scan_root,
         cfg,
@@ -724,6 +725,7 @@ pub(crate) fn build_record(
         config_hash,
         findings,
     )
+    .with_coverage_observation(coverage_observation)
 }
 
 fn non_empty(values: &[f64]) -> bool {

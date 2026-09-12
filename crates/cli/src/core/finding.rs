@@ -47,6 +47,62 @@ impl Location {
     }
 }
 
+/// Provenance for the opt-in coverage observation. This is deliberately
+/// separate from [`Finding`]: missing data is a setup/review action, not a
+/// measured 0% value and therefore cannot enter a drain tier.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageObservationState {
+    #[default]
+    Missing,
+    ReadError,
+    Partial,
+    Complete,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CoverageObservation {
+    pub state: CoverageObservationState,
+    pub configured_sources: Vec<PathBuf>,
+    pub sources: Vec<PathBuf>,
+    pub unreadable_sources: Vec<PathBuf>,
+    pub unmeasured_files: Vec<PathBuf>,
+}
+
+impl CoverageObservation {
+    #[must_use]
+    pub fn scoped_to(&self, workspace: &str) -> Self {
+        let workspace = std::path::Path::new(workspace);
+        let mut scoped = self.clone();
+        scoped
+            .unmeasured_files
+            .retain(|path| path.starts_with(workspace));
+        if scoped.state == CoverageObservationState::Partial && scoped.unmeasured_files.is_empty() {
+            scoped.state = CoverageObservationState::Complete;
+        }
+        scoped
+    }
+
+    #[must_use]
+    pub fn guidance(&self) -> Option<String> {
+        match self.state {
+            CoverageObservationState::Missing => Some(format!(
+                "coverage unmeasured: none of {} configured LCOV report(s) was found; check `[features.test.coverage].lcov_paths`",
+                self.configured_sources.len()
+            )),
+            CoverageObservationState::ReadError => Some(format!(
+                "coverage incomplete: {} LCOV report(s) could not be read; check reporter output and permissions",
+                self.unreadable_sources.len()
+            )),
+            CoverageObservationState::Partial => Some(format!(
+                "coverage partial: {} production source file(s) are absent from LCOV; check reporter package scope",
+                self.unmeasured_files.len()
+            )),
+            CoverageObservationState::Complete => None,
+        }
+    }
+}
+
 /// One actionable signal produced by an observer. Multi-site findings
 /// (duplication blocks, coupling pairs) carry the canonical
 /// representative in `location` and the rest in `locations`; the id

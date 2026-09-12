@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use heal_cli::core::config::{Config, TestConfig, TestCoverageConfig};
-use heal_cli::core::finding::{Finding, IntoFindings};
+use heal_cli::core::finding::{CoverageObservationState, Finding, IntoFindings};
 use heal_cli::observer::test::coverage::{CoverageObserver, CoverageReport};
 
 mod common;
@@ -139,10 +139,55 @@ fn colliding_entries_across_files_max_merge() {
 #[test]
 fn returns_empty_when_no_lcov_file_present() {
     let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "src/lib.rs", "pub fn live() {}\n");
     let cfg = cfg_test_coverage_enabled();
     let report = CoverageObserver::from_config(&cfg).scan(dir.path());
     assert!(report.entries.is_empty());
     assert!(report.source.is_none());
+    assert_eq!(report.state, CoverageObservationState::Missing);
+    assert_eq!(report.unmeasured_files, vec![PathBuf::from("src/lib.rs")]);
+}
+
+#[test]
+fn partial_report_lists_only_unmeasured_production_sources() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "src/measured.rs", "pub fn measured() {}\n");
+    write(dir.path(), "src/missing.rs", "pub fn missing() {}\n");
+    write(dir.path(), "tests/helper.rs", "#[test] fn test_it() {}\n");
+    write(dir.path(), "generated/output.rs", "pub fn generated() {}\n");
+    write(dir.path(), "excluded/skip.rs", "pub fn skipped() {}\n");
+    write(
+        dir.path(),
+        "lcov.info",
+        "SF:src/measured.rs\nLF:1\nLH:0\nend_of_record\nSF:src/full.rs\nLF:1\nLH:1\nend_of_record\n",
+    );
+    let mut cfg = cfg_test_coverage_enabled();
+    cfg.git.exclude_paths = vec!["excluded/**".into()];
+    let report = CoverageObserver::from_config(&cfg).scan(dir.path());
+
+    assert_eq!(report.state, CoverageObservationState::Partial);
+    assert_eq!(
+        report.unmeasured_files,
+        vec![PathBuf::from("src/missing.rs")]
+    );
+    assert!(report
+        .entries
+        .iter()
+        .any(|entry| entry.path == PathBuf::from("src/measured.rs")
+            && entry.line_coverage_pct == 0.0));
+    assert!(report.entries.iter().any(
+        |entry| entry.path == PathBuf::from("src/full.rs") && entry.line_coverage_pct == 100.0
+    ));
+}
+
+#[test]
+fn unreadable_report_is_distinct_from_missing_report() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("lcov.info")).unwrap();
+    let cfg = cfg_test_coverage_enabled();
+    let report = CoverageObserver::from_config(&cfg).scan(dir.path());
+    assert_eq!(report.state, CoverageObservationState::ReadError);
+    assert_eq!(report.unreadable_sources, vec![PathBuf::from("lcov.info")]);
 }
 
 #[test]
@@ -192,8 +237,6 @@ end_of_record
 #[test]
 fn ratio_for_returns_coverage_ratio() {
     let report = CoverageReport {
-        source: None,
-        sources: Vec::new(),
         entries: vec![heal_cli::observer::test::coverage::CoverageEntry {
             path: PathBuf::from("src/lib.rs"),
             lines_found: 10,
@@ -202,6 +245,7 @@ fn ratio_for_returns_coverage_ratio() {
             branches_hit: 0,
             line_coverage_pct: 80.0,
         }],
+        ..CoverageReport::default()
     };
     let r = report
         .ratio_for(std::path::Path::new("src/lib.rs"))

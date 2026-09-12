@@ -46,7 +46,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::config::Config;
 use crate::core::error::{Error, Result};
-use crate::core::finding::Finding;
+use crate::core::finding::{CoverageObservation, Finding};
 use crate::core::hash::{fnv1a_64_chunked, fnv1a_hex};
 use crate::core::severity::SeverityCounts;
 
@@ -76,7 +76,9 @@ use crate::core::severity::SeverityCounts;
 /// invalidate rather than mis-reconcile against the new ids. v6 expands
 /// `config_hash` to include enabled non-git observation inputs (doc pairs
 /// and LCOV payloads), including their path and missing/readable state.
-pub const FINDINGS_RECORD_VERSION: u32 = 6;
+/// v7 adds `coverage_observation`, separating missing/partial reporter
+/// provenance from measured `coverage_pct` findings.
+pub const FINDINGS_RECORD_VERSION: u32 = 7;
 
 /// One execution of `heal status`. The unit of read in the cache:
 /// `latest.json` holds the single most-recent record. `heal diff` reads
@@ -108,6 +110,8 @@ pub struct FindingsRecord {
     /// the top-level `severity_counts`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub workspaces: Vec<WorkspaceSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coverage_observation: Option<CoverageObservation>,
     pub findings: Vec<Finding>,
 }
 
@@ -143,8 +147,15 @@ impl FindingsRecord {
             config_hash,
             severity_counts,
             workspaces,
+            coverage_observation: None,
             findings,
         }
+    }
+
+    #[must_use]
+    pub fn with_coverage_observation(mut self, observation: Option<CoverageObservation>) -> Self {
+        self.coverage_observation = observation;
+        self
     }
 
     /// Return a copy with `findings` and `severity_counts` narrowed to
@@ -175,6 +186,10 @@ impl FindingsRecord {
             config_hash: self.config_hash.clone(),
             severity_counts,
             workspaces,
+            coverage_observation: self
+                .coverage_observation
+                .as_ref()
+                .map(|observation| observation.scoped_to(workspace)),
             findings,
         }
     }
