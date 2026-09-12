@@ -102,9 +102,10 @@ heal diff [<ref> = HEAD]
   ↓
 git rev-parse <ref> → from_sha
   ↓
-read latest.json: head_sha == from_sha?
+resolved ref == checked-out HEAD, and latest.json matches
+(head_sha, observation-input config_hash, worktree_clean=true)?
   ├── yes → use cached "from" record (fast path)
-  └── no  → continue
+  └── no, including every older ref → continue
   ↓
 LOC gate: scan current worktree LOC; > [diff].max_loc_threshold
                                        (default 200_000) → exit 2
@@ -125,6 +126,10 @@ render
 
 The "from" record applies **today's** rules to historical source. This is
 deliberate — apples-to-apples drift, not "what users saw at the time".
+The observation-input hash includes config/calibration plus every enabled
+LCOV/doc-pair logical path, state, and content. Older refs are always
+materialised so ignored inputs in the live checkout cannot masquerade as
+historical observations.
 
 ## End-to-end flow: post-commit
 

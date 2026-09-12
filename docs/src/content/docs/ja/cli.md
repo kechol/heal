@@ -116,7 +116,7 @@ heal status --feature test               # test ファミリのみ([features.tes
 heal status --feature docs               # docs ファミリのみ([features.docs])
 heal status --path src/payments          # パスプレフィックスで絞る(v0.4 以前は --feature)
 heal status --all                        # Medium / Ok と低 Severity の Hotspot セクションを表示
-heal status --top 5                      # 各 Severity バケットを 5 行で打ち切り
+heal status --top 5                      # 各 Tier/Severity バケットを 5 行で打ち切り
 heal status --no-pager                   # ページャを通さず stdout に直接書く
 heal status --json                       # 機械可読な形式を stdout へ
 ```
@@ -154,6 +154,8 @@ heal diff --json                       # 機械可読な形式
 人間向けレンダラはデフォルトで `from`/`to` のいずれもが High 未満のエントリを隠し、`[N entries below High hidden — pass --all]` というフッターを出します(ノイズの多い baseline で実行可能な行が埋もれないようにするためです)。`--all` を渡すとこの絞り込みが外れ、Improved / Unchanged バケットも一緒に表示されます。`--json` 出力は常にフィルタなしで、skill や CI からは全行が見えます。
 
 `heal mark accept` で受容済みの finding には `📌 accepted` マーカーが付き、New / Regressed の行が「把握済みで対応不要」だと一目で分かります。`--hide-accepted` を渡すとこれらの行ごと隠れ、対応が必要な行だけが残ります(`[N accepted entries hidden]` フッターで件数は見えます)。この絞り込みは `--all` とは独立に効きます。
+
+coverage が有効なら、JSON は `from_coverage_observation` と `to_coverage_observation` を返します。両側の `missing` / `read_error` / `partial` / `complete` と入力一覧により、未計測と実測 0% / 100% を区別できます。
 
 accepted finding の Severity が上昇するか、そのファミリの Hotspot が false から true になると、status、diff の現在側、post-commit hook に再レビュー通知が出ます。JSON は 1 つの `accepted_rereview` に 1 つまたは両方の理由を返します。accept は解除せず、finding を解消キューに戻しません。
 

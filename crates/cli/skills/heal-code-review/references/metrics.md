@@ -152,8 +152,11 @@ day-to-day verdict.
 
 ## `hotspot` — Composite (churn × complexity)
 
-- **Definition.** `score = commits × ccn_sum × weights` per file, then
-  flagged when `score ≥ p90` of the per-project distribution.
+- **Definition.** `score = commits × ccn_sum × weights` per file. With
+  at least 5 finite candidates, a flag requires `score ≥ p90` and the
+  Code floor 22; with 1–4 candidates, floor 22 alone applies. Non-finite
+  scores never flag. While both weights are positive, changing either
+  scales every score equally and does not change rank.
 - **Literature.** Tornhill, *Your Code as a Crime Scene* and
   *Software Design X-Rays*. Empirically a small fraction of files
   (often <10%) accounts for the majority of post-release defects;

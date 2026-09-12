@@ -171,7 +171,7 @@ heal status --feature test               # only the test family ([features.test]
 heal status --feature docs               # only the docs family ([features.docs])
 heal status --path src/payments          # restrict to one path prefix (was --feature pre-v0.4)
 heal status --all                        # show Medium / Ok plus the low-Severity hotspot section
-heal status --top 5                      # cap each Severity bucket at 5 rows
+heal status --top 5                      # cap each Tier/Severity bucket at 5 rows
 heal status --no-pager                   # write straight to stdout (skip the pager)
 heal status --json                       # machine-readable shape on stdout
 ```
@@ -253,6 +253,11 @@ those rows entirely and see only the actionable view; a `[N accepted
 entries hidden]` footer keeps the count visible. The two filters are
 independent — `--all --hide-accepted` shows every severity but still
 skips accepted rows.
+
+When coverage is enabled, JSON includes `from_coverage_observation` and
+`to_coverage_observation`. Their `missing` / `read_error` / `partial` /
+`complete` states and source lists keep an unmeasured side distinct from
+measured 0% or 100% coverage.
 
 An accepted finding whose Severity rises or whose family Hotspot turns
 from false to true produces a re-review notice in status, the current

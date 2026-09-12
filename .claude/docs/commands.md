@@ -147,7 +147,8 @@ swallowed → exit 0.
      severity distribution, demoted to context.
 2. Regressed section (re-detected after `mark fix`).
 3. Per-family blocks (`═══ Code ═══`, `═══ Test ═══`, `═══ Docs ═══`)
-   — each family runs its own (Severity, hotspot) cascade and ends
+   — each family orders by effective Drain Tier, then Severity, then
+   descending family-local `hotspot_score` (deterministic path/id ties), and ends
    with a `Next: claude /heal-{code,test,doc}-patch` hint. Empty
    enabled families show `(no findings)` so the absence is visible.
    Disabled families (`[features.test/docs].enabled = false`) are
@@ -179,7 +180,7 @@ swallowed → exit 0.
 - `--workspace <PATH>` — single declared workspace.
 - `--severity <Critical|High|Medium|Ok>` — floor.
 - `--all` — show Medium/Ok and low-Severity hotspots.
-- `--top <N>` — cap each bucket.
+- `--top <N>` — cap each rendered Tier/Severity bucket.
 
 **Output (JSON):** raw `FindingsRecord` (the on-disk shape).
 
@@ -247,10 +248,10 @@ since calibration".
 
 Two paths (`commands/diff.rs`):
 
-1. **Cache hit** — `latest.json` is a clean scan of the resolved ref
-   under the current `config_hash` (full `(head_sha, config_hash,
-   worktree_clean)` triple, mirroring `is_fresh_against`) → read
-   directly. Fast.
+1. **Cache hit** — only when the resolved ref is the checked-out HEAD and
+   `latest.json` matches the full `(head_sha, observation-input config_hash,
+   worktree_clean)` triple. The hash covers config/calibration and every
+   enabled LCOV/doc-pair path, state, and content.
 2. **Worktree fallback** — when no cache match:
    - LOC gate: scan current worktree LOC. If
      `> [diff].max_loc_threshold` (default `200_000`), **exit 2** with
@@ -293,8 +294,9 @@ filter. `from_accepted` stays baseline-side for the T0 exclusion.
   `Population: X / Y resolved (Z%)` underneath. Accepted entries
   carry `📌 accepted`; `--hide-accepted` drops them (with a
   `[N accepted entries hidden]` footer). JSON is never filtered.
-- JSON: `DiffReport { from_ref, from_sha, buckets..., progress_pct,
-  t0_total, t0_resolved, t0_progress_pct, workspace? }`.
+- JSON: `DiffReport { from_ref, from_sha, from_coverage_observation?,
+  to_coverage_observation?, buckets..., progress_pct, t0_total, t0_resolved,
+  t0_progress_pct, workspace? }`.
 
 **Exit:** 0 success; **2** on LOC threshold; otherwise error.
 

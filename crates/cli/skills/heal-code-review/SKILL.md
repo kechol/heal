@@ -78,10 +78,11 @@ classified `Finding`:
 
 ```jsonc
 {
-  "version": 2,
-  "id": "...",                // ULID; lexicographic order = chronological
+  "version": 8,
+  "id": "...",                // deterministic FNV-1a of head/config/clean
   "head_sha": "...",
   "worktree_clean": true,
+  "config_hash": "...",
   "severity_counts": { "critical": 3, "high": 11, "medium": 22, "ok": 0 },
   "findings": [
     {
@@ -89,6 +90,7 @@ classified `Finding`:
       "metric": "ccn",
       "severity": "critical",
       "hotspot": true,
+      "hotspot_score": 140.0,  // family-local ordering only; not part of id
       "location":  { "file": "src/payments/engine.ts", "line": 120, "symbol": "processOrder" },
       "locations": [],         // multi-site findings (duplication / coupling) populate this
       "summary":   "CCN=28",
