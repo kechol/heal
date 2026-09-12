@@ -229,9 +229,9 @@ impl HotspotIndex {
         )
     }
 
-    /// Whether `path`'s hotspot score crosses the calibration's `p90`.
-    /// Returns `false` for files outside the index or when the project
-    /// has no hotspot calibration yet.
+    /// Whether `path`'s hotspot score crosses the calibration's active
+    /// percentile/floor rule. Returns `false` for files outside the
+    /// index or when the project has no hotspot calibration yet.
     #[must_use]
     pub fn is_hot(&self, path: &Path) -> bool {
         match (&self.calibration, self.by_path.get(path)) {
@@ -421,6 +421,8 @@ impl Default for FeatureRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::calibration::{FLOOR_OK_DOC_HOTSPOT, FLOOR_OK_HOTSPOT};
+    use crate::core::config::DrainTier;
 
     #[test]
     fn builtin_registry_emits_one_feature_per_metric() {
@@ -492,5 +494,65 @@ mod tests {
                 f.meta().name,
             );
         }
+    }
+
+    #[test]
+    fn small_hotspot_cohort_can_reach_the_real_t0_policy() {
+        let path = PathBuf::from("src/hot.rs");
+        let calibration = HotspotCalibration::from_distribution_with_floor(
+            &[FLOOR_OK_HOTSPOT],
+            Some(FLOOR_OK_HOTSPOT),
+        );
+        let index =
+            HotspotIndex::from_entries([(path.clone(), FLOOR_OK_HOTSPOT)], Some(calibration));
+        let finding = decorate(
+            Finding::new(
+                "ccn",
+                Location::file(path),
+                "high complexity".to_owned(),
+                "",
+            ),
+            Severity::Critical,
+            &index,
+        );
+
+        assert!(finding.hotspot);
+        assert_eq!(
+            Config::default().policy.drain.tier_for(&finding),
+            Some(DrainTier::Must),
+        );
+    }
+
+    #[test]
+    fn empty_or_uncalibrated_hotspot_index_never_marks_a_finding() {
+        let path = PathBuf::from("docs/quiet.md");
+        let empty = HotspotIndex::from_entries(
+            std::iter::empty(),
+            Some(HotspotCalibration::from_distribution_with_floor(
+                &[],
+                Some(FLOOR_OK_DOC_HOTSPOT),
+            )),
+        );
+        let uncalibrated = HotspotIndex::from_entries([(path.clone(), 1_000.0)], None);
+
+        assert!(!empty.is_hot(&path));
+        assert!(!uncalibrated.is_hot(&path));
+    }
+
+    #[test]
+    fn missing_test_hotspot_report_does_not_create_a_candidate() {
+        let calibration = Calibration {
+            calibration: crate::core::calibration::MetricCalibrations {
+                test_hotspot: Some(HotspotCalibration::from_distribution_with_floor(
+                    &[100.0],
+                    Some(crate::core::calibration::FLOOR_OK_TEST_HOTSPOT),
+                )),
+                ..crate::core::calibration::MetricCalibrations::default()
+            },
+            ..Calibration::default()
+        };
+        let index = HotspotIndex::for_test(None, &calibration);
+
+        assert!(!index.is_hot(Path::new("src/unmeasured.rs")));
     }
 }
