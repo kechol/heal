@@ -226,9 +226,9 @@ weight_churn      = 1.0
 weight_complexity = 1.0
 ```
 
-- 合成スコアは `(weight_complexity × ccn_sum) × (weight_churn × commits)`。どちらかを `0.0` にすると、その側を合成から外せます(オブザーバ自体の無効化ではありません)。
+- 合成スコアは `(weight_complexity × ccn_sum) × (weight_churn × commits)`。両方が正の値なら、片方を変えても全スコアが同じ比率で伸縮するため順位は変わりません。どちらかを `0.0` にすると、その側を合成から外せます(オブザーバ自体の無効化ではありません)。
 
-Hotspot には `floor_critical` がありません。Severity ティアではなくフラグ(スコア分布の上位 10%)です。
+Hotspot には `floor_critical` がありません。Severity ティアではなくフラグです。有限な候補が5件以上なら p90 と family floor の両方、1〜4件なら絶対 family floor だけで判定します(Code 22、Test 25、Docs 5)。非有限値は Hotspot になりません。
 
 ### `[metrics.lcom]`
 
@@ -289,7 +289,7 @@ floor_ok       = 11.0
 [calibration.hotspot]
 p50 = 5.0
 p75 = 18.0
-p90 = 67.0          # Hotspot 🔥 のフラグ境界(上位 10%、固定)
+p90 = 67.0          # 候補が5件以上あるときの Hotspot 🔥 percentile gate
 p95 = 145.0
 ```
 

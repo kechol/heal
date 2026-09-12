@@ -466,7 +466,7 @@ impl Eq for TestHotspotConfig {}
 
 /// `[features.test.coverage]` — lcov.info ingestion. Generation is
 /// outsourced to the user's CI / local toolchain (`cargo llvm-cov`,
-/// `pytest --cov`, `nyc`, `scoverage`); HEAL only reads the file. The
+/// `pytest --cov`, `nyc`, `scoverage`); HEAL only reads the file.
 /// Every existing entry in `lcov_paths` is read and merged. Missing
 /// entries remain part of observation provenance without becoming
 /// measured 0% coverage.
@@ -478,8 +478,8 @@ pub struct TestCoverageConfig {
     /// projects that opt into `is_test_file` tagging don't get a noisy
     /// "lcov not found" warning before they've wired up a reporter.
     pub enabled: bool,
-    /// Project-relative paths the reader probes for an lcov.info file.
-    /// First existing match wins; missing files are silent. The
+    /// Project-relative paths the reader probes for lcov.info files.
+    /// Every existing match is merged; missing files are silent. The
     /// defaults cover the common reporter conventions: bare
     /// `lcov.info`, the `nyc` / `pytest-cov` `coverage/` dir, and
     /// `cargo llvm-cov`'s `target/llvm-cov/lcov.info`.

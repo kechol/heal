@@ -39,7 +39,9 @@ Commits).
 `orphan_pages`, `todo_density`, plus the per-family decoration
 carrier `doc_hotspot` (always `Severity::Ok`; flips
 `hotspot=true` on the other six when the pair's churn × debt
-sits in the project's top decile). Finding ids are deterministic
+sits above p90 and the Docs floor 5 with 5+ finite candidates, or
+above floor 5 alone with 1–4; non-finite scores never flag).
+Finding ids are deterministic
 — same broken link keeps the same id, so disappearance from the
 cache after a commit means it's genuinely fixed.
 
