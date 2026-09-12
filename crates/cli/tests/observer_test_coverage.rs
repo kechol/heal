@@ -2,7 +2,7 @@
 //! against tempdir layouts, `CoverageReport` lookup helpers, and
 //! severity classification through `Feature::lower`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use heal_cli::core::config::{Config, TestConfig, TestCoverageConfig};
 use heal_cli::core::finding::{CoverageObservationState, Finding, IntoFindings};
@@ -170,14 +170,15 @@ fn partial_report_lists_only_unmeasured_production_sources() {
         report.unmeasured_files,
         vec![PathBuf::from("src/missing.rs")]
     );
+    assert!(report.entries.iter().any(|entry| {
+        entry.path.as_path() == Path::new("src/measured.rs")
+            && entry.line_coverage_pct.abs() < f64::EPSILON
+    }));
     assert!(report
         .entries
         .iter()
-        .any(|entry| entry.path == PathBuf::from("src/measured.rs")
-            && entry.line_coverage_pct == 0.0));
-    assert!(report.entries.iter().any(
-        |entry| entry.path == PathBuf::from("src/full.rs") && entry.line_coverage_pct == 100.0
-    ));
+        .any(|entry| entry.path.as_path() == Path::new("src/full.rs")
+            && (entry.line_coverage_pct - 100.0).abs() < f64::EPSILON));
 }
 
 #[test]
