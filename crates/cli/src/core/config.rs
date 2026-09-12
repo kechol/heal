@@ -1334,7 +1334,8 @@ impl Config {
 
     /// Cross-field invariants. Currently checks `[[project.workspaces]]`
     /// paths (non-empty, slash-separated, repo-root-relative, no
-    /// duplicates, no nesting), every `exclude_paths` entry as
+    /// duplicates, no nesting), observation-input paths as project-
+    /// relative and non-escaping, every `exclude_paths` entry as
     /// `.gitignore` syntax, and that every name in `metrics.disabled`
     /// is a known disable-able metric (`loc` is foundational and is
     /// rejected here).
@@ -1343,6 +1344,25 @@ impl Config {
             path: path.to_path_buf(),
             message: message.clone(),
         })?;
+        validate_observation_path("[features.docs].pairs_path", &self.features.docs.pairs_path)
+            .and_then(|()| {
+                self.features
+                    .test
+                    .coverage
+                    .lcov_paths
+                    .iter()
+                    .enumerate()
+                    .try_for_each(|(index, value)| {
+                        validate_observation_path(
+                            &format!("[features.test.coverage].lcov_paths[{index}]"),
+                            value,
+                        )
+                    })
+            })
+            .map_err(|message| Error::ConfigInvalid {
+                path: path.to_path_buf(),
+                message,
+            })?;
         validate_gitignore_lines(&self.exclude_lines()).map_err(|message| {
             Error::ConfigInvalid {
                 path: path.to_path_buf(),
@@ -1495,6 +1515,32 @@ fn validate_gitignore_lines(lines: &[String]) -> std::result::Result<(), String>
         .build()
         .map(|_| ())
         .map_err(|e| format!("gitignore matcher build failed: {e}"))
+}
+
+/// Observation inputs must stay inside the project root. Detached historical
+/// scans join the same logical path to a temporary checkout; accepting an
+/// absolute or parent-traversing path would instead read live host state and
+/// make the observation hash checkout-dependent.
+fn validate_observation_path(label: &str, value: &str) -> std::result::Result<(), String> {
+    let path = Path::new(value);
+    if value.trim().is_empty() {
+        return Err(format!("{label} must not be empty"));
+    }
+    if path.is_absolute()
+        || path.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        })
+    {
+        return Err(format!(
+            "{label} `{value}` must be project-relative and must not contain `..`"
+        ));
+    }
+    Ok(())
 }
 
 /// Rewrite a workspace-relative `.gitignore` line so it works as a

@@ -580,6 +580,43 @@ fn workspaces_validate_rejects_absolute_path() {
 }
 
 #[test]
+fn observation_input_paths_reject_absolute_and_parent_escape() {
+    for cfg in [
+        r#"
+            [features.docs]
+            enabled = false
+            pairs_path = "/tmp/doc_pairs.json"
+        "#,
+        r#"
+            [features.docs]
+            enabled = false
+            pairs_path = "../doc_pairs.json"
+        "#,
+        r#"
+            [features.test]
+            enabled = false
+            [features.test.coverage]
+            enabled = false
+            lcov_paths = ["/tmp/lcov.info"]
+        "#,
+        r#"
+            [features.test]
+            enabled = false
+            [features.test.coverage]
+            enabled = false
+            lcov_paths = ["coverage/../../lcov.info"]
+        "#,
+    ] {
+        let parsed = Config::from_toml_str(cfg).unwrap();
+        let error = parsed
+            .validate(Path::new("/heal/config.toml"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("project-relative"), "{error}");
+    }
+}
+
+#[test]
 fn workspaces_validate_rejects_dotdot() {
     let cfg = r#"
         [[project.workspaces]]
