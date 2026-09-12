@@ -44,6 +44,7 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::core::accepted::AcceptedDrift;
 use crate::core::config::Config;
 use crate::core::error::{Error, Result};
 use crate::core::finding::{CoverageObservation, Finding};
@@ -114,6 +115,11 @@ pub struct FindingsRecord {
     pub workspaces: Vec<WorkspaceSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coverage_observation: Option<CoverageObservation>,
+    /// Render-time notices for accepted findings whose decision premise
+    /// changed. Empty in persisted `latest.json`; populated after the
+    /// current accepted map is applied.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accepted_rereview: Vec<AcceptedDrift>,
     pub findings: Vec<Finding>,
 }
 
@@ -150,6 +156,7 @@ impl FindingsRecord {
             severity_counts,
             workspaces,
             coverage_observation: None,
+            accepted_rereview: Vec::new(),
             findings,
         }
     }
@@ -192,6 +199,12 @@ impl FindingsRecord {
                 .coverage_observation
                 .as_ref()
                 .map(|observation| observation.scoped_to(workspace)),
+            accepted_rereview: self
+                .accepted_rereview
+                .iter()
+                .filter(|drift| findings.iter().any(|f| f.id == drift.finding_id))
+                .cloned()
+                .collect(),
             findings,
         }
     }
@@ -202,8 +215,10 @@ impl FindingsRecord {
     /// neither a slice walk nor a re-aggregation.
     pub fn apply_accepted(&mut self, map: &crate::core::accepted::AcceptedMap) {
         if map.is_empty() {
+            self.accepted_rereview.clear();
             return;
         }
+        self.accepted_rereview = crate::core::accepted::reconcile_accepted(map, &self.findings);
         crate::core::accepted::decorate_findings(&mut self.findings, map);
         self.recompute_summary();
     }
@@ -211,6 +226,11 @@ impl FindingsRecord {
     pub(crate) fn recompute_summary(&mut self) {
         self.severity_counts = SeverityCounts::from_findings(&self.findings);
         self.workspaces = workspace_summaries(&self.findings);
+    }
+
+    pub(crate) fn retain_rereviews_for_findings(&mut self) {
+        self.accepted_rereview
+            .retain(|drift| self.findings.iter().any(|f| f.id == drift.finding_id));
     }
 
     /// True iff `(head_sha, config_hash, worktree_clean)` matches and
@@ -553,6 +573,7 @@ fn read_jsonl<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Vec<T>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::accepted::{snapshot, AcceptedMap, AcceptedRereviewReason};
     use crate::core::finding::{Finding, Location};
     use crate::core::severity::Severity;
     use std::path::PathBuf;
@@ -597,6 +618,35 @@ mod tests {
         assert_eq!(web.head_sha, rec.head_sha);
         assert_eq!(web.config_hash, rec.config_hash);
         assert_eq!(web.id, rec.id);
+    }
+
+    #[test]
+    fn apply_accepted_keeps_acceptance_and_adds_ephemeral_rereview() {
+        let prior = finding("alpha", Severity::High);
+        let mut current = prior.clone();
+        current.severity = Severity::Critical;
+        current.hotspot = true;
+        let mut map = AcceptedMap::new();
+        map.insert(
+            current.id.clone(),
+            snapshot(&prior, "intrinsic".into(), chrono::Utc::now(), None),
+        );
+        let mut record = FindingsRecord::new(Some("sha".into()), true, "h".into(), vec![current]);
+        let raw = serde_json::to_value(&record).unwrap();
+        assert!(raw.get("accepted_rereview").is_none());
+
+        record.apply_accepted(&map);
+
+        assert!(record.findings[0].accepted);
+        assert_eq!(record.accepted_rereview.len(), 1);
+        assert_eq!(
+            record.accepted_rereview[0].reasons,
+            vec![
+                AcceptedRereviewReason::SeverityIncreased,
+                AcceptedRereviewReason::BecameHotspot,
+            ]
+        );
+        assert_eq!(record.findings[0].id, prior.id);
     }
 
     #[test]

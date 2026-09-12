@@ -106,19 +106,42 @@ pub fn decorate_findings(findings: &mut [Finding], map: &AcceptedMap) {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AcceptedRereviewReason {
+    SeverityIncreased,
+    BecameHotspot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AcceptedDrift {
     pub finding_id: String,
     pub file: String,
     pub was: Severity,
     pub now: Severity,
+    pub was_hotspot: bool,
+    pub now_hotspot: bool,
+    pub reasons: Vec<AcceptedRereviewReason>,
 }
 
-/// Severity escalations only. File-deleted, not-detected, and
-/// same-severity-different-value cases stay quiet — those surface in
-/// `heal mark accept --list`, not as runtime warnings (severity is
-/// HEAL's only decision boundary; raw metric values are an
-/// implementation detail of the classifier).
+impl AcceptedDrift {
+    #[must_use]
+    pub fn reason_summary(&self) -> String {
+        self.reasons
+            .iter()
+            .map(|reason| match reason {
+                AcceptedRereviewReason::SeverityIncreased => "Severity increased",
+                AcceptedRereviewReason::BecameHotspot => "became a hotspot",
+            })
+            .collect::<Vec<_>>()
+            .join(" and ")
+    }
+}
+
+/// Notify when an accepted finding crosses a decision premise: Severity
+/// rises or its family hotspot flag changes from false to true. Missing,
+/// improved, stable-hotspot, and same-severity value changes stay quiet.
+/// Acceptance itself is never removed.
 #[must_use]
 pub fn reconcile_accepted(map: &AcceptedMap, findings: &[Finding]) -> Vec<AcceptedDrift> {
     let mut out = Vec::new();
@@ -126,12 +149,22 @@ pub fn reconcile_accepted(map: &AcceptedMap, findings: &[Finding]) -> Vec<Accept
         let Some(entry) = map.get(&f.id) else {
             continue;
         };
+        let mut reasons = Vec::with_capacity(2);
         if f.severity > entry.severity {
+            reasons.push(AcceptedRereviewReason::SeverityIncreased);
+        }
+        if !entry.hotspot && f.hotspot {
+            reasons.push(AcceptedRereviewReason::BecameHotspot);
+        }
+        if !reasons.is_empty() {
             out.push(AcceptedDrift {
                 finding_id: f.id.clone(),
                 file: entry.file.clone(),
                 was: entry.severity,
                 now: f.severity,
+                was_hotspot: entry.hotspot,
+                now_hotspot: f.hotspot,
+                reasons,
             });
         }
     }
@@ -291,10 +324,15 @@ mod tests {
     }
 
     #[test]
-    fn reconcile_returns_escalations_only() {
+    fn reconcile_returns_decision_premise_changes_only() {
         let f_high_to_crit = finding("ccn", "src/a.ts", Severity::Critical, "CCN=28");
         let f_high_stable = finding("ccn", "src/b.ts", Severity::High, "CCN=12");
         let f_high_improved = finding("ccn", "src/c.ts", Severity::Medium, "CCN=8");
+        let mut f_became_hot = finding("ccn", "src/d.ts", Severity::High, "CCN=12");
+        f_became_hot.hotspot = true;
+        let mut f_stayed_hot = finding("ccn", "src/e.ts", Severity::High, "CCN=12");
+        f_stayed_hot.hotspot = true;
+        let f_cooled = finding("ccn", "src/f.ts", Severity::High, "CCN=12");
         let mut map = AcceptedMap::new();
         map.insert(
             f_high_to_crit.id.clone(),
@@ -308,14 +346,80 @@ mod tests {
             f_high_improved.id.clone(),
             accepted("ccn", Severity::High, "CCN=12"),
         );
+        map.insert(
+            f_became_hot.id.clone(),
+            accepted("ccn", Severity::High, "CCN=12"),
+        );
+        let mut accepted_hot = accepted("ccn", Severity::High, "CCN=12");
+        accepted_hot.hotspot = true;
+        map.insert(f_stayed_hot.id.clone(), accepted_hot.clone());
+        map.insert(f_cooled.id.clone(), accepted_hot);
         let drifts = reconcile_accepted(
             &map,
-            &[f_high_to_crit.clone(), f_high_stable, f_high_improved],
+            &[
+                f_high_to_crit.clone(),
+                f_high_stable,
+                f_high_improved,
+                f_became_hot.clone(),
+                f_stayed_hot,
+                f_cooled,
+            ],
         );
-        assert_eq!(drifts.len(), 1);
+        assert_eq!(drifts.len(), 2);
         assert_eq!(drifts[0].finding_id, f_high_to_crit.id);
         assert_eq!(drifts[0].was, Severity::High);
         assert_eq!(drifts[0].now, Severity::Critical);
+        assert_eq!(
+            drifts[0].reasons,
+            vec![AcceptedRereviewReason::SeverityIncreased]
+        );
+        assert_eq!(drifts[1].finding_id, f_became_hot.id);
+        assert_eq!(
+            drifts[1].reasons,
+            vec![AcceptedRereviewReason::BecameHotspot]
+        );
+    }
+
+    #[test]
+    fn simultaneous_severity_and_hotspot_change_is_one_notice() {
+        let mut finding = finding("ccn", "src/a.ts", Severity::Critical, "CCN=28");
+        finding.hotspot = true;
+        let mut map = AcceptedMap::new();
+        map.insert(
+            finding.id.clone(),
+            accepted("ccn", Severity::High, "CCN=12"),
+        );
+
+        let drifts = reconcile_accepted(&map, &[finding]);
+        assert_eq!(drifts.len(), 1);
+        assert_eq!(
+            drifts[0].reasons,
+            vec![
+                AcceptedRereviewReason::SeverityIncreased,
+                AcceptedRereviewReason::BecameHotspot,
+            ]
+        );
+        assert_eq!(
+            drifts[0].reason_summary(),
+            "Severity increased and became a hotspot"
+        );
+    }
+
+    #[test]
+    fn old_accepted_json_without_hotspot_defaults_to_false() {
+        let raw = r#"{
+            "id-1": {
+                "reason": "intrinsic",
+                "file": "src/foo.ts",
+                "metric": "ccn",
+                "severity": "high",
+                "summary": "CCN=12 foo",
+                "accepted_at": "2026-05-03T12:00:00Z"
+            }
+        }"#;
+
+        let map: AcceptedMap = serde_json::from_str(raw).unwrap();
+        assert!(!map["id-1"].hotspot);
     }
 
     #[test]

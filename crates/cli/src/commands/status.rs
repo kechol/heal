@@ -137,12 +137,14 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
             (None, true) => {
                 let mut emit = record.clone();
                 emit.findings.retain(|f| filters.passes(f));
+                emit.retain_rereviews_for_findings();
                 super::emit_json(&emit);
             }
             (Some(ws), narrowing) => {
                 let mut emit = record.project_to_workspace(ws);
                 if narrowing {
                     emit.findings.retain(|f| filters.passes(f));
+                    emit.retain_rereviews_for_findings();
                 }
                 super::emit_json(&emit);
             }
@@ -242,6 +244,7 @@ pub(super) fn render(
         render_coverage_observation(record, colorize, out)?;
     }
     render_regressed_banner(regressed, colorize, out)?;
+    render_accepted_rereview_banner(record, filters, colorize, out)?;
 
     let show_low = filters.all || matches!(filters.severity, Some(Severity::Medium | Severity::Ok));
 
@@ -422,6 +425,39 @@ fn render_regressed_banner(
         ansi_wrap(ANSI_YELLOW, "regression:", colorize),
         regressed.len(),
     )?;
+    writeln!(out)?;
+    Ok(())
+}
+
+fn render_accepted_rereview_banner(
+    record: &FindingsRecord,
+    filters: &Filters,
+    colorize: bool,
+    out: &mut (impl Write + ?Sized),
+) -> Result<()> {
+    let visible: Vec<_> = record
+        .accepted_rereview
+        .iter()
+        .filter(|drift| {
+            record.findings.iter().any(|finding| {
+                finding.id == drift.finding_id
+                    && filters.passes(finding)
+                    && filters.severity.is_none_or(|min| finding.severity >= min)
+            })
+        })
+        .collect();
+    if visible.is_empty() {
+        return Ok(());
+    }
+    writeln!(
+        out,
+        "  {} {} accepted finding(s) need re-review; acceptance remains in place.",
+        ansi_wrap(ANSI_YELLOW, "accepted re-review:", colorize),
+        visible.len(),
+    )?;
+    for drift in visible {
+        writeln!(out, "    {} — {}", drift.file, drift.reason_summary())?;
+    }
     writeln!(out)?;
     Ok(())
 }
@@ -720,6 +756,7 @@ fn override_notes(cfg: &Config) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::accepted::{AcceptedDrift, AcceptedRereviewReason};
     use crate::core::finding::{CoverageObservation, CoverageObservationState, Location};
     use std::path::PathBuf;
 
@@ -898,6 +935,42 @@ mod tests {
             json["coverage_observation"]["unmeasured_files"][0],
             "src/unlisted.rs"
         );
+    }
+
+    #[test]
+    fn accepted_rereview_is_reasoned_in_human_and_machine_output() {
+        let mut accepted = finding("ccn", "src/hot.rs", Severity::Critical, true);
+        accepted.accepted = true;
+        let finding_id = accepted.id.clone();
+        let mut rec = record(vec![accepted]);
+        rec.accepted_rereview.push(AcceptedDrift {
+            finding_id,
+            file: "src/hot.rs".into(),
+            was: Severity::High,
+            now: Severity::Critical,
+            was_hotspot: false,
+            now_hotspot: true,
+            reasons: vec![
+                AcceptedRereviewReason::SeverityIncreased,
+                AcceptedRereviewReason::BecameHotspot,
+            ],
+        });
+
+        let out = render_to_string(&rec, &default_filters());
+        assert!(out.contains("accepted re-review:"), "{out}");
+        assert!(
+            out.contains("Severity increased and became a hotspot"),
+            "{out}"
+        );
+        assert!(out.contains("acceptance remains in place"), "{out}");
+        assert!(out.contains("T0 0 findings"), "{out}");
+
+        let json = serde_json::to_value(&rec).unwrap();
+        assert_eq!(
+            json["accepted_rereview"][0]["reasons"],
+            serde_json::json!(["severity_increased", "became_hotspot"])
+        );
+        assert_eq!(json["findings"][0]["accepted"], true);
     }
 
     #[test]

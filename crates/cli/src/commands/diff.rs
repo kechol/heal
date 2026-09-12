@@ -56,6 +56,7 @@ use serde::Serialize;
 use tempfile::TempDir;
 
 use crate::core::accepted::read_accepted;
+use crate::core::accepted::AcceptedDrift;
 use crate::core::calibration::Calibration;
 use crate::core::config::{load_from_project, Config, DrainTier, PolicyDrainConfig};
 use crate::core::finding::Finding;
@@ -117,12 +118,14 @@ pub fn run(project: &Path, args: &crate::cli::DiffArgs) -> Result<()> {
     to_record.apply_accepted(&accepted_map);
 
     let diff = compute_diff(&from_record, &to_record, workspace, &cfg.policy.drain);
+    let accepted_rereview = scoped_accepted_rereview(&to_record, workspace);
     if args.json {
         super::emit_json(&DiffReport {
             from_ref: &resolved_ref,
             from_sha: &target_sha,
             to_head_sha: to_record.head_sha.as_deref(),
             workspace,
+            accepted_rereview,
             buckets: &diff,
         });
         return Ok(());
@@ -278,6 +281,8 @@ struct DiffReport<'a> {
     /// terse.
     #[serde(skip_serializing_if = "Option::is_none")]
     workspace: Option<&'a str>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    accepted_rereview: Vec<AcceptedDrift>,
     #[serde(flatten)]
     buckets: &'a Diff,
 }
@@ -489,6 +494,7 @@ fn render_diff(
     )?;
     render_coverage_guidance("from", from, colorize, out)?;
     render_coverage_guidance("to", to, colorize, out)?;
+    render_accepted_rereview(to, workspace, colorize, out)?;
     writeln!(out)?;
 
     let mut hidden_low_severity = 0usize;
@@ -551,6 +557,45 @@ fn render_diff(
     }
     writeln!(out)?;
     render_progress(diff, scoped_count(&from.findings, workspace), out)?;
+    Ok(())
+}
+
+fn scoped_accepted_rereview(
+    record: &FindingsRecord,
+    workspace: Option<&str>,
+) -> Vec<AcceptedDrift> {
+    record
+        .accepted_rereview
+        .iter()
+        .filter(|drift| {
+            record.findings.iter().any(|finding| {
+                finding.id == drift.finding_id
+                    && workspace.is_none_or(|ws| finding.workspace.as_deref() == Some(ws))
+            })
+        })
+        .cloned()
+        .collect()
+}
+
+fn render_accepted_rereview(
+    record: &FindingsRecord,
+    workspace: Option<&str>,
+    colorize: bool,
+    out: &mut (impl Write + ?Sized),
+) -> std::io::Result<()> {
+    let drifts = scoped_accepted_rereview(record, workspace);
+    if drifts.is_empty() {
+        return Ok(());
+    }
+    writeln!(
+        out,
+        "  {} {} accepted finding(s) need re-review; acceptance remains in place.",
+        ansi_wrap(ANSI_YELLOW, "accepted re-review:", colorize),
+        drifts.len(),
+    )?;
+    for drift in drifts {
+        writeln!(out, "    {} — {}", drift.file, drift.reason_summary())?;
+    }
     Ok(())
 }
 
@@ -693,6 +738,7 @@ fn is_high_or_critical(e: &DiffEntry) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::accepted::{AcceptedDrift, AcceptedRereviewReason};
     use crate::core::finding::{CoverageObservation, CoverageObservationState, Finding, Location};
     use crate::core::findings_cache::FindingsRecord;
     use crate::core::severity::Severity;
@@ -727,6 +773,58 @@ mod tests {
         render_coverage_guidance("from", &record, false, &mut out).unwrap();
         let out = String::from_utf8(out).unwrap();
         assert!(out.contains("measurement: from: coverage unmeasured"));
+    }
+
+    #[test]
+    fn diff_surfaces_accepted_rereview_in_human_and_machine_output() {
+        let mut accepted = finding("accepted", Severity::Critical);
+        accepted.accepted = true;
+        let finding_id = accepted.id.clone();
+        let from = record(vec![accepted.clone()]);
+        let mut to = record(vec![accepted]);
+        to.accepted_rereview.push(AcceptedDrift {
+            finding_id,
+            file: "src/accepted.ts".into(),
+            was: Severity::Critical,
+            now: Severity::Critical,
+            was_hotspot: false,
+            now_hotspot: true,
+            reasons: vec![AcceptedRereviewReason::BecameHotspot],
+        });
+        let diff = compute_diff(&from, &to, None, &PolicyDrainConfig::default());
+
+        let mut out = Vec::new();
+        render_diff(
+            "HEAD",
+            "deadbeefdeadbeef",
+            None,
+            &from,
+            &to,
+            &diff,
+            false,
+            false,
+            false,
+            &mut out,
+        )
+        .unwrap();
+        let out = String::from_utf8(out).unwrap();
+        assert!(out.contains("accepted re-review:"), "{out}");
+        assert!(out.contains("became a hotspot"), "{out}");
+        assert!(out.contains("acceptance remains in place"), "{out}");
+
+        let report = DiffReport {
+            from_ref: "HEAD",
+            from_sha: "deadbeefdeadbeef",
+            to_head_sha: to.head_sha.as_deref(),
+            workspace: None,
+            accepted_rereview: scoped_accepted_rereview(&to, None),
+            buckets: &diff,
+        };
+        let json = serde_json::to_value(report).unwrap();
+        assert_eq!(
+            json["accepted_rereview"][0]["reasons"],
+            serde_json::json!(["became_hotspot"])
+        );
     }
 
     fn record(findings: Vec<Finding>) -> FindingsRecord {

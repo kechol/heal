@@ -20,7 +20,7 @@ use std::io::{IsTerminal, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use crate::core::accepted::{decorate_findings, read_accepted};
+use crate::core::accepted::{decorate_findings, read_accepted, reconcile_accepted, AcceptedDrift};
 use crate::core::calibration::Calibration;
 use crate::core::config::{load_from_project, Config};
 use crate::core::finding::{CoverageObservation, Finding};
@@ -63,6 +63,7 @@ fn run_commit(project: &Path, paths: &HealPaths) -> Result<()> {
     // Critical / High counts match `heal status` instead of shaming
     // the team about findings they explicitly accepted as intrinsic.
     let accepted_map = read_accepted(&paths.findings_accepted()).unwrap_or_default();
+    let accepted_rereview = reconcile_accepted(&accepted_map, &findings);
     if !accepted_map.is_empty() {
         decorate_findings(&mut findings, &accepted_map);
     }
@@ -72,6 +73,7 @@ fn run_commit(project: &Path, paths: &HealPaths) -> Result<()> {
         &cfg,
         &findings,
         reports.coverage.as_ref().map(|r| r.observation()).as_ref(),
+        &accepted_rereview,
         &mut std::io::stdout(),
     )
     .ok();
@@ -135,6 +137,7 @@ fn write_nudge(
     cfg: &Config,
     findings: &[Finding],
     coverage: Option<&CoverageObservation>,
+    accepted_rereview: &[AcceptedDrift],
     out: &mut impl Write,
 ) -> Result<()> {
     if calibration.is_none() {
@@ -157,6 +160,7 @@ fn write_nudge(
             ansi_wrap(ANSI_GREEN, "clean", colorize),
         )?;
         write_coverage_nudge(coverage, colorize, out)?;
+        write_accepted_rereview_nudge(accepted_rereview, colorize, out)?;
         return Ok(());
     }
 
@@ -200,6 +204,24 @@ fn write_nudge(
         }
     }
     write_coverage_nudge(coverage, colorize, out)?;
+    write_accepted_rereview_nudge(accepted_rereview, colorize, out)?;
+    Ok(())
+}
+
+fn write_accepted_rereview_nudge(
+    drifts: &[AcceptedDrift],
+    colorize: bool,
+    out: &mut impl Write,
+) -> Result<()> {
+    for drift in drifts {
+        writeln!(
+            out,
+            "         · {} {} — {}; acceptance remains in place",
+            ansi_wrap(ANSI_YELLOW, "accepted re-review:", colorize),
+            drift.file,
+            drift.reason_summary(),
+        )?;
+    }
     Ok(())
 }
 
@@ -222,6 +244,7 @@ fn write_coverage_nudge(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::accepted::{AcceptedDrift, AcceptedRereviewReason};
     use crate::core::config::Config;
     use crate::test_support::init_project_with_config;
     use tempfile::TempDir;
@@ -240,6 +263,7 @@ mod tests {
             cfg,
             &findings,
             coverage.as_ref(),
+            &[],
             &mut buf,
         )
         .unwrap();
@@ -418,5 +442,34 @@ mod tests {
         let out = nudge_output(dir.path(), &paths, &cfg);
         assert!(out.contains("coverage unmeasured"), "{out}");
         assert!(out.starts_with("heal: recorded · clean"), "{out}");
+    }
+
+    #[test]
+    fn nudge_surfaces_accepted_hotspot_rereview_without_unaccepting() {
+        let drift = AcceptedDrift {
+            finding_id: "id-1".into(),
+            file: "src/hot.rs".into(),
+            was: Severity::High,
+            now: Severity::High,
+            was_hotspot: false,
+            now_hotspot: true,
+            reasons: vec![AcceptedRereviewReason::BecameHotspot],
+        };
+        let mut out = Vec::new();
+        write_nudge(
+            Some(&Calibration::default()),
+            &Config::default(),
+            &[],
+            None,
+            &[drift],
+            &mut out,
+        )
+        .unwrap();
+        let out = String::from_utf8(out).unwrap();
+
+        assert!(out.starts_with("heal: recorded · clean"), "{out}");
+        assert!(out.contains("accepted re-review:"), "{out}");
+        assert!(out.contains("became a hotspot"), "{out}");
+        assert!(out.contains("acceptance remains in place"), "{out}");
     }
 }
