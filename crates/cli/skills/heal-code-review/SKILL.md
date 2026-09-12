@@ -151,8 +151,10 @@ the design tree with the user.
    - **By metric.** Which signal dominates — does this codebase
      have a complexity problem, a duplication problem, a coupling
      problem? The dominant axis sets the reading's frame.
-   - **By hotspot flag.** `hotspot=true` is a leverage multiplier;
-     the same Severity with the flag should usually outrank without.
+   - **By effective drain tier and hotspot score.** The flag can move a
+     finding into a higher tier through `[policy.drain]`; within the same
+     Tier and Severity, use descending `hotspot_score`. The flag alone does
+     not outrank a higher score.
 3. **Read the top files.** For every file with `≥ 2` non-Ok
    findings, *or* a Critical finding, *or* `hotspot=true`: open
    the file. Summarize what it does in one sentence. Don't trust

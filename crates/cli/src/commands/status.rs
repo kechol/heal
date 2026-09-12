@@ -220,6 +220,11 @@ impl Filters {
                 return false;
             }
         }
+        if let Some(minimum) = self.severity {
+            if finding.severity < minimum {
+                return false;
+            }
+        }
         true
     }
 }
@@ -260,11 +265,6 @@ pub(super) fn render(
     let mut by_family: BTreeMap<crate::feature::Family, Vec<&Finding>> = BTreeMap::new();
     let mut accepted_items: Vec<&Finding> = Vec::new();
     for f in record.findings.iter().filter(|f| filters.passes(f)) {
-        if let Some(min) = filters.severity {
-            if f.severity < min {
-                continue;
-            }
-        }
         if f.accepted {
             accepted_items.push(f);
             continue;
@@ -595,9 +595,7 @@ fn render_tier_section(
         let prefix = if tier_and_severity_fixed {
             std::cmp::Ordering::Equal
         } else {
-            b.severity
-                .cmp(&a.severity)
-                .then_with(|| b.hotspot.cmp(&a.hotspot))
+            b.severity.cmp(&a.severity)
         };
         prefix
             .then_with(|| match (b.hotspot_score, a.hotspot_score) {
@@ -1027,6 +1025,21 @@ mod tests {
     }
 
     #[test]
+    fn accepted_same_severity_uses_score_before_hotspot_flag() {
+        let mut higher_score =
+            scored_finding("ccn", "src/z-score.rs", Severity::Critical, false, 90.0);
+        higher_score.accepted = true;
+        let mut hotspot = scored_finding("ccn", "src/a-hotspot.rs", Severity::Critical, true, 30.0);
+        hotspot.accepted = true;
+        let rec = record(vec![hotspot, higher_score]);
+        let mut filters = default_filters();
+        filters.all = true;
+
+        let out = render_to_string(&rec, &filters);
+        assert!(out.find("src/z-score.rs").unwrap() < out.find("src/a-hotspot.rs").unwrap());
+    }
+
+    #[test]
     fn coverage_measurement_gap_is_guidance_not_drain_work() {
         let rec = record(Vec::new()).with_coverage_observation(Some(CoverageObservation {
             state: CoverageObservationState::Partial,
@@ -1177,6 +1190,23 @@ mod tests {
             !out.contains("src/lukewarm.ts"),
             "Medium must drop with --severity high:\n{out}"
         );
+
+        // The JSON path uses `Filters::passes` directly when retaining
+        // findings, so pin that shared boundary as well as human rendering.
+        let mut json_record = rec.clone();
+        json_record
+            .findings
+            .retain(|finding| filters.passes(finding));
+        let json = serde_json::to_value(json_record).unwrap();
+        let files: Vec<&str> = json["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|finding| finding["location"]["file"].as_str())
+            .collect();
+        assert!(files.contains(&"src/hot.ts"));
+        assert!(files.contains(&"src/warm.ts"));
+        assert!(!files.contains(&"src/lukewarm.ts"));
     }
 
     #[test]
