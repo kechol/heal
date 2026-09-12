@@ -1126,6 +1126,14 @@ mod tests {
             serde_json::json!(["pkg/a/src/missing.rs"])
         );
 
+        let mut accepted_workspace = default_filters();
+        accepted_workspace.workspace = Some("pkg/b".into());
+        let json = serde_json::to_value(json_record_view(&rec, &accepted_workspace)).unwrap();
+        assert_eq!(json["findings"].as_array().unwrap().len(), 1);
+        assert_eq!(json["accepted_rereview"].as_array().unwrap().len(), 1);
+        assert_eq!(json["severity_counts"]["high"], 0);
+        assert_eq!(json["workspaces"][0]["severity_counts"]["high"], 0);
+
         let mut feature = default_filters();
         feature.family = Some(Family::Test);
         let json = serde_json::to_value(json_record_view(&rec, &feature)).unwrap();
@@ -1149,6 +1157,7 @@ mod tests {
         assert_eq!(json["findings"].as_array().unwrap().len(), 1);
         assert_eq!(json["accepted_rereview"].as_array().unwrap().len(), 1);
         assert_eq!(json["severity_counts"]["high"], 0);
+        assert_eq!(json["workspaces"][0]["severity_counts"]["high"], 0);
         assert_eq!(
             json["coverage_observation"]["unmeasured_files"],
             serde_json::json!(["pkg/b/src/missing.rs"])
@@ -1160,6 +1169,7 @@ mod tests {
         assert_eq!(json["findings"].as_array().unwrap().len(), 2);
         assert_eq!(json["severity_counts"]["critical"], 1);
         assert_eq!(json["severity_counts"]["high"], 0);
+        assert_eq!(json["workspaces"][1]["severity_counts"]["high"], 0);
         assert_eq!(json["accepted_rereview"].as_array().unwrap().len(), 1);
         assert!(json.get("coverage_observation").is_some());
     }

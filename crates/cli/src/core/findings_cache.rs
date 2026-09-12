@@ -263,7 +263,10 @@ fn workspace_summaries(findings: &[Finding]) -> Vec<WorkspaceSummary> {
         let Some(ws) = f.workspace.as_deref() else {
             continue;
         };
-        groups.entry(ws.to_owned()).or_default().tally(f.severity);
+        let counts = groups.entry(ws.to_owned()).or_default();
+        if !f.accepted {
+            counts.tally(f.severity);
+        }
     }
     groups
         .into_iter()
