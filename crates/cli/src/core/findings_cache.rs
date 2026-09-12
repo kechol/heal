@@ -340,7 +340,6 @@ pub fn config_hash_from_paths(config: &Path, calibration: &Path) -> String {
 /// Each file contributes a stable logical path plus one of `present`,
 /// `missing`, or `unreadable`. Absolute host paths and mtimes never enter the
 /// digest, so identical checkouts remain byte-for-byte reproducible.
-#[must_use]
 pub fn observation_hash_from_paths(
     observation_root: &Path,
     cfg: &Config,
