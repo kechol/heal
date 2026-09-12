@@ -6,7 +6,8 @@ description: Drain `[features.test]` findings from the cache, applying mechanica
 # heal-test-patch
 
 Drain the `[features.test]` findings that `heal status` produced.
-One finding per commit, in Severity order, until the test slice of
+One finding per commit, in effective Tier, Severity, then Test-family
+`hotspot_score` order, until T0 in the test slice of
 the cache is empty (or the user stops). This is the **write**
 counterpart to `/heal-test-review`.
 

@@ -97,9 +97,9 @@ Read-only. Reads `heal status --json`, filters to the
 1. An **architectural reading** of the doc tree — is the dominant
    axis "tutorial drifted from the actual install steps", "API
    reference stale", or "concept docs link-broken"?
-2. A **prioritized doc-fix TODO list** — Tutorial / How-to drift
-   first (a confused first-time reader is the highest-leverage
-   fix), then Reference, then Explanation.
+2. A **prioritized doc-fix TODO list** — effective Tier, Severity,
+   then descending Docs-family `hotspot_score` order. Diátaxis purpose
+   shapes the diagnosis and remedy without reordering the queue.
 
 Per-metric framing through the **Diátaxis** lens:
 

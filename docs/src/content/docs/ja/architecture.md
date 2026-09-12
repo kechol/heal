@@ -199,7 +199,7 @@ heal はコード健全性の **測定** と、それに対して何を行うか
 | **T1 / 余裕があれば解消** | `should = ["critical", "high:hotspot"]` | デフォルト表示、別セクション。 | レビュー対象、自動解消 しない。          |
 | **Advisory**              | それ以外の非 Ok                         | `--all` 時のみ表示。           | 自動解消 なし、余裕のあるときに review。 |
 
-`Severity::Ok` の Finding は解消対象外です。レンダラーは Ok 🔥 pre-section（Hotspot フラグ付きだがメトリクスフロア未満）と隠し合計カウントで表示します。
+`Severity::Ok` の Finding は解消対象外です。`--all` では通常の Ok セクションにスコア順で表示し、hotspot/plain が混在する場合は該当行へ `🔥` を付けます。`--all` なしでは隠し合計カウントにだけ含めます。
 
 各ファミリ・Tier の中では Severity、`hotspot_score` 降順、安定した metric/path/id の順で並びます。Code、Test、Docs の生スコアを相互に比較することはありません。
 

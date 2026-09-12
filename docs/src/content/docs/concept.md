@@ -25,8 +25,8 @@ the codebase emit signals on its own.
 - **Every commit**, a post-commit hook re-runs every observer and
   prints any Critical / High item right inside the commit output —
   the next problem stays visible without a daemon.
-- **On demand**, `heal status` lays out the same items as a
-  Severity-grouped TODO list, which the bundled `/heal-code-patch`
+- **On demand**, `heal status` lays out the same items in effective
+  Tier, Severity, then family-local score order, which the bundled `/heal-code-patch`
   Claude skill works through one fix per commit.
 
 The result is a loop where the codebase wakes the agent up, rather
@@ -48,7 +48,7 @@ cases, and a uniformly-clean codebase isn't held hostage by the "top
 10% is always red" loop. See [Code › Metrics](/heal/code/metrics/)
 for the full ladder.
 
-## Hotspot — where to look first
+## Hotspot — where leverage concentrates
 
 **A Hotspot is a file that's both hard to read and frequently
 edited.** heal ranks every file by `commits × complexity` (the
@@ -62,11 +62,11 @@ The intuition: a high-complexity file that nobody touches is debt
 every other day deserves earlier scrutiny. Hotspot is the intersection:
 high score = often touched **and** hard to read.
 
-That's why **Hotspot is the one signal to watch first** out of the
-Code family. A `Critical 🔥` item isn't twice as bad as a plain
-`Critical`; it is simply considered first within that work tier. The
-`/heal-code-patch` skill works through the `🔥` queue first by default
-for the same reason.
+Hotspot is therefore a useful leverage signal, but `🔥` is not an
+extra sort key. HEAL first applies the effective Drain Tier and
+Severity, then orders the remaining same-family bucket by descending
+`hotspot_score`. A plain finding with a higher score can precede a
+flagged finding in that bucket.
 
 The opt-in Test and Docs families ship their own family-specific
 Hotspot composers — Test Hotspot (`commits × uncovered %`) and Doc

@@ -7,7 +7,7 @@
 AI coding agents are reactive: they wait for a human to file the next
 task. Meanwhile, codebases decay — complexity creeps, hotspots shift,
 duplicates pile up. heal closes that gap. Every commit it re-measures
-the codebase and produces a Severity-ranked TODO list your agent can
+the codebase and produces a Tier/Severity/score-ranked TODO list your agent can
 drain — no human in the polling path.
 
 Documentation: <https://kechol.github.io/heal/>

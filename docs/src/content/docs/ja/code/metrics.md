@@ -1,6 +1,6 @@
 ---
 title: Code · メトリクス
-description: Code ファミリの 7 メトリクス、Severity ラダー、最初に見るべき Hotspot の役割。
+description: Code ファミリの 7 メトリクス、Severity ラダー、Hotspot が示すレバレッジ。
 ---
 
 Code ファミリは 7 つのメトリクスを同梱しています。どれも AI 専用ではなく、長年の文献に裏打ちされたコードヘルス指標です。heal の貢献は **コードベース自身の分布に合わせて calibrate すること**。200 行のスクリプトと 200kloc のサービスは、同じ生の値でも違う扱いを受けます。
@@ -89,4 +89,4 @@ Hotspot は churn × complexity を掛け合わせて、読みにくく頻繁に
 
 「Ok 🔥」サブセット — 低 Severity だが頻繁に編集されている、「なぜまだここを編集しているのか?」候補 — は `heal status --all` の専用セクションに現れます。
 
-詳しい背景は [コンセプト › Hotspot](/heal/ja/concept/#hotspot--最初に見る場所) を参照。
+詳しい背景は [コンセプト › Hotspot](/heal/ja/concept/#hotspot--レバレッジが集中する場所) を参照。

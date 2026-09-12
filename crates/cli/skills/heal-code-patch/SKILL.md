@@ -1,12 +1,13 @@
 ---
 name: heal-code-patch
-description: Drain the cache produced by `heal status`, fixing one finding per commit in Severity order, until the cache is empty or the user stops. Writes code, runs tests, and commits — does NOT push or open PRs. Refuses to start on a dirty worktree. Trigger on "fix the heal findings", "drain the cache", "work through the TODO list heal produced", "/heal-code-patch".
+description: Drain T0 from the cache produced by `heal status`, fixing one finding per commit in effective Tier, Severity, then family-local hotspot score order until T0 is empty or the user stops. Writes code, runs tests, and commits — does NOT push or open PRs. Refuses to start on a dirty worktree. Trigger on "fix the heal findings", "drain the cache", "work through the TODO list heal produced", "/heal-code-patch".
 ---
 
 # heal-code-patch
 
 Drain the cache that `heal status` produced. One finding per commit,
-in Severity order, until the cache is empty (or the user stops). This
+in effective Tier, Severity, then family-local `hotspot_score` order,
+until T0 is empty (or the user stops). This
 is the **write** counterpart to `/heal-code-review` — that one proposes,
 this one applies.
 

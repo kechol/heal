@@ -390,10 +390,8 @@ pub struct StatusArgs {
     /// also surface lower severities below it.
     #[arg(long, value_enum)]
     pub severity: Option<SeverityFilter>,
-    /// Show every Severity tier (Medium / Ok included) plus the
-    /// low-Severity hotspot section. Without this, only Critical /
-    /// High render (with a "(N) hidden — pass `--all`" footer when
-    /// there are more).
+    /// Show lower-priority Advisory, Medium, Ok, and accepted sections.
+    /// Without this, hidden findings are reported in a summary footer.
     #[arg(long)]
     pub all: bool,
     /// Emit the `FindingsRecord` payload as JSON on stdout. Same shape as

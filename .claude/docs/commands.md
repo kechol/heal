@@ -123,10 +123,12 @@ heal status [--metric <FindingMetric>] [--feature <FamilyFilter>]
 
 Pipeline (`commands/status.rs:44-112`):
 
-1. Read cache from `.heal/findings/latest.json` unless `--refresh`.
-2. Idempotency check: `is_fresh_against(head_sha, config_hash,
-   worktree_clean)`. Match → reuse cached record. Mismatch or dirty
-   worktree → recompute.
+1. Unless `--refresh`, call `read_latest_if_fresh` for
+   `.heal/findings/latest.json`.
+2. Freshness check: HEAD and clean worktree plus the observation-input
+   `config_hash` (config, calibration, enabled LCOV/doc-pair state and
+   content). Match → reuse; mismatch, dirty worktree, or unstable input
+   → recompute.
 3. Recompute path: `build_record(...)` → `run_all` → `classify` →
    `FindingsRecord` → `fs::atomic_write` to `latest.json`.
 4. `reconcile_fixed(fixed.json, regressed.jsonl, &record)` — re-detected
@@ -148,7 +150,7 @@ swallowed → exit 0.
 2. Regressed section (re-detected after `mark fix`).
 3. Per-family blocks (`═══ Code ═══`, `═══ Test ═══`, `═══ Docs ═══`)
    — each family orders by effective Drain Tier, then Severity, then
-   descending family-local `hotspot_score` (deterministic path/id ties), and ends
+   descending family-local `hotspot_score` (deterministic metric/path/id ties), and ends
    with a `Next: claude /heal-{code,test,doc}-patch` hint. Empty
    enabled families show `(no findings)` so the absence is visible.
    Disabled families (`[features.test/docs].enabled = false`) are

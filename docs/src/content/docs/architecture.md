@@ -32,7 +32,7 @@ heal status  ──►  classify Findings via calibration.toml
                        │
                        ├──►  reconcile fixed.json ↔ regressed.jsonl
                        │
-                       └──►  render Severity-grouped view to stdout
+                       └──►  render Tier/Severity/score-ordered view to stdout
 ```
 
 `heal` is a single binary; both paths go through it. There is no
@@ -276,9 +276,10 @@ buckets driven by `[policy.drain]`:
 | **T1 / Should drain** | `should = ["critical", "high:hotspot"]` | Shown by default, separate section.           | Surfaced for review; not auto-drained.            |
 | **Advisory**          | everything else above Ok                | Hidden unless `--all`.                        | Never drained; review when convenient.            |
 
-Findings classified as `Severity::Ok` are excluded from drain entirely;
-the renderer surfaces them via a dedicated Ok 🔥 pre-section
-(Hotspot-flagged but below the metric floor) and a hidden-summary count.
+Findings classified as `Severity::Ok` are excluded from drain entirely.
+With `--all` they appear in the normal Ok section in score order; a
+mixed section marks individual hotspot rows with `🔥`. Without
+`--all`, they contribute only to the hidden-summary count.
 
 Within each family and Tier, rows sort by Severity and then descending
 `hotspot_score`, followed by stable metric/path/id tie-breakers. Scores

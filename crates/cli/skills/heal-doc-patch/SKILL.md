@@ -6,7 +6,8 @@ description: Drain `[features.docs]` findings from the cache, applying mechanica
 # heal-doc-patch
 
 Drain the `doc_*` findings that `heal status` produced. One finding
-per commit, in Severity order, until the docs slice of the cache is
+per commit, in effective Tier, Severity, then Docs-family
+`hotspot_score` order, until T0 in the docs slice of the cache is
 empty (or the user stops). This is the **write** counterpart to
 `/heal-doc-review`.
 

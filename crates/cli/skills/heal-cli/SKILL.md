@@ -56,12 +56,13 @@ Behind the scenes:
 - A post-commit git hook re-runs every observer, classifies the result
   against `.heal/calibration.toml`, and prints a one-line nudge.
   Failures are swallowed so HEAL never blocks a commit. No event log
-  is written — `latest.json` (refreshed on `heal status --refresh`) is
+  is written — `latest.json` (maintained by `heal status`) is
   the live state.
 - `heal status` writes its result to `.heal/findings/latest.json`. The
   cache is single-record by design — there is no historical stream.
-  Re-running on the same `(head_sha, config_hash, worktree_clean=true)`
-  is a free cache hit.
+  Re-running with the same HEAD, clean worktree, config, calibration,
+  and enabled observation inputs is a free cache hit. Missing or stale
+  state is rescanned and replaced automatically.
 - `.heal/findings/fixed.json` (a `BTreeMap<finding_id, FixedFinding>`)
   and `.heal/findings/regressed.jsonl` track the per-finding fix
   history.
@@ -91,8 +92,9 @@ overwrite the file. JSON shape:
 
 ### `heal status [args] [--json]`
 
-The single source of truth for the current TODO list. Renders cached
-findings; pass `--refresh` to rescan first. Useful args:
+The single source of truth for the current TODO list. Reuses fresh
+cached findings, automatically rescans missing/stale state, and accepts
+`--refresh` to force a rescan. Useful args:
 
 - `--refresh` — rescan and overwrite `.heal/findings/latest.json`.
 - `--all` — surface Medium and Ok tiers (default hides them).

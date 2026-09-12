@@ -1,21 +1,22 @@
 //! `heal status` — render `.heal/findings/latest.json` and, when needed,
 //! produce it.
 //!
-//! Default flow reads the cached `FindingsRecord` from `latest.json` if
-//! one exists. Only when the cache is missing — or `--refresh` is
-//! passed — does this command run every observer, lift the reports
+//! Default flow reads the cached `FindingsRecord` from `latest.json` when
+//! its HEAD/config/clean gate and observation-input hash are fresh. A
+//! missing or stale cache, or `--refresh`, runs every observer, lifts the reports
 //! through `crate::core::finding::IntoFindings`, decorate each Finding
 //! with Severity (via `Calibration`) and the per-file hotspot flag
 //! (via `HotspotCalibration`), and write a fresh `FindingsRecord`. This
 //! is still the single writer of `.heal/findings/`.
 //!
-//! The renderer groups findings by `(Severity, hotspot)` and labels the
-//! sections by Severity (🔴 Critical 🔥 → 🔴 Critical → 🟠 High 🔥 → …).
+//! The renderer groups findings by effective Drain Tier and Severity.
+//! Inside each same-family bucket, rows follow descending
+//! `hotspot_score`, with missing scores last and metric/path/id ties.
 //! Each section header carries a `[T0 Must drain]` / `[T1 Should drain]`
 //! / `[Advisory]` suffix derived from `[policy.drain]` so the link to
 //! `/heal-code-patch` stays explicit. Default policy:
 //! `must = ["critical:hotspot"]`, `should = ["critical", "high:hotspot"]`.
-//! Sections below `🟠 High 🔥` (plain High, Medium, Ok) are hidden unless
+//! Advisory and unclassified lower-priority sections are hidden unless
 //! `--all` is passed; the footer surfaces a "next steps" line pointing
 //! at `claude /heal-code-patch` for the Must-drain queue.
 //!
@@ -1198,7 +1199,7 @@ mod tests {
     }
 
     #[test]
-    fn default_omits_low_severity_hotspot_section() {
+    fn default_omits_ok_section_without_all() {
         let rec = record(vec![finding(
             "hotspot",
             "src/touch_a_lot.ts",
@@ -1208,7 +1209,7 @@ mod tests {
         let out = render_to_string(&rec, &default_filters());
         assert!(
             !out.contains("Ok 🔥"),
-            "low-Severity hotspot section must stay hidden without --all:\n{out}",
+            "Ok section must stay hidden without --all:\n{out}",
         );
     }
 

@@ -1,6 +1,6 @@
 ---
 title: Code · Metrics
-description: The seven Code-family metrics, the Severity ladder, and why Hotspot is the one to watch first.
+description: The seven Code-family metrics, the Severity ladder, and how Hotspot identifies leverage.
 ---
 
 The Code family ships seven metrics. None are AI-specific — each
@@ -146,4 +146,4 @@ shows up in its own section under `heal status --all` ("why are we
 still editing this?" candidates).
 
 For the longer rationale see
-[Concept › Hotspot](/heal/concept/#hotspot--where-to-look-first).
+[Concept › Hotspot](/heal/concept/#hotspot--where-leverage-concentrates).

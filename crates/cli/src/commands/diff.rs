@@ -7,10 +7,11 @@
 //!
 //! Two paths:
 //!
-//! 1. **Cache hit.** `latest.json` was scanned clean at the resolved
-//!    ref under the current `config_hash` → read the cached
-//!    `FindingsRecord` directly. Fast.
-//! 2. **Worktree fallback.** `git worktree add --detach <tempdir> <sha>`
+//! 1. **Checked-out HEAD cache hit.** Only when the resolved ref is the
+//!    current HEAD and `latest.json` passes its full freshness gate can
+//!    the cached `FindingsRecord` be reused. Ignored observation inputs
+//!    make the live worktree unsuitable evidence for an older ref.
+//! 2. **Detached worktree.** `git worktree add --detach <tempdir> <sha>`
 //!    materialises the source at the ref, runs the observer pipeline
 //!    against it (using the *current* `config.toml`/`calibration.toml`
 //!    so the comparison is apples-to-apples), and removes the worktree

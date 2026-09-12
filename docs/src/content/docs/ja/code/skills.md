@@ -44,7 +44,7 @@ heal skills install --target all     # 検出有無に関わらず全 target に
 
 ## `/heal-code-patch` — 書き込みスキル
 
-`.heal/findings/latest.json` を Severity 順に 1 件ずつ消化し、修正ごとに 1 コミット。ループは **T0(`must`)のみ** 解消します。T1 / Advisory は表示するだけで自動解消はしません。
+`.heal/findings/latest.json` を有効 Tier、Severity、同一ファミリの `hotspot_score` 降順(欠落は末尾、同点は metric/path/id)で 1 件ずつ消化し、修正ごとに 1 コミット。ループは **T0(`must`)のみ** 解消します。T1 / Advisory は表示するだけで自動解消はしません。
 
 **事前チェック**(失敗すると起動拒否):
 

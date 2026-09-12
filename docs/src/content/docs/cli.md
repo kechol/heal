@@ -118,8 +118,8 @@ The bundled set ships eleven skills, grouped by feature family:
 - `/heal-code-review` (read-only) ingests `heal status --all --json`,
   deep-reads the flagged code, and produces an architectural reading
   plus a prioritized refactor TODO list.
-- `/heal-code-patch` (write) drains the TODO list one finding per
-  commit (Severity order; `Critical 🔥` first).
+- `/heal-code-patch` (write) drains T0 one finding per commit in
+  effective Tier, Severity, then family-local score order.
 - `/heal-cli` is a concise reference for the `heal` CLI surface.
 - `/heal-setup` is the setup wizard. It calibrates the project,
   asks for a strictness level, writes `config.toml`, then asks
@@ -170,7 +170,7 @@ heal status --feature code               # only the code family (drop test / doc
 heal status --feature test               # only the test family ([features.test])
 heal status --feature docs               # only the docs family ([features.docs])
 heal status --path src/payments          # restrict to one path prefix (was --feature pre-v0.4)
-heal status --all                        # show Medium / Ok plus the low-Severity hotspot section
+heal status --all                        # show Advisory, Medium, Ok, and accepted sections
 heal status --top 5                      # cap each Tier/Severity bucket at 5 rows
 heal status --no-pager                   # write straight to stdout (skip the pager)
 heal status --json                       # machine-readable shape on stdout
@@ -182,12 +182,10 @@ When stdout is a terminal, `heal status` pipes through `$PAGER` (or
 (redirect, `| cat`, CI logs) and the pager is skipped automatically.
 `--json` always writes raw to stdout.
 
-By default `heal status` is a read-only render of the cached TODO:
-runs are free once the cache is warm. Pass `--refresh` to invalidate
-and re-run every observer; this is the only path that writes the
-cache. A missing cache (e.g. immediately after `heal init`) also
-triggers a scan, so the first invocation in a project still works
-without flags.
+By default `heal status` reuses a fresh cached TODO, so warm runs are
+effectively free. A missing or stale cache triggers a scan and writes
+the replacement automatically; `--refresh` forces that same rescan and
+write even when the cache is fresh.
 
 Freshness includes enabled non-git observations as well as HEAD and
 the clean-worktree gate. Updating an ignored LCOV report or doc-pair
@@ -197,13 +195,13 @@ output distinguishes `missing`, `read_error`, `partial`, and
 `complete`. Unlisted production files are unmeasured and prompt a
 reporter/package-scope check; they are not treated as measured 0%.
 
-Output groups findings under `🔴 Critical 🔥 / 🔴 Critical / 🟠 High 🔥
-/ 🟠 High / 🟡 Medium / ✅ Ok` (last two require `--all`) and
-aggregates one row per file. Priority is Tier, Severity, then descending
+Output groups findings by effective Drain Tier and Severity (lower
+priority sections require `--all`) and aggregates one row per file.
+Hotspot remains visible as `🔥` on an all-hot section or mixed row.
+Priority is Tier, Severity, then descending
 family-local `hotspot_score`, with metric/path/id tie-breakers. Code,
 Test, and Docs scores are never compared with one another, and the
-score is not a probability or guaranteed payoff. With `--all`, an
-extra low-Severity Hotspot section surfaces additional review targets.
+score is not a probability or guaranteed payoff.
 
 ## `heal diff`
 
@@ -332,11 +330,11 @@ this command. Put `floor_critical` / `floor_ok` overrides in
 at the on-disk state directly, three flat files live under
 `.heal/findings/`:
 
-| File                             | Purpose                                                       |
-| -------------------------------- | ------------------------------------------------------------- |
-| `.heal/findings/latest.json`     | The current TODO list — refreshed by `heal status --refresh`. |
-| `.heal/findings/fixed.json`      | Bounded record of fixes claimed by `/heal-code-patch`.        |
-| `.heal/findings/regressed.jsonl` | Audit trail for fixes that were re-detected.                  |
+| File                             | Purpose                                                                                   |
+| -------------------------------- | ----------------------------------------------------------------------------------------- |
+| `.heal/findings/latest.json`     | Current TODO — reused when fresh; replaced when stale/missing or forced with `--refresh`. |
+| `.heal/findings/fixed.json`      | Bounded record of fixes claimed by `/heal-code-patch`.                                    |
+| `.heal/findings/regressed.jsonl` | Audit trail for fixes that were re-detected.                                              |
 
 These are plain files, readable with `jq`:
 

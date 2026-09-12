@@ -14,9 +14,9 @@ For per-area facts:
 
 - `heal init` rewrites `.heal/config.toml` and the post-commit hook
   only when content differs. `--force` overwrites.
-- `heal status` short-circuits when the cache is fresh
-  (`(head_sha, config_hash, worktree_clean=true)` match — see
-  `data-model.md`).
+- `heal status` short-circuits when the cache is fresh: HEAD and clean
+  worktree match, and the content hash covers config, calibration, and
+  enabled non-git observation inputs (see `data-model.md`).
 - `heal hook commit` short-circuits silently if `.heal/` doesn't exist.
 - `heal skills install` skips existing files in `InstallSafe` mode;
   `--force` overwrites.
@@ -64,7 +64,7 @@ contract:
 
 ```rust
 let parsed: serde_json::Value = serde_json::from_str(&out)?;
-assert_eq!(parsed["version"], 2);
+assert_eq!(parsed["version"], 8);
 assert!(parsed["findings"][0]["id"].is_string());
 ```
 

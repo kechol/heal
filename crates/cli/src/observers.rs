@@ -325,10 +325,10 @@ pub(crate) fn run_all(
         && cfg.features.test.enabled
         && cfg.features.test.coverage.enabled)
         .then(|| {
-            // Universe-completion is load-bearing here — files that
-            // the lcov reporter dropped are the most important hot
-            // candidates, and they only enter the universe via
-            // ChurnReport. The `want()` extension ensures churn ran.
+            // Churn supplies edit frequency for files that have an
+            // explicit measured coverage entry. Files absent from LCOV
+            // remain unmeasured and do not become Test Hotspots. The
+            // `want()` extension ensures churn ran for the composition.
             let ch = churn.as_ref();
             let cov = coverage.as_ref();
             ch.map(|ch| compose_test_hotspot(ch, cov))

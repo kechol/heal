@@ -81,7 +81,7 @@ heal skills uninstall --target all   # 全 tree を削除
 **Code(常時オン):**
 
 - `/heal-code-review`(read-only) — `heal status --all --json` を取り込み、フラグ付きコードを深く読み、アーキテクチャ的な所見と優先順位付きリファクタ TODO リストを返します。
-- `/heal-code-patch`(write) — TODO リストを Severity 順(`Critical 🔥` 先頭)に 1 コミット 1 finding ずつ解消。
+- `/heal-code-patch`(write) — T0 を有効 Tier、Severity、ファミリ内スコア順に 1 コミット 1 finding ずつ解消。
 - `/heal-cli` — `heal` CLI の簡潔なリファレンス。
 - `/heal-setup` — セットアップウィザード。calibrate → strictness 選択 → `config.toml` 書き出し のあと、オプションの `[features.docs]` / `[features.test]` を有効化するかを順に確認し、有効化を選んだ場合は `/heal-doc-pair-setup` / `/heal-test-reporter-setup` まで連携します。calibration ドリフトを検知して `heal calibrate --force` も提案します。
 
@@ -115,7 +115,7 @@ heal status --feature code               # code ファミリのみ表示(test / 
 heal status --feature test               # test ファミリのみ([features.test])
 heal status --feature docs               # docs ファミリのみ([features.docs])
 heal status --path src/payments          # パスプレフィックスで絞る(v0.4 以前は --feature)
-heal status --all                        # Medium / Ok と低 Severity の Hotspot セクションを表示
+heal status --all                        # Advisory、Medium、Ok、accepted セクションも表示
 heal status --top 5                      # 各 Tier/Severity バケットを 5 行で打ち切り
 heal status --no-pager                   # ページャを通さず stdout に直接書く
 heal status --json                       # 機械可読な形式を stdout へ
@@ -123,11 +123,11 @@ heal status --json                       # 機械可読な形式を stdout へ
 
 stdout がターミナルのときは `$PAGER`(または `less`)にパイプします(`git diff` / `git log` と同じ慣習)。`--no-pager` を渡すか、出力をパイプ(リダイレクト、`| cat`、CI ログ)するとページャは自動的にスキップされます。`--json` は常に raw のまま stdout に出します。
 
-デフォルトの `heal status` はキャッシュ済み TODO の読み取り専用描画です。キャッシュが温まっていれば実質コスト 0 で動きます。`--refresh` を指定すると初めてキャッシュを破棄して再スキャン・上書きします(このパスだけが書き込みを行います)。`heal init` 直後などキャッシュがないときは最初の実行で自動的にスキャンするので、フラグなしでも問題なく動きます。
+デフォルトの `heal status` は鮮度が有効なキャッシュを再利用するため、温まっていれば実質コスト 0 です。キャッシュが欠けているか古ければ自動的に再スキャンして置き換え、`--refresh` は鮮度にかかわらず同じ再スキャンと書き込みを強制します。
 
 鮮度は HEAD と clean-worktree gate だけでなく、有効な非 git 観測入力も含めて判定します。ignored な LCOV や doc-pair を更新すると、HEAD が同じでも cache は無効です。mtime と checkout の絶対パスは使いません。human/JSON の coverage provenance は `missing` / `read_error` / `partial` / `complete` を区別します。LCOV にない production ファイルは未計測であり、0% とは判定せず reporter/package scope の確認へ案内します。
 
-出力は Finding を `🔴 Critical 🔥 / 🔴 Critical / 🟠 High 🔥 / 🟠 High / 🟡 Medium / ✅ Ok` の下にグループ化し(最後の 2 つは `--all` が必要)、ファイル単位に 1 行へ集約します。優先順は Tier、Severity、同一ファミリの `hotspot_score` 降順、metric/path/id の tie-break です。Code、Test、Docs の生スコアは相互比較せず、確率や修正効果の保証でもありません。`--all` では低 Severity の Hotspot も別セクションに表示します。
+出力は Finding を有効 Drain Tier と Severity でグループ化し(低優先度セクションは `--all` が必要)、ファイル単位に 1 行へ集約します。Hotspot は全行 hot のセクションまたは混在行の `🔥` で表示します。優先順は Tier、Severity、同一ファミリの `hotspot_score` 降順、metric/path/id の tie-break です。Code、Test、Docs の生スコアは相互比較せず、確率や修正効果の保証でもありません。
 
 ## `heal diff`
 
@@ -203,11 +203,11 @@ heal は **絶対に** 自動で recalibrate しません。コードベース�
 
 スクリプト用の契約は `heal status --json` です。直接オンディスク状態を覗きたい場合は、`.heal/findings/` 配下にフラットな成果物が 3 つ置かれています:
 
-| ファイル                         | 役割                                                          |
-| -------------------------------- | ------------------------------------------------------------- |
-| `.heal/findings/latest.json`     | 現在の TODO リスト — `heal status --refresh` がリフレッシュ。 |
-| `.heal/findings/fixed.json`      | `/heal-code-patch` が記録した修正の有界マップ。               |
-| `.heal/findings/regressed.jsonl` | 修正済みが再検出された監査トレイル。                          |
+| ファイル                         | 役割                                                                      |
+| -------------------------------- | ------------------------------------------------------------------------- |
+| `.heal/findings/latest.json`     | 現在の TODO — fresh なら再利用し、stale/欠落時または `--refresh` で置換。 |
+| `.heal/findings/fixed.json`      | `/heal-code-patch` が記録した修正の有界マップ。                           |
+| `.heal/findings/regressed.jsonl` | 修正済みが再検出された監査トレイル。                                      |
 
 これらはすべて素のファイルなので `jq` で直接読めます。
 

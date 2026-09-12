@@ -3,7 +3,7 @@
 //!
 //! - `commit` runs every observer, classifies the result against the
 //!   project's calibration, and emits a one-line nudge. No event-log
-//!   write — `latest.json` (refreshed on every `heal status`) is the
+//!   write — `latest.json` (maintained by `heal status`) is the
 //!   live state of record.
 //! - `edit` / `stop` are no-ops kept for back-compat with any
 //!   `settings.json` registrations that survived an upgrade.

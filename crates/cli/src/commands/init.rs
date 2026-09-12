@@ -304,7 +304,7 @@ fn print_summary(
 
     println!();
     println!("Next steps:");
-    println!("  heal status               # render the Severity-grouped TODO list");
+    println!("  heal status               # render the Tier/Severity/score-ranked TODO list");
     println!("  heal metrics              # see metric trends");
     println!("  heal diff                 # progress vs. the calibration baseline");
     let any_installed = skills_outcomes

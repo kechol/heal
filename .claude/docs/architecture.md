@@ -54,9 +54,9 @@ heal status [--refresh]
   ↓
 commands::status::run
   ↓
-read .heal/findings/latest.json (if not --refresh)
+read_latest_if_fresh(.heal/findings/latest.json) (unless --refresh)
   ↓
-is_fresh_against(head_sha, config_hash, worktree_clean)?
+fresh HEAD/clean gate + observation-input config_hash?
   ├── yes → render cached record (fast path)
   └── no  → continue
   ↓
@@ -116,8 +116,8 @@ git worktree add --detach <tmp> <from_sha>
 run observers + classify against current config + calibration
   → "from" FindingsRecord (today's rules applied to historical source)
   ↓
-read latest.json (or run observers on live worktree if --refresh)
-  → "to" FindingsRecord
+run observers on live worktree without persisting
+  → "to" FindingsRecord (always fresh)
   ↓
 diff buckets: resolved, regressed, improved, new_findings, unchanged
   ↓
