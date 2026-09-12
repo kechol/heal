@@ -136,28 +136,45 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
         // need to drop findings — borrow the record and clone only
         // when an actual narrowing is in flight, so the unfiltered
         // fast path serializes the original record directly.
-        match (filters.workspace.as_deref(), filters.is_narrowing()) {
-            (None, false) => super::emit_json(&record),
-            (None, true) => {
-                let mut emit = record.clone();
-                emit.findings.retain(|f| filters.passes(f));
-                emit.retain_rereviews_for_findings();
-                super::emit_json(&emit);
-            }
-            (Some(ws), narrowing) => {
-                let mut emit = record.project_to_workspace(ws);
-                if narrowing {
-                    emit.findings.retain(|f| filters.passes(f));
-                    emit.retain_rereviews_for_findings();
-                }
-                super::emit_json(&emit);
-            }
+        if filters.workspace.is_none() && !filters.is_narrowing() {
+            super::emit_json(&record);
+        } else {
+            super::emit_json(&json_record_view(&record, &filters));
         }
         return Ok(());
     }
     write_through_pager(args.no_pager, |out, colorize| {
         render(&record, &regressed, &filters, &cfg, colorize, out)
     })
+}
+
+fn json_record_view(record: &FindingsRecord, filters: &Filters) -> FindingsRecord {
+    let mut emit = filters.workspace.as_deref().map_or_else(
+        || record.clone(),
+        |workspace| record.project_to_workspace(workspace),
+    );
+    emit.findings.retain(|finding| filters.passes(finding));
+    emit.retain_rereviews_for_findings();
+    emit.recompute_summary();
+    scope_coverage_observation(&mut emit, filters);
+    emit
+}
+
+fn scope_coverage_observation(record: &mut FindingsRecord, filters: &Filters) {
+    let coverage_selected = filters
+        .family
+        .is_none_or(|family| family == crate::feature::Family::Test)
+        && filters
+            .metric
+            .is_none_or(|metric| metric == FindingMetric::CoveragePct);
+    if !coverage_selected {
+        record.coverage_observation = None;
+    } else if let Some(path) = filters.path.as_deref() {
+        record.coverage_observation = record
+            .coverage_observation
+            .as_ref()
+            .map(|observation| observation.scoped_to(path));
+    }
 }
 
 /// Resolved filters for the renderer.
@@ -1059,6 +1076,92 @@ mod tests {
             json["coverage_observation"]["unmeasured_files"][0],
             "src/unlisted.rs"
         );
+    }
+
+    #[test]
+    fn json_filters_keep_findings_notices_summaries_and_coverage_consistent() {
+        use crate::core::accepted::AcceptedRereviewReason;
+        use crate::feature::Family;
+
+        let mut code = finding("ccn", "pkg/a/src/code.rs", Severity::Critical, true);
+        code.workspace = Some("pkg/a".into());
+        let mut test = finding(
+            Finding::METRIC_COVERAGE_PCT,
+            "pkg/a/src/uncovered.rs",
+            Severity::Medium,
+            false,
+        );
+        test.workspace = Some("pkg/a".into());
+        let mut docs = finding("doc_drift", "pkg/b/docs/api.md", Severity::High, false);
+        docs.workspace = Some("pkg/b".into());
+        docs.accepted = true;
+        let docs_id = docs.id.clone();
+        let mut rec = record(vec![code, test, docs]);
+        rec.accepted_rereview.push(AcceptedDrift {
+            finding_id: docs_id,
+            file: "pkg/b/docs/api.md".into(),
+            was: Severity::Medium,
+            now: Severity::High,
+            was_hotspot: false,
+            now_hotspot: false,
+            reasons: vec![AcceptedRereviewReason::SeverityIncreased],
+        });
+        rec.coverage_observation = Some(CoverageObservation {
+            state: CoverageObservationState::Partial,
+            configured_sources: vec!["lcov.info".into()],
+            sources: vec!["lcov.info".into()],
+            unreadable_sources: Vec::new(),
+            unmeasured_files: vec!["pkg/a/src/missing.rs".into(), "pkg/b/src/missing.rs".into()],
+        });
+
+        let mut workspace = default_filters();
+        workspace.workspace = Some("pkg/a".into());
+        let json = serde_json::to_value(json_record_view(&rec, &workspace)).unwrap();
+        assert_eq!(json["findings"].as_array().unwrap().len(), 2);
+        assert_eq!(json["severity_counts"]["critical"], 1);
+        assert_eq!(json["severity_counts"]["medium"], 1);
+        assert_eq!(json["workspaces"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            json["coverage_observation"]["unmeasured_files"],
+            serde_json::json!(["pkg/a/src/missing.rs"])
+        );
+
+        let mut feature = default_filters();
+        feature.family = Some(Family::Test);
+        let json = serde_json::to_value(json_record_view(&rec, &feature)).unwrap();
+        assert_eq!(json["findings"].as_array().unwrap().len(), 1);
+        assert_eq!(json["findings"][0]["metric"], Finding::METRIC_COVERAGE_PCT);
+        assert_eq!(json["severity_counts"]["medium"], 1);
+        assert_eq!(json["accepted_rereview"], serde_json::Value::Null);
+        assert!(json.get("coverage_observation").is_some());
+
+        let mut metric = default_filters();
+        metric.metric = Some(FindingMetric::Ccn);
+        let json = serde_json::to_value(json_record_view(&rec, &metric)).unwrap();
+        assert_eq!(json["findings"].as_array().unwrap().len(), 1);
+        assert_eq!(json["severity_counts"]["critical"], 1);
+        assert_eq!(json["workspaces"].as_array().unwrap().len(), 1);
+        assert!(json.get("coverage_observation").is_none());
+
+        let mut path = default_filters();
+        path.path = Some("pkg/b".into());
+        let json = serde_json::to_value(json_record_view(&rec, &path)).unwrap();
+        assert_eq!(json["findings"].as_array().unwrap().len(), 1);
+        assert_eq!(json["accepted_rereview"].as_array().unwrap().len(), 1);
+        assert_eq!(json["severity_counts"]["high"], 0);
+        assert_eq!(
+            json["coverage_observation"]["unmeasured_files"],
+            serde_json::json!(["pkg/b/src/missing.rs"])
+        );
+
+        let mut severity = default_filters();
+        severity.severity = Some(Severity::High);
+        let json = serde_json::to_value(json_record_view(&rec, &severity)).unwrap();
+        assert_eq!(json["findings"].as_array().unwrap().len(), 2);
+        assert_eq!(json["severity_counts"]["critical"], 1);
+        assert_eq!(json["severity_counts"]["high"], 0);
+        assert_eq!(json["accepted_rereview"].as_array().unwrap().len(), 1);
+        assert!(json.get("coverage_observation").is_some());
     }
 
     #[test]

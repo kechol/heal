@@ -337,7 +337,10 @@ The two JSON views intentionally are not byte-for-byte identical.
 `latest.json` is the raw observer record. `heal status --json` uses the
 same record schema, then overlays the current accepted state and the
 ephemeral `accepted_rereview` notices, and applies any requested
-workspace, feature, metric, path, and Severity filters.
+workspace, feature, metric, path, and Severity filters to findings,
+re-review notices, and their aggregate counts. Coverage provenance has
+no Severity; it follows workspace/path scope and is omitted when a
+non-Test family or non-coverage metric is selected.
 
 | File                             | Purpose                                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------------------------- |
