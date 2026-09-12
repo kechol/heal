@@ -27,6 +27,7 @@ use crate::core::finding::{CoverageObservation, Finding};
 use crate::core::severity::Severity;
 use crate::core::term::{ansi_wrap, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW};
 use crate::core::HealPaths;
+use crate::observer::test::coverage::CoverageReport;
 use crate::observers::{classify, run_all, ObserverReports};
 use anyhow::Result;
 
@@ -72,7 +73,11 @@ fn run_commit(project: &Path, paths: &HealPaths) -> Result<()> {
         calibration.as_ref(),
         &cfg,
         &findings,
-        reports.coverage.as_ref().map(|r| r.observation()).as_ref(),
+        reports
+            .coverage
+            .as_ref()
+            .map(CoverageReport::observation)
+            .as_ref(),
         &accepted_rereview,
         &mut std::io::stdout(),
     )
@@ -257,7 +262,7 @@ mod tests {
         let reports = run_all(dir, cfg, None, None);
         let (calibration, findings) = classify_with_calibration(paths, cfg, &reports);
         let mut buf: Vec<u8> = Vec::new();
-        let coverage = reports.coverage.as_ref().map(|r| r.observation());
+        let coverage = reports.coverage.as_ref().map(CoverageReport::observation);
         write_nudge(
             calibration.as_ref(),
             cfg,
