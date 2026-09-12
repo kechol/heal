@@ -117,22 +117,38 @@ writer of `accepted.json`.
 
 ```json
 {
-  "version": 5,
+  "version": 8,
   "id": "9f8e7d6c5b4a3210", // FNV-1a hex of (head_sha, config_hash, worktree_clean)
   "head_sha": "a0a6d1a…",
   "worktree_clean": true,
-  "config_hash": "9f8e7d6c5b4a3210", // FNV-1a over config + calibration
+  "config_hash": "9f8e7d6c5b4a3210", // rules + enabled non-git observations
   "severity_counts": { "critical": 2, "high": 5, "medium": 12, "ok": 84 },
+  "coverage_observation": {
+    "state": "partial",
+    "configured_sources": ["lcov.info"],
+    "sources": ["lcov.info"],
+    "unreadable_sources": [],
+    "unmeasured_files": ["src/new.ts"]
+  },
   "findings": [/* Vec<Finding> */]
 }
 ```
 
 `heal status` short-circuits when `(head_sha, config_hash,
-worktree_clean=true)` matches the cached record — re-running on the
-same commit is free. The `id` is a deterministic FNV-1a digest of
-that tuple, so the same commit + config + worktree state always
-produces byte-identical content. That's what lets the file stay
-tracked in git without showing up in every teammate's `git status`.
+worktree_clean=true)` matches the cached record. `config_hash` includes
+`config.toml`, `calibration.toml`, and each enabled LCOV/doc-pair
+logical path, readable/missing state, and content. It excludes mtimes,
+absolute checkout paths, and disabled-family inputs. Consequently, the
+same HEAD is not enough to reuse a result when an ignored LCOV report
+or doc-pair file changed, while identical observations remain
+byte-reproducible across checkouts. Historical windows use the observed
+HEAD/ref commit timestamp rather than the wall clock.
+
+Schema v6 introduced that broader observation hash, v7 added coverage
+provenance, and v8 added optional `findings[].hotspot_score`. Old cache
+versions are discarded and rebuilt automatically. A production file
+absent from LCOV is reported as unmeasured, not synthesized as 0%; an
+explicit LCOV 0% record remains a measured finding.
 
 ### `fixed.json` — bounded fix record
 
@@ -195,6 +211,13 @@ Removing an entry: hand-edit the file to drop the row, or call
 `heal mark accept --remove` from the skill flow. The next
 `heal status` will surface the underlying finding again.
 
+If an accepted finding's Severity rises or its family Hotspot changes
+from false to true, status, current-side diff, and the post-commit hook
+request re-review. JSON exposes one `accepted_rereview` object with one
+or both reasons (`severity_increased`, `became_hotspot`). Acceptance is
+not removed and the finding is not returned to T0. Stable, cooling, and
+improving accepted findings stay quiet.
+
 You can inspect the cache directly with `jq`:
 
 ```sh
@@ -212,6 +235,11 @@ initial scan; `heal calibrate --force` refreshes it on demand.
 `floor_critical` / `floor_ok` set in `config.toml` win over the
 calibrated percentile. Recalibration is **never automatic** — see
 [CLI › `heal calibrate`](/heal/cli/#heal-calibrate).
+
+Hotspot uses p90 plus the family floor with 5+ finite candidates. With
+1–4 it uses the existing absolute family floor alone (Code 22, Test 25,
+Docs 5); non-finite values never flag. This fallback is not a percentile
+claim, probability estimate, or guarantee of remediation payoff.
 
 ## Calibration vs policy: two layers
 
@@ -242,15 +270,19 @@ for their bandwidth.
 `heal status` partitions every non-Ok finding into one of three
 buckets driven by `[policy.drain]`:
 
-| Tier                  | Default specs                           | Renderer behavior                      | Skill behavior                                    |
-| --------------------- | --------------------------------------- | -------------------------------------- | ------------------------------------------------- |
-| **T0 / Drain queue**  | `must = ["critical:hotspot"]`           | Always shown, sorted Severity 🔥 desc. | `/heal-code-patch` drains one finding per commit. |
-| **T1 / Should drain** | `should = ["critical", "high:hotspot"]` | Shown by default, separate section.    | Surfaced for review; not auto-drained.            |
-| **Advisory**          | everything else above Ok                | Hidden unless `--all`.                 | Never drained; review when convenient.            |
+| Tier                  | Default specs                           | Renderer behavior                             | Skill behavior                                    |
+| --------------------- | --------------------------------------- | --------------------------------------------- | ------------------------------------------------- |
+| **T0 / Drain queue**  | `must = ["critical:hotspot"]`           | Always shown in deterministic priority order. | `/heal-code-patch` drains one finding per commit. |
+| **T1 / Should drain** | `should = ["critical", "high:hotspot"]` | Shown by default, separate section.           | Surfaced for review; not auto-drained.            |
+| **Advisory**          | everything else above Ok                | Hidden unless `--all`.                        | Never drained; review when convenient.            |
 
 Findings classified as `Severity::Ok` are excluded from drain entirely;
-the renderer surfaces them via a dedicated Ok 🔥 pre-section (top-10%
-hotspot but below the metric floor) and a hidden-summary count.
+the renderer surfaces them via a dedicated Ok 🔥 pre-section
+(Hotspot-flagged but below the metric floor) and a hidden-summary count.
+
+Within each family and Tier, rows sort by Severity and then descending
+`hotspot_score`, followed by stable metric/path/id tie-breakers. Scores
+from Code, Test, and Docs are never compared with one another.
 
 Override visibility: when `[metrics.<m>] floor_ok` or `floor_critical`
 deviates from the literature default, `heal status` emits a header line

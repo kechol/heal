@@ -189,13 +189,21 @@ cache. A missing cache (e.g. immediately after `heal init`) also
 triggers a scan, so the first invocation in a project still works
 without flags.
 
+Freshness includes enabled non-git observations as well as HEAD and
+the clean-worktree gate. Updating an ignored LCOV report or doc-pair
+file invalidates the cache even when HEAD did not move; mtimes and
+absolute checkout paths do not. Coverage provenance in human and JSON
+output distinguishes `missing`, `read_error`, `partial`, and
+`complete`. Unlisted production files are unmeasured and prompt a
+reporter/package-scope check; they are not treated as measured 0%.
+
 Output groups findings under `🔴 Critical 🔥 / 🔴 Critical / 🟠 High 🔥
-/ 🟠 High / 🟡 Medium / ✅ Ok` (last two require `--all`), aggregates
-one row per file, and ends with `Goal: 0 Critical, 0 High` plus a
-"next steps" line pointing at `claude /heal-code-patch`. With
-`--all`, an extra "Ok / Medium 🔥 (low Severity, top-10% hotspot)"
-section surfaces files that aren't classified as a problem yet but
-get touched often enough to be worth a look.
+/ 🟠 High / 🟡 Medium / ✅ Ok` (last two require `--all`) and
+aggregates one row per file. Priority is Tier, Severity, then descending
+family-local `hotspot_score`, with metric/path/id tie-breakers. Code,
+Test, and Docs scores are never compared with one another, and the
+score is not a probability or guaranteed payoff. With `--all`, an
+extra low-Severity Hotspot section surfaces additional review targets.
 
 ## `heal diff`
 
@@ -245,6 +253,12 @@ those rows entirely and see only the actionable view; a `[N accepted
 entries hidden]` footer keeps the count visible. The two filters are
 independent — `--all --hide-accepted` shows every severity but still
 skips accepted rows.
+
+An accepted finding whose Severity rises or whose family Hotspot turns
+from false to true produces a re-review notice in status, the current
+side of diff, and the post-commit hook. JSON returns one
+`accepted_rereview` entry with one or both reasons. This does not remove
+acceptance or return the finding to the drain queue.
 
 For very large repos the comparison can be expensive; `[diff]` in
 `config.toml` exposes a LOC ceiling that switches to a manual
@@ -340,6 +354,11 @@ When `[features.test.coverage]` is enabled and any High / Critical
 `coverage_pct` finding sits on a hotspot file, the nudge gains a
 second indented line counting "uncovered hotspot" findings — the
 shortest possible "the next test should land here" reminder.
+
+When coverage is missing, unreadable, or partial, the hook prints the
+same reporter/package-scope guidance as status instead of interpreting
+unmeasured files as uncovered Hotspots. It also reports accepted items
+whose decision premise now needs re-review.
 
 Manual invocation is occasionally useful for debugging:
 

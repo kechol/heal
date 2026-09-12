@@ -467,7 +467,9 @@ impl Eq for TestHotspotConfig {}
 /// `[features.test.coverage]` — lcov.info ingestion. Generation is
 /// outsourced to the user's CI / local toolchain (`cargo llvm-cov`,
 /// `pytest --cov`, `nyc`, `scoverage`); HEAL only reads the file. The
-/// `lcov_paths` list is tried in order; the first existing file wins.
+/// Every existing entry in `lcov_paths` is read and merged. Missing
+/// entries remain part of observation provenance without becoming
+/// measured 0% coverage.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct TestCoverageConfig {

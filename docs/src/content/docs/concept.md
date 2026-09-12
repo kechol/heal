@@ -48,31 +48,36 @@ cases, and a uniformly-clean codebase isn't held hostage by the "top
 10% is always red" loop. See [Code › Metrics](/heal/code/metrics/)
 for the full ladder.
 
-## Hotspot — the file most likely to break next
+## Hotspot — where to look first
 
 **A Hotspot is a file that's both hard to read and frequently
 edited.** heal ranks every file by `commits × complexity` (the
 "code as a crime scene" idea from Adam Tornhill's _Your Code as a
-Crime Scene_); the top 10% of that distribution gets the `🔥`
-flag in `heal status`.
+Crime Scene_). With 5+ finite candidates, the top decile that also
+clears the family floor gets `🔥`; with only 1–4, the existing
+absolute family floor is used alone. Non-finite values never flag.
 
 The intuition: a high-complexity file that nobody touches is debt
-— interesting, but not urgent. A high-complexity file the team
-edits every other day is where the next bug ships from. Hotspot is
-the intersection: high score = often touched **and** hard to read
-= where regressions historically concentrate.
+— interesting, but not urgent. A high-complexity file the team edits
+every other day deserves earlier scrutiny. Hotspot is the intersection:
+high score = often touched **and** hard to read.
 
 That's why **Hotspot is the one signal to watch first** out of the
 Code family. A `Critical 🔥` item isn't twice as bad as a plain
-`Critical` — it's the one that actually pays back the time you
-spend fixing it. The `/heal-code-patch` skill works through the
-`🔥` queue first by default for the same reason.
+`Critical`; it is simply considered first within that work tier. The
+`/heal-code-patch` skill works through the `🔥` queue first by default
+for the same reason.
 
 The opt-in Test and Docs families ship their own family-specific
 Hotspot composers — Test Hotspot (`commits × uncovered %`) and Doc
 Hotspot (`paired-source churn × doc debt`) — so the same `🔥` flag
 also points at the next file most worth testing or re-documenting.
 Same idea, family-appropriate inputs.
+
+HEAL uses these scores only to order work after drain Tier and Severity,
+and only within the same family. They are heuristics, not defect
+probabilities, cross-family units, or guarantees about the effect of a
+fix.
 
 ## Two halves: heal surfaces the debt, the skills work it down
 

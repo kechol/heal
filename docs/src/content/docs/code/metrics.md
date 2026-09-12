@@ -124,21 +124,26 @@ scopes. (Go has no class scope; Scala awaits the LSP backend.)
 ## Hotspot
 
 Hotspot multiplies churn × complexity to surface the files that
-are both hard to read and frequently edited. The output is a
-per-file flag (top-10% of the score distribution), rendered as
-the `🔥` emoji on top of any other Finding for that file — so a
-finding can be `Critical 🔥`, `High 🔥`, `Medium 🔥`, or even
+are both hard to read and frequently edited. With at least 5 finite
+candidates, the flag requires both p90 and the Code floor (22); with
+1–4 candidates, the absolute floor alone is used. Non-finite scores
+never flag. The per-file `🔥` decorates any other Finding for that
+file, so it can be `Critical 🔥`, `High 🔥`, `Medium 🔥`, or even
 `Ok 🔥`.
 
 A complex file nobody touches is debt; a complex file the team
-edits every other day is where the next bug ships from. The
+edits every other day deserves scrutiny sooner. The
 default drain queue `(critical:hotspot)` is exactly that
 intersection — that's why Hotspot is the **single most actionable
 signal** heal produces.
+
+Inside one Code Tier and Severity, `hotspot_score` sorts higher scores
+first. It is a prioritization heuristic, not a defect probability or a
+guarantee that one remediation will have a larger effect.
 
 The "Ok 🔥" subset — heavily touched but no Severity finding —
 shows up in its own section under `heal status --all` ("why are we
 still editing this?" candidates).
 
 For the longer rationale see
-[Concept › Hotspot](/heal/concept/#hotspot--the-file-most-likely-to-break-next).
+[Concept › Hotspot](/heal/concept/#hotspot--where-to-look-first).

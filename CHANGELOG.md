@@ -4,6 +4,14 @@
 
 ### Features
 
+- **Practical work ordering and accepted-item re-review.** Findings now
+  carry an optional family-local `hotspot_score`. `heal status` and the
+  bundled review/patch skills order work by drain Tier, Severity, then
+  descending score within that family; raw scores are not compared
+  across Code, Test, and Docs. Accepted findings remain accepted, but
+  status, current-side diff, the post-commit hook, and JSON now notify
+  once per observation when Severity rises or `hotspot` changes from
+  false to true.
 - **`heal diff` surfaces the accept state (#30).** Findings the team
   acknowledged via `heal mark accept` now render with a
   `📌 accepted` marker in the New / Regressed / Improved / Unchanged
@@ -16,6 +24,24 @@
 
 ### Fixes
 
+- **Freshness, measurement provenance, and small-project Hotspots are
+  deterministic.** `FINDINGS_RECORD_VERSION` is now 8. v6 expanded
+  `config_hash` to include enabled LCOV/doc-pair logical paths, state,
+  and bytes; v7 added `coverage_observation`; v8 added the optional
+  `hotspot_score`. Older `latest.json` files invalidate and rebuild
+  automatically. The same HEAD no longer reuses stale ignored LCOV or
+  doc-pair content, and git history windows use the observed ref's
+  commit timestamp instead of the wall clock.
+- **Missing coverage is no longer treated as measured 0%.** Machine
+  output distinguishes `missing`, `read_error`, `partial`, and
+  `complete` observations and lists unmeasured production files. Only
+  files actually present in LCOV can produce coverage findings or Test
+  Hotspots; an explicit 0% record still does. Human output points
+  incomplete observations to reporter/package-scope setup.
+- **Hotspot calibration works for 1–4 finite candidates.** Small cohorts
+  use only the existing family floor (Code 22, Test 25, Docs 5); cohorts
+  of 5+ retain p90 plus the floor. Non-finite scores never flag. This is
+  an absolute fallback, not a percentile claim or outcome guarantee.
 - **`[features.test.coverage].lcov_paths` reads every existing file
   instead of first-match-wins (#29).** In a polyglot monorepo where
   each package emits its own `lcov.info`, only the first existing

@@ -81,7 +81,7 @@ Inside any git repository:
 ```sh
 heal init                      # set up .heal/, calibrate, install hook, offer skills for each detected agent
 claude /heal-setup             # tune strictness; optionally turn on Test / Docs
-heal status                    # render the Severity-grouped TODO list
+heal status                    # render the Tier/Severity-ranked TODO list
 claude /heal-code-patch        # work through it, one fix per commit
 ```
 
@@ -94,6 +94,15 @@ that's your CLI.
 picks Strict / Default / Lenient, writes `.heal/config.toml`, and
 chains into `/heal-doc-pair-setup` or `/heal-test-reporter-setup`
 when you opt into either family.
+
+When Test is enabled, HEAL distinguishes an explicit LCOV 0% result
+from a production file the report never measured; the latter prompts a
+reporter-scope check instead of creating a test-debt finding. Cache
+freshness also includes enabled LCOV and doc-pair inputs, so changing an
+ignored report invalidates the result even at the same commit. Within a
+Tier and Severity, work is ordered by the relevant family Hotspot score;
+scores are prioritization signals, not probabilities or guaranteed
+payoff.
 
 Full walkthrough: [Quick Start](https://kechol.github.io/heal/quick-start/).
 

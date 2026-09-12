@@ -97,17 +97,26 @@ heal status  ──►  calibration.toml で Finding を分類
 
 ```json
 {
-  "version": 5,
+  "version": 8,
   "id": "9f8e7d6c5b4a3210", // (head_sha, config_hash, worktree_clean) の FNV-1a hex
   "head_sha": "a0a6d1a…",
   "worktree_clean": true,
-  "config_hash": "9f8e7d6c5b4a3210", // config + calibration の FNV-1a
+  "config_hash": "9f8e7d6c5b4a3210", // ルール + 有効な非 git 観測入力
   "severity_counts": { "critical": 2, "high": 5, "medium": 12, "ok": 84 },
+  "coverage_observation": {
+    "state": "partial",
+    "configured_sources": ["lcov.info"],
+    "sources": ["lcov.info"],
+    "unreadable_sources": [],
+    "unmeasured_files": ["src/new.ts"]
+  },
   "findings": [/* Vec<Finding> */]
 }
 ```
 
-`heal status` は `(head_sha, config_hash, worktree_clean=true)` がキャッシュレコードと一致するときショートサーキットします — 同じコミット上での再実行は無料です。`id` はそのタプルの決定論的な FNV-1a ダイジェストなので、同じコミット + 設定 + ワーキングツリー状態は常にバイト同等の内容を生みます。だからこのファイルは git に tracked のまま、各チームメイトの `git status` を汚さずに済みます。
+`heal status` は `(head_sha, config_hash, worktree_clean=true)` がキャッシュレコードと一致するときショートサーキットします。`config_hash` には `config.toml`、`calibration.toml`、有効な LCOV / doc-pair の論理パス・読取可否/欠落状態・内容が入ります。mtime、checkout の絶対パス、無効なファミリの入力は含みません。そのため、同じ HEAD でも ignored な LCOV や doc-pair が変われば再利用せず、同じ観測は checkout 間でバイト再現されます。履歴窓の基準は実行時刻ではなく観測対象 HEAD/ref のコミット時刻です。
+
+スキーマ v6 でこの観測 hash、v7 で coverage provenance、v8 で optional な `findings[].hotspot_score` が入りました。古い cache は自動的に無効化され、再構築されます。LCOV にない production ファイルは 0% と合成せず未計測とし、LCOV が明示する 0% は実測 Finding のままです。
 
 ### `fixed.json` — 有界の修正記録
 
@@ -154,6 +163,8 @@ heal status  ──►  calibration.toml で Finding を分類
 
 エントリの削除: ファイルを手編集して該当行を消すか、スキルフローから `heal mark accept --remove` を呼びます。次の `heal status` で元の finding が再び表面化します。
 
+accepted finding の Severity が上昇するか、そのファミリの Hotspot が false から true になると、status、現在側 diff、post-commit hook が再レビューを通知します。JSON は 1 つの `accepted_rereview` オブジェクトに 1 つまたは両方の理由 (`severity_increased`, `became_hotspot`) を返します。accept は解除せず T0 に戻しません。安定・冷却・改善時は通知しません。
+
 このキャッシュは `jq` で直接覗けます。
 
 ```sh
@@ -166,6 +177,8 @@ tail .heal/findings/regressed.jsonl
 ## Calibration(Severity 基準の調整)
 
 `calibration.toml` は Severity を扱う各メトリクスのコードベース相対パーセンタイル区切りを保持します。`heal init` が初回スキャンから計算し、`heal calibrate --force` がオンデマンドで更新します。`config.toml` の `floor_critical` / `floor_ok` は calibrate されたパーセンタイルに勝ちます。再 calibrate は **絶対に自動では行いません** — [CLI › `heal calibrate`](/heal/ja/cli/#heal-calibrate) を参照。
+
+Hotspot は有限スコアが 5 件以上なら p90 + ファミリフロア、1〜4 件なら既存の絶対ファミリフロアのみ (Code 22、Test 25、Docs 5) で判定します。非有限値はフラグしません。この fallback はパーセンタイル、確率、修正効果の保証ではありません。
 
 ## Calibration(Severity 基準の調整)と policy: 2 つのレイヤ
 
@@ -180,13 +193,15 @@ heal はコード健全性の **測定** と、それに対して何を行うか
 
 `heal status` は非 Ok の Finding を `[policy.drain]` 駆動で 3 つのバケットに分けます。
 
-| Tier                      | デフォルト spec                         | レンダラー挙動                  | Skill 挙動                               |
-| ------------------------- | --------------------------------------- | ------------------------------- | ---------------------------------------- |
-| **T0 / 解消キュー**       | `must = ["critical:hotspot"]`           | 常に表示、Severity 🔥 desc 順。 | `/heal-code-patch` が 1 件ずつ解消。     |
-| **T1 / 余裕があれば解消** | `should = ["critical", "high:hotspot"]` | デフォルト表示、別セクション。  | レビュー対象、自動解消 しない。          |
-| **Advisory**              | それ以外の非 Ok                         | `--all` 時のみ表示。            | 自動解消 なし、余裕のあるときに review。 |
+| Tier                      | デフォルト spec                         | レンダラー挙動                 | Skill 挙動                               |
+| ------------------------- | --------------------------------------- | ------------------------------ | ---------------------------------------- |
+| **T0 / 解消キュー**       | `must = ["critical:hotspot"]`           | 常に決定的な優先順で表示。     | `/heal-code-patch` が 1 件ずつ解消。     |
+| **T1 / 余裕があれば解消** | `should = ["critical", "high:hotspot"]` | デフォルト表示、別セクション。 | レビュー対象、自動解消 しない。          |
+| **Advisory**              | それ以外の非 Ok                         | `--all` 時のみ表示。           | 自動解消 なし、余裕のあるときに review。 |
 
-`Severity::Ok` の Finding は 解消対象外です。レンダラーは Ok 🔥 pre-section（上位 10% hotspot だがメトリクスフロア未満）と隠し合計カウントで表示します。
+`Severity::Ok` の Finding は解消対象外です。レンダラーは Ok 🔥 pre-section（Hotspot フラグ付きだがメトリクスフロア未満）と隠し合計カウントで表示します。
+
+各ファミリ・Tier の中では Severity、`hotspot_score` 降順、安定した metric/path/id の順で並びます。Code、Test、Docs の生スコアを相互に比較することはありません。
 
 Override の可視化: `[metrics.<m>] floor_ok` / `floor_critical` が文献デフォルトと異なる場合、`heal status` はヘッダ行に `override: ccn floor_ok=15 [override from 11]` のような注釈を出力します。CI ログや PR diff で policy 変更が監査可能になります。
 
