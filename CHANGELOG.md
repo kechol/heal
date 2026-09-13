@@ -57,6 +57,10 @@
   use only the existing family floor (Code 22, Test 25, Docs 5); cohorts
   of 5+ retain p90 plus the floor. Non-finite scores never flag. This is
   an absolute fallback, not a percentile claim or outcome guarantee.
+- **Concurrent state writes no longer share a staging file.** Atomic
+  writes use unique temporary files in the destination directory, so
+  overlapping commands cannot truncate or rename each other's writes.
+  Failed writes clean up their temporary files.
 - **`[features.test.coverage].lcov_paths` reads every existing file
   instead of first-match-wins (#29).** In a polyglot monorepo where
   each package emits its own `lcov.info`, only the first existing

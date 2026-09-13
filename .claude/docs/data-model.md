@@ -502,8 +502,12 @@ variants.
 Every persistent state file goes through `core::fs::atomic_write`:
 
 ```
-write to <path>.tmp → fsync → rename to <path>
+write to a unique sibling temporary file → persist (rename) to <path>
 ```
+
+Each writer owns its staging file, so concurrent writes cannot truncate
+each other's contents. This provides atomic replacement, not crash durability
+across power loss; the file and parent directory are not fsynced.
 
 Files written this way:
 - `.heal/config.toml`
