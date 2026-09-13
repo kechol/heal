@@ -250,9 +250,7 @@ fn ignore_file_matches_dir(root: &Path, ignore_file: &Path, target: &Path) -> bo
         return true;
     }
     builder.build().map_or(true, |matcher| {
-        matcher
-            .matched_path_or_any_parents(target, true)
-            .is_ignore()
+        path_or_ancestor_is_ignored(&matcher, target, root)
     })
 }
 
@@ -526,6 +524,33 @@ mod tests {
             ),
             vec![dir.path().join(".hidden").join(source_name)],
         );
+    }
+
+    #[test]
+    fn workspace_whitelist_cannot_reinclude_an_excluded_parent() {
+        for ignore_name in [".gitignore", ".ignore"] {
+            let dir = tempfile::TempDir::new().unwrap();
+            let (source_name, source) = crate::observer::shared::lang::test_source_fixture();
+            let workspace = Path::new("pkg/nested");
+            let source_path = dir.path().join(workspace).join(source_name);
+            std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+            std::fs::write(&source_path, source).unwrap();
+            let ignore_path = dir.path().join(ignore_name);
+            std::fs::write(&ignore_path, "pkg/\n!pkg/nested/\n").unwrap();
+
+            assert!(
+                walk_supported_files_under(dir.path(), &ExcludeMatcher::empty(), Some(workspace),)
+                    .is_empty(),
+                "{ignore_name}: an ignored parent must still block traversal"
+            );
+
+            std::fs::write(&ignore_path, "pkg/\n!pkg/\n!pkg/nested/\n").unwrap();
+            assert_eq!(
+                walk_supported_files_under(dir.path(), &ExcludeMatcher::empty(), Some(workspace),),
+                vec![source_path],
+                "{ignore_name}: explicitly reincluding the parent permits traversal",
+            );
+        }
     }
 
     #[test]

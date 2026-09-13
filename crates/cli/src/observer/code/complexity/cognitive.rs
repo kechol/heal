@@ -86,68 +86,61 @@ struct Walker<'p> {
 
 impl<'p> Walker<'p> {
     fn visit(&mut self, node: Node<'_>, depth: u32) {
-        // Prune nested function bodies — they're scored on their own row.
-        // This is the only nested-function check the walker needs; downstream
-        // visit_* methods can assume the node belongs to the current scope.
-        if node.start_byte() != self.scope_start
-            && self.nested_starts.binary_search(&node.start_byte()).is_ok()
-        {
-            return;
+        let mut pending = vec![(node, depth)];
+        while let Some((node, depth)) = pending.pop() {
+            // Prune nested function bodies — they're scored on their own row.
+            if node.start_byte() != self.scope_start
+                && self.nested_starts.binary_search(&node.start_byte()).is_ok()
+            {
+                continue;
+            }
+
+            let child_depth = match self.roles.get(&node.id()).copied() {
+                Some(Role::If) => {
+                    let is_else_if = node.parent().is_some_and(|p| p.kind() == "else_clause");
+                    if is_else_if {
+                        // else-if: +1, no nesting bonus, no nesting increase for body.
+                        self.score = self.score.saturating_add(1);
+                        depth
+                    } else {
+                        self.score = self.score.saturating_add(1 + depth);
+                        depth.saturating_add(1)
+                    }
+                }
+                Some(Role::Else) => {
+                    // If the else_clause directly wraps an if (TS: if_statement, Rust:
+                    // if_expression), the inner if — special-cased as else-if above —
+                    // absorbs the +1.
+                    let wraps_if = direct_child_of_kind(node, "if_statement").is_some()
+                        || direct_child_of_kind(node, "if_expression").is_some();
+                    if !wraps_if {
+                        self.score = self.score.saturating_add(1);
+                    }
+                    depth
+                }
+                Some(Role::IncAndNest) => {
+                    self.score = self.score.saturating_add(1 + depth);
+                    depth.saturating_add(1)
+                }
+                Some(Role::Inc) => {
+                    // ternary: +1 + depth, but doesn't increase nesting for its branches.
+                    self.score = self.score.saturating_add(1 + depth);
+                    depth
+                }
+                Some(Role::Binary) => {
+                    self.visit_binary(node);
+                    depth
+                }
+                None => depth,
+            };
+            let start = pending.len();
+            let mut cursor = node.walk();
+            pending.extend(node.children(&mut cursor).map(|child| (child, child_depth)));
+            pending[start..].reverse();
         }
-
-        match self.roles.get(&node.id()).copied() {
-            Some(Role::If) => self.visit_if(node, depth),
-            Some(Role::Else) => self.visit_else(node, depth),
-            Some(Role::IncAndNest) => self.visit_inc_and_nest(node, depth),
-            Some(Role::Inc) => self.visit_inc(node, depth),
-            Some(Role::Binary) => self.visit_binary(node, depth),
-            None => self.visit_children(node, depth),
-        }
     }
 
-    fn visit_children(&mut self, node: Node<'_>, depth: u32) {
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            self.visit(child, depth);
-        }
-    }
-
-    fn visit_if(&mut self, node: Node<'_>, depth: u32) {
-        let is_else_if = node.parent().is_some_and(|p| p.kind() == "else_clause");
-        if is_else_if {
-            // else-if: +1, no nesting bonus, no nesting increase for body.
-            self.score = self.score.saturating_add(1);
-            self.visit_children(node, depth);
-        } else {
-            self.score = self.score.saturating_add(1 + depth);
-            self.visit_children(node, depth.saturating_add(1));
-        }
-    }
-
-    fn visit_else(&mut self, node: Node<'_>, depth: u32) {
-        // If the else_clause directly wraps an if (TS: if_statement, Rust:
-        // if_expression), the inner if — special-cased as else-if in visit_if —
-        // absorbs the +1.
-        let wraps_if = direct_child_of_kind(node, "if_statement").is_some()
-            || direct_child_of_kind(node, "if_expression").is_some();
-        if !wraps_if {
-            self.score = self.score.saturating_add(1);
-        }
-        self.visit_children(node, depth);
-    }
-
-    fn visit_inc_and_nest(&mut self, node: Node<'_>, depth: u32) {
-        self.score = self.score.saturating_add(1 + depth);
-        self.visit_children(node, depth.saturating_add(1));
-    }
-
-    fn visit_inc(&mut self, node: Node<'_>, depth: u32) {
-        // ternary: +1 + depth, but doesn't increase nesting for its branches.
-        self.score = self.score.saturating_add(1 + depth);
-        self.visit_children(node, depth);
-    }
-
-    fn visit_binary(&mut self, node: Node<'_>, depth: u32) {
+    fn visit_binary(&mut self, node: Node<'_>) {
         if !self.visited_binary.contains(&node.id()) {
             let mut ops: Vec<&'p str> = Vec::new();
             collect_chain_ops(node, &mut ops, &mut self.visited_binary, self.source);
@@ -157,7 +150,6 @@ impl<'p> Walker<'p> {
                 self.score = self.score.saturating_add(1).saturating_add(switch_count);
             }
         }
-        self.visit_children(node, depth);
     }
 }
 
@@ -177,26 +169,92 @@ fn collect_chain_ops<'a>(
     visited: &mut HashSet<usize>,
     source: &'a str,
 ) {
-    if node.kind() != "binary_expression" {
-        return;
+    enum Step<'tree, 'source> {
+        Node(Node<'tree>),
+        Operator(&'source str),
     }
-    let Some(op_node) = node.child_by_field_name("operator") else {
-        return;
-    };
-    let Ok(op_text) = op_node.utf8_text(source.as_bytes()) else {
-        return;
-    };
-    if !LOGICAL_OPERATORS.contains(&op_text) {
-        return;
+    let mut pending = vec![Step::Node(node)];
+    while let Some(step) = pending.pop() {
+        let node = match step {
+            Step::Node(node) => node,
+            Step::Operator(op) => {
+                ops.push(op);
+                continue;
+            }
+        };
+        if node.kind() != "binary_expression" {
+            continue;
+        }
+        let Some(op_node) = node.child_by_field_name("operator") else {
+            continue;
+        };
+        let Ok(op_text) = op_node.utf8_text(source.as_bytes()) else {
+            continue;
+        };
+        if !LOGICAL_OPERATORS.contains(&op_text) {
+            continue;
+        }
+
+        visited.insert(node.id());
+
+        if let Some(right) = node.child_by_field_name("right") {
+            pending.push(Step::Node(right));
+        }
+        pending.push(Step::Operator(op_text));
+        if let Some(left) = node.child_by_field_name("left") {
+            pending.push(Step::Node(left));
+        }
+    }
+}
+
+#[cfg(all(test, feature = "lang-rust"))]
+mod tests {
+    use super::*;
+    use crate::observer::code::complexity::parse;
+    use crate::observer::shared::lang::Language;
+
+    #[test]
+    fn deeply_nested_expression_uses_bounded_thread_stack() {
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(|| {
+                let source = format!(
+                    "fn f() {{ let x = {}1{}; }}",
+                    "(".repeat(10_000),
+                    ")".repeat(10_000)
+                );
+                let parsed = parse(source, Language::Rust).unwrap();
+                let scope = parsed.tree.root_node().named_child(0).unwrap();
+                assert_eq!(compute(&parsed, scope, &[]), 0);
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 
-    visited.insert(node.id());
-
-    if let Some(left) = node.child_by_field_name("left") {
-        collect_chain_ops(left, ops, visited, source);
-    }
-    ops.push(op_text);
-    if let Some(right) = node.child_by_field_name("right") {
-        collect_chain_ops(right, ops, visited, source);
+    #[test]
+    fn long_logical_chain_preserves_in_order_operators_on_worker_stack() {
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(|| {
+                let source = format!(
+                    "fn f() {{ {}true || false && true; }}",
+                    "true && ".repeat(10_000)
+                );
+                let parsed = parse(source, Language::Rust).unwrap();
+                let scope = parsed.tree.root_node().named_child(0).unwrap();
+                let body = scope.child_by_field_name("body").unwrap();
+                let expression = body.named_child(0).unwrap().named_child(0).unwrap();
+                let mut ops = Vec::new();
+                let mut visited = HashSet::new();
+                collect_chain_ops(expression, &mut ops, &mut visited, &parsed.source);
+                assert_eq!(ops.len(), 10_002);
+                assert!(ops[..10_000].iter().all(|op| *op == "&&"));
+                assert_eq!(&ops[10_000..], &["||", "&&"]);
+                assert_eq!(visited.len(), ops.len());
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 }

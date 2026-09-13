@@ -45,6 +45,9 @@
 
 ### Fixes
 
+- Keep deeply nested source analysis off the worker call stack, preserve
+  excluded-parent semantics when a workspace has a negated ignore rule, and
+  skip source caches that pass through symlinked state directories or files.
 - **Freshness, measurement provenance, and small-project Hotspots are
   deterministic.** `FINDINGS_RECORD_VERSION` is now 8. v6 expanded
   `config_hash` to include enabled LCOV/doc-pair logical paths, state,

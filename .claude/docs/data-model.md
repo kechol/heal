@@ -264,7 +264,9 @@ uses `accepted_rereview[].reasons` values `severity_increased` and
 
 ### Disposable source-analysis cache
 
-`.heal/cache/source-v1.json` is local, ignored, and safe to delete. It stores
+`.heal/cache/source-v1.json` is local, ignored, and safe to delete. Symlinked
+state/cache directories and non-regular cache files disable reuse and writes;
+source analysis still runs normally. It stores
 only derived Complexity metrics, LCOM classes, and Duplication token hashes;
 source text and tree-sitter trees are never persisted. Each entry validates
 relative path, byte size, stable FNV-1a content hash, language, analyzer
