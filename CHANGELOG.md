@@ -11,7 +11,11 @@
 
 - Upgrade tree-sitter to 0.27 and tokei to 15, refresh Rust dependencies,
   and migrate query capture access to tree-sitter's current API.
+- Update the docs site to Astro 7.3, Sharp 0.35.4, and TypeScript 6;
+  refresh transitive dependencies, including the nanoid security fix.
+  TypeScript 7 remains excluded until Astro's checker supports it.
 - Update CI actions, cargo-dist to 0.33, and cargo-llvm-cov to 0.9.1.
+  Docs pull requests now run formatting, type checking, and site builds.
 
 ### Features
 
