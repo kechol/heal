@@ -53,9 +53,9 @@ pub enum FeatureKind {
 /// the [`Family::Code`] index. Also surfaced to user-facing
 /// `--feature` filters in the v0.4 status / metrics flow.
 ///
-/// Variant order is the canonical render order (Code → Test → Docs)
-/// — `BTreeMap<Family, _>` iteration relies on the derived `Ord`
-/// matching that order.
+/// Variant order is the canonical render order (Code → Test → Docs).
+/// The renderer names that order explicitly and tests keep it aligned
+/// with the derived `Ord` used by family-keyed maps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Family {
     Code,
@@ -171,6 +171,9 @@ impl HotspotIndex {
     ) -> Self {
         let mut by_path: std::collections::HashMap<PathBuf, f64> = std::collections::HashMap::new();
         for (path, score) in entries {
+            if !score.is_finite() {
+                continue;
+            }
             by_path
                 .entry(path)
                 .and_modify(|v| {
@@ -229,15 +232,34 @@ impl HotspotIndex {
         )
     }
 
-    /// Whether `path`'s hotspot score crosses the calibration's `p90`.
-    /// Returns `false` for files outside the index or when the project
-    /// has no hotspot calibration yet.
+    /// Whether `path`'s hotspot score crosses the calibration's active
+    /// percentile/floor rule. Returns `false` for files outside the
+    /// index or when the project has no hotspot calibration yet.
     #[must_use]
     pub fn is_hot(&self, path: &Path) -> bool {
         match (&self.calibration, self.by_path.get(path)) {
             (Some(c), Some(score)) => c.flag(*score),
             _ => false,
         }
+    }
+
+    #[must_use]
+    fn score(&self, path: &Path) -> Option<f64> {
+        self.by_path.get(path).copied()
+    }
+
+    /// Highest score attached to a Finding's primary or secondary
+    /// locations. Every score comes from this index's single family.
+    #[must_use]
+    pub(crate) fn max_location_score(
+        &self,
+        primary: &Location,
+        locations: &[Location],
+    ) -> Option<f64> {
+        std::iter::once(primary)
+            .chain(locations)
+            .filter_map(|location| self.score(&location.file))
+            .max_by(f64::total_cmp)
     }
 
     /// Convenience: a Finding's primary file or any of its
@@ -260,6 +282,7 @@ impl HotspotIndex {
 pub fn decorate(mut f: Finding, severity: Severity, hotspot: &HotspotIndex) -> Finding {
     f.severity = severity;
     f.hotspot = hotspot.any_location_hot(&f.location, &f.locations);
+    f.hotspot_score = hotspot.max_location_score(&f.location, &f.locations);
     f
 }
 
@@ -296,17 +319,17 @@ pub trait Feature: Send + Sync {
     ) -> Vec<Finding>;
 }
 
-/// Static registry of every builtin Feature. The order is the order
-/// findings are emitted in `Vec<Finding>` — same-Severity tiebreakers
-/// in the renderer fall back to it for determinism.
+/// Static registry of every builtin Feature. The order is the stable
+/// machine-record emission order; human status independently sorts by
+/// family, effective Tier, Severity, score, metric, path, and id.
 pub struct FeatureRegistry {
     features: Vec<Box<dyn Feature>>,
 }
 
 impl FeatureRegistry {
-    /// All builtin Features. Order matters — same-Severity ties in the
-    /// renderer fall back to it for stable output. Append new Features
-    /// at the end to keep that contract.
+    /// All builtin Features. Order matters for stable serialized finding
+    /// arrays. Append new Features at the end unless a schema migration
+    /// deliberately changes that machine-output contract.
     #[must_use]
     pub fn builtin() -> Self {
         use crate::observer::code::change_coupling::ChangeCouplingFeature;
@@ -421,13 +444,15 @@ impl Default for FeatureRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::calibration::{FLOOR_OK_DOC_HOTSPOT, FLOOR_OK_HOTSPOT};
+    use crate::core::config::DrainTier;
 
     #[test]
     fn builtin_registry_emits_one_feature_per_metric() {
         let r = FeatureRegistry::builtin();
         let names: Vec<&str> = r.iter().map(|f| f.meta().name).collect();
-        // Order is the public emission contract — tests / renderer rely
-        // on it for stable Finding ordering. Docs Features sit between
+        // Order is the stable machine-record emission contract. The human
+        // renderer applies its own work-order sort. Docs Features sit between
         // code and test so the v0.2 emission order for code metrics is
         // preserved; per-family hotspots (`doc_hotspot`, `test_hotspot`)
         // sit at the end of their own family blocks.
@@ -492,5 +517,94 @@ mod tests {
                 f.meta().name,
             );
         }
+    }
+
+    #[test]
+    fn small_hotspot_cohort_can_reach_the_real_t0_policy() {
+        let path = PathBuf::from("src/hot.rs");
+        let calibration = HotspotCalibration::from_distribution_with_floor(
+            &[FLOOR_OK_HOTSPOT],
+            Some(FLOOR_OK_HOTSPOT),
+        );
+        let index =
+            HotspotIndex::from_entries([(path.clone(), FLOOR_OK_HOTSPOT)], Some(calibration));
+        let finding = decorate(
+            Finding::new(
+                "ccn",
+                Location::file(path),
+                "high complexity".to_owned(),
+                "",
+            ),
+            Severity::Critical,
+            &index,
+        );
+
+        assert!(finding.hotspot);
+        assert_eq!(
+            Config::default().policy.drain.tier_for(&finding),
+            Some(DrainTier::Must),
+        );
+    }
+
+    #[test]
+    fn empty_or_uncalibrated_hotspot_index_never_marks_a_finding() {
+        let path = PathBuf::from("docs/quiet.md");
+        let empty = HotspotIndex::from_entries(
+            std::iter::empty(),
+            Some(HotspotCalibration::from_distribution_with_floor(
+                &[],
+                Some(FLOOR_OK_DOC_HOTSPOT),
+            )),
+        );
+        let uncalibrated = HotspotIndex::from_entries([(path.clone(), 1_000.0)], None);
+
+        assert!(!empty.is_hot(&path));
+        assert!(!uncalibrated.is_hot(&path));
+    }
+
+    #[test]
+    fn missing_test_hotspot_report_does_not_create_a_candidate() {
+        let calibration = Calibration {
+            calibration: crate::core::calibration::MetricCalibrations {
+                test_hotspot: Some(HotspotCalibration::from_distribution_with_floor(
+                    &[100.0],
+                    Some(crate::core::calibration::FLOOR_OK_TEST_HOTSPOT),
+                )),
+                ..crate::core::calibration::MetricCalibrations::default()
+            },
+            ..Calibration::default()
+        };
+        let index = HotspotIndex::for_test(None, &calibration);
+
+        assert!(!index.is_hot(Path::new("src/unmeasured.rs")));
+    }
+
+    #[test]
+    fn decoration_uses_the_highest_score_across_all_locations() {
+        let primary = Location::file(PathBuf::from("src/primary.rs"));
+        let secondary = Location::file(PathBuf::from("src/hottest.rs"));
+        let calibration = HotspotCalibration {
+            p50: 10.0,
+            p75: 20.0,
+            p90: 50.0,
+            p95: 90.0,
+            floor_ok: Some(FLOOR_OK_HOTSPOT),
+        };
+        let index = HotspotIndex::from_entries(
+            [
+                (primary.file.clone(), 30.0),
+                (secondary.file.clone(), 100.0),
+                (PathBuf::from("src/non-finite.rs"), f64::NAN),
+            ],
+            Some(calibration),
+        );
+        let finding = Finding::new("duplication", primary, "duplicate".into(), "seed")
+            .with_locations(vec![secondary]);
+        let decorated = decorate(finding.clone(), Severity::Critical, &index);
+
+        assert!(decorated.hotspot);
+        assert_eq!(decorated.hotspot_score, Some(100.0));
+        assert_eq!(decorated.id, finding.id);
+        assert_eq!(index.score(Path::new("src/non-finite.rs")), None);
     }
 }

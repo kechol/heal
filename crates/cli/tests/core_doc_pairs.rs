@@ -75,6 +75,31 @@ fn read_rejects_unknown_fields() {
     assert!(DocPairsFile::read(dir.path(), ".heal/doc_pairs.json").is_err());
 }
 
+#[cfg(unix)]
+#[test]
+fn read_rejects_symlinked_pairs_file() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join(".heal")).unwrap();
+    std::fs::write(
+        outside.path().join("doc_pairs.json"),
+        r#"{"version":1,"pairs":[]}"#,
+    )
+    .unwrap();
+    symlink(
+        outside.path().join("doc_pairs.json"),
+        dir.path().join(".heal/doc_pairs.json"),
+    )
+    .unwrap();
+
+    let error = DocPairsFile::read(dir.path(), ".heal/doc_pairs.json")
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("symlink component"), "{error}");
+}
+
 #[test]
 fn integrity_check_clean_when_all_paths_exist() {
     let dir = tempfile::tempdir().unwrap();

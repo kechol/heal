@@ -91,13 +91,14 @@ move.
 
 ## 4. See the TODO list
 
-The Severity-grouped TODO list, ready to act on.
+The TODO list is grouped by effective Drain Tier and Severity, with
+same-family rows ordered by descending hotspot score.
 
 ```sh
 heal status
 ```
 
-Prints the per-file TODO list grouped by Severity. Filters and
+Prints the per-file TODO list in Tier, Severity, then score order. Filters and
 JSON output: [CLI › heal status](/heal/cli/#heal-status).
 
 ## 5. Audit and drain with your agent
@@ -112,7 +113,7 @@ the same.
 ```sh
 # Always available — the always-on Code family:
 claude /heal-code-review     # what is HEAL really saying? Architectural read of the flagged code, prioritized refactor TODO list, no source writes.
-claude /heal-code-patch      # work through the TODO list mechanically: one fix per commit, in Severity order, never pushes or amends.
+claude /heal-code-patch      # drain T0 mechanically: one fix per commit, in Tier / Severity / family-local score order; never pushes or amends.
 
 # When [features.docs] is on:
 claude /heal-doc-review      # audit your docs through the Diátaxis lens — find where readers get lost.

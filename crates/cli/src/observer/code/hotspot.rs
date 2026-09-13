@@ -189,8 +189,9 @@ impl Observer for HotspotObserver {
 }
 
 impl IntoFindings for HotspotReport {
-    /// `hotspot` flag stays `false`; Calibration's percentile pass
-    /// (TODO §Hotspot) toggles it on the top 10%.
+    /// `hotspot` stays `false` here; family calibration decorates it
+    /// later. With 1–4 finite candidates the absolute Code floor alone
+    /// applies; with 5+ both p90 and that floor apply.
     fn into_findings(&self) -> Vec<Finding> {
         self.entries
             .iter()

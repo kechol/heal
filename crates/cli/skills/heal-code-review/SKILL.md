@@ -78,10 +78,11 @@ classified `Finding`:
 
 ```jsonc
 {
-  "version": 2,
-  "id": "...",                // ULID; lexicographic order = chronological
+  "version": 8,
+  "id": "...",                // deterministic FNV-1a of head/config/clean
   "head_sha": "...",
   "worktree_clean": true,
+  "config_hash": "...",
   "severity_counts": { "critical": 3, "high": 11, "medium": 22, "ok": 0 },
   "findings": [
     {
@@ -89,6 +90,7 @@ classified `Finding`:
       "metric": "ccn",
       "severity": "critical",
       "hotspot": true,
+      "hotspot_score": 140.0,  // family-local ordering only; not part of id
       "location":  { "file": "src/payments/engine.ts", "line": 120, "symbol": "processOrder" },
       "locations": [],         // multi-site findings (duplication / coupling) populate this
       "summary":   "CCN=28",
@@ -142,15 +144,20 @@ the design tree with the user.
 
 ### Phase 1 — Explore
 
-1. **Capture the cache.** Read the full `FindingsRecord` JSON.
+1. **Capture the cache.** Read the full `FindingsRecord` JSON. Exclude every
+   finding with `accepted=true` before clustering or ranking. Keep
+   `accepted_rereview` notices informational; they do not requeue accepted
+   findings.
 2. **Cluster the findings.**
    - **By file.** Multiple findings on one path → architectural
      target.
    - **By metric.** Which signal dominates — does this codebase
      have a complexity problem, a duplication problem, a coupling
      problem? The dominant axis sets the reading's frame.
-   - **By hotspot flag.** `hotspot=true` is a leverage multiplier;
-     the same Severity with the flag should usually outrank without.
+   - **By effective drain tier and hotspot score.** The flag can move a
+     finding into a higher tier through `[policy.drain]`; within the same
+     Tier and Severity, use descending `hotspot_score`. The flag alone does
+     not outrank a higher score.
 3. **Read the top files.** For every file with `≥ 2` non-Ok
    findings, *or* a Critical finding, *or* `hotspot=true`: open
    the file. Summarize what it does in one sentence. Don't trust
@@ -218,9 +225,12 @@ highest-Severity items individually.
 - **Advisory** — everything else above `Severity::Ok`. Mention as a
   count, never as TODO entries.
 
-Within T0, sort `Critical 🔥` first. Cap the TODO list at the top 8 —
-beyond that the list dilutes. If the user asked for "everything", you
-may extend into T1; never auto-extend into Advisory.
+Within T0, sort higher Severity first, then descending `hotspot_score`
+within the Code family. Missing scores sort last; ties use metric, path,
+then finding id. This is the same order as human `heal status`; never mix raw
+scores across families or invent a combined score. Cap the TODO list at
+the top 8 — beyond that the list dilutes. If the user asked for
+"everything", you may extend into T1; never auto-extend into Advisory.
 
 Each entry is exactly **5 lines**:
 

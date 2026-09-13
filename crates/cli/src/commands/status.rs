@@ -1,26 +1,28 @@
 //! `heal status` — render `.heal/findings/latest.json` and, when needed,
 //! produce it.
 //!
-//! Default flow reads the cached `FindingsRecord` from `latest.json` if
-//! one exists. Only when the cache is missing — or `--refresh` is
-//! passed — does this command run every observer, lift the reports
+//! Default flow reads the cached `FindingsRecord` from `latest.json` when
+//! its HEAD/config/clean gate and observation-input hash are fresh. A
+//! missing or stale cache, or `--refresh`, runs every observer, lifts the reports
 //! through `crate::core::finding::IntoFindings`, decorate each Finding
 //! with Severity (via `Calibration`) and the per-file hotspot flag
 //! (via `HotspotCalibration`), and write a fresh `FindingsRecord`. This
 //! is still the single writer of `.heal/findings/`.
 //!
-//! The renderer groups findings by `(Severity, hotspot)` and labels the
-//! sections by Severity (🔴 Critical 🔥 → 🔴 Critical → 🟠 High 🔥 → …).
+//! The renderer groups findings by effective Drain Tier and Severity.
+//! Inside each same-family bucket, rows follow descending
+//! `hotspot_score`, with missing scores last and metric/path/id ties.
 //! Each section header carries a `[T0 Must drain]` / `[T1 Should drain]`
 //! / `[Advisory]` suffix derived from `[policy.drain]` so the link to
 //! `/heal-code-patch` stays explicit. Default policy:
 //! `must = ["critical:hotspot"]`, `should = ["critical", "high:hotspot"]`.
-//! Sections below `🟠 High 🔥` (plain High, Medium, Ok) are hidden unless
+//! Advisory and unclassified lower-priority sections are hidden unless
 //! `--all` is passed; the footer surfaces a "next steps" line pointing
 //! at `claude /heal-code-patch` for the Must-drain queue.
 //!
-//! `--json` emits the `FindingsRecord` in the exact shape of `latest.json`
-//! so skills and CI scripts have one stable contract.
+//! `--json` emits the `FindingsRecord` schema used by `latest.json`, after
+//! overlaying the current accepted state and accepted re-review notices.
+//! Requested finding/workspace filters are applied to that invocation's view.
 
 use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
@@ -34,8 +36,7 @@ use crate::core::calibration::{FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_OK_CCN, FLOOR_O
 use crate::core::config::{load_from_project, Config, DrainTier, PolicyDrainConfig};
 use crate::core::finding::Finding;
 use crate::core::findings_cache::{
-    config_hash_from_paths, read_latest, reconcile_fixed, write_record, FindingsRecord,
-    RegressedEntry,
+    read_latest_if_fresh, reconcile_fixed, write_record, FindingsRecord, RegressedEntry,
 };
 use crate::core::severity::Severity;
 use crate::core::term::{
@@ -55,6 +56,28 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     })?;
 
     let filters = Filters::from_args(args);
+    let cfg = load_from_project(project).with_context(|| {
+        format!(
+            "loading {} (run `heal init` first?)",
+            paths.config().display(),
+        )
+    })?;
+
+    // Early-exit when `--feature <disabled>` would otherwise produce
+    // empty output. Skills (`/heal-test-patch`, `/heal-doc-patch`,
+    // …) shell out with `--feature <family>` and read the exit code:
+    // a non-zero exit here is the contract for "this family is off
+    // in `.heal/config.toml`, stop now".
+    if let Some(family) = filters.family {
+        if !family.is_enabled(&cfg) {
+            eprintln!(
+                "heal status: --feature {0} requested but `[features.{0}].enabled = false`. \
+                 Edit `.heal/config.toml` (or run `/heal-setup`) to enable the family before re-running.",
+                family.name(),
+            );
+            std::process::exit(1);
+        }
+    }
 
     // Cache reuse hinges on `(head_sha, config_hash, worktree_clean)` —
     // the same triple that drives `FindingsRecord.id` — so a stale
@@ -65,57 +88,23 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     // see the previous owner's state until they remembered to refresh.
     let head_sha = git::head_sha(project);
     let worktree_clean = git::worktree_clean(project).unwrap_or(false);
-    let cfg_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
     let cached = if args.refresh {
         None
     } else {
-        read_latest(&paths.findings_latest())
-            .ok()
-            .flatten()
-            .filter(|r| r.is_fresh_against(head_sha.as_deref(), &cfg_hash, worktree_clean))
+        read_latest_if_fresh(
+            &paths.findings_latest(),
+            project,
+            &cfg,
+            &paths.config(),
+            &paths.calibration(),
+            head_sha.as_deref(),
+            worktree_clean,
+        )?
     };
     let must_scan = cached.is_none();
 
-    // Load config only when it's actually needed: a fresh scan needs
-    // it for `build_record`, the textual renderer needs it for
-    // `policy.drain` + override notes, and `--feature` needs it to
-    // gate against the relevant `[features.<f>].enabled` switch. The
-    // JSON path with a cache hit and no `--feature` filter pays
-    // none of these costs.
-    let need_cfg = must_scan || !args.json || args.feature.is_some();
-    let cfg = if need_cfg {
-        Some(load_from_project(project).with_context(|| {
-            format!(
-                "loading {} (run `heal init` first?)",
-                paths.config().display(),
-            )
-        })?)
-    } else {
-        None
-    };
-
-    // Early-exit when `--feature <disabled>` would otherwise produce
-    // empty output. Skills (`/heal-test-patch`, `/heal-doc-patch`,
-    // …) shell out with `--feature <family>` and read the exit code:
-    // a non-zero exit here is the contract for "this family is off
-    // in `.heal/config.toml`, stop now".
-    if let Some(family) = filters.family {
-        let cfg_ref = cfg
-            .as_ref()
-            .expect("cfg loaded above when --feature is set");
-        if !family.is_enabled(cfg_ref) {
-            eprintln!(
-                "heal status: --feature {0} requested but `[features.{0}].enabled = false`. \
-                 Edit `.heal/config.toml` (or run `/heal-setup`) to enable the family before re-running.",
-                family.name(),
-            );
-            std::process::exit(1);
-        }
-    }
-
     let (mut record, regressed) = if must_scan {
-        let cfg = cfg.as_ref().expect("cfg loaded above when must_scan");
-        let record = build_record(project, &paths, cfg, head_sha, worktree_clean);
+        let record = build_record(project, &paths, &cfg, head_sha, worktree_clean)?;
         write_record(&paths.findings_latest(), &record)?;
         let regs = reconcile_fixed(
             &paths.findings_fixed(),
@@ -147,27 +136,45 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
         // need to drop findings — borrow the record and clone only
         // when an actual narrowing is in flight, so the unfiltered
         // fast path serializes the original record directly.
-        match (filters.workspace.as_deref(), filters.is_narrowing()) {
-            (None, false) => super::emit_json(&record),
-            (None, true) => {
-                let mut emit = record.clone();
-                emit.findings.retain(|f| filters.passes(f));
-                super::emit_json(&emit);
-            }
-            (Some(ws), narrowing) => {
-                let mut emit = record.project_to_workspace(ws);
-                if narrowing {
-                    emit.findings.retain(|f| filters.passes(f));
-                }
-                super::emit_json(&emit);
-            }
+        if filters.workspace.is_none() && !filters.is_narrowing() {
+            super::emit_json(&record);
+        } else {
+            super::emit_json(&json_record_view(&record, &filters));
         }
         return Ok(());
     }
-    let cfg = cfg.expect("cfg loaded above when not args.json");
     write_through_pager(args.no_pager, |out, colorize| {
         render(&record, &regressed, &filters, &cfg, colorize, out)
     })
+}
+
+fn json_record_view(record: &FindingsRecord, filters: &Filters) -> FindingsRecord {
+    let mut emit = filters.workspace.as_deref().map_or_else(
+        || record.clone(),
+        |workspace| record.project_to_workspace(workspace),
+    );
+    emit.findings.retain(|finding| filters.passes(finding));
+    emit.retain_rereviews_for_findings();
+    emit.recompute_summary();
+    scope_coverage_observation(&mut emit, filters);
+    emit
+}
+
+fn scope_coverage_observation(record: &mut FindingsRecord, filters: &Filters) {
+    let coverage_selected = filters
+        .family
+        .is_none_or(|family| family == crate::feature::Family::Test)
+        && filters
+            .metric
+            .is_none_or(|metric| metric == FindingMetric::CoveragePct);
+    if !coverage_selected {
+        record.coverage_observation = None;
+    } else if let Some(path) = filters.path.as_deref() {
+        record.coverage_observation = record
+            .coverage_observation
+            .as_ref()
+            .map(|observation| observation.scoped_to(path));
+    }
 }
 
 /// Resolved filters for the renderer.
@@ -231,6 +238,11 @@ impl Filters {
                 return false;
             }
         }
+        if let Some(minimum) = self.severity {
+            if finding.severity < minimum {
+                return false;
+            }
+        }
         true
     }
 }
@@ -251,12 +263,19 @@ pub(super) fn render(
     let summary = drain_summary(&record.findings, drain);
     let accepted = accepted_summary(&record.findings);
     render_header(record, &summary, &accepted, cfg, filters, colorize, out)?;
+    if filters
+        .family
+        .is_none_or(|family| family == crate::feature::Family::Test)
+    {
+        render_coverage_observation(record, colorize, out)?;
+    }
     render_regressed_banner(regressed, colorize, out)?;
+    render_accepted_rereview_banner(record, filters, colorize, out)?;
 
     let show_low = filters.all || matches!(filters.severity, Some(Severity::Medium | Severity::Ok));
 
     // Partition by family first, then bucket each family's findings by
-    // (severity, hotspot). Per-family rendering is the v0.4 contract:
+    // effective drain Tier and Severity. Per-family rendering is the v0.4 contract:
     // each family's drain queue is independent (matching the per-family
     // patch skills and the per-family `HotspotIndex` decoration), so a
     // global Severity ordering would mix Test and Code Critical 🔥
@@ -264,11 +283,6 @@ pub(super) fn render(
     let mut by_family: BTreeMap<crate::feature::Family, Vec<&Finding>> = BTreeMap::new();
     let mut accepted_items: Vec<&Finding> = Vec::new();
     for f in record.findings.iter().filter(|f| filters.passes(f)) {
-        if let Some(min) = filters.severity {
-            if f.severity < min {
-                continue;
-            }
-        }
         if f.accepted {
             accepted_items.push(f);
             continue;
@@ -311,11 +325,33 @@ pub(super) fn render(
             ANSI_CYAN,
             &accepted_items,
             filters.top,
+            false,
             colorize,
             out,
         )?;
     }
 
+    Ok(())
+}
+
+fn render_coverage_observation(
+    record: &FindingsRecord,
+    colorize: bool,
+    out: &mut (impl Write + ?Sized),
+) -> Result<()> {
+    let Some(guidance) = record
+        .coverage_observation
+        .as_ref()
+        .and_then(crate::core::finding::CoverageObservation::guidance)
+    else {
+        return Ok(());
+    };
+    writeln!(
+        out,
+        "  {} {guidance}",
+        ansi_wrap(ANSI_YELLOW, "measurement:", colorize),
+    )?;
+    writeln!(out)?;
     Ok(())
 }
 
@@ -415,6 +451,39 @@ fn render_regressed_banner(
     Ok(())
 }
 
+fn render_accepted_rereview_banner(
+    record: &FindingsRecord,
+    filters: &Filters,
+    colorize: bool,
+    out: &mut (impl Write + ?Sized),
+) -> Result<()> {
+    let visible: Vec<_> = record
+        .accepted_rereview
+        .iter()
+        .filter(|drift| {
+            record.findings.iter().any(|finding| {
+                finding.id == drift.finding_id
+                    && filters.passes(finding)
+                    && filters.severity.is_none_or(|min| finding.severity >= min)
+            })
+        })
+        .collect();
+    if visible.is_empty() {
+        return Ok(());
+    }
+    writeln!(
+        out,
+        "  {} {} accepted finding(s) need re-review; acceptance remains in place.",
+        ansi_wrap(ANSI_YELLOW, "accepted re-review:", colorize),
+        visible.len(),
+    )?;
+    for drift in visible {
+        writeln!(out, "    {} — {}", drift.file, drift.reason_summary())?;
+    }
+    writeln!(out)?;
+    Ok(())
+}
+
 /// Render one family's banner, findings, and patch-skill hint. Returns
 /// the count of hidden lower-Severity findings the caller should
 /// accumulate for the global `Hidden: …` footer. Disabled families and
@@ -462,10 +531,10 @@ fn render_one_family(
     Ok(hidden)
 }
 
-/// Render one family's findings as the per-`(Severity, hotspot)`
-/// bucket cascade. Returns the number of findings hidden behind the
-/// `--all` gate so the caller can roll a single "Hidden: N across
-/// families" footer instead of one per family.
+/// Render one family's findings by effective drain tier, then by
+/// Severity. Returns the number hidden behind the `--all`
+/// gate so the caller can roll a single "Hidden: N across families"
+/// footer instead of one per family.
 fn render_family(
     items: &[&Finding],
     drain: &PolicyDrainConfig,
@@ -474,58 +543,62 @@ fn render_family(
     colorize: bool,
     out: &mut (impl Write + ?Sized),
 ) -> Result<usize> {
-    let mut buckets: BTreeMap<(Severity, bool), Vec<&Finding>> = BTreeMap::new();
+    let mut buckets: BTreeMap<(u8, Severity), Vec<&Finding>> = BTreeMap::new();
     for f in items {
-        buckets.entry((f.severity, f.hotspot)).or_default().push(*f);
+        let tier = match drain.tier_for(f) {
+            Some(DrainTier::Must) => 0,
+            Some(DrainTier::Should) => 1,
+            Some(DrainTier::Advisory) => 2,
+            None => 3,
+        };
+        buckets.entry((tier, f.severity)).or_default().push(*f);
     }
-    let order: &[(Severity, bool, &str, &str, bool)] = &[
-        (Severity::Critical, true, "🔴 Critical 🔥", ANSI_RED, true),
-        (Severity::Critical, false, "🔴 Critical", ANSI_RED, true),
-        (Severity::High, true, "🟠 High 🔥", ANSI_YELLOW, true),
-        (Severity::High, false, "🟠 High", ANSI_YELLOW, show_low),
-        (
-            Severity::Medium,
-            true,
-            "🟡 Medium 🔥",
-            ANSI_YELLOW,
-            show_low,
-        ),
-        (Severity::Medium, false, "🟡 Medium", ANSI_YELLOW, show_low),
-        (Severity::Ok, true, "✅ Ok 🔥", ANSI_CYAN, show_low),
-        (Severity::Ok, false, "✅ Ok", ANSI_GREEN, show_low),
+    let tier_order: &[(u8, &str, bool)] = &[
+        (0, "T0 Must drain", true),
+        (1, "T1 Should drain", true),
+        (2, "Advisory", show_low),
+        (3, "", show_low),
+    ];
+    let severity_order: &[(Severity, &str, &str)] = &[
+        (Severity::Critical, "🔴 Critical", ANSI_RED),
+        (Severity::High, "🟠 High", ANSI_YELLOW),
+        (Severity::Medium, "🟡 Medium", ANSI_YELLOW),
+        (Severity::Ok, "✅ Ok", ANSI_GREEN),
     ];
     let mut hidden = 0usize;
-    for (sev, hot, label, color, visible) in order {
-        let Some(items) = buckets.get(&(*sev, *hot)) else {
-            continue;
-        };
-        if !*visible {
-            hidden += items.len();
-            continue;
+    for (tier, tier_label, visible) in tier_order {
+        for (sev, label, color) in severity_order {
+            let Some(items) = buckets.get(&(*tier, *sev)) else {
+                continue;
+            };
+            if !*visible {
+                hidden += items.len();
+                continue;
+            }
+            let hotspot = if items.iter().all(|finding| finding.hotspot) {
+                " 🔥"
+            } else {
+                ""
+            };
+            let tier_suffix = if tier_label.is_empty() {
+                String::new()
+            } else {
+                format!(" [{tier_label}]")
+            };
+            let full_label = format!("{label}{hotspot}{tier_suffix}");
+            render_tier_section(&full_label, color, items, top, true, colorize, out)?;
         }
-        let suffix = drain
-            .tier_for(items[0])
-            .map(|t| {
-                let name = match t {
-                    DrainTier::Must => "T0 Must drain",
-                    DrainTier::Should => "T1 Should drain",
-                    DrainTier::Advisory => "Advisory",
-                };
-                format!(" [{name}]")
-            })
-            .unwrap_or_default();
-        let full_label = format!("{label}{suffix}");
-        render_tier_section(&full_label, color, items, top, colorize, out)?;
     }
     Ok(hidden)
 }
 
-/// Render a drain-tier section with internal Severity 🔥 sort.
+/// Render a section, preserving Tier/Severity buckets when already fixed.
 fn render_tier_section(
     label: &str,
     color: &str,
     items: &[&Finding],
     top: Option<usize>,
+    tier_and_severity_fixed: bool,
     colorize: bool,
     out: &mut (impl Write + ?Sized),
 ) -> std::io::Result<()> {
@@ -533,27 +606,56 @@ fn render_tier_section(
         return Ok(());
     }
     let mut sorted: Vec<&Finding> = items.to_vec();
-    // Severity desc, then 🔥 first within same Severity, then by metric
-    // / file for deterministic output.
+    // Tier and Severity are fixed by the enclosing bucket cascade. Within
+    // a bucket, use the same-family hotspot score before deterministic
+    // metric / path / id ties. Missing scores sort last.
     sorted.sort_by(|a, b| {
-        b.severity
-            .cmp(&a.severity)
-            .then_with(|| b.hotspot.cmp(&a.hotspot))
+        let prefix = if tier_and_severity_fixed {
+            std::cmp::Ordering::Equal
+        } else {
+            b.severity.cmp(&a.severity)
+        };
+        prefix
+            .then_with(|| match (b.hotspot_score, a.hotspot_score) {
+                (Some(b), Some(a)) => b.total_cmp(&a),
+                (Some(_), None) => std::cmp::Ordering::Greater,
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (None, None) => std::cmp::Ordering::Equal,
+            })
             .then_with(|| a.metric.cmp(&b.metric))
             .then_with(|| a.location.file.cmp(&b.location.file))
+            .then_with(|| a.id.cmp(&b.id))
     });
     let total = sorted.len();
-    if let Some(n) = top {
-        sorted.truncate(n);
-    }
     writeln!(out, "{} ({})", ansi_wrap(color, label, colorize), total)?;
-    let mut by_file: BTreeMap<&PathBuf, Vec<&Finding>> = BTreeMap::new();
-    for f in &sorted {
-        by_file.entry(&f.location.file).or_default().push(f);
+    // Preserve the score-ranked first occurrence when folding multiple
+    // findings into one file row. A BTreeMap here would silently restore
+    // lexical path order and discard the work-order signal.
+    let mut by_file: Vec<(&PathBuf, Vec<&Finding>)> = Vec::new();
+    for f in sorted {
+        if let Some((_, findings)) = by_file
+            .iter_mut()
+            .find(|(file, _)| *file == &f.location.file)
+        {
+            findings.push(f);
+        } else {
+            by_file.push((&f.location.file, vec![f]));
+        }
     }
-    for (file, fs) in &by_file {
+    if let Some(n) = top {
+        by_file.truncate(n);
+    }
+    let mark_hotspot_rows = tier_and_severity_fixed
+        && items.iter().any(|finding| finding.hotspot)
+        && items.iter().any(|finding| !finding.hotspot);
+    for (file, fs) in by_file {
         let summary = group_labels(fs.iter().map(|f| f.short_label())).join("  ");
-        writeln!(out, "  {}  {summary}", file.display())?;
+        let hotspot = if mark_hotspot_rows && fs.iter().any(|finding| finding.hotspot) {
+            " 🔥"
+        } else {
+            ""
+        };
+        writeln!(out, "  {}{hotspot}  {summary}", file.display())?;
     }
     Ok(())
 }
@@ -691,7 +793,8 @@ fn override_notes(cfg: &Config) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::finding::Location;
+    use crate::core::accepted::{AcceptedDrift, AcceptedRereviewReason};
+    use crate::core::finding::{CoverageObservation, CoverageObservationState, Location};
     use std::path::PathBuf;
 
     fn finding(metric: &str, file: &str, severity: Severity, hotspot: bool) -> Finding {
@@ -719,14 +822,30 @@ mod tests {
         f
     }
 
+    fn scored_finding(
+        metric: &str,
+        file: &str,
+        severity: Severity,
+        hotspot: bool,
+        score: f64,
+    ) -> Finding {
+        let mut f = finding(metric, file, severity, hotspot);
+        f.hotspot_score = Some(score);
+        f
+    }
+
     fn record(findings: Vec<Finding>) -> FindingsRecord {
         FindingsRecord::new(Some("abc1234".into()), true, "h".into(), findings)
     }
 
     fn render_to_string(record: &FindingsRecord, filters: &Filters) -> String {
-        let mut buf = Vec::new();
         let cfg = Config::default();
-        render(record, &[], filters, &cfg, false, &mut buf).unwrap();
+        render_with_config(record, filters, &cfg)
+    }
+
+    fn render_with_config(record: &FindingsRecord, filters: &Filters, cfg: &Config) -> String {
+        let mut buf = Vec::new();
+        render(record, &[], filters, cfg, false, &mut buf).unwrap();
         String::from_utf8(buf).unwrap()
     }
 
@@ -773,6 +892,322 @@ mod tests {
         assert!(out.contains("[T1 Should drain]"), "T1 tier suffix:\n{out}");
         assert!(out.contains("src/hot.ts"));
         assert!(out.contains("src/cool.ts"));
+    }
+
+    #[test]
+    fn effective_drain_tier_precedes_severity() {
+        use crate::core::config::{DrainSpec, HotspotMatch, PolicyDrainMetricOverride};
+
+        let rec = record(vec![
+            finding("ccn", "src/critical.rs", Severity::Critical, false),
+            scored_finding("cognitive", "src/high.rs", Severity::High, false, 90.0),
+            scored_finding(
+                "cognitive",
+                "src/hot-but-lower.rs",
+                Severity::High,
+                true,
+                10.0,
+            ),
+        ]);
+        let mut cfg = Config::default();
+        cfg.policy.drain.metrics.insert(
+            "cognitive".to_owned(),
+            PolicyDrainMetricOverride {
+                must: Some(vec![DrainSpec {
+                    severity: Severity::High,
+                    hotspot: HotspotMatch::Any,
+                }]),
+                should: Some(Vec::new()),
+            },
+        );
+
+        let out = render_with_config(&rec, &default_filters(), &cfg);
+        assert!(out.find("src/high.rs").unwrap() < out.find("src/critical.rs").unwrap());
+        assert!(out.find("src/high.rs").unwrap() < out.find("src/hot-but-lower.rs").unwrap());
+        assert!(out.contains("High [T0 Must drain]"), "{out}");
+        assert!(out.contains("Critical [T1 Should drain]"), "{out}");
+    }
+
+    #[test]
+    fn cross_workspace_advisory_obeys_all_gate() {
+        let rec = record(vec![finding(
+            Finding::METRIC_CHANGE_COUPLING_CROSS_WORKSPACE,
+            "src/coupled.rs",
+            Severity::Critical,
+            true,
+        )]);
+
+        let default = render_to_string(&rec, &default_filters());
+        assert!(!default.contains("src/coupled.rs"), "{default}");
+        assert!(default.contains("Hidden: 1 finding"), "{default}");
+
+        let mut filters = default_filters();
+        filters.all = true;
+        let all = render_to_string(&rec, &filters);
+        assert!(all.contains("Critical 🔥 [Advisory]"), "{all}");
+        assert!(all.contains("src/coupled.rs"), "{all}");
+    }
+
+    #[test]
+    fn same_bucket_renders_higher_hotspot_score_before_lexical_path() {
+        let rec = record(vec![
+            scored_finding("ccn", "src/a-low.rs", Severity::Critical, true, 30.0),
+            scored_finding("ccn", "src/z-high.rs", Severity::Critical, true, 90.0),
+        ]);
+        let out = render_to_string(&rec, &default_filters());
+
+        assert!(out.find("src/z-high.rs").unwrap() < out.find("src/a-low.rs").unwrap());
+    }
+
+    #[test]
+    fn equal_hotspot_scores_use_deterministic_path_order() {
+        let rec = record(vec![
+            scored_finding("ccn", "src/z.rs", Severity::Critical, true, 90.0),
+            scored_finding("ccn", "src/a.rs", Severity::Critical, true, 90.0),
+        ]);
+        let out = render_to_string(&rec, &default_filters());
+
+        assert!(out.find("src/a.rs").unwrap() < out.find("src/z.rs").unwrap());
+    }
+
+    #[test]
+    fn regrouping_and_top_preserve_score_order() {
+        let mut repeated =
+            scored_finding("cognitive", "src/z-high.rs", Severity::Critical, true, 90.0);
+        repeated.id.push_str(":second");
+        let rec = record(vec![
+            scored_finding("ccn", "src/a-low.rs", Severity::Critical, true, 30.0),
+            scored_finding("ccn", "src/z-high.rs", Severity::Critical, true, 90.0),
+            repeated,
+        ]);
+        let out = render_to_string(&rec, &default_filters());
+        assert!(out.find("src/z-high.rs").unwrap() < out.find("src/a-low.rs").unwrap());
+        assert_eq!(out.matches("src/z-high.rs").count(), 1, "{out}");
+
+        let mut filters = default_filters();
+        filters.top = Some(1);
+        let top = render_to_string(&rec, &filters);
+        assert!(top.contains("src/z-high.rs"), "{top}");
+        assert!(!top.contains("src/a-low.rs"), "{top}");
+    }
+
+    #[test]
+    fn top_counts_file_rows_after_regrouping() {
+        let mut repeated =
+            scored_finding("cognitive", "src/z-high.rs", Severity::Critical, true, 90.0);
+        repeated.id.push_str(":second");
+        let rec = record(vec![
+            scored_finding("ccn", "src/z-high.rs", Severity::Critical, true, 100.0),
+            repeated,
+            scored_finding("ccn", "src/a-next.rs", Severity::Critical, true, 80.0),
+            scored_finding("ccn", "src/b-hidden.rs", Severity::Critical, true, 70.0),
+        ]);
+        let mut filters = default_filters();
+        filters.top = Some(2);
+
+        let out = render_to_string(&rec, &filters);
+        assert_eq!(out.matches("src/z-high.rs").count(), 1, "{out}");
+        assert!(out.contains("src/a-next.rs"), "{out}");
+        assert!(!out.contains("src/b-hidden.rs"), "{out}");
+    }
+
+    #[test]
+    fn missing_hotspot_score_sorts_after_scored_findings() {
+        let rec = record(vec![
+            finding("ccn", "src/a-missing.rs", Severity::Critical, true),
+            scored_finding("ccn", "src/z-scored.rs", Severity::Critical, true, 1.0),
+        ]);
+
+        let out = render_to_string(&rec, &default_filters());
+        assert!(out.find("src/z-scored.rs").unwrap() < out.find("src/a-missing.rs").unwrap());
+    }
+
+    #[test]
+    fn accepted_finding_does_not_displace_active_score_order() {
+        let mut accepted = scored_finding(
+            "ccn",
+            "src/z-accepted.rs",
+            Severity::Critical,
+            true,
+            1_000.0,
+        );
+        accepted.accepted = true;
+        let rec = record(vec![
+            accepted,
+            scored_finding("ccn", "src/a-active.rs", Severity::Critical, true, 30.0),
+        ]);
+        let out = render_to_string(&rec, &default_filters());
+
+        assert!(out.contains("src/a-active.rs"), "{out}");
+        assert!(!out.contains("src/z-accepted.rs"), "{out}");
+    }
+
+    #[test]
+    fn accepted_same_severity_uses_score_before_hotspot_flag() {
+        let mut higher_score =
+            scored_finding("ccn", "src/z-score.rs", Severity::Critical, false, 90.0);
+        higher_score.accepted = true;
+        let mut hotspot = scored_finding("ccn", "src/a-hotspot.rs", Severity::Critical, true, 30.0);
+        hotspot.accepted = true;
+        let rec = record(vec![hotspot, higher_score]);
+        let mut filters = default_filters();
+        filters.all = true;
+
+        let out = render_to_string(&rec, &filters);
+        assert!(out.find("src/z-score.rs").unwrap() < out.find("src/a-hotspot.rs").unwrap());
+    }
+
+    #[test]
+    fn coverage_measurement_gap_is_guidance_not_drain_work() {
+        let rec = record(Vec::new()).with_coverage_observation(Some(CoverageObservation {
+            state: CoverageObservationState::Partial,
+            configured_sources: vec!["lcov.info".into()],
+            sources: vec!["lcov.info".into()],
+            unreadable_sources: Vec::new(),
+            unmeasured_files: vec!["src/unlisted.rs".into()],
+        }));
+        let out = render_to_string(&rec, &default_filters());
+        assert!(out.contains("measurement: coverage partial"), "{out}");
+        assert!(out.contains("T0 0 findings"), "{out}");
+
+        let json = serde_json::to_value(&rec).unwrap();
+        assert_eq!(json["coverage_observation"]["state"], "partial");
+        assert_eq!(
+            json["coverage_observation"]["unmeasured_files"][0],
+            "src/unlisted.rs"
+        );
+    }
+
+    #[test]
+    fn json_filters_keep_findings_notices_summaries_and_coverage_consistent() {
+        use crate::core::accepted::AcceptedRereviewReason;
+        use crate::feature::Family;
+
+        let mut code = finding("ccn", "pkg/a/src/code.rs", Severity::Critical, true);
+        code.workspace = Some("pkg/a".into());
+        let mut test = finding(
+            Finding::METRIC_COVERAGE_PCT,
+            "pkg/a/src/uncovered.rs",
+            Severity::Medium,
+            false,
+        );
+        test.workspace = Some("pkg/a".into());
+        let mut docs = finding("doc_drift", "pkg/b/docs/api.md", Severity::High, false);
+        docs.workspace = Some("pkg/b".into());
+        docs.accepted = true;
+        let docs_id = docs.id.clone();
+        let mut rec = record(vec![code, test, docs]);
+        rec.accepted_rereview.push(AcceptedDrift {
+            finding_id: docs_id,
+            file: "pkg/b/docs/api.md".into(),
+            was: Severity::Medium,
+            now: Severity::High,
+            was_hotspot: false,
+            now_hotspot: false,
+            reasons: vec![AcceptedRereviewReason::SeverityIncreased],
+        });
+        rec.coverage_observation = Some(CoverageObservation {
+            state: CoverageObservationState::Partial,
+            configured_sources: vec!["lcov.info".into()],
+            sources: vec!["lcov.info".into()],
+            unreadable_sources: Vec::new(),
+            unmeasured_files: vec!["pkg/a/src/missing.rs".into(), "pkg/b/src/missing.rs".into()],
+        });
+
+        let mut workspace = default_filters();
+        workspace.workspace = Some("pkg/a".into());
+        let json = serde_json::to_value(json_record_view(&rec, &workspace)).unwrap();
+        assert_eq!(json["findings"].as_array().unwrap().len(), 2);
+        assert_eq!(json["severity_counts"]["critical"], 1);
+        assert_eq!(json["severity_counts"]["medium"], 1);
+        assert_eq!(json["workspaces"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            json["coverage_observation"]["unmeasured_files"],
+            serde_json::json!(["pkg/a/src/missing.rs"])
+        );
+
+        let mut accepted_workspace = default_filters();
+        accepted_workspace.workspace = Some("pkg/b".into());
+        let json = serde_json::to_value(json_record_view(&rec, &accepted_workspace)).unwrap();
+        assert_eq!(json["findings"].as_array().unwrap().len(), 1);
+        assert_eq!(json["accepted_rereview"].as_array().unwrap().len(), 1);
+        assert_eq!(json["severity_counts"]["high"], 0);
+        assert_eq!(json["workspaces"][0]["severity_counts"]["high"], 0);
+
+        let mut feature = default_filters();
+        feature.family = Some(Family::Test);
+        let json = serde_json::to_value(json_record_view(&rec, &feature)).unwrap();
+        assert_eq!(json["findings"].as_array().unwrap().len(), 1);
+        assert_eq!(json["findings"][0]["metric"], Finding::METRIC_COVERAGE_PCT);
+        assert_eq!(json["severity_counts"]["medium"], 1);
+        assert_eq!(json["accepted_rereview"], serde_json::Value::Null);
+        assert!(json.get("coverage_observation").is_some());
+
+        let mut metric = default_filters();
+        metric.metric = Some(FindingMetric::Ccn);
+        let json = serde_json::to_value(json_record_view(&rec, &metric)).unwrap();
+        assert_eq!(json["findings"].as_array().unwrap().len(), 1);
+        assert_eq!(json["severity_counts"]["critical"], 1);
+        assert_eq!(json["workspaces"].as_array().unwrap().len(), 1);
+        assert!(json.get("coverage_observation").is_none());
+
+        let mut path = default_filters();
+        path.path = Some("pkg/b".into());
+        let json = serde_json::to_value(json_record_view(&rec, &path)).unwrap();
+        assert_eq!(json["findings"].as_array().unwrap().len(), 1);
+        assert_eq!(json["accepted_rereview"].as_array().unwrap().len(), 1);
+        assert_eq!(json["severity_counts"]["high"], 0);
+        assert_eq!(json["workspaces"][0]["severity_counts"]["high"], 0);
+        assert_eq!(
+            json["coverage_observation"]["unmeasured_files"],
+            serde_json::json!(["pkg/b/src/missing.rs"])
+        );
+
+        let mut severity = default_filters();
+        severity.severity = Some(Severity::High);
+        let json = serde_json::to_value(json_record_view(&rec, &severity)).unwrap();
+        assert_eq!(json["findings"].as_array().unwrap().len(), 2);
+        assert_eq!(json["severity_counts"]["critical"], 1);
+        assert_eq!(json["severity_counts"]["high"], 0);
+        assert_eq!(json["workspaces"][1]["severity_counts"]["high"], 0);
+        assert_eq!(json["accepted_rereview"].as_array().unwrap().len(), 1);
+        assert!(json.get("coverage_observation").is_some());
+    }
+
+    #[test]
+    fn accepted_rereview_is_reasoned_in_human_and_machine_output() {
+        let mut accepted = finding("ccn", "src/hot.rs", Severity::Critical, true);
+        accepted.accepted = true;
+        let finding_id = accepted.id.clone();
+        let mut rec = record(vec![accepted]);
+        rec.accepted_rereview.push(AcceptedDrift {
+            finding_id,
+            file: "src/hot.rs".into(),
+            was: Severity::High,
+            now: Severity::Critical,
+            was_hotspot: false,
+            now_hotspot: true,
+            reasons: vec![
+                AcceptedRereviewReason::SeverityIncreased,
+                AcceptedRereviewReason::BecameHotspot,
+            ],
+        });
+
+        let out = render_to_string(&rec, &default_filters());
+        assert!(out.contains("accepted re-review:"), "{out}");
+        assert!(
+            out.contains("Severity increased and became a hotspot"),
+            "{out}"
+        );
+        assert!(out.contains("acceptance remains in place"), "{out}");
+        assert!(out.contains("T0 0 findings"), "{out}");
+
+        let json = serde_json::to_value(&rec).unwrap();
+        assert_eq!(
+            json["accepted_rereview"][0]["reasons"],
+            serde_json::json!(["severity_increased", "became_hotspot"])
+        );
+        assert_eq!(json["findings"][0]["accepted"], true);
     }
 
     #[test]
@@ -869,6 +1304,23 @@ mod tests {
             !out.contains("src/lukewarm.ts"),
             "Medium must drop with --severity high:\n{out}"
         );
+
+        // The JSON path uses `Filters::passes` directly when retaining
+        // findings, so pin that shared boundary as well as human rendering.
+        let mut json_record = rec.clone();
+        json_record
+            .findings
+            .retain(|finding| filters.passes(finding));
+        let json = serde_json::to_value(json_record).unwrap();
+        let files: Vec<&str> = json["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|finding| finding["location"]["file"].as_str())
+            .collect();
+        assert!(files.contains(&"src/hot.ts"));
+        assert!(files.contains(&"src/warm.ts"));
+        assert!(!files.contains(&"src/lukewarm.ts"));
     }
 
     #[test]
@@ -891,7 +1343,7 @@ mod tests {
     }
 
     #[test]
-    fn default_omits_low_severity_hotspot_section() {
+    fn default_omits_ok_section_without_all() {
         let rec = record(vec![finding(
             "hotspot",
             "src/touch_a_lot.ts",
@@ -901,7 +1353,7 @@ mod tests {
         let out = render_to_string(&rec, &default_filters());
         assert!(
             !out.contains("Ok 🔥"),
-            "low-Severity hotspot section must stay hidden without --all:\n{out}",
+            "Ok section must stay hidden without --all:\n{out}",
         );
     }
 

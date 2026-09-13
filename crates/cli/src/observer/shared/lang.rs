@@ -408,6 +408,26 @@ impl Language {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn test_source_fixture() -> (&'static str, &'static str) {
+    if cfg!(feature = "lang-typescript") {
+        ("fixture.ts", "function value(): number { return 1; }\n")
+    } else if cfg!(feature = "lang-javascript") {
+        ("fixture.js", "function value() { return 1; }\n")
+    } else if cfg!(feature = "lang-python") {
+        ("fixture.py", "def value():\n    return 1\n")
+    } else if cfg!(feature = "lang-go") {
+        (
+            "fixture.go",
+            "package fixture\nfunc value() int { return 1 }\n",
+        )
+    } else if cfg!(feature = "lang-scala") {
+        ("fixture.scala", "object Fixture { def value(): Int = 1 }\n")
+    } else {
+        ("fixture.rs", "fn value() -> u8 { 1 }\n")
+    }
+}
+
 fn capture_index(query: &Query, name: &str) -> u32 {
     query
         .capture_index_for_name(name)

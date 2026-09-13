@@ -79,7 +79,7 @@ Doc Hotspot 自体は常に `Severity::Ok` です。docs ファミリの Finding
 
 ## 解消パターン
 
-`/heal-doc-review` は **Diátaxis** のレンズで findings をフレーム化します — Tutorial / How-to のドリフトを最初に(混乱した初心者ユーザーが最高レバレッジの修正対象)、次に Reference、最後に Explanation。`/heal-doc-patch` は docs スライスを 1 件 1 コミットで消化します:
+`/heal-doc-review` は **Diátaxis** のレンズで findings を読み解きますが、有効 Tier、Severity、Docs ファミリの `hotspot_score` 降順(欠落は末尾、同点は metric/path/id)という HEAL の順序を維持します。Tutorial / How-to / Reference / Explanation は診断と修正方法に使い、キューの優先度を上書きしません。`/heal-doc-patch` は docs スライスを 1 件 1 コミットで消化します:
 
 - **`doc_link_health`** → 相対パスまたは anchor slug を修正。
 - **`doc_drift`** → 古い識別子の参照を消す、または明確なリネームがあれば新しい名前で復活。

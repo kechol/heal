@@ -138,7 +138,8 @@ Anonymous/lambda functions are named `<anonymous@LINE>`.
 
 **Algorithm:**
 
-1. Time-sorted revwalk. Cut at `since_cutoff = now - since_days * 86400`.
+1. Time-sorted revwalk. Cut at `since_cutoff = observed HEAD commit time -
+   since_days * 86400`, so the same ref keeps the same window across run dates.
 2. **Diff each commit against its first parent only** (avoid
    double-counting in merge commits). Root commits diff against an empty
    tree, reporting their full inserted size.
@@ -294,9 +295,12 @@ composition, no FS/git access.
 **Calibration:** `HotspotCalibration` = percentiles on raw scores +
 `floor_ok = FLOOR_OK_HOTSPOT = 22.0` (= `2 × FLOOR_OK_CCN`).
 
-`HotspotIndex` is built once per run. A file is a hotspot iff
-`score ≥ p90` AND `score ≥ floor_ok` (when set). Used by every other
-Feature to decorate findings on hotspot files.
+`HotspotIndex` is built once per run. With at least 5 finite candidates,
+a file is a hotspot iff `score ≥ p90` and, when set, `score ≥ floor_ok`;
+with 1–4, the family floor alone applies. An empty cohort, absent
+calibration, non-finite score, or legacy NaN calibration without a floor
+never flags. Current family floors are Code 22, Test 25, and Docs 5. Every
+other Feature uses this index to decorate findings on hotspot files.
 
 **Config:**
 - `metrics.hotspot.weight_churn` (default `1.0`).
@@ -368,7 +372,8 @@ escalating.
 - `path_under(path, workspace)` — segment-wise check (so `pkg/web` does
   **not** match `pkg/webapp/foo.ts`). Workspaces are early-filter, never
   post-aggregate.
-- `since_cutoff(since_days)` → Unix seconds threshold.
+- `since_cutoff(reference_secs, since_days)` → Unix seconds threshold
+  anchored to the observed ref's commit time.
 
 ### `observer/lang.rs`
 
@@ -489,10 +494,11 @@ multiplicative boosts capped at `1.5×`; that post-hoc fusion is
 gone. Test- and Docs-family Findings get their own composites:
 
 - `test_hotspot` (`observer/test/hotspot.rs`):
-  `commits × uncov_pct` per src file. Universe is
-  `ChurnReport.files ∪ CoverageReport.entries` filtered to
-  recognised src extensions (`Language::from_path`); files
-  absent from lcov but present in churn count as 100% gap. Same
+  `commits × uncov_pct` per measured production src file. Only
+  `CoverageReport.entries` with recognised source extensions and a
+  matching non-zero churn entry enter the ranking. An lcov-absent file
+  is unmeasured, not a synthetic 100% gap; explicit measured 0% remains
+  a 100% gap. Same
   `HotspotCalibration` shape as code Hotspot, anchored on
   `FLOOR_OK_TEST_HOTSPOT`. Decorates `coverage_pct` Findings
   via `Family::Test` `HotspotIndex`.

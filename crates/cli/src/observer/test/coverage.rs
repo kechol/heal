@@ -23,8 +23,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::calibration::MetricCalibration;
 use crate::core::config::Config;
-use crate::core::finding::{Finding, IntoFindings, Location};
+use crate::core::finding::{
+    CoverageObservation, CoverageObservationState, Finding, IntoFindings, Location,
+};
 use crate::feature::{decorate, Family, Feature, FeatureKind, FeatureMeta, HotspotIndex};
+use crate::observer::shared::file_role::{file_role, is_test_path, FileRole};
+use crate::observer::shared::lang::Language;
+use crate::observer::shared::walk::{walk_supported_files_under, ExcludeMatcher};
 use crate::observer::test::lcov::{normalise_lcov_path, LcovReport};
 
 /// Fallback calibration when `[calibration.coverage_pct]` hasn't been
@@ -50,6 +55,8 @@ const FALLBACK_CALIBRATION: MetricCalibration = MetricCalibration {
 pub struct CoverageObserver {
     pub enabled: bool,
     pub lcov_paths: Vec<String>,
+    pub excluded: Vec<String>,
+    pub test_paths: Vec<String>,
 }
 
 impl CoverageObserver {
@@ -58,6 +65,8 @@ impl CoverageObserver {
         Self {
             enabled: cfg.features.test.enabled && cfg.features.test.coverage.enabled,
             lcov_paths: cfg.features.test.coverage.lcov_paths.clone(),
+            excluded: cfg.exclude_lines(),
+            test_paths: cfg.features.test.test_paths.clone(),
         }
     }
 
@@ -72,21 +81,37 @@ impl CoverageObserver {
         if !self.enabled {
             return CoverageReport::default();
         }
+        let production_files = self.production_files(root);
         let mut sources: Vec<PathBuf> = Vec::new();
+        let mut unreadable_sources: Vec<PathBuf> = Vec::new();
         // BTreeMap so merged entries come out path-sorted — the JSON
         // ordering must not depend on lcov_paths probe order.
         let mut merged: std::collections::BTreeMap<PathBuf, CoverageEntry> =
             std::collections::BTreeMap::new();
-        for rel in &self.lcov_paths {
+        for (index, rel) in self.lcov_paths.iter().enumerate() {
             // Skip the explicit `exists()` precheck — `LcovReport::read`
             // returns `Err(NotFound)` for missing files, which we treat
             // identically to "no record" without paying a stat() per
             // candidate.
-            let parsed = match LcovReport::read(&root.join(rel)) {
+            let file = match crate::core::config::open_observation_file(
+                root,
+                &format!("[features.test.coverage].lcov_paths[{index}]"),
+                rel,
+            ) {
+                Ok(Some(file)) => file,
+                Ok(None) => continue,
+                Err(err) => {
+                    eprintln!("heal: warning: skipping lcov file {rel}: {err}");
+                    unreadable_sources.push(PathBuf::from(rel));
+                    continue;
+                }
+            };
+            let parsed = match LcovReport::read_file(file, Path::new(rel)) {
                 Ok(parsed) => parsed,
                 Err(err) => {
                     if !err.is_not_found() {
                         eprintln!("heal: warning: skipping lcov file {rel}: {err}");
+                        unreadable_sources.push(PathBuf::from(rel));
                     }
                     continue;
                 }
@@ -106,11 +131,60 @@ impl CoverageObserver {
                 merge_entry(&mut merged, normalised, entry);
             }
         }
+        // LCOV can contain test files, generated files, deleted files, or
+        // paths excluded by project policy. The walked production universe is
+        // authoritative; report entries outside it are provenance noise, not
+        // actionable coverage observations.
+        let production_set: std::collections::HashSet<&Path> =
+            production_files.iter().map(PathBuf::as_path).collect();
+        merged.retain(|path, _| production_set.contains(path.as_path()));
+        let entries: Vec<CoverageEntry> = merged.into_values().collect();
+        let measured: std::collections::HashSet<&Path> =
+            entries.iter().map(|entry| entry.path.as_path()).collect();
+        let unmeasured_files: Vec<PathBuf> = production_files
+            .iter()
+            .filter(|path| !measured.contains(path.as_path()))
+            .cloned()
+            .collect();
+        let state = if !unreadable_sources.is_empty() {
+            CoverageObservationState::ReadError
+        } else if sources.is_empty() {
+            CoverageObservationState::Missing
+        } else if !unmeasured_files.is_empty() {
+            CoverageObservationState::Partial
+        } else {
+            CoverageObservationState::Complete
+        };
         CoverageReport {
             source: sources.first().cloned(),
+            configured_sources: self.lcov_paths.iter().map(PathBuf::from).collect(),
             sources,
-            entries: merged.into_values().collect(),
+            unreadable_sources,
+            production_files,
+            unmeasured_files,
+            state,
+            entries,
         }
+    }
+
+    fn production_files(&self, root: &Path) -> Vec<PathBuf> {
+        let excluded = ExcludeMatcher::compile(root, &self.excluded)
+            .expect("exclude patterns validated at config load");
+        let test_paths = ExcludeMatcher::compile(Path::new(""), &self.test_paths).ok();
+        let mut files: Vec<PathBuf> = walk_supported_files_under(root, &excluded, None)
+            .into_iter()
+            .filter_map(|path| {
+                let rel = path.strip_prefix(root).ok()?.to_path_buf();
+                let language = Language::from_path(&rel)?;
+                let configured_test = test_paths
+                    .as_ref()
+                    .map_or_else(|| is_test_path(&rel), |m| m.is_excluded(&rel, false));
+                (!configured_test && file_role(&rel, Some(language.name())) == FileRole::Source)
+                    .then_some(rel)
+            })
+            .collect();
+        files.sort();
+        files
     }
 }
 
@@ -180,16 +254,51 @@ pub struct CoverageReport {
     /// when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<PathBuf>,
+    /// Configured report paths, including absent files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub configured_sources: Vec<PathBuf>,
+    /// Configured paths that existed but could not be read.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unreadable_sources: Vec<PathBuf>,
+    /// Existing, supported production source files after exclude/test/generated filtering.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub production_files: Vec<PathBuf>,
+    /// Production source files not listed by any readable LCOV payload.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unmeasured_files: Vec<PathBuf>,
+    #[serde(default)]
+    pub state: CoverageObservationState,
     pub entries: Vec<CoverageEntry>,
 }
 
 impl CoverageReport {
+    /// Measured entries that belong to the observer's production universe.
+    /// Consumers use this boundary even though `scan` already filters entries,
+    /// so manually assembled/internal reports cannot bypass file-role policy.
+    pub(crate) fn measured_production_entries(&self) -> impl Iterator<Item = &CoverageEntry> {
+        let production: std::collections::HashSet<&Path> =
+            self.production_files.iter().map(PathBuf::as_path).collect();
+        self.entries
+            .iter()
+            .filter(move |entry| production.contains(entry.path.as_path()))
+    }
+
+    #[must_use]
+    pub fn observation(&self) -> CoverageObservation {
+        CoverageObservation {
+            state: self.state,
+            configured_sources: self.configured_sources.clone(),
+            sources: self.sources.clone(),
+            unreadable_sources: self.unreadable_sources.clone(),
+            unmeasured_files: self.unmeasured_files.clone(),
+        }
+    }
+
     /// Look up coverage for `path`. `None` when the lcov file didn't
     /// mention it.
     #[must_use]
     pub fn ratio_for(&self, path: &Path) -> Option<f64> {
-        self.entries
-            .iter()
+        self.measured_production_entries()
             .find(|e| e.path == path)
             .map(|e| e.line_coverage_pct / 100.0)
     }
@@ -199,8 +308,7 @@ impl CoverageReport {
     #[must_use]
     pub fn worst_n(&self, n: usize) -> Vec<&CoverageEntry> {
         let mut top: Vec<&CoverageEntry> = self
-            .entries
-            .iter()
+            .measured_production_entries()
             .filter(|e| e.line_coverage_pct < 100.0)
             .collect();
         top.sort_by(|a, b| {
@@ -215,8 +323,7 @@ impl CoverageReport {
     /// Number of files with sub-100% coverage.
     #[must_use]
     pub fn uncovered_count(&self) -> usize {
-        self.entries
-            .iter()
+        self.measured_production_entries()
             .filter(|e| e.line_coverage_pct < 100.0)
             .count()
     }
@@ -254,8 +361,7 @@ fn entry_finding(entry: &CoverageEntry) -> Finding {
 
 impl IntoFindings for CoverageReport {
     fn into_findings(&self) -> Vec<Finding> {
-        self.entries
-            .iter()
+        self.measured_production_entries()
             // Fully-covered files aren't signal — emitting them would
             // dwarf the actual gaps. `ratio_for` still surfaces them
             // for downstream consumers that need the raw ratio.
@@ -297,8 +403,7 @@ impl Feature for CoverageFeature {
             .as_ref()
             .unwrap_or(&FALLBACK_CALIBRATION);
         report
-            .entries
-            .iter()
+            .measured_production_entries()
             .filter(|e| e.line_coverage_pct < 100.0)
             .map(|entry| {
                 let inverted = 100.0 - entry.line_coverage_pct;
@@ -347,9 +452,12 @@ mod tests {
     #[test]
     fn parses_lcov_when_enabled() {
         let tmp = TempDir::new().unwrap();
+        let (source_name, source) = crate::observer::shared::lang::test_source_fixture();
+        fs::create_dir_all(tmp.path().join("src")).unwrap();
+        fs::write(tmp.path().join("src").join(source_name), source).unwrap();
         fixture(
             &tmp,
-            "SF:src/lib.rs\nDA:1,0\nDA:2,0\nDA:3,0\nLF:3\nLH:0\nend_of_record\n",
+            &format!("SF:src/{source_name}\nDA:1,0\nDA:2,0\nDA:3,0\nLF:3\nLH:0\nend_of_record\n"),
         );
         let cfg = cfg_enabled();
         let report = CoverageObserver::from_config(&cfg).scan(tmp.path());
@@ -359,27 +467,70 @@ mod tests {
         assert_eq!(report.source.as_deref(), Some(Path::new("lcov.info")));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_lcov_is_read_error_without_external_entries() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("src")).unwrap();
+        fs::write(tmp.path().join("src/lib.rs"), "pub fn live() {}\n").unwrap();
+        fs::write(
+            outside.path().join("lcov.info"),
+            "SF:src/lib.rs\nLF:1\nLH:0\nend_of_record\n",
+        )
+        .unwrap();
+        symlink(
+            outside.path().join("lcov.info"),
+            tmp.path().join("lcov.info"),
+        )
+        .unwrap();
+
+        let report = CoverageObserver::from_config(&cfg_enabled()).scan(tmp.path());
+        assert_eq!(report.state, CoverageObservationState::ReadError);
+        assert_eq!(report.unreadable_sources, vec![PathBuf::from("lcov.info")]);
+        assert!(report.sources.is_empty());
+        assert!(report.entries.is_empty());
+    }
+
     #[test]
     fn emits_findings_only_for_uncovered_files() {
         let tmp = TempDir::new().unwrap();
+        let (source_name, source) = crate::observer::shared::lang::test_source_fixture();
+        let extension = Path::new(source_name)
+            .extension()
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let full_name = format!("full.{extension}");
+        let half_name = format!("half.{extension}");
+        fs::create_dir_all(tmp.path().join("src")).unwrap();
+        fs::write(tmp.path().join("src").join(&full_name), source).unwrap();
+        fs::write(tmp.path().join("src").join(&half_name), source).unwrap();
         fixture(
             &tmp,
-            "\
-SF:src/full.rs
+            &format!(
+                "\
+SF:src/{full_name}
 LF:5
 LH:5
 end_of_record
-SF:src/half.rs
+SF:src/{half_name}
 LF:4
 LH:2
 end_of_record
-",
+"
+            ),
         );
         let cfg = cfg_enabled();
         let report = CoverageObserver::from_config(&cfg).scan(tmp.path());
         let findings = report.into_findings();
         assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].location.file, PathBuf::from("src/half.rs"),);
+        assert_eq!(
+            findings[0].location.file,
+            PathBuf::from("src").join(half_name)
+        );
         assert!(findings[0].summary.starts_with("Coverage=50%"));
     }
 
@@ -399,8 +550,7 @@ end_of_record
     #[test]
     fn ratio_for_returns_none_for_unknown_path() {
         let report = CoverageReport {
-            source: None,
-            sources: Vec::new(),
+            production_files: vec![PathBuf::from("src/lib.rs")],
             entries: vec![CoverageEntry {
                 path: PathBuf::from("src/lib.rs"),
                 lines_found: 10,
@@ -409,6 +559,7 @@ end_of_record
                 branches_hit: 0,
                 line_coverage_pct: 70.0,
             }],
+            ..CoverageReport::default()
         };
         assert!((report.ratio_for(Path::new("src/lib.rs")).unwrap() - 0.7).abs() < 1e-9);
         assert!(report.ratio_for(Path::new("src/other.rs")).is_none());

@@ -47,7 +47,7 @@ description: '[features.docs] 向け同梱スキル 4 種 — /heal-doc-pair-set
 読み取り専用。`heal status --json` を読み、`[features.docs]` スライスにフィルタリングし、次の 2 つを返します:
 
 1. ドキュメントツリーの **アーキテクチャ的読解** — 支配的な軸は「Tutorial が実際のインストール手順からドリフト」「API リファレンスが古い」「コンセプトドキュメントのリンクが切れている」のどれか?
-2. **優先順位付きドキュメント修正 TODO リスト** — Tutorial / How-to のドリフトを最初に(混乱した初心者ユーザーが最高レバレッジの修正対象)、次に Reference、最後に Explanation。
+2. **優先順位付きドキュメント修正 TODO リスト** — 有効 Tier、Severity、Docs ファミリの `hotspot_score` 降順。Diátaxis の目的は診断と修正方法に使い、キューを並べ替えません。
 
 メトリクス別の **Diátaxis** レンズでのフレーミング:
 

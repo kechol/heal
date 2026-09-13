@@ -33,7 +33,7 @@ deserialises as garbage. The one exception is `regressed.jsonl`
 ## R3. Schema-versioned shapes bump on any contract change
 
 `FindingsRecord` is versioned by `FINDINGS_RECORD_VERSION` (currently
-`5`). Bump on:
+`8`). Bump on:
 
 - A field rename.
 - A field semantic change (units, sentinel meaning).
@@ -83,11 +83,16 @@ serialized output.
 ## R6. Cache freshness is `(head_sha, config_hash, worktree_clean)`
 
 `is_fresh_against` is the contract. Dirty worktree → never fresh on
-either side. `config_hash` covers `config.toml + calibration.toml`
-together.
+either side. `config_hash` covers `config.toml`, `calibration.toml`, and
+enabled non-git observations (LCOV/doc-pair logical path, state, and
+content). It must not depend on absolute paths or mtimes. The same HEAD
+is not fresh when an enabled ignored LCOV or doc-pair input changed.
 
 If a new dimension should invalidate the cache, put it in
 `config_hash`'s input. Don't add a fourth tuple element.
+
+Historical windows use the observed HEAD/ref commit timestamp, not the
+wall clock. This keeps repeated observations of one git state stable.
 
 ## R7. `deny_unknown_fields` everywhere on `Config*`
 

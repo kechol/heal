@@ -41,6 +41,15 @@ metrics — see
 [Test › Configuration](/heal/test/configuration/#calibrationseverity-基準の調整)
 for the floors.
 
+Coverage output also carries observation provenance. `missing` means
+no configured report was found, `read_error` means at least one could
+not be read, `partial` lists supported production files absent from
+LCOV, and `complete` means none are missing. Absent files are
+**unmeasured**, not inferred as 0%; they prompt reporter/package-scope
+setup and cannot enter the Test drain queue. An LCOV record with zero
+hits remains a measured 0% finding. Configured test paths, generated
+files, and excluded paths are not counted as unmeasured production.
+
 ## `skip_ratio`
 
 > _"Which test files carry a meaningful percentage of skipped
@@ -76,8 +85,15 @@ keeps changing **and** large slices of it stay untested. A low-CCN
 config loader with 0% coverage and 30 commits is a real test
 target that code Hotspot would miss.
 
-Files that lcov never mentioned but git churn touched count as
-100% gap (= untested). Files at 100% coverage drop to score 0.
+Only production files explicitly present in LCOV enter this score. A
+missing entry is unmeasured; an explicit 0% entry contributes a 100%
+gap. Files at 100% coverage drop to score 0.
+
+With 5+ finite candidates, Test Hotspot requires p90 and the Test floor
+(25). With 1–4, the absolute floor alone applies; non-finite scores
+never flag. Within the same Test Tier and Severity, higher scores are
+worked first. This is a prioritization heuristic, not a probability or
+effect guarantee.
 
 Test Hotspot itself always carries `Severity::Ok`; its job is to
 flip `hotspot=true` on `coverage_pct` Findings on the same file —

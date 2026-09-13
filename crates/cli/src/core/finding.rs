@@ -47,12 +47,68 @@ impl Location {
     }
 }
 
+/// Provenance for the opt-in coverage observation. This is deliberately
+/// separate from [`Finding`]: missing data is a setup/review action, not a
+/// measured 0% value and therefore cannot enter a drain tier.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageObservationState {
+    #[default]
+    Missing,
+    ReadError,
+    Partial,
+    Complete,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CoverageObservation {
+    pub state: CoverageObservationState,
+    pub configured_sources: Vec<PathBuf>,
+    pub sources: Vec<PathBuf>,
+    pub unreadable_sources: Vec<PathBuf>,
+    pub unmeasured_files: Vec<PathBuf>,
+}
+
+impl CoverageObservation {
+    #[must_use]
+    pub fn scoped_to(&self, workspace: &str) -> Self {
+        let workspace = std::path::Path::new(workspace);
+        let mut scoped = self.clone();
+        scoped
+            .unmeasured_files
+            .retain(|path| path.starts_with(workspace));
+        if scoped.state == CoverageObservationState::Partial && scoped.unmeasured_files.is_empty() {
+            scoped.state = CoverageObservationState::Complete;
+        }
+        scoped
+    }
+
+    #[must_use]
+    pub fn guidance(&self) -> Option<String> {
+        match self.state {
+            CoverageObservationState::Missing => Some(format!(
+                "coverage unmeasured: none of {} configured LCOV report(s) was found; check `[features.test.coverage].lcov_paths`",
+                self.configured_sources.len()
+            )),
+            CoverageObservationState::ReadError => Some(format!(
+                "coverage incomplete: {} LCOV report(s) could not be read; check reporter output and permissions",
+                self.unreadable_sources.len()
+            )),
+            CoverageObservationState::Partial => Some(format!(
+                "coverage partial: {} production source file(s) are absent from LCOV; check reporter package scope",
+                self.unmeasured_files.len()
+            )),
+            CoverageObservationState::Complete => None,
+        }
+    }
+}
+
 /// One actionable signal produced by an observer. Multi-site findings
 /// (duplication blocks, coupling pairs) carry the canonical
 /// representative in `location` and the rest in `locations`; the id
 /// is derived from `location` + a metric-specific content seed so
 /// alternative orderings of the same set hash identically.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Finding {
     pub id: String,
     pub metric: String,
@@ -60,6 +116,12 @@ pub struct Finding {
     pub severity: Severity,
     #[serde(default)]
     pub hotspot: bool,
+    /// Raw score from the finding's own family-specific hotspot index.
+    /// Used only as a tiebreaker after drain Tier and Severity; scores
+    /// from different families are not comparable. Not part of the
+    /// stable finding id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hotspot_score: Option<f64>,
     /// Workspace path (project-root relative) when the finding's
     /// `location.file` lives under a declared `[[project.workspaces]]`
     /// entry. `None` for files outside every declared workspace, or
@@ -119,6 +181,7 @@ impl Finding {
             metric: metric.to_owned(),
             severity: Severity::Ok,
             hotspot: false,
+            hotspot_score: None,
             workspace: None,
             location,
             locations: Vec::new(),
@@ -385,6 +448,7 @@ mod tests {
             metric: "ccn".into(),
             severity: Severity::Ok,
             hotspot: false,
+            hotspot_score: None,
             workspace: None,
             location: loc("src/foo.rs", Some("bar"), Some(1)),
             locations: vec![],
@@ -397,7 +461,39 @@ mod tests {
         assert!(!json.contains("locations"));
         assert!(!json.contains("fix_hint"));
         assert!(!json.contains("workspace"));
+        assert!(!json.contains("hotspot_score"));
         assert!(!json.contains("accepted"));
         assert!(!json.contains("is_test_file"));
+    }
+
+    #[test]
+    fn finding_serialises_hotspot_score_when_present() {
+        let mut f = Finding::new(
+            "ccn",
+            loc("src/foo.rs", Some("bar"), Some(1)),
+            "CCN=42".into(),
+            "seed",
+        );
+        f.hotspot_score = Some(123.5);
+
+        let json = serde_json::to_value(&f).unwrap();
+        assert_eq!(json["hotspot_score"], 123.5);
+        assert_eq!(Finding::make_id("ccn", &f.location, "seed"), f.id);
+    }
+
+    #[test]
+    fn finding_without_hotspot_score_deserialises_for_backward_compatibility() {
+        let json = r#"{
+            "id":"ccn:src/foo.rs:bar:deadbeef",
+            "metric":"ccn",
+            "severity":"critical",
+            "hotspot":true,
+            "location":{"file":"src/foo.rs","line":1,"symbol":"bar"},
+            "summary":"CCN=42"
+        }"#;
+
+        let finding: Finding = serde_json::from_str(json).unwrap();
+        assert_eq!(finding.hotspot_score, None);
+        assert!(finding.hotspot);
     }
 }

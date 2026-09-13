@@ -56,12 +56,13 @@ Behind the scenes:
 - A post-commit git hook re-runs every observer, classifies the result
   against `.heal/calibration.toml`, and prints a one-line nudge.
   Failures are swallowed so HEAL never blocks a commit. No event log
-  is written — `latest.json` (refreshed on `heal status --refresh`) is
+  is written — `latest.json` (maintained by `heal status`) is
   the live state.
 - `heal status` writes its result to `.heal/findings/latest.json`. The
   cache is single-record by design — there is no historical stream.
-  Re-running on the same `(head_sha, config_hash, worktree_clean=true)`
-  is a free cache hit.
+  Re-running with the same HEAD, clean worktree, config, calibration,
+  and enabled observation inputs is a free cache hit. Missing or stale
+  state is rescanned and replaced automatically.
 - `.heal/findings/fixed.json` (a `BTreeMap<finding_id, FixedFinding>`)
   and `.heal/findings/regressed.jsonl` track the per-finding fix
   history.
@@ -91,8 +92,9 @@ overwrite the file. JSON shape:
 
 ### `heal status [args] [--json]`
 
-The single source of truth for the current TODO list. Renders cached
-findings; pass `--refresh` to rescan first. Useful args:
+The single source of truth for the current TODO list. Reuses fresh
+cached findings, automatically rescans missing/stale state, and accepts
+`--refresh` to force a rescan. Useful args:
 
 - `--refresh` — rescan and overwrite `.heal/findings/latest.json`.
 - `--all` — surface Medium and Ok tiers (default hides them).
@@ -114,18 +116,19 @@ findings; pass `--refresh` to rescan first. Useful args:
   before parsing stdout.
 - `--path <PATH-PREFIX>` — restrict to findings under a path
   (renamed from `--feature` in v0.4 — that flag now selects family).
-- `--top <N>` — cap each Severity bucket.
+- `--top <N>` — cap each rendered Tier/Severity bucket.
 
 JSON shape: `FindingsRecord` — same shape as `.heal/findings/latest.json`.
 Key fields:
 
 ```jsonc
 {
-  "version": 5,
+  "version": 8,
   "id": "9f8e7d6c5b4a3210",                  // FNV-1a hex of (head_sha, config_hash, worktree_clean)
   "head_sha": "deadbeef…",
   "worktree_clean": true,
   "config_hash": "…",
+  "coverage_observation": { "state": "complete", "configured_sources": ["lcov.info"], "sources": ["lcov.info"], "unreadable_sources": [], "unmeasured_files": [] },
   "severity_counts": { "critical": 3, "high": 11, "medium": 22, "ok": 0 },
   "findings": [
     {
@@ -133,6 +136,7 @@ Key fields:
       "metric": "ccn",
       "severity": "critical",                      // or "high" / "medium" / "ok"
       "hotspot": true,
+      "hotspot_score": 140.0,                    // family-local ordering only; not part of id
       "location":  { "file": "…", "line": 120, "symbol": "…" },
       "locations": [],                             // populated for duplication / coupling
       "summary":   "CCN=28",
@@ -152,10 +156,10 @@ calibration?"
 
 `<git-ref>` accepts anything `git rev-parse` understands —
 `HEAD`, `main`, `v0.2.1`, `HEAD~3`, or a (partial / full) SHA. If
-`.heal/findings/latest.json` is a clean scan of the resolved ref
-under the current config + calibration (the full `(head_sha,
-config_hash, worktree_clean)` triple), `heal diff` reads it directly.
-On a miss it materialises the source at the ref via `git worktree
+the resolved ref is the checked-out HEAD and `.heal/findings/latest.json`
+matches its full `(head_sha, observation-input config_hash,
+worktree_clean)` triple, `heal diff` reads it directly. Older refs and
+other misses materialise the source via `git worktree
 add --detach`, runs the observer pipeline there using the *current*
 `config.toml` / `calibration.toml` (apples-to-apples), and tears the
 worktree down on exit. Gated by `[diff].max_loc_threshold` (default
@@ -175,6 +179,8 @@ never filtered). JSON shape:
   "from_ref":     "HEAD",
   "from_sha":     "deadbeef…",
   "to_head_sha":  "deadbeef…",
+  "from_coverage_observation": { "state": "missing", "configured_sources": ["lcov.info"], "sources": [], "unreadable_sources": [], "unmeasured_files": ["src/a.ts"] },
+  "to_coverage_observation":   { "state": "complete", "configured_sources": ["lcov.info"], "sources": ["lcov.info"], "unreadable_sources": [], "unmeasured_files": [] },
   "resolved":     [{ "finding_id": "ccn:…", "metric": "ccn", "file": "src/a.ts",
                      "from_severity": "high", "to_severity": null,
                      "from_hotspot": false, "hotspot": false }],

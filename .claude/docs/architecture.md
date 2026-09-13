@@ -26,10 +26,10 @@ Layered view of `heal-cli` (the only published crate; binary `heal`).
 │   test/  coverage_pct  skip_ratio  lcov reader                       │
 │          (gated on cfg.features.test.enabled)                        │
 │   shared/ walk (gitignore + workspace) lang (tree-sitter)            │
-│           git (git2)  file_role (is_test_file matcher)               │
+│           git (git2 + shared history) file_role (is_test_file)       │
 ├──────────────────────────────────────────────────────────────────────┤
 │ core                   src/core/*                                    │
-│   config  calibration  finding  findings_cache  severity             │
+│   config  calibration  finding  findings_cache  source_cache         │
 │   paths  fs  hash  monorepo  term  error                             │
 ├──────────────────────────────────────────────────────────────────────┤
 │ harness integration    src/claude_settings.rs  src/skill_assets.rs   │
@@ -54,11 +54,14 @@ heal status [--refresh]
   ↓
 commands::status::run
   ↓
-read .heal/findings/latest.json (if not --refresh)
+read_latest_if_fresh(.heal/findings/latest.json) (unless --refresh)
   ↓
-is_fresh_against(head_sha, config_hash, worktree_clean)?
-  ├── yes → render cached record (fast path)
-  └── no  → continue
+fresh HEAD/clean gate + config/calibration/observation-input hash?
+  ├── yes → cached raw record; skip scan and continue at accepted overlay
+  └── no / --refresh → stable scan below
+  ↓
+stable input window begins: hash before → load current Config + existing
+Calibration (normal status does not build or rewrite calibration)
   ↓
 observers::run_all(project, cfg, only=None, workspace=None)
   ├── LocObserver               (always)
@@ -77,12 +80,15 @@ observers::run_all(project, cfg, only=None, workspace=None)
   │   OrphanPages, TodoDensity
   └── CoverageObserver,         ([features.test] / .test.coverage)
       SkipRatioObserver
-  ↓
-observers::build_calibration(reports, config)
-  → MetricCalibration per metric (global + per-workspace)
+  source walk uses at most 8 workers, rejoins by original path order,
+  and validates reusable derived data in .heal/cache/source-v1.json
   ↓
 feature::FeatureRegistry::builtin().lower_all(reports, cfg, cal)
   → Vec<Finding> with severity + hotspot flag
+  ↓
+hash observation inputs after scan
+  ├── changed → retry full window up to 3 times, then stop without writing
+  └── stable  → continue
   ↓
 FindingsRecord { id (FNV-1a of head+config+clean), head_sha, config_hash,
                  worktree_clean, severity_counts, workspaces, findings }
@@ -92,7 +98,10 @@ fs::atomic_write → .heal/findings/latest.json
 reconcile_fixed(fixed.json, regressed.jsonl, &record)
   → re-detected fixes move to regressed.jsonl, dropped from fixed.json
   ↓
-render → spawn pager (stdout TTY && !--no-pager && !--json)
+read accepted.json → overlay accepted state + ephemeral re-review notices
+  (latest.json remains raw observer truth)
+  ↓
+render or filtered JSON → spawn pager (stdout TTY && !--no-pager && !--json)
 ```
 
 ## End-to-end flow: `heal diff <ref>`
@@ -102,9 +111,10 @@ heal diff [<ref> = HEAD]
   ↓
 git rev-parse <ref> → from_sha
   ↓
-read latest.json: head_sha == from_sha?
+resolved ref == checked-out HEAD, and latest.json matches
+(head_sha, observation-input config_hash, worktree_clean=true)?
   ├── yes → use cached "from" record (fast path)
-  └── no  → continue
+  └── no, including every older ref → continue
   ↓
 LOC gate: scan current worktree LOC; > [diff].max_loc_threshold
                                        (default 200_000) → exit 2
@@ -115,8 +125,8 @@ git worktree add --detach <tmp> <from_sha>
 run observers + classify against current config + calibration
   → "from" FindingsRecord (today's rules applied to historical source)
   ↓
-read latest.json (or run observers on live worktree if --refresh)
-  → "to" FindingsRecord
+run observers on live worktree without persisting
+  → "to" FindingsRecord (always fresh)
   ↓
 diff buckets: resolved, regressed, improved, new_findings, unchanged
   ↓
@@ -125,6 +135,10 @@ render
 
 The "from" record applies **today's** rules to historical source. This is
 deliberate — apples-to-apples drift, not "what users saw at the time".
+The observation-input hash includes config/calibration plus every enabled
+LCOV/doc-pair logical path, state, and content. Older refs are always
+materialised so ignored inputs in the live checkout cannot masquerade as
+historical observations.
 
 ## End-to-end flow: post-commit
 
@@ -154,22 +168,23 @@ commit.
 
 ## Pipeline ordering
 
-`observers::run_all` is **sequential**, not parallel. The bottleneck is
-tree-sitter parsing inside Complexity; no rayon-style fan-out today.
+`observers::run_all` keeps report assembly in a fixed order. Its shared source
+stage analyzes files with at most eight workers, reuses parsers within each
+worker, and rejoins results in the original path order before aggregation.
 
 Order is fixed and meaningful:
 
 1. **Loc** first — scans the worktree, computes primary language. Other
    observers consume `LocReport.primary` (e.g. ChangeCoupling's PairClass
    filter is language-aware).
-2. **Complexity** — single tree-sitter pass per file produces both CCN
-   and Cognitive.
-3. **Churn** — git revwalk over `since_days` window. Diffs each commit
-   against **its first parent only** (avoids double-counting merge
-   commits). Cap: skip commits with > `BULK_COMMIT_FILE_LIMIT = 50` files
-   for ChangeCoupling (lockfile bumps, mass-renames).
-4. **ChangeCoupling** — same revwalk pattern. Pair counts → lift filter
-   → PairClass demotion.
+2. **Complexity** — the shared tree-sitter source pass produces CCN and
+   Cognitive together, plus the inputs needed by Duplication and Lcom.
+3. **Churn** — a shared git history collector walks the `since_days` window
+   once and diffs each commit against **its first parent only** (avoids
+   double-counting merge commits).
+4. **ChangeCoupling** — consumes the same collected history. Its pair counts
+   apply the lift filter and PairClass demotion; commits with more than
+   `BULK_COMMIT_FILE_LIMIT = 50` files are excluded here, not from Churn.
 5. **Duplication** — tree-sitter token streams + Rabin-Karp rolling hash
    keyed by FNV-1a 64-bit per token (kind_id + text). When
    `[features.docs]` is on, a parallel Markdown / RST pass runs with

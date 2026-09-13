@@ -1,37 +1,46 @@
 //! Small filesystem helpers shared across `core::*` writers.
 
+use std::io::Write;
 use std::path::Path;
 
 use crate::core::error::{Error, Result};
 
 /// Atomic write: create parent directories, write `body` to a sibling
-/// `<filename>.tmp` file, then `rename` it into `path`. A SIGINT mid-
+/// uniquely named temporary file, then rename it into `path`. A SIGINT mid-
 /// write therefore leaves either the previous file untouched or the new
 /// file fully written — never a half-written stub that breaks
 /// every subsequent reader on parse.
 pub fn atomic_write(path: &Path, body: &[u8]) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| Error::Io {
-            path: parent.to_path_buf(),
-            source: e,
-        })?;
-    }
-    let tmp = match path.file_name() {
-        Some(name) => {
-            let mut t = name.to_os_string();
-            t.push(".tmp");
-            path.with_file_name(t)
-        }
-        None => path.with_extension("tmp"),
-    };
-    std::fs::write(&tmp, body).map_err(|e| Error::Io {
-        path: tmp.clone(),
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent).map_err(|e| Error::Io {
+        path: parent.to_path_buf(),
         source: e,
     })?;
-    std::fs::rename(&tmp, path).map_err(|e| Error::Io {
+    // Independent writers must never truncate or rename each other's staging file.
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(".heal-");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // Match std::fs::write's creation mode; tempfile still applies the umask.
+        builder.permissions(std::fs::Permissions::from_mode(0o666));
+    }
+    let mut tmp = builder.tempfile_in(parent).map_err(|e| Error::Io {
         path: path.to_path_buf(),
         source: e,
-    })
+    })?;
+    tmp.write_all(body).map_err(|e| Error::Io {
+        path: tmp.path().to_path_buf(),
+        source: e,
+    })?;
+    tmp.persist(path).map_err(|e| Error::Io {
+        path: path.to_path_buf(),
+        source: e.error,
+    })?;
+    Ok(())
 }
 
 /// True when `dir` exists, is readable, and contains no entries.
@@ -52,5 +61,63 @@ pub fn remove_dir_if_empty(dir: &Path) -> std::io::Result<()> {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn atomic_write_replaces_existing_file_without_touching_tmp_sibling() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested/state.json");
+        atomic_write(&path, b"old").unwrap();
+        let sibling = path.with_file_name("state.json.tmp");
+        std::fs::write(&sibling, b"another writer").unwrap();
+
+        atomic_write(&path, b"new").unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+        assert_eq!(std::fs::read(&sibling).unwrap(), b"another writer");
+        assert_eq!(
+            std::fs::read_dir(path.parent().unwrap()).unwrap().count(),
+            2
+        );
+    }
+
+    #[test]
+    fn concurrent_atomic_writes_keep_one_complete_body() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let barrier = std::sync::Barrier::new(8);
+        std::thread::scope(|scope| {
+            for byte in 0..8_u8 {
+                let path = &path;
+                let barrier = &barrier;
+                scope.spawn(move || {
+                    let body = vec![byte; 64 * 1024];
+                    barrier.wait();
+                    atomic_write(path, &body).unwrap();
+                });
+            }
+        });
+
+        let body = std::fs::read(&path).unwrap();
+        assert_eq!(body.len(), 64 * 1024);
+        assert!(body.iter().all(|byte| *byte == body[0]));
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn atomic_write_cleans_up_staging_file_when_persist_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("directory");
+        std::fs::create_dir(&path).unwrap();
+
+        assert!(atomic_write(&path, b"data").is_err());
+
+        assert!(path.is_dir());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 }

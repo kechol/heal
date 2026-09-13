@@ -6,7 +6,8 @@ description: Drain `[features.docs]` findings from the cache, applying mechanica
 # heal-doc-patch
 
 Drain the `doc_*` findings that `heal status` produced. One finding
-per commit, in Severity order, until the docs slice of the cache is
+per commit, in effective Tier, Severity, then Docs-family
+`hotspot_score` order, until T0 in the docs slice of the cache is
 empty (or the user stops). This is the **write** counterpart to
 `/heal-doc-review`.
 
@@ -39,7 +40,9 @@ Commits).
 `orphan_pages`, `todo_density`, plus the per-family decoration
 carrier `doc_hotspot` (always `Severity::Ok`; flips
 `hotspot=true` on the other six when the pair's churn × debt
-sits in the project's top decile). Finding ids are deterministic
+sits above p90 and the Docs floor 5 with 5+ finite candidates, or
+above floor 5 alone with 1–4; non-finite scores never flag).
+Finding ids are deterministic
 — same broken link keeps the same id, so disappearance from the
 cache after a commit means it's genuinely fixed.
 
@@ -71,7 +74,7 @@ different.
 
 ```
 while there are non-Ok doc_* findings in the cache:
-    pick the next one (Severity order: Critical → High → Medium)
+    pick the first item in HEAL's Tier → Severity → hotspot_score order
         skip findings where `accepted == true`
     read the doc + paired srcs
     decide: allow-list (apply) / false-positive (propose accept) / escalate-list (stop)?
@@ -90,6 +93,11 @@ while there are non-Ok doc_* findings in the cache:
 
 Stop conditions: doc cache empty, user interrupts, or only
 escalate-list findings remain.
+
+Within a drain Tier, choose higher Severity first and then descending
+`hotspot_score` within the Docs family. Missing scores sort last; ties
+use metric, path, then finding id. This mirrors human `heal status`; do not mix
+Docs scores with Code/Test scores or construct a combined score.
 
 ## Allow-list (apply mechanically)
 

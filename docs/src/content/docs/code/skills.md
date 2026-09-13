@@ -74,8 +74,9 @@ say?", "where should we refactor?", "/heal-code-review".
 
 ## `/heal-code-patch` — the write skill
 
-Drains `.heal/findings/latest.json` one finding at a time, in
-Severity order, committing once per fix. The loop drains **T0
+Drains `.heal/findings/latest.json` one finding at a time, in effective
+Tier, Severity, then descending family-local `hotspot_score` order
+(missing scores last; metric/path/id ties), committing once per fix. The loop drains **T0
 (`must`) only**; T1 / Advisory are surfaced for review but never
 auto-drained.
 

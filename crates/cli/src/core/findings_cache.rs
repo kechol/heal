@@ -24,8 +24,9 @@
 //! [`is_fresh_against`] returns true when `(head_sha, config_hash,
 //! worktree_clean)` matches the supplied baseline — `heal status` short-
 //! circuits on a fresh cache and reuses the latest record. Dirty
-//! worktrees never count as fresh (any untracked file invalidates the
-//! cache; we cannot trust the on-disk numbers).
+//! worktrees never count as fresh: tracked modifications and non-ignored
+//! untracked files fail the clean gate, while configured ignored
+//! observation inputs are tracked by `config_hash` content/state.
 //!
 //! ## fixed.json reconciliation
 //!
@@ -39,13 +40,16 @@
 //!     `regressed.jsonl` so the renderer can warn the user.
 
 use std::collections::BTreeMap;
+use std::io::Read;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::core::accepted::AcceptedDrift;
+use crate::core::config::{open_observation_file, Config};
 use crate::core::error::{Error, Result};
-use crate::core::finding::Finding;
+use crate::core::finding::{CoverageObservation, Finding};
 use crate::core::hash::{fnv1a_64_chunked, fnv1a_hex};
 use crate::core::severity::SeverityCounts;
 
@@ -72,8 +76,14 @@ use crate::core::severity::SeverityCounts;
 /// with every rescan — is dropped from the seed) and added collision
 /// ordinals to the `ccn` / `cognitive` / `lcom` seeds; every
 /// change-coupling `Finding.id` changes once, so old caches must
-/// invalidate rather than mis-reconcile against the new ids.
-pub const FINDINGS_RECORD_VERSION: u32 = 5;
+/// invalidate rather than mis-reconcile against the new ids. v6 expands
+/// `config_hash` to include enabled non-git observation inputs (doc pairs
+/// and LCOV payloads), including their path and missing/readable state.
+/// v7 adds `coverage_observation`, separating missing/partial reporter
+/// provenance from measured `coverage_pct` findings. v8 adds the optional
+/// per-finding `hotspot_score` used for deterministic within-family work
+/// order; the score does not affect IDs, Severity, or drain Tier.
+pub const FINDINGS_RECORD_VERSION: u32 = 8;
 
 /// One execution of `heal status`. The unit of read in the cache:
 /// `latest.json` holds the single most-recent record. `heal diff` reads
@@ -93,9 +103,9 @@ pub struct FindingsRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub head_sha: Option<String>,
     pub worktree_clean: bool,
-    /// Hex digest of `(config.toml || calibration.toml)`. Two runs at
-    /// the same `head_sha` but different configs / calibrations produce
-    /// different hashes and thus distinct records.
+    /// Hex digest of configuration, calibration, and enabled non-git
+    /// observation inputs. Two runs at the same `head_sha` with different
+    /// rules, doc pairs, or LCOV payloads produce distinct records.
     pub config_hash: String,
     pub severity_counts: SeverityCounts,
     /// Per-workspace tally when `[[project.workspaces]]` is declared,
@@ -105,6 +115,13 @@ pub struct FindingsRecord {
     /// the top-level `severity_counts`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub workspaces: Vec<WorkspaceSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coverage_observation: Option<CoverageObservation>,
+    /// Render-time notices for accepted findings whose decision premise
+    /// changed. Empty in persisted `latest.json`; populated after the
+    /// current accepted map is applied.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accepted_rereview: Vec<AcceptedDrift>,
     pub findings: Vec<Finding>,
 }
 
@@ -140,8 +157,16 @@ impl FindingsRecord {
             config_hash,
             severity_counts,
             workspaces,
+            coverage_observation: None,
+            accepted_rereview: Vec::new(),
             findings,
         }
+    }
+
+    #[must_use]
+    pub fn with_coverage_observation(mut self, observation: Option<CoverageObservation>) -> Self {
+        self.coverage_observation = observation;
+        self
     }
 
     /// Return a copy with `findings` and `severity_counts` narrowed to
@@ -172,6 +197,16 @@ impl FindingsRecord {
             config_hash: self.config_hash.clone(),
             severity_counts,
             workspaces,
+            coverage_observation: self
+                .coverage_observation
+                .as_ref()
+                .map(|observation| observation.scoped_to(workspace)),
+            accepted_rereview: self
+                .accepted_rereview
+                .iter()
+                .filter(|drift| findings.iter().any(|f| f.id == drift.finding_id))
+                .cloned()
+                .collect(),
             findings,
         }
     }
@@ -182,8 +217,10 @@ impl FindingsRecord {
     /// neither a slice walk nor a re-aggregation.
     pub fn apply_accepted(&mut self, map: &crate::core::accepted::AcceptedMap) {
         if map.is_empty() {
+            self.accepted_rereview.clear();
             return;
         }
+        self.accepted_rereview = crate::core::accepted::reconcile_accepted(map, &self.findings);
         crate::core::accepted::decorate_findings(&mut self.findings, map);
         self.recompute_summary();
     }
@@ -191,6 +228,11 @@ impl FindingsRecord {
     pub(crate) fn recompute_summary(&mut self) {
         self.severity_counts = SeverityCounts::from_findings(&self.findings);
         self.workspaces = workspace_summaries(&self.findings);
+    }
+
+    pub(crate) fn retain_rereviews_for_findings(&mut self) {
+        self.accepted_rereview
+            .retain(|drift| self.findings.iter().any(|f| f.id == drift.finding_id));
     }
 
     /// True iff `(head_sha, config_hash, worktree_clean)` matches and
@@ -221,7 +263,10 @@ fn workspace_summaries(findings: &[Finding]) -> Vec<WorkspaceSummary> {
         let Some(ws) = f.workspace.as_deref() else {
             continue;
         };
-        groups.entry(ws.to_owned()).or_default().tally(f.severity);
+        let counts = groups.entry(ws.to_owned()).or_default();
+        if !f.accepted {
+            counts.tally(f.severity);
+        }
     }
     groups
         .into_iter()
@@ -291,6 +336,94 @@ pub fn config_hash_from_paths(config: &Path, calibration: &Path) -> String {
     config_hash(&cfg, &cal)
 }
 
+/// Hash every input that can change a full observer run without changing
+/// `head_sha` or dirtying the worktree. The serialized field remains named
+/// `config_hash` to preserve the three-part cache key; its v6 semantics cover
+/// enabled doc-pair and LCOV inputs as well as config/calibration bytes.
+///
+/// Each file contributes a stable logical path plus one of `present`,
+/// `missing`, or `unreadable`. Absolute host paths and mtimes never enter the
+/// digest, so identical checkouts remain byte-for-byte reproducible.
+pub fn observation_hash_from_paths(
+    observation_root: &Path,
+    cfg: &Config,
+    config: &Path,
+    calibration: &Path,
+) -> Result<String> {
+    fn push_file(chunks: &mut Vec<Vec<u8>>, label: &str, logical_path: &str, path: &Path) {
+        chunks.push(label.as_bytes().to_vec());
+        chunks.push(logical_path.as_bytes().to_vec());
+        match std::fs::read(path) {
+            Ok(bytes) => {
+                chunks.push(b"present".to_vec());
+                chunks.push(bytes);
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                chunks.push(b"missing".to_vec());
+            }
+            Err(_) => {
+                chunks.push(b"unreadable".to_vec());
+            }
+        }
+    }
+
+    fn push_observation_file(
+        chunks: &mut Vec<Vec<u8>>,
+        label: &str,
+        logical_path: &str,
+        mut file: Option<std::fs::File>,
+    ) {
+        chunks.push(label.as_bytes().to_vec());
+        chunks.push(logical_path.as_bytes().to_vec());
+        let Some(file) = file.as_mut() else {
+            chunks.push(b"missing".to_vec());
+            return;
+        };
+        let mut bytes = Vec::new();
+        match file.read_to_end(&mut bytes) {
+            Ok(_) => {
+                chunks.push(b"present".to_vec());
+                chunks.push(bytes);
+            }
+            Err(_) => chunks.push(b"unreadable".to_vec()),
+        }
+    }
+
+    let mut chunks = Vec::new();
+    push_file(&mut chunks, "config", ".heal/config.toml", config);
+    push_file(
+        &mut chunks,
+        "calibration",
+        ".heal/calibration.toml",
+        calibration,
+    );
+    if cfg.features.docs.enabled {
+        let rel = &cfg.features.docs.pairs_path;
+        let file = open_observation_file(observation_root, "[features.docs].pairs_path", rel)
+            .map_err(|message| Error::ConfigInvalid {
+                path: config.to_path_buf(),
+                message,
+            })?;
+        push_observation_file(&mut chunks, "doc_pairs", rel, file);
+    }
+    if cfg.features.test.enabled && cfg.features.test.coverage.enabled {
+        for (index, rel) in cfg.features.test.coverage.lcov_paths.iter().enumerate() {
+            let file = open_observation_file(
+                observation_root,
+                &format!("[features.test.coverage].lcov_paths[{index}]"),
+                rel,
+            )
+            .map_err(|message| Error::ConfigInvalid {
+                path: config.to_path_buf(),
+                message,
+            })?;
+            push_observation_file(&mut chunks, "lcov", rel, file);
+        }
+    }
+    let refs: Vec<&[u8]> = chunks.iter().map(Vec::as_slice).collect();
+    Ok(fnv1a_hex(fnv1a_64_chunked(&refs)))
+}
+
 /// Atomically write `record` to `latest_path` (i.e.
 /// `.heal/findings/latest.json`). The cache is single-record by design;
 /// previous runs are overwritten in place.
@@ -335,6 +468,29 @@ pub fn read_latest(latest_path: &Path) -> Result<Option<FindingsRecord>> {
         source: e,
     })?;
     Ok(Some(record))
+}
+
+/// Read `latest.json` only when the observation boundary stayed stable while
+/// the cache and parsed config were inspected. A semantic config change after
+/// the caller loaded `cfg` forces the scan path, where `build_record` reports
+/// the race instead of mixing rules and observations.
+pub fn read_latest_if_fresh(
+    latest_path: &Path,
+    observation_root: &Path,
+    cfg: &Config,
+    config_path: &Path,
+    calibration_path: &Path,
+    head_sha: Option<&str>,
+    worktree_clean: bool,
+) -> Result<Option<FindingsRecord>> {
+    let before = observation_hash_from_paths(observation_root, cfg, config_path, calibration_path)?;
+    let observed_cfg = Config::load(config_path)?;
+    let candidate = read_latest(latest_path)?;
+    let after = observation_hash_from_paths(observation_root, cfg, config_path, calibration_path)?;
+    if before != after || observed_cfg != *cfg {
+        return Ok(None);
+    }
+    Ok(candidate.filter(|record| record.is_fresh_against(head_sha, &before, worktree_clean)))
 }
 
 /// Bounded map of "skill committed a fix" markers, keyed by
@@ -480,6 +636,7 @@ fn read_jsonl<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Vec<T>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::accepted::{snapshot, AcceptedMap, AcceptedRereviewReason};
     use crate::core::finding::{Finding, Location};
     use crate::core::severity::Severity;
     use std::path::PathBuf;
@@ -527,6 +684,35 @@ mod tests {
     }
 
     #[test]
+    fn apply_accepted_keeps_acceptance_and_adds_ephemeral_rereview() {
+        let prior = finding("alpha", Severity::High);
+        let mut current = prior.clone();
+        current.severity = Severity::Critical;
+        current.hotspot = true;
+        let mut map = AcceptedMap::new();
+        map.insert(
+            current.id.clone(),
+            snapshot(&prior, "intrinsic".into(), chrono::Utc::now(), None),
+        );
+        let mut record = FindingsRecord::new(Some("sha".into()), true, "h".into(), vec![current]);
+        let raw = serde_json::to_value(&record).unwrap();
+        assert!(raw.get("accepted_rereview").is_none());
+
+        record.apply_accepted(&map);
+
+        assert!(record.findings[0].accepted);
+        assert_eq!(record.accepted_rereview.len(), 1);
+        assert_eq!(
+            record.accepted_rereview[0].reasons,
+            vec![
+                AcceptedRereviewReason::SeverityIncreased,
+                AcceptedRereviewReason::BecameHotspot,
+            ]
+        );
+        assert_eq!(record.findings[0].id, prior.id);
+    }
+
+    #[test]
     fn config_hash_distinguishes_concatenation_boundary() {
         // Without the field separator, ("ab", "c") and ("a", "bc") would
         // collide. Verify they don't.
@@ -540,6 +726,143 @@ mod tests {
         let a = config_hash(b"foo", b"bar");
         let b = config_hash(b"foo", b"bar");
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn observation_hash_tracks_lcov_create_update_and_delete() {
+        let tmp = TempDir::new().unwrap();
+        let config = tmp.path().join("config.toml");
+        let calibration = tmp.path().join("calibration.toml");
+        std::fs::write(&config, b"cfg").unwrap();
+        std::fs::write(&calibration, b"cal").unwrap();
+        let mut cfg = Config::default();
+        cfg.features.test.enabled = true;
+        cfg.features.test.coverage.enabled = true;
+        cfg.features.test.coverage.lcov_paths = vec!["ignored/lcov.info".into()];
+
+        let missing = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
+        std::fs::create_dir(tmp.path().join("ignored")).unwrap();
+        std::fs::write(tmp.path().join("ignored/lcov.info"), b"SF:src/a.rs\n").unwrap();
+        let created = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
+        assert_ne!(missing, created);
+
+        std::fs::write(tmp.path().join("ignored/lcov.info"), b"SF:src/b.rs\n").unwrap();
+        let updated = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
+        assert_ne!(created, updated);
+
+        std::fs::remove_file(tmp.path().join("ignored/lcov.info")).unwrap();
+        let deleted = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
+        assert_eq!(missing, deleted);
+    }
+
+    #[test]
+    fn observation_hash_tracks_paths_and_only_enabled_inputs() {
+        let tmp = TempDir::new().unwrap();
+        let config = tmp.path().join("config.toml");
+        let calibration = tmp.path().join("calibration.toml");
+        std::fs::write(&config, b"cfg").unwrap();
+        std::fs::write(&calibration, b"cal").unwrap();
+        std::fs::write(tmp.path().join("a.info"), b"same").unwrap();
+        std::fs::write(tmp.path().join("b.info"), b"same").unwrap();
+
+        let cfg = Config::default();
+        let disabled =
+            observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
+        std::fs::write(tmp.path().join("a.info"), b"changed while disabled").unwrap();
+        assert_eq!(
+            disabled,
+            observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap()
+        );
+
+        let mut enabled = cfg;
+        enabled.features.test.enabled = true;
+        enabled.features.test.coverage.enabled = true;
+        enabled.features.test.coverage.lcov_paths = vec!["a.info".into()];
+        let path_a =
+            observation_hash_from_paths(tmp.path(), &enabled, &config, &calibration).unwrap();
+        enabled.features.test.coverage.lcov_paths = vec!["b.info".into()];
+        let path_b =
+            observation_hash_from_paths(tmp.path(), &enabled, &config, &calibration).unwrap();
+        assert_ne!(path_a, path_b, "logical input path is part of the hash");
+    }
+
+    #[test]
+    fn observation_hash_tracks_enabled_doc_pairs() {
+        let tmp = TempDir::new().unwrap();
+        let config = tmp.path().join("config.toml");
+        let calibration = tmp.path().join("calibration.toml");
+        std::fs::write(&config, b"cfg").unwrap();
+        std::fs::write(&calibration, b"cal").unwrap();
+        let mut cfg = Config::default();
+        cfg.features.docs.enabled = true;
+        cfg.features.docs.pairs_path = "pairs.json".into();
+
+        let missing = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
+        std::fs::write(
+            tmp.path().join("pairs.json"),
+            b"{\"version\":1,\"pairs\":[]}",
+        )
+        .unwrap();
+        let present = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
+        assert_ne!(missing, present);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn observation_hash_rejects_symlinked_lcov_input() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let config = tmp.path().join("config.toml");
+        let calibration = tmp.path().join("calibration.toml");
+        std::fs::write(&config, b"cfg").unwrap();
+        std::fs::write(&calibration, b"cal").unwrap();
+        std::fs::write(outside.path().join("lcov.info"), b"external").unwrap();
+        symlink(
+            outside.path().join("lcov.info"),
+            tmp.path().join("lcov.info"),
+        )
+        .unwrap();
+        let mut cfg = Config::default();
+        cfg.features.test.enabled = true;
+        cfg.features.test.coverage.enabled = true;
+        cfg.features.test.coverage.lcov_paths = vec!["lcov.info".into()];
+
+        let error = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("symlink component"), "{error}");
+    }
+
+    #[test]
+    fn cache_reuse_rejects_config_parsed_before_a_semantic_change() {
+        let tmp = TempDir::new().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        let calibration_path = tmp.path().join("calibration.toml");
+        let latest_path = tmp.path().join("latest.json");
+        let disk_cfg = Config::default();
+        disk_cfg.save(&config_path).unwrap();
+
+        let mut stale_cfg = disk_cfg;
+        stale_cfg.metrics.top_n = 99;
+        let hash =
+            observation_hash_from_paths(tmp.path(), &stale_cfg, &config_path, &calibration_path)
+                .unwrap();
+        let record = FindingsRecord::new(Some("abc".into()), true, hash, Vec::new());
+        write_record(&latest_path, &record).unwrap();
+
+        let reused = read_latest_if_fresh(
+            &latest_path,
+            tmp.path(),
+            &stale_cfg,
+            &config_path,
+            &calibration_path,
+            Some("abc"),
+            true,
+        )
+        .unwrap();
+        assert!(reused.is_none());
     }
 
     #[test]

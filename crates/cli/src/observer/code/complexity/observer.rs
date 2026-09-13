@@ -11,7 +11,7 @@ use crate::core::finding::{Finding, IntoFindings, Location};
 use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
-use crate::observer::code::complexity::{analyze, FunctionMetric, ParsedFile};
+use crate::observer::code::complexity::FunctionMetric;
 use crate::observer::shared::lang::Language;
 use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
@@ -83,8 +83,7 @@ pub(crate) struct ComplexityAccumulator {
 }
 
 impl ComplexityAccumulator {
-    pub(crate) fn add(&mut self, rel: &Path, lang: Language, parsed: &ParsedFile) {
-        let metrics = analyze(parsed);
+    pub(crate) fn add_metrics(&mut self, rel: &Path, lang: Language, metrics: Vec<FunctionMetric>) {
         if metrics.is_empty() {
             return;
         }

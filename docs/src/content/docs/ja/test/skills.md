@@ -29,7 +29,7 @@ description: '[features.test] 向け同梱スキル 3 種 — /heal-test-reporte
 読み取り専用。`heal status --json` を読み、`[features.test]` スライスにフィルタリングし、次の 2 つを返します:
 
 1. テストスイートの **アーキテクチャ的読解** — 支配的な軸は「unit テストがない」「テストがソースについていけていない」「重要パスがカバーされていない」「skip された flake が永続的な skip として固化した」のどれか?
-2. **優先順位付きテスト修正 TODO リスト** — まず hotspot ファイルのカバレッジギャップ、次にドリフトしたテスト、最後に skip 比率の outlier。
+2. **優先順位付きテスト修正 TODO リスト** — 有効 Tier、Severity、Test ファミリの `hotspot_score` 降順を正確に維持。coverage、drift、skip の分類は修正方法の説明に使い、順序を上書きしません。
 
 ソースは編集しません。レビューを読んで「これも直してほしい」と思ったら、その場でエージェント(Claude Code / Codex)に伝えれば対応に移れます(「上位 3 件のテストを書いて」「`auth/` 配下の skip を再有効化して」など)。機械的な修正は `/heal-test-patch` を経由し、判断が要る項目(「実は本物の flake で skip のままが正しいのでは?」「このカバーされていないファイルはそもそもテストすべきか、削除すべきか?」)は自動適用されず、あなたの指示を待ちます。
 
@@ -41,7 +41,7 @@ description: '[features.test] 向け同梱スキル 3 種 — /heal-test-reporte
 
 ## `/heal-test-patch` — 書き込みスキル
 
-`.heal/findings/latest.json` のテストスライスを Severity 順に 1 件ずつ消化します。**1 修正 1 コミット**。
+`.heal/findings/latest.json` のテストスライスを有効 Tier、Severity、Test ファミリの `hotspot_score` 降順(欠落は末尾、同点は metric/path/id)で 1 件ずつ消化します。**1 修正 1 コミット**。
 
 **事前チェック**(失敗すると起動拒否):
 

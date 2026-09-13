@@ -1,9 +1,110 @@
 //! Small `git2` helpers shared across observers.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use git2::Repository;
+use git2::{Oid, Patch, Repository, Sort};
 use serde::{Deserialize, Serialize};
+
+use super::walk::{path_under, resolve_workspace_target, since_cutoff, ExcludeMatcher};
+
+#[derive(Debug, Clone)]
+pub(crate) struct HistoryCommit {
+    pub oid: Oid,
+    pub paths: Vec<PathBuf>,
+    pub line_stats: Vec<(PathBuf, u32, u32)>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct History {
+    pub commits: Vec<HistoryCommit>,
+    #[cfg(test)]
+    pub diffs_generated: usize,
+    #[cfg(test)]
+    pub patches_generated: usize,
+}
+
+pub(crate) fn collect_history(
+    root: &Path,
+    since_days: u32,
+    excluded: &[String],
+    workspace: Option<&Path>,
+    include_line_stats: bool,
+) -> History {
+    let Ok(repo) = Repository::discover(root) else {
+        return History::default();
+    };
+    let Ok(head_commit) = repo.head().and_then(|head| head.peel_to_commit()) else {
+        return History::default();
+    };
+    let cutoff_secs = since_cutoff(head_commit.time().seconds(), since_days);
+    let Ok(mut revwalk) = repo.revwalk() else {
+        return History::default();
+    };
+    if revwalk.set_sorting(Sort::TIME).is_err() || revwalk.push_head().is_err() {
+        return History::default();
+    }
+    let workspace_target = resolve_workspace_target(root, workspace, false);
+    let matcher =
+        ExcludeMatcher::compile(root, excluded).expect("exclude patterns validated at config load");
+    let mut history = History::default();
+    for oid in revwalk.filter_map(Result::ok) {
+        let Ok(commit) = repo.find_commit(oid) else {
+            continue;
+        };
+        if commit.time().seconds() < cutoff_secs {
+            break;
+        }
+        let Ok(commit_tree) = commit.tree() else {
+            continue;
+        };
+        let parent_tree = commit.parent(0).ok().and_then(|parent| parent.tree().ok());
+        let Ok(diff) = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit_tree), None)
+        else {
+            continue;
+        };
+        #[cfg(test)]
+        {
+            history.diffs_generated += 1;
+        }
+        let mut paths = BTreeSet::new();
+        let mut line_stats = Vec::new();
+        for (index, delta) in diff.deltas().enumerate() {
+            let Some(path) = delta.new_file().path() else {
+                continue;
+            };
+            if path.as_os_str().is_empty()
+                || !path_under(path, workspace_target.as_deref())
+                || matcher.is_excluded(path, false)
+            {
+                continue;
+            }
+            paths.insert(path.to_path_buf());
+            if include_line_stats {
+                #[cfg(test)]
+                {
+                    history.patches_generated += 1;
+                }
+                let (added, deleted) = Patch::from_diff(&diff, index)
+                    .ok()
+                    .flatten()
+                    .and_then(|patch| patch.line_stats().ok())
+                    .map_or((0, 0), |(_, added, deleted)| (added, deleted));
+                line_stats.push((
+                    path.to_path_buf(),
+                    u32::try_from(added).unwrap_or(u32::MAX),
+                    u32::try_from(deleted).unwrap_or(u32::MAX),
+                ));
+            }
+        }
+        history.commits.push(HistoryCommit {
+            oid,
+            paths: paths.into_iter().collect(),
+            line_stats,
+        });
+    }
+    history
+}
 
 /// Best-effort HEAD SHA lookup. Returns `None` when `root` isn't inside a
 /// git repo or HEAD is unborn (e.g. fresh `git init` before the first
@@ -140,6 +241,44 @@ mod tests {
     fn set_user(dir: &Path) {
         git(dir, &["config", "user.name", "tester"]);
         git(dir, &["config", "user.email", "tester@example.com"]);
+    }
+
+    #[test]
+    fn history_generates_patches_only_for_selected_deltas() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::create_dir_all(dir.path().join("vendor")).unwrap();
+        std::fs::write(dir.path().join("src/keep.rs"), "fn keep() {}\n").unwrap();
+        std::fs::write(dir.path().join("vendor/drop.rs"), "fn drop() {}\n").unwrap();
+        git(dir.path(), &["add", "."]);
+        git(
+            dir.path(),
+            &[
+                "-c",
+                "user.email=tester@example.com",
+                "-c",
+                "user.name=tester",
+                "commit",
+                "-q",
+                "-m",
+                "fixture",
+            ],
+        );
+
+        let history = collect_history(dir.path(), 90, &["vendor/".into()], None, true);
+        assert_eq!(history.diffs_generated, 1);
+        assert_eq!(history.patches_generated, 1);
+        assert_eq!(history.commits[0].paths, vec![PathBuf::from("src/keep.rs")]);
+        assert_eq!(
+            history.commits[0].line_stats,
+            vec![(PathBuf::from("src/keep.rs"), 1, 0)],
+        );
+
+        let paths_only = collect_history(dir.path(), 90, &[], None, false);
+        assert_eq!(paths_only.diffs_generated, 1);
+        assert_eq!(paths_only.patches_generated, 0);
+        assert!(paths_only.commits[0].line_stats.is_empty());
     }
 
     // ── head_sha ────────────────────────────────────────────────────

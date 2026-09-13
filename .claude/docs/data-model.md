@@ -16,11 +16,14 @@ pub struct Finding {
     pub metric: String,              // see glossary "metric strings" table
     pub severity: Severity,          // post-classify
     pub hotspot: bool,               // post-classify decoration
+    pub hotspot_score: Option<f64>,  // same-family ordering only
     pub workspace: Option<String>,   // post-classify (longest-prefix)
     pub location: Location,          // canonical site
     pub locations: Vec<Location>,    // multi-site extras (duplication, coupling)
     pub summary: String,
     pub fix_hint: Option<String>,
+    pub accepted: bool,              // render-time decoration
+    pub is_test_file: bool,          // test-family role decoration
 }
 
 pub struct Location {
@@ -75,16 +78,18 @@ The full result of one `heal status` run. Written to
 see identical drain queues without re-scanning.
 
 ```rust
-pub const FINDINGS_RECORD_VERSION: u32 = 5;
+pub const FINDINGS_RECORD_VERSION: u32 = 8;
 
 pub struct FindingsRecord {
-    pub version: u32,                // currently 5
+    pub version: u32,                // currently 8
     pub id: String,                  // FNV-1a hex of (head_sha, config_hash, worktree_clean)
     pub head_sha: Option<String>,    // None outside git or HEAD unborn
     pub worktree_clean: bool,
-    pub config_hash: String,         // FNV-1a hex of config + calibration
+    pub config_hash: String,         // rules + enabled non-git observations
     pub severity_counts: SeverityCounts,
     pub workspaces: Vec<WorkspaceSummary>,
+    pub coverage_observation: Option<CoverageObservation>,
+    pub accepted_rereview: Vec<AcceptedDrift>, // render-time only
     pub findings: Vec<Finding>,
 }
 
@@ -102,7 +107,7 @@ byte-identical content, keeping `git status` clean.
 
 ### Schema versioning
 
-`FINDINGS_RECORD_VERSION` is currently **5**. v1 → v2 renamed
+`FINDINGS_RECORD_VERSION` is currently **8**. v1 → v2 renamed
 `check_id → id` and `regressed_check_id → regressed_in_record_id`.
 v2 → v3 (Unreleased v0.4 cycle) bundles every new addition since
 v0.3.2: the `[features.docs]` family of metric strings
@@ -122,7 +127,14 @@ its seed (the count drifts with every rescan, so ids churned and
 `fixed.json` / `heal diff` mis-reconciled), and `ccn` /
 `cognitive` / `lcom` seeds gain an occurrence ordinal so two
 same-name same-span functions (or same-name class scopes) in one
-file no longer collide to a single id.
+file no longer collide to a single id. v5 → v6 expands
+`config_hash` to include enabled non-git observation inputs (LCOV and
+doc-pair logical paths, readable/missing state, and bytes). v6 → v7
+adds `coverage_observation`, which separates absent or partial
+measurement from measured 0% coverage. v7 → v8 adds the optional
+`Finding.hotspot_score`; it controls deterministic order within a
+family after Tier and Severity, but does not affect ids, Severity, or
+drain Tier.
 
 `read_latest` peeks at the version field first and returns `Ok(None)`
 on **any mismatch** — the next run silently rewrites under the new
@@ -157,8 +169,19 @@ pub fn is_fresh_against(
 breaks the contract — the recorded numbers wouldn't reflect on-disk
 source.
 
-`config_hash` covers both `config.toml` and `calibration.toml`. A
-`heal calibrate --force` shifts the hash, invalidating the cache.
+`config_hash` covers `config.toml`, `calibration.toml`, and every
+enabled non-git observation input: each configured LCOV/doc-pair
+logical path, its missing/readable/read-error state, and its content.
+It deliberately excludes absolute paths, mtimes, and disabled-family
+inputs. A `heal calibrate --force`, an updated ignored `lcov.info`, or
+an edited doc-pair file therefore invalidates the cache even at the
+same HEAD; identical content remains reproducible across checkouts.
+
+`CoverageObservation.state` is `missing`, `read_error`, `partial`, or
+`complete`. Its configured/readable/unreadable source lists and
+`unmeasured_files` are provenance, not synthetic findings. A production
+file absent from LCOV is **unmeasured**, never inferred as 0% covered;
+an explicit LCOV record with 0 hits remains a measured 0% finding.
 
 ---
 
@@ -230,14 +253,28 @@ the observer cache cheap to write and lets policy decisions (accept
 / remove) take effect without a rescan.
 
 `reconcile_accepted(&AcceptedMap, &[Finding]) -> Vec<AcceptedDrift>`
-surfaces severity escalations only. An accepted-at-`High` finding
-that now classifies as `Critical` produces an `AcceptedDrift` so
-the renderer can warn. Other shapes — file deleted, finding no
-longer detected, metric value moved within the same severity —
-stay quiet by design (they belong on `heal mark accept --list`,
-not in the live status banner). Severity is HEAL's decision
-boundary; raw metric values are an implementation detail of the
-classifier.
+surfaces two changed decision premises: Severity increased, or the
+same family changed from `hotspot=false` to `hotspot=true`. If both
+happen, one drift object carries both reasons. Stable/cooling hotspots,
+improvement, disappearance, and same-Severity metric movement stay
+quiet. Re-review never removes acceptance or puts the item back into
+T0; status, current-side diff, and the hook only notify. Machine output
+uses `accepted_rereview[].reasons` values `severity_increased` and
+`became_hotspot`.
+
+### Disposable source-analysis cache
+
+`.heal/cache/source-v1.json` is local, ignored, and safe to delete. Symlinked
+state/cache directories and non-regular cache files disable reuse and writes;
+source analysis still runs normally. It stores
+only derived Complexity metrics, LCOM classes, and Duplication token hashes;
+source text and tree-sitter trees are never persisted. Each entry validates
+relative path, byte size, stable FNV-1a content hash, language, analyzer
+version, and a capability mask before reuse. A missing capability, old or
+corrupt format, write failure, or race is a cache miss and falls back to normal
+analysis. The file is replaced from the current source inventory, so deleted
+files and unbounded generations do not accumulate. This is not metrics history
+and does not alter `FindingsRecord` freshness.
 
 ---
 
@@ -301,7 +338,8 @@ because the underlying observer is `Duplication`; gating logic in
 fallback heuristic in `observer/shared/file_role.rs::is_test_path`
 applies. `TestCoverageConfig.lcov_paths` defaults to `lcov.info`,
 `coverage/lcov.info`, `target/llvm-cov/lcov.info`,
-`coverage/lcov-report/lcov.info`; the first existing file wins.
+`coverage/lcov-report/lcov.info`; every existing file is merged and
+missing entries remain visible in observation provenance.
 
 ### Schema invariants
 
@@ -429,13 +467,17 @@ pub struct HotspotCalibration {
 ```
 
 `from_distribution(values, floors)` builds the table from observed data.
-With < `MIN_SAMPLES_FOR_PERCENTILES` (5), percentiles are `NaN` and `≥`
-comparisons against `NaN` are always `false` → cascade falls through to
-`Ok`.
+With < `MIN_SAMPLES_FOR_PERCENTILES` (5), metric Severity percentiles
+are `NaN` and `≥` comparisons against `NaN` are always `false` →
+cascade falls through to `Ok` unless an absolute floor applies.
 
-`HotspotCalibration::flag(score) → bool`: true iff `score ≥ p90` **and**
-`score ≥ floor_ok` (when set). Sets the `hotspot=true` decoration on
-findings whose file is in the top decile.
+`HotspotCalibration::flag(score) → bool`: for 5+ finite scores, true
+iff `score ≥ p90` **and** `score ≥ floor_ok`. For 1–4 finite scores,
+the family floor alone is the fallback (Code 22, Test 25, Docs 5).
+Non-finite scores are excluded from sample counts and never flag.
+Without a usable percentile or floor, the result is false. These are
+family-local prioritization signals, not probabilities or effect-size
+guarantees.
 
 ---
 
@@ -474,8 +516,12 @@ variants.
 Every persistent state file goes through `core::fs::atomic_write`:
 
 ```
-write to <path>.tmp → fsync → rename to <path>
+write to a unique sibling temporary file → persist (rename) to <path>
 ```
+
+Each writer owns its staging file, so concurrent writes cannot truncate
+each other's contents. This provides atomic replacement, not crash durability
+across power loss; the file and parent directory are not fsynced.
 
 Files written this way:
 - `.heal/config.toml`

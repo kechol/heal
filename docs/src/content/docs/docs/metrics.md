@@ -132,11 +132,12 @@ the docs-family Findings (`doc_freshness`, `doc_drift`,
 
 ## Drain pattern
 
-`/heal-doc-review` frames the findings through the **Diátaxis**
-lens — Tutorial / How-to drift first (the highest-leverage fix
-for confused first-time readers), then Reference, then
-Explanation. `/heal-doc-patch` works through the docs slice one
-commit at a time:
+`/heal-doc-review` frames findings through the **Diátaxis** lens, but
+preserves HEAL's exact effective Tier, Severity, then descending
+Docs-family `hotspot_score` order (missing scores last;
+metric/path/id ties). Tutorial / How-to / Reference / Explanation
+informs the diagnosis and remedy, not queue priority.
+`/heal-doc-patch` works through the docs slice one commit at a time:
 
 - **`doc_link_health`** → fix the relative path or anchor slug.
 - **`doc_drift`** → remove the stale reference, or restore the

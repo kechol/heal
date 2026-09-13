@@ -91,10 +91,12 @@ pub enum Command {
         #[arg(long)]
         no_pager: bool,
     },
-    /// Render the cached `FindingsRecord` from `.heal/findings/latest.json`
-    /// — Critical / High view by default. Runs a fresh scan only when
-    /// the cache is missing; pass `--refresh` to force a rescan and
-    /// overwrite the cache. The single source of truth that
+    /// Render the current actionable `FindingsRecord` view. Reuses
+    /// `.heal/findings/latest.json` only while its HEAD, clean-worktree,
+    /// config, calibration, and observation-input freshness gates match;
+    /// otherwise it rescans and replaces the cache automatically.
+    /// Pass `--refresh` to force that rescan even while fresh. The source
+    /// of truth that
     /// `/heal-code-patch` (Claude side) and `heal diff` consume.
     Status(StatusArgs),
     /// Diff the current findings against a cached `FindingsRecord` whose
@@ -386,26 +388,26 @@ pub struct StatusArgs {
     /// `doc_hotspot`).
     #[arg(long, value_enum)]
     pub feature: Option<FamilyFilter>,
-    /// Severity floor — show only this level. Combine with `--all` to
-    /// also surface lower severities below it.
+    /// Minimum Severity — show findings at this level or higher. `--all`
+    /// controls low-priority and accepted sections but never bypasses
+    /// this floor.
     #[arg(long, value_enum)]
     pub severity: Option<SeverityFilter>,
-    /// Show every Severity tier (Medium / Ok included) plus the
-    /// low-Severity hotspot section. Without this, only Critical /
-    /// High render (with a "(N) hidden — pass `--all`" footer when
-    /// there are more).
+    /// Show lower-priority Advisory, Medium, Ok, and accepted sections.
+    /// Without this, hidden findings are reported in a summary footer.
     #[arg(long)]
     pub all: bool,
-    /// Emit the `FindingsRecord` payload as JSON on stdout. Same shape as
-    /// `.heal/findings/latest.json` — stable contract for skills and CI.
+    /// Emit the `FindingsRecord` schema as JSON on stdout, with current
+    /// accepted state, re-review notices, and requested filters applied.
+    /// This is the stable machine contract for skills and CI.
     #[arg(long)]
     pub json: bool,
     /// Re-scan the project and overwrite `.heal/findings/latest.json`
-    /// instead of reading the cached record. Without this, a present
-    /// cache is reused as-is; only a missing cache triggers a scan.
+    /// even when the cached record is fresh. Without this, a fresh cache
+    /// is reused; a missing or stale cache is rescanned automatically.
     #[arg(long)]
     pub refresh: bool,
-    /// Cap each Severity bucket at the N worst findings.
+    /// Cap each Tier/Severity bucket at N rendered file rows.
     #[arg(long, value_name = "N")]
     pub top: Option<usize>,
     /// Skip the pager and write directly to stdout. By default

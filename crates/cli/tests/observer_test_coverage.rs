@@ -2,9 +2,13 @@
 //! against tempdir layouts, `CoverageReport` lookup helpers, and
 //! severity classification through `Feature::lower`.
 
+#[cfg(feature = "lang-rust")]
+use std::path::Path;
 use std::path::PathBuf;
 
 use heal_cli::core::config::{Config, TestConfig, TestCoverageConfig};
+use heal_cli::core::finding::CoverageObservationState;
+#[cfg(feature = "lang-rust")]
 use heal_cli::core::finding::{Finding, IntoFindings};
 use heal_cli::observer::test::coverage::{CoverageObserver, CoverageReport};
 
@@ -25,11 +29,13 @@ fn cfg_test_coverage_enabled() -> Config {
     cfg
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn single_existing_lcov_path_reads_as_before() {
     // Single-package projects: one path matches, missing candidates
     // stay silent — identical output to the pre-merge behavior.
     let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "src/lib.rs", "pub fn live() {}\n");
     write(
         dir.path(),
         "coverage/lcov.info",
@@ -47,12 +53,15 @@ fn single_existing_lcov_path_reads_as_before() {
     assert_eq!(report.sources, vec![PathBuf::from("coverage/lcov.info")]);
 }
 
+#[cfg(feature = "lang-typescript")]
 #[test]
 fn merges_every_existing_lcov_path() {
     // Polyglot monorepo: every package emits its own lcov.info and
     // every one of them must count — the old first-match-wins probe
     // silently dropped all but the first (issue #29).
     let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "pkg-a/src/a.ts", "export const a = 1;\n");
+    write(dir.path(), "pkg-b/src/b.ts", "export const b = 1;\n");
     write(
         dir.path(),
         "pkg-a/coverage/lcov.info",
@@ -88,6 +97,7 @@ fn merges_every_existing_lcov_path() {
     );
 }
 
+#[cfg(feature = "lang-typescript")]
 #[test]
 fn resolves_package_relative_sf_paths() {
     // vitest / jest / scoverage run from the package root and emit
@@ -108,6 +118,7 @@ fn resolves_package_relative_sf_paths() {
     assert_eq!(report.entries[0].path, PathBuf::from("pkg-a/src/foo.ts"));
 }
 
+#[cfg(feature = "lang-typescript")]
 #[test]
 fn colliding_entries_across_files_max_merge() {
     // A hand-merged root lcov.info can coexist with the per-package
@@ -115,6 +126,7 @@ fn colliding_entries_across_files_max_merge() {
     // duplicate `SF` records within one file) instead of aliasing or
     // double-counting.
     let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "pkg-a/src/a.ts", "export const a = 1;\n");
     write(
         dir.path(),
         "lcov.info",
@@ -136,13 +148,61 @@ fn colliding_entries_across_files_max_merge() {
     assert!((report.entries[0].line_coverage_pct - 70.0).abs() < 1e-9);
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn returns_empty_when_no_lcov_file_present() {
     let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "src/lib.rs", "pub fn live() {}\n");
     let cfg = cfg_test_coverage_enabled();
     let report = CoverageObserver::from_config(&cfg).scan(dir.path());
     assert!(report.entries.is_empty());
     assert!(report.source.is_none());
+    assert_eq!(report.state, CoverageObservationState::Missing);
+    assert_eq!(report.unmeasured_files, vec![PathBuf::from("src/lib.rs")]);
+}
+
+#[cfg(feature = "lang-rust")]
+#[test]
+fn partial_report_lists_only_unmeasured_production_sources() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "src/measured.rs", "pub fn measured() {}\n");
+    write(dir.path(), "src/missing.rs", "pub fn missing() {}\n");
+    write(dir.path(), "tests/helper.rs", "#[test] fn test_it() {}\n");
+    write(dir.path(), "generated/output.rs", "pub fn generated() {}\n");
+    write(dir.path(), "excluded/skip.rs", "pub fn skipped() {}\n");
+    write(
+        dir.path(),
+        "lcov.info",
+        "SF:src/measured.rs\nLF:1\nLH:0\nend_of_record\nSF:tests/helper.rs\nLF:1\nLH:0\nend_of_record\nSF:generated/output.rs\nLF:1\nLH:0\nend_of_record\nSF:excluded/skip.rs\nLF:1\nLH:0\nend_of_record\nSF:src/deleted.rs\nLF:1\nLH:0\nend_of_record\n",
+    );
+    let mut cfg = cfg_test_coverage_enabled();
+    cfg.git.exclude_paths = vec!["excluded/**".into()];
+    let report = CoverageObserver::from_config(&cfg).scan(dir.path());
+
+    assert_eq!(report.state, CoverageObservationState::Partial);
+    assert_eq!(
+        report.unmeasured_files,
+        vec![PathBuf::from("src/missing.rs")]
+    );
+    assert!(report.entries.iter().any(|entry| {
+        entry.path.as_path() == Path::new("src/measured.rs")
+            && entry.line_coverage_pct.abs() < f64::EPSILON
+    }));
+    assert_eq!(report.entries.len(), 1);
+    assert!(report
+        .into_findings()
+        .iter()
+        .all(|finding| finding.location.file == Path::new("src/measured.rs")));
+}
+
+#[test]
+fn unreadable_report_is_distinct_from_missing_report() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("lcov.info")).unwrap();
+    let cfg = cfg_test_coverage_enabled();
+    let report = CoverageObserver::from_config(&cfg).scan(dir.path());
+    assert_eq!(report.state, CoverageObservationState::ReadError);
+    assert_eq!(report.unreadable_sources, vec![PathBuf::from("lcov.info")]);
 }
 
 #[test]
@@ -160,9 +220,12 @@ fn returns_empty_when_feature_disabled() {
     assert!(report.entries.is_empty());
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn into_findings_skips_fully_covered_files() {
     let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "src/full.rs", "pub fn full() {}\n");
+    write(dir.path(), "src/half.rs", "pub fn half() {}\n");
     write(
         dir.path(),
         "lcov.info",
@@ -192,8 +255,7 @@ end_of_record
 #[test]
 fn ratio_for_returns_coverage_ratio() {
     let report = CoverageReport {
-        source: None,
-        sources: Vec::new(),
+        production_files: vec![PathBuf::from("src/lib.rs")],
         entries: vec![heal_cli::observer::test::coverage::CoverageEntry {
             path: PathBuf::from("src/lib.rs"),
             lines_found: 10,
@@ -202,6 +264,7 @@ fn ratio_for_returns_coverage_ratio() {
             branches_hit: 0,
             line_coverage_pct: 80.0,
         }],
+        ..CoverageReport::default()
     };
     let r = report
         .ratio_for(std::path::Path::new("src/lib.rs"))

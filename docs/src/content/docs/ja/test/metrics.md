@@ -24,6 +24,8 @@ description: '[features.test] ファミリが追加するテスト品質メト�
 
 `[features.test.coverage].lcov_paths` に存在するすべての `lcov.info` を parse・マージした、ソースファイル単位の行カバレッジ率です(多言語モノレポならパッケージごとのファイルを列挙すればどれも集計に入ります)。Finding は `< 100%` のファイルにのみ発行されます。Calibration は **反転値**(`100 - coverage_pct`)を保存するので、他のメトリクスと同じ「value が p95 に達したら Critical」のカスケードがそのまま使えます — フロアの調整は [Test › 設定](/heal/ja/test/configuration/#calibrationseverity-基準の調整) を参照。
 
+coverage 出力は観測 provenance も持ちます。`missing` は設定済み report がない、`read_error` は 1 つ以上を読めない、`partial` は LCOV にない対応 production ファイルを列挙、`complete` は欠落なしを意味します。不在ファイルは **未計測** であり 0% とは推定せず、reporter/package scope の設定確認へ案内し、Test 解消キューには入りません。hit 0 の LCOV record は実測 0% Finding です。設定した test path、generated、exclude は未計測 production に数えません。
+
 ## `skip_ratio`
 
 > _「skip テストの比率が無視できないファイルはどれか?」_
@@ -42,7 +44,9 @@ description: '[features.test] ファミリが追加するテスト品質メト�
 
 Test Hotspot は code Hotspot の test ファミリ版です。src ファイルを `commits × uncov_pct` でランクします。スコアが高い = そのファイルは編集が続いている **かつ** 大部分がテストされていない、という意味です。30 commits ある低 CCN の config-loader でカバレッジ 0% なら本物のテスト対象ですが、code Hotspot は CCN が低いせいで取りこぼします。
 
-lcov に出てこないが git 履歴では触られているファイルは 100% gap(= 未テスト)として扱います。100% カバレッジのファイルはスコア 0 で落ちます。
+Test Hotspot に入るのは LCOV に明示された production ファイルだけです。不在 entry は未計測、明示的な 0% entry は 100% gap です。100% coverage のファイルはスコア 0 で落ちます。
+
+有限候補が 5 件以上なら p90 と Test フロア (25) の両方、1〜4 件なら絶対フロアのみでフラグします。非有限スコアは対象外です。同じ Test Tier と Severity の中では高スコアから着手します。これは優先付けのヒューリスティックであり、確率や修正効果の保証ではありません。
 
 Test Hotspot 自体は常に `Severity::Ok` です。スコアの仕事は同じファイルの `coverage_pct` Finding に `hotspot=true` を立てることです。解消対象は「Critical AND `hotspot=true`」のままで、test ファミリ単位にスコープされます。
 

@@ -42,8 +42,10 @@ Read-only. Reads `heal status --json`, filters to the
    dominant axis "no unit tests", "tests aren't keeping up with
    their source", "important paths uncovered", or "skipped flakes
    that solidified into permanent skips"?
-2. A **prioritized test-fix TODO list** — coverage gaps on hotspot
-   files first, then drifting tests, then skip-ratio outliers.
+2. A **prioritized test-fix TODO list** — exact effective Tier,
+   Severity, then descending Test-family `hotspot_score` order;
+   coverage, drift, and skip categories explain the remedy but do not
+   override that order.
 
 Never edits source. After reading the review you can act on any
 item right away — ask the agent in the same session ("write the
@@ -70,8 +72,10 @@ tests", "which tests should we unskip", "/heal-test-review".
 
 ## `/heal-test-patch` — the write skill
 
-Drains the test slice of `.heal/findings/latest.json` one finding
-at a time, in Severity order. **One commit per fix.**
+Drains the test slice of `.heal/findings/latest.json` one finding at a
+time in effective Tier, Severity, then descending Test-family
+`hotspot_score` order (missing scores last; metric/path/id ties).
+**One commit per fix.**
 
 **Pre-flight** (refuses to start otherwise):
 

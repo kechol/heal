@@ -275,11 +275,15 @@ weight_complexity = 1.0
 ```
 
 - The composed score is `(weight_complexity × ccn_sum) ×
-(weight_churn × commits)`. Setting either weight to `0.0`
-  disables that side of the composition.
+(weight_churn × commits)`. When both weights are positive, changing
+  either one scales every score by the same constant and does not
+  change the ranking. Setting a weight to `0.0` disables that side of
+  the composition.
 
-Hotspot doesn't have a `floor_critical`; it's a flag (top 10% of
-the score distribution), not a Severity tier.
+Hotspot doesn't have a `floor_critical`; it's a flag, not a Severity
+tier. With at least 5 finite candidates, a score must clear both p90
+and the family floor. With 1–4 candidates, the absolute family floor
+alone is used (Code 22, Test 25, Docs 5). Non-finite scores never flag.
 
 ### `[metrics.lcom]`
 
@@ -351,7 +355,7 @@ floor_ok       = 11.0
 [calibration.hotspot]
 p50 = 5.0
 p75 = 18.0
-p90 = 67.0          # Hotspot 🔥 flag boundary (top 10%, fixed)
+p90 = 67.0          # Hotspot 🔥 percentile gate when 5+ candidates exist
 p95 = 145.0
 ```
 

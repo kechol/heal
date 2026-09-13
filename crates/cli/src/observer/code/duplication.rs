@@ -26,7 +26,6 @@
 //! Limitations explicitly out of v0.1 scope:
 //! - Type-2 clones (identifier-insensitive). Token hash includes text, so
 //!   `function foo` and `function bar` won't match.
-//! - Parallel scanning. The walker is single-threaded.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -210,8 +209,7 @@ pub(crate) struct DuplicationAccumulator {
 }
 
 impl DuplicationAccumulator {
-    pub(crate) fn add(&mut self, rel: &Path, parsed: &ParsedFile) {
-        let (hashes, lines) = collect_tokens(parsed);
+    pub(crate) fn add_tokens(&mut self, rel: &Path, hashes: Vec<u64>, lines: Vec<u32>) {
         if hashes.len() < self.window {
             return;
         }
@@ -476,7 +474,7 @@ fn tokenize_markdown(body: &str) -> (Vec<u64>, Vec<u32>) {
 /// Walk the parsed tree pre-order and collect every leaf token that isn't
 /// an `extra` (tree-sitter convention for comments / whitespace) or an
 /// error fragment. Returns parallel hash + line vectors.
-fn collect_tokens(parsed: &ParsedFile) -> (Vec<u64>, Vec<u32>) {
+pub(crate) fn collect_tokens(parsed: &ParsedFile) -> (Vec<u64>, Vec<u32>) {
     let mut hashes: Vec<u64> = Vec::new();
     let mut lines: Vec<u32> = Vec::new();
     let source = parsed.source.as_bytes();

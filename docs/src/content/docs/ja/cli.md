@@ -81,7 +81,7 @@ heal skills uninstall --target all   # 全 tree を削除
 **Code(常時オン):**
 
 - `/heal-code-review`(read-only) — `heal status --all --json` を取り込み、フラグ付きコードを深く読み、アーキテクチャ的な所見と優先順位付きリファクタ TODO リストを返します。
-- `/heal-code-patch`(write) — TODO リストを Severity 順(`Critical 🔥` 先頭)に 1 コミット 1 finding ずつ解消。
+- `/heal-code-patch`(write) — T0 を有効 Tier、Severity、ファミリ内スコア順に 1 コミット 1 finding ずつ解消。
 - `/heal-cli` — `heal` CLI の簡潔なリファレンス。
 - `/heal-setup` — セットアップウィザード。calibrate → strictness 選択 → `config.toml` 書き出し のあと、オプションの `[features.docs]` / `[features.test]` を有効化するかを順に確認し、有効化を選んだ場合は `/heal-doc-pair-setup` / `/heal-test-reporter-setup` まで連携します。calibration ドリフトを検知して `heal calibrate --force` も提案します。
 
@@ -110,22 +110,26 @@ heal status --refresh                    # 再スキャンしてキャッシュ�
 heal status --metric lcom                # LCOM の Finding のみ
 heal status --metric coverage-pct        # カバレッジ findings のみ（[features.test]）
 heal status --metric doc-drift           # doc-drift findings のみ（[features.docs]）
-heal status --severity critical          # Critical のみ（`--all` で以上を含む）
+heal status --severity high              # High と Critical（--all でもこの下限は下がらない）
 heal status --feature code               # code ファミリのみ表示(test / docs を抑制)
 heal status --feature test               # test ファミリのみ([features.test])
 heal status --feature docs               # docs ファミリのみ([features.docs])
 heal status --path src/payments          # パスプレフィックスで絞る(v0.4 以前は --feature)
-heal status --all                        # Medium / Ok と低 Severity の Hotspot セクションを表示
-heal status --top 5                      # 各 Severity バケットを 5 行で打ち切り
+heal status --all                        # Advisory、Medium、Ok、accepted セクションも表示
+heal status --top 5                      # 各 Tier/Severity バケットを 5 行で打ち切り
 heal status --no-pager                   # ページャを通さず stdout に直接書く
 heal status --json                       # 機械可読な形式を stdout へ
 ```
 
 stdout がターミナルのときは `$PAGER`(または `less`)にパイプします(`git diff` / `git log` と同じ慣習)。`--no-pager` を渡すか、出力をパイプ(リダイレクト、`| cat`、CI ログ)するとページャは自動的にスキップされます。`--json` は常に raw のまま stdout に出します。
 
-デフォルトの `heal status` はキャッシュ済み TODO の読み取り専用描画です。キャッシュが温まっていれば実質コスト 0 で動きます。`--refresh` を指定すると初めてキャッシュを破棄して再スキャン・上書きします(このパスだけが書き込みを行います)。`heal init` 直後などキャッシュがないときは最初の実行で自動的にスキャンするので、フラグなしでも問題なく動きます。
+デフォルトの `heal status` は鮮度が有効なキャッシュを再利用するため、温まっていれば実質コスト 0 です。キャッシュが欠けているか古ければ自動的に再スキャンして置き換え、`--refresh` は鮮度にかかわらず同じ再スキャンと書き込みを強制します。
 
-出力は Finding を `🔴 Critical 🔥 / 🔴 Critical / 🟠 High 🔥 / 🟠 High / 🟡 Medium / ✅ Ok` の下にグループ化し(最後の 2 つは `--all` が必要)、ファイル単位に 1 行へ集約します。最後に `Goal: 0 Critical, 0 High` と `claude /heal-code-patch` を指す "next steps" の行が続きます。`--all` を指定すると、「Severity は低いが上位 10% の Hotspot」に該当するファイルを別セクション(`Ok / Medium 🔥`)で追加表示します。
+鮮度は HEAD と clean-worktree gate だけでなく、有効な非 git 観測入力も含めて判定します。ignored な LCOV や doc-pair を更新すると、HEAD が同じでも cache は無効です。mtime と checkout の絶対パスは使いません。human/JSON の coverage provenance は `missing` / `read_error` / `partial` / `complete` を区別します。LCOV にない production ファイルは未計測であり、0% とは判定せず reporter/package scope の確認へ案内します。
+
+出力は Finding を有効 Drain Tier と Severity でグループ化し(低優先度セクションは `--all` が必要)、ファイル単位に 1 行へ集約します。Hotspot は全行 hot のセクションまたは混在行の `🔥` で表示します。優先順は Tier、Severity、同一ファミリの `hotspot_score` 降順、metric/path/id の tie-break です。Code、Test、Docs の生スコアは相互比較せず、確率や修正効果の保証でもありません。
+
+`--severity` は常に最小 Severity の下限です。`--all` はその下限以上にある通常非表示のセクションを表示できますが、下限未満の finding は復元しません。
 
 ## `heal diff`
 
@@ -152,6 +156,10 @@ heal diff --json                       # 機械可読な形式
 人間向けレンダラはデフォルトで `from`/`to` のいずれもが High 未満のエントリを隠し、`[N entries below High hidden — pass --all]` というフッターを出します(ノイズの多い baseline で実行可能な行が埋もれないようにするためです)。`--all` を渡すとこの絞り込みが外れ、Improved / Unchanged バケットも一緒に表示されます。`--json` 出力は常にフィルタなしで、skill や CI からは全行が見えます。
 
 `heal mark accept` で受容済みの finding には `📌 accepted` マーカーが付き、New / Regressed の行が「把握済みで対応不要」だと一目で分かります。`--hide-accepted` を渡すとこれらの行ごと隠れ、対応が必要な行だけが残ります(`[N accepted entries hidden]` フッターで件数は見えます)。この絞り込みは `--all` とは独立に効きます。
+
+coverage が有効なら、JSON は `from_coverage_observation` と `to_coverage_observation` を返します。両側の `missing` / `read_error` / `partial` / `complete` と入力一覧により、未計測と実測 0% / 100% を区別できます。
+
+accepted finding の Severity が上昇するか、そのファミリの Hotspot が false から true になると、status、diff の現在側、post-commit hook に再レビュー通知が出ます。JSON は 1 つの `accepted_rereview` に 1 つまたは両方の理由を返します。accept は解除せず、finding を解消キューに戻しません。
 
 巨大なリポジトリではこの比較が高コストになります。`config.toml` の `[diff]` で LOC 上限を設定でき、超過時は手動 2 ブランチ手順に切り替わります。詳しくは [Code › 設定](/heal/ja/code/configuration/#diff) を参照。
 
@@ -197,11 +205,13 @@ heal は **絶対に** 自動で recalibrate しません。コードベース�
 
 スクリプト用の契約は `heal status --json` です。直接オンディスク状態を覗きたい場合は、`.heal/findings/` 配下にフラットな成果物が 3 つ置かれています:
 
-| ファイル                         | 役割                                                          |
-| -------------------------------- | ------------------------------------------------------------- |
-| `.heal/findings/latest.json`     | 現在の TODO リスト — `heal status --refresh` がリフレッシュ。 |
-| `.heal/findings/fixed.json`      | `/heal-code-patch` が記録した修正の有界マップ。               |
-| `.heal/findings/regressed.jsonl` | 修正済みが再検出された監査トレイル。                          |
+2 つの JSON 表示は意図的に byte-for-byte では一致しません。`latest.json` はオブザーバの生レコードです。`heal status --json` は同じレコードschemaを使い、現在の accepted 状態と一時的な `accepted_rereview` 通知をoverlayしたうえで、指定された workspace、feature、metric、path、Severity のfilterを finding、再レビュー通知、その集計値へ適用します。coverage provenance 自体には Severity がなく、workspace/path の範囲に従い、Test 以外のfamilyまたはcoverage以外のmetricが指定された場合は省略します。
+
+| ファイル                         | 役割                                                                      |
+| -------------------------------- | ------------------------------------------------------------------------- |
+| `.heal/findings/latest.json`     | 現在の TODO — fresh なら再利用し、stale/欠落時または `--refresh` で置換。 |
+| `.heal/findings/fixed.json`      | `/heal-code-patch` が記録した修正の有界マップ。                           |
+| `.heal/findings/regressed.jsonl` | 修正済みが再検出された監査トレイル。                                      |
 
 これらはすべて素のファイルなので `jq` で直接読めます。
 
@@ -216,6 +226,8 @@ tail .heal/findings/regressed.jsonl
 `heal init` がインストールする git の post-commit フックから自動的に呼ばれます。全オブザーバを実行し、`Critical` と `High` の Finding を 1 行のナッジとして stdout に出します(Hotspot フラグ付きが先頭)。クールダウンはありません。同じ問題は修正されるまで毎コミット出続けます — それが狙いです。ディスクには何も書きません(出力はナッジのみ)。
 
 `[features.test.coverage]` が有効で、High / Critical な `coverage_pct` finding が hotspot ファイル上にあるとき、ナッジには「N uncovered hotspot」をカウントするインデント付き 2 行目が追加されます。「次のテストはここに書くべき」の最短リマインダです。
+
+coverage が欠落・読取不能・partial なとき、hook は未計測ファイルを uncovered Hotspot と解釈せず、status と同じ reporter/package scope の案内を出します。accepted の判断前提が変わった場合も再レビューを通知します。
 
 デバッグ用に手動で実行することもあります。
 

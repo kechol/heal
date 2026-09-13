@@ -123,10 +123,12 @@ heal status [--metric <FindingMetric>] [--feature <FamilyFilter>]
 
 Pipeline (`commands/status.rs:44-112`):
 
-1. Read cache from `.heal/findings/latest.json` unless `--refresh`.
-2. Idempotency check: `is_fresh_against(head_sha, config_hash,
-   worktree_clean)`. Match → reuse cached record. Mismatch or dirty
-   worktree → recompute.
+1. Unless `--refresh`, call `read_latest_if_fresh` for
+   `.heal/findings/latest.json`.
+2. Freshness check: HEAD and clean worktree plus the observation-input
+   `config_hash` (config, calibration, enabled LCOV/doc-pair state and
+   content). Match → reuse; mismatch, dirty worktree, or unstable input
+   → recompute.
 3. Recompute path: `build_record(...)` → `run_all` → `classify` →
    `FindingsRecord` → `fs::atomic_write` to `latest.json`.
 4. `reconcile_fixed(fixed.json, regressed.jsonl, &record)` — re-detected
@@ -145,9 +147,14 @@ swallowed → exit 0.
      file counts are unique-`location.file` sets per tier.
    - `Population: [critical] N [high] N [medium] N [ok] N` — the raw
      severity distribution, demoted to context.
-2. Regressed section (re-detected after `mark fix`).
-3. Per-family blocks (`═══ Code ═══`, `═══ Test ═══`, `═══ Docs ═══`)
-   — each family runs its own (Severity, hotspot) cascade and ends
+2. Coverage measurement guidance when configured LCOV input is missing,
+   unreadable, or covers only part of the production-source universe.
+3. Regressed section (re-detected after `mark fix`).
+4. Accepted re-review notice when an accepted finding increased Severity
+   or changed from non-hotspot to hotspot. Acceptance remains in place.
+5. Per-family blocks (`═══ Code ═══`, `═══ Test ═══`, `═══ Docs ═══`)
+   — each family orders by effective Drain Tier, then Severity, then
+   descending family-local `hotspot_score` (deterministic metric/path/id ties), and ends
    with a `Next: claude /heal-{code,test,doc}-patch` hint. Empty
    enabled families show `(no findings)` so the absence is visible.
    Disabled families (`[features.test/docs].enabled = false`) are
@@ -155,9 +162,9 @@ swallowed → exit 0.
    `--feature <FAMILY>`, sibling banners are suppressed entirely;
    when the requested family itself is disabled, `run()` exits 1
    before reaching the renderer.
-4. Cross-family `Hidden: N findings across families` footer (when
+6. Cross-family `Hidden: N findings across families` footer (when
    not `--all` and lower-severity rows were dropped).
-5. Accepted section (only with `--all`).
+7. Accepted section (only with `--all`).
 
 **Filters:**
 
@@ -179,9 +186,12 @@ swallowed → exit 0.
 - `--workspace <PATH>` — single declared workspace.
 - `--severity <Critical|High|Medium|Ok>` — floor.
 - `--all` — show Medium/Ok and low-Severity hotspots.
-- `--top <N>` — cap each bucket.
+- `--top <N>` — cap each rendered Tier/Severity bucket.
 
-**Output (JSON):** raw `FindingsRecord` (the on-disk shape).
+**Output (JSON):** the `FindingsRecord` schema used on disk, with the current
+accepted state and ephemeral `accepted_rereview` notices overlaid. Finding and
+workspace filters narrow this invocation's payload; it is therefore not a
+byte-for-byte dump of `latest.json`.
 
 **Exit:** 0 success (broken pipe included); error otherwise.
 
@@ -247,10 +257,10 @@ since calibration".
 
 Two paths (`commands/diff.rs`):
 
-1. **Cache hit** — `latest.json` is a clean scan of the resolved ref
-   under the current `config_hash` (full `(head_sha, config_hash,
-   worktree_clean)` triple, mirroring `is_fresh_against`) → read
-   directly. Fast.
+1. **Cache hit** — only when the resolved ref is the checked-out HEAD and
+   `latest.json` matches the full `(head_sha, observation-input config_hash,
+   worktree_clean)` triple. The hash covers config/calibration and every
+   enabled LCOV/doc-pair path, state, and content.
 2. **Worktree fallback** — when no cache match:
    - LOC gate: scan current worktree LOC. If
      `> [diff].max_loc_threshold` (default `200_000`), **exit 2** with
@@ -293,8 +303,9 @@ filter. `from_accepted` stays baseline-side for the T0 exclusion.
   `Population: X / Y resolved (Z%)` underneath. Accepted entries
   carry `📌 accepted`; `--hide-accepted` drops them (with a
   `[N accepted entries hidden]` footer). JSON is never filtered.
-- JSON: `DiffReport { from_ref, from_sha, buckets..., progress_pct,
-  t0_total, t0_resolved, t0_progress_pct, workspace? }`.
+- JSON: `DiffReport { from_ref, from_sha, from_coverage_observation?,
+  to_coverage_observation?, buckets..., progress_pct, t0_total, t0_resolved,
+  t0_progress_pct, workspace? }`.
 
 **Exit:** 0 success; **2** on LOC threshold; otherwise error.
 

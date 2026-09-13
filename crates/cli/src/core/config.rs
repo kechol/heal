@@ -4,6 +4,7 @@
 //! schema errors instead of silently dropping settings.
 
 use std::collections::BTreeMap;
+use std::fs::File;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -466,8 +467,10 @@ impl Eq for TestHotspotConfig {}
 
 /// `[features.test.coverage]` — lcov.info ingestion. Generation is
 /// outsourced to the user's CI / local toolchain (`cargo llvm-cov`,
-/// `pytest --cov`, `nyc`, `scoverage`); HEAL only reads the file. The
-/// `lcov_paths` list is tried in order; the first existing file wins.
+/// `pytest --cov`, `nyc`, `scoverage`); HEAL only reads the file.
+/// Every existing entry in `lcov_paths` is read and merged. Missing
+/// entries remain part of observation provenance without becoming
+/// measured 0% coverage.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct TestCoverageConfig {
@@ -476,8 +479,8 @@ pub struct TestCoverageConfig {
     /// projects that opt into `is_test_file` tagging don't get a noisy
     /// "lcov not found" warning before they've wired up a reporter.
     pub enabled: bool,
-    /// Project-relative paths the reader probes for an lcov.info file.
-    /// First existing match wins; missing files are silent. The
+    /// Project-relative paths the reader probes for lcov.info files.
+    /// Every existing match is merged; missing files are silent. The
     /// defaults cover the common reporter conventions: bare
     /// `lcov.info`, the `nyc` / `pytest-cov` `coverage/` dir, and
     /// `cargo llvm-cov`'s `target/llvm-cov/lcov.info`.
@@ -1332,7 +1335,8 @@ impl Config {
 
     /// Cross-field invariants. Currently checks `[[project.workspaces]]`
     /// paths (non-empty, slash-separated, repo-root-relative, no
-    /// duplicates, no nesting), every `exclude_paths` entry as
+    /// duplicates, no nesting), observation-input paths as project-
+    /// relative and non-escaping, every `exclude_paths` entry as
     /// `.gitignore` syntax, and that every name in `metrics.disabled`
     /// is a known disable-able metric (`loc` is foundational and is
     /// rejected here).
@@ -1341,6 +1345,25 @@ impl Config {
             path: path.to_path_buf(),
             message: message.clone(),
         })?;
+        validate_observation_path("[features.docs].pairs_path", &self.features.docs.pairs_path)
+            .and_then(|()| {
+                self.features
+                    .test
+                    .coverage
+                    .lcov_paths
+                    .iter()
+                    .enumerate()
+                    .try_for_each(|(index, value)| {
+                        validate_observation_path(
+                            &format!("[features.test.coverage].lcov_paths[{index}]"),
+                            value,
+                        )
+                    })
+            })
+            .map_err(|message| Error::ConfigInvalid {
+                path: path.to_path_buf(),
+                message,
+            })?;
         validate_gitignore_lines(&self.exclude_lines()).map_err(|message| {
             Error::ConfigInvalid {
                 path: path.to_path_buf(),
@@ -1495,6 +1518,109 @@ fn validate_gitignore_lines(lines: &[String]) -> std::result::Result<(), String>
         .map_err(|e| format!("gitignore matcher build failed: {e}"))
 }
 
+/// Observation inputs must stay inside the project root. Detached historical
+/// scans join the same logical path to a temporary checkout; accepting an
+/// absolute or parent-traversing path would instead read live host state and
+/// make the observation hash checkout-dependent.
+fn validate_observation_path(label: &str, value: &str) -> std::result::Result<(), String> {
+    let path = Path::new(value);
+    if value.trim().is_empty() {
+        return Err(format!("{label} must not be empty"));
+    }
+    if path.is_absolute()
+        || path.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        })
+    {
+        return Err(format!(
+            "{label} `{value}` must be project-relative and must not contain `..`"
+        ));
+    }
+    Ok(())
+}
+
+/// Open a configured observation input relative to a trusted project directory
+/// without following symlinks. Missing components return `None` so an unwired
+/// reporter remains a normal `missing` observation.
+pub(crate) fn open_observation_file(
+    project_root: &Path,
+    label: &str,
+    value: &str,
+) -> std::result::Result<Option<File>, String> {
+    validate_observation_path(label, value)?;
+    open_relative_nofollow(project_root, Path::new(value)).map_err(|err| {
+        format!("{label} `{value}` could not be opened without following symlink components: {err}")
+    })
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn open_relative_nofollow(project_root: &Path, relative: &Path) -> std::io::Result<Option<File>> {
+    open_relative_nofollow_with(project_root, relative, |_| {})
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn open_relative_nofollow_with(
+    project_root: &Path,
+    relative: &Path,
+    mut before_component_open: impl FnMut(usize),
+) -> std::io::Result<Option<File>> {
+    use rustix::fs::{openat, Mode, OFlags};
+
+    let names: Vec<_> = relative
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(name) => Some(name.to_os_string()),
+            std::path::Component::CurDir => None,
+            _ => unreachable!("observation path validated before opening"),
+        })
+        .collect();
+    let mut directory = File::open(project_root)?;
+    for (index, name) in names.iter().enumerate() {
+        before_component_open(index);
+        let is_last = index + 1 == names.len();
+        let flags = OFlags::RDONLY
+            | OFlags::NOFOLLOW
+            | OFlags::CLOEXEC
+            | if is_last {
+                OFlags::empty()
+            } else {
+                OFlags::DIRECTORY
+            };
+        let opened = match openat(&directory, name, flags, Mode::empty()) {
+            Ok(fd) => File::from(fd),
+            Err(err) => {
+                if err == rustix::io::Errno::NOENT {
+                    return Ok(None);
+                }
+                return Err(err.into());
+            }
+        };
+        if is_last {
+            return Ok(Some(opened));
+        }
+        directory = opened;
+    }
+    Ok(None)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn open_relative_nofollow(project_root: &Path, relative: &Path) -> std::io::Result<Option<File>> {
+    let path = project_root.join(relative);
+    match std::fs::symlink_metadata(&path) {
+        Ok(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "race-safe observation inputs are unsupported on this platform",
+        )),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
 /// Rewrite a workspace-relative `.gitignore` line so it works as a
 /// project-root-relative pattern. `!`-negation is preserved by stripping
 /// it before translation and re-attaching it after; comments and empty
@@ -1526,7 +1652,42 @@ pub(crate) fn translate_workspace_pattern(workspace_path: &str, line: &str) -> S
 
 /// Convenience: load from `.heal/config.toml` under a project root.
 pub fn load_from_project(project_root: &Path) -> Result<Config> {
-    Config::load(&crate::core::paths::HealPaths::new(project_root).config())
+    let config_path = crate::core::paths::HealPaths::new(project_root).config();
+    let cfg = Config::load(&config_path)?;
+    validate_observation_paths_at(&cfg, project_root, &config_path)?;
+    Ok(cfg)
+}
+
+pub(crate) fn validate_observation_paths_at(
+    cfg: &Config,
+    project_root: &Path,
+    config_path: &Path,
+) -> Result<()> {
+    open_observation_file(
+        project_root,
+        "[features.docs].pairs_path",
+        &cfg.features.docs.pairs_path,
+    )
+    .and_then(|_| {
+        cfg.features
+            .test
+            .coverage
+            .lcov_paths
+            .iter()
+            .enumerate()
+            .try_for_each(|(index, value)| {
+                open_observation_file(
+                    project_root,
+                    &format!("[features.test.coverage].lcov_paths[{index}]"),
+                    value,
+                )
+                .map(|_| ())
+            })
+    })
+    .map_err(|message| Error::ConfigInvalid {
+        path: config_path.to_path_buf(),
+        message,
+    })
 }
 
 /// Reject malformed `[[project.workspaces]]` entries before they reach
@@ -1680,4 +1841,55 @@ pub fn assign_workspace<'a>(file: &Path, workspaces: &'a [WorkspaceOverlay]) -> 
         }
     }
     best
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod nofollow_tests {
+    use super::*;
+    use std::io::Read;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn final_component_replacement_is_not_followed() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("lcov.info"), "inside").unwrap();
+        std::fs::write(outside.path().join("lcov.info"), "outside").unwrap();
+
+        let result = open_relative_nofollow_with(root.path(), Path::new("lcov.info"), |index| {
+            if index == 0 {
+                std::fs::remove_file(root.path().join("lcov.info")).unwrap();
+                symlink(
+                    outside.path().join("lcov.info"),
+                    root.path().join("lcov.info"),
+                )
+                .unwrap();
+            }
+        });
+
+        assert!(result.is_err(), "final symlink replacement must not open");
+    }
+
+    #[test]
+    fn opened_parent_handle_survives_path_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("reports")).unwrap();
+        std::fs::write(root.path().join("reports/lcov.info"), "inside").unwrap();
+        std::fs::write(outside.path().join("lcov.info"), "outside").unwrap();
+
+        let mut file =
+            open_relative_nofollow_with(root.path(), Path::new("reports/lcov.info"), |index| {
+                if index == 1 {
+                    std::fs::rename(root.path().join("reports"), root.path().join("held")).unwrap();
+                    symlink(outside.path(), root.path().join("reports")).unwrap();
+                }
+            })
+            .unwrap()
+            .expect("original file remains reachable through opened parent fd");
+        let mut body = String::new();
+        file.read_to_string(&mut body).unwrap();
+
+        assert_eq!(body, "inside");
+    }
 }

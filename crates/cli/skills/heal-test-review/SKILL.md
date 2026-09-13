@@ -122,7 +122,9 @@ The shapes a `[features.test]` cache typically reveals:
 
 ### Phase 1 — Read
 
-For each `[features.test]` finding:
+Exclude every finding with `accepted=true` before ranking. Keep any
+`accepted_rereview` notice informational; it does not requeue the accepted
+finding. For each remaining `[features.test]` finding:
 
 1. Note `metric`, `severity`, `hotspot`, `is_test_file`, primary
    location, and secondary locations. The `is_test_file` flag
@@ -179,6 +181,12 @@ zero is almost certainly stale.
 Build a prioritized TODO list. Order matters — drain the
 high-value, low-effort items first so the cache empties faster
 under `/heal-test-patch`:
+
+First preserve HEAL's Tier and Severity order, then sort by descending
+`hotspot_score` within the Test family. Missing scores sort last; ties
+use metric, path, then finding id. This mirrors human `heal status`; do not mix
+raw scores across families or invent a combined score. The categories
+below decide how an item is handled, not a different numeric ranking.
 
 1. **Mechanical wins (allow-list).** Findings whose fix is
    obviously deterministic — adding a unit test for an uncovered

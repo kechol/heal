@@ -7,10 +7,11 @@
 //!
 //! Two paths:
 //!
-//! 1. **Cache hit.** `latest.json` was scanned clean at the resolved
-//!    ref under the current `config_hash` → read the cached
-//!    `FindingsRecord` directly. Fast.
-//! 2. **Worktree fallback.** `git worktree add --detach <tempdir> <sha>`
+//! 1. **Checked-out HEAD cache hit.** Only when the resolved ref is the
+//!    current HEAD and `latest.json` passes its full freshness gate can
+//!    the cached `FindingsRecord` be reused. Ignored observation inputs
+//!    make the live worktree unsuitable evidence for an older ref.
+//! 2. **Detached worktree.** `git worktree add --detach <tempdir> <sha>`
 //!    materialises the source at the ref, runs the observer pipeline
 //!    against it (using the *current* `config.toml`/`calibration.toml`
 //!    so the comparison is apples-to-apples), and removes the worktree
@@ -56,10 +57,11 @@ use serde::Serialize;
 use tempfile::TempDir;
 
 use crate::core::accepted::read_accepted;
+use crate::core::accepted::AcceptedDrift;
 use crate::core::calibration::Calibration;
 use crate::core::config::{load_from_project, Config, DrainTier, PolicyDrainConfig};
-use crate::core::finding::Finding;
-use crate::core::findings_cache::{config_hash_from_paths, read_latest, FindingsRecord};
+use crate::core::finding::{CoverageObservation, Finding};
+use crate::core::findings_cache::{read_latest_if_fresh, FindingsRecord};
 use crate::core::severity::Severity;
 use crate::core::term::{
     ansi_wrap, write_through_pager, ANSI_CYAN, ANSI_GREEN, ANSI_RED, ANSI_YELLOW,
@@ -107,7 +109,7 @@ pub fn run(project: &Path, args: &crate::cli::DiffArgs) -> Result<()> {
         load_or_recompute_from(project, &paths, &cfg, &resolved_ref, &target_sha)?;
     let to_head_sha = git::head_sha(project);
     let to_clean = git::worktree_clean(project).unwrap_or(false);
-    let mut to_record = build_record(project, &paths, &cfg, to_head_sha, to_clean);
+    let mut to_record = build_record(project, &paths, &cfg, to_head_sha, to_clean)?;
 
     // The baseline uses **today's** accepted-finding decisions —
     // apples-to-apples with the "to" view, same principle as
@@ -117,12 +119,16 @@ pub fn run(project: &Path, args: &crate::cli::DiffArgs) -> Result<()> {
     to_record.apply_accepted(&accepted_map);
 
     let diff = compute_diff(&from_record, &to_record, workspace, &cfg.policy.drain);
+    let accepted_rereview = scoped_accepted_rereview(&to_record, workspace);
     if args.json {
         super::emit_json(&DiffReport {
             from_ref: &resolved_ref,
             from_sha: &target_sha,
             to_head_sha: to_record.head_sha.as_deref(),
             workspace,
+            from_coverage_observation: scoped_coverage_observation(&from_record, workspace),
+            to_coverage_observation: scoped_coverage_observation(&to_record, workspace),
+            accepted_rereview,
             buckets: &diff,
         });
         return Ok(());
@@ -156,18 +162,21 @@ fn load_or_recompute_from(
     revspec: &str,
     target_sha: &str,
 ) -> Result<FindingsRecord> {
-    // Same gate as `is_fresh_against`, minus the live-worktree term:
-    // the "from" baseline only needs the cached record to be a clean
-    // scan of the target sha under today's config_hash — whether the
-    // *current* worktree is dirty doesn't invalidate it. Without the
-    // config_hash term, a `heal calibrate --force` between the cached
-    // scan and this diff would compare stale-classified findings
-    // against a freshly classified "to", producing spurious buckets.
-    let cfg_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
-    if let Some(record) = read_latest(&paths.findings_latest())?.filter(|r| {
-        r.worktree_clean && r.head_sha.as_deref() == Some(target_sha) && r.config_hash == cfg_hash
-    }) {
-        return Ok(record);
+    // Reuse can be proven only when the target is the checked-out HEAD:
+    // enabled LCOV/doc-pair inputs may be ignored by git, so the current
+    // worktree cannot stand in for an older ref's observation inputs.
+    if git::head_sha(project).as_deref() == Some(target_sha) {
+        if let Some(record) = read_latest_if_fresh(
+            &paths.findings_latest(),
+            project,
+            cfg,
+            &paths.config(),
+            &paths.calibration(),
+            Some(target_sha),
+            true,
+        )? {
+            return Ok(record);
+        }
     }
     enforce_loc_threshold(project, cfg, revspec);
     recompute_at_ref(project, paths, cfg, target_sha)
@@ -210,13 +219,7 @@ fn recompute_at_ref(
     let workdir = tmp.path().join("heal-diff");
     let _guard = WorktreeGuard::add(project, &workdir, target_sha)?;
     // A fresh `git worktree add --detach` is clean by construction.
-    Ok(build_record(
-        &workdir,
-        paths,
-        cfg,
-        Some(target_sha.to_owned()),
-        true,
-    ))
+    build_record(&workdir, paths, cfg, Some(target_sha.to_owned()), true)
 }
 
 /// RAII handle for a transient `git worktree`. `add` runs
@@ -277,6 +280,12 @@ struct DiffReport<'a> {
     /// terse.
     #[serde(skip_serializing_if = "Option::is_none")]
     workspace: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    from_coverage_observation: Option<CoverageObservation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    to_coverage_observation: Option<CoverageObservation>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    accepted_rereview: Vec<AcceptedDrift>,
     #[serde(flatten)]
     buckets: &'a Diff,
 }
@@ -486,6 +495,9 @@ fn render_diff(
         to.head_sha.as_deref().unwrap_or("∅"),
         scoped_count(&to.findings, workspace),
     )?;
+    render_coverage_guidance("from", from, workspace, colorize, out)?;
+    render_coverage_guidance("to", to, workspace, colorize, out)?;
+    render_accepted_rereview(to, workspace, colorize, out)?;
     writeln!(out)?;
 
     let mut hidden_low_severity = 0usize;
@@ -549,6 +561,75 @@ fn render_diff(
     writeln!(out)?;
     render_progress(diff, scoped_count(&from.findings, workspace), out)?;
     Ok(())
+}
+
+fn scoped_accepted_rereview(
+    record: &FindingsRecord,
+    workspace: Option<&str>,
+) -> Vec<AcceptedDrift> {
+    record
+        .accepted_rereview
+        .iter()
+        .filter(|drift| {
+            record.findings.iter().any(|finding| {
+                finding.id == drift.finding_id
+                    && workspace.is_none_or(|ws| finding.workspace.as_deref() == Some(ws))
+            })
+        })
+        .cloned()
+        .collect()
+}
+
+fn render_accepted_rereview(
+    record: &FindingsRecord,
+    workspace: Option<&str>,
+    colorize: bool,
+    out: &mut (impl Write + ?Sized),
+) -> std::io::Result<()> {
+    let drifts = scoped_accepted_rereview(record, workspace);
+    if drifts.is_empty() {
+        return Ok(());
+    }
+    writeln!(
+        out,
+        "  {} {} accepted finding(s) need re-review; acceptance remains in place.",
+        ansi_wrap(ANSI_YELLOW, "accepted re-review:", colorize),
+        drifts.len(),
+    )?;
+    for drift in drifts {
+        writeln!(out, "    {} — {}", drift.file, drift.reason_summary())?;
+    }
+    Ok(())
+}
+
+fn render_coverage_guidance(
+    side: &str,
+    record: &FindingsRecord,
+    workspace: Option<&str>,
+    colorize: bool,
+    out: &mut (impl Write + ?Sized),
+) -> std::io::Result<()> {
+    let observation = scoped_coverage_observation(record, workspace);
+    let Some(guidance) = observation
+        .as_ref()
+        .and_then(crate::core::finding::CoverageObservation::guidance)
+    else {
+        return Ok(());
+    };
+    writeln!(
+        out,
+        "  {} {side}: {guidance}",
+        ansi_wrap(ANSI_YELLOW, "measurement:", colorize),
+    )
+}
+
+fn scoped_coverage_observation(
+    record: &FindingsRecord,
+    workspace: Option<&str>,
+) -> Option<CoverageObservation> {
+    record.coverage_observation.as_ref().map(|observation| {
+        workspace.map_or_else(|| observation.clone(), |ws| observation.scoped_to(ws))
+    })
 }
 
 /// The two-line progress block: T0 drain foregrounded, whole-population
@@ -670,7 +751,8 @@ fn is_high_or_critical(e: &DiffEntry) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::finding::{Finding, Location};
+    use crate::core::accepted::{AcceptedDrift, AcceptedRereviewReason};
+    use crate::core::finding::{CoverageObservation, CoverageObservationState, Finding, Location};
     use crate::core::findings_cache::FindingsRecord;
     use crate::core::severity::Severity;
     use std::path::PathBuf;
@@ -688,6 +770,103 @@ mod tests {
         );
         f.severity = severity;
         f
+    }
+
+    #[test]
+    fn diff_surfaces_coverage_provenance_per_side() {
+        let from = FindingsRecord::new(Some("abc".into()), true, "h".into(), Vec::new())
+            .with_coverage_observation(Some(CoverageObservation {
+                state: CoverageObservationState::Missing,
+                configured_sources: vec!["lcov.info".into()],
+                sources: Vec::new(),
+                unreadable_sources: Vec::new(),
+                unmeasured_files: vec!["src/lib.rs".into()],
+            }));
+        let to = FindingsRecord::new(Some("def".into()), true, "h".into(), Vec::new())
+            .with_coverage_observation(Some(CoverageObservation {
+                state: CoverageObservationState::Complete,
+                configured_sources: vec!["lcov.info".into()],
+                sources: vec!["lcov.info".into()],
+                unreadable_sources: Vec::new(),
+                unmeasured_files: Vec::new(),
+            }));
+        let mut out = Vec::new();
+        render_coverage_guidance("from", &from, None, false, &mut out).unwrap();
+        let out = String::from_utf8(out).unwrap();
+        assert!(out.contains("measurement: from: coverage unmeasured"));
+
+        let diff = Diff::default();
+        let report = DiffReport {
+            from_ref: "HEAD",
+            from_sha: "abc",
+            to_head_sha: to.head_sha.as_deref(),
+            workspace: None,
+            from_coverage_observation: scoped_coverage_observation(&from, None),
+            to_coverage_observation: scoped_coverage_observation(&to, None),
+            accepted_rereview: Vec::new(),
+            buckets: &diff,
+        };
+        let json = serde_json::to_value(report).unwrap();
+        assert_eq!(json["from_coverage_observation"]["state"], "missing");
+        assert_eq!(json["to_coverage_observation"]["state"], "complete");
+        assert_eq!(
+            json["from_coverage_observation"]["unmeasured_files"][0],
+            "src/lib.rs"
+        );
+    }
+
+    #[test]
+    fn diff_surfaces_accepted_rereview_in_human_and_machine_output() {
+        let mut accepted = finding("accepted", Severity::Critical);
+        accepted.accepted = true;
+        let finding_id = accepted.id.clone();
+        let from = record(vec![accepted.clone()]);
+        let mut to = record(vec![accepted]);
+        to.accepted_rereview.push(AcceptedDrift {
+            finding_id,
+            file: "src/accepted.ts".into(),
+            was: Severity::Critical,
+            now: Severity::Critical,
+            was_hotspot: false,
+            now_hotspot: true,
+            reasons: vec![AcceptedRereviewReason::BecameHotspot],
+        });
+        let diff = compute_diff(&from, &to, None, &PolicyDrainConfig::default());
+
+        let mut out = Vec::new();
+        render_diff(
+            "HEAD",
+            "deadbeefdeadbeef",
+            None,
+            &from,
+            &to,
+            &diff,
+            false,
+            false,
+            false,
+            &mut out,
+        )
+        .unwrap();
+        let out = String::from_utf8(out).unwrap();
+        assert!(out.contains("accepted re-review:"), "{out}");
+        assert!(out.contains("became a hotspot"), "{out}");
+        assert!(out.contains("acceptance remains in place"), "{out}");
+
+        let report = DiffReport {
+            from_ref: "HEAD",
+            from_sha: "deadbeefdeadbeef",
+            to_head_sha: to.head_sha.as_deref(),
+            workspace: None,
+            from_coverage_observation: None,
+            to_coverage_observation: None,
+            accepted_rereview: scoped_accepted_rereview(&to, None),
+            buckets: &diff,
+        };
+        let json = serde_json::to_value(report).unwrap();
+        assert_eq!(
+            json["accepted_rereview"][0]["reasons"],
+            serde_json::json!(["became_hotspot"])
+        );
     }
 
     fn record(findings: Vec<Finding>) -> FindingsRecord {
@@ -1026,7 +1205,7 @@ mod tests {
     #[test]
     fn from_cache_requires_matching_config_hash_and_clean_scan() {
         use crate::core::config::Config;
-        use crate::core::findings_cache::{config_hash_from_paths, write_record};
+        use crate::core::findings_cache::{observation_hash_from_paths, write_record};
         use crate::test_support::{commit, init_repo};
         use tempfile::TempDir;
 
@@ -1044,7 +1223,9 @@ mod tests {
         paths.ensure().unwrap();
         Config::default().save(&paths.config()).unwrap();
         let cfg = load_from_project(dir.path()).unwrap();
-        let cfg_hash = config_hash_from_paths(&paths.config(), &paths.calibration());
+        let cfg_hash =
+            observation_hash_from_paths(dir.path(), &cfg, &paths.config(), &paths.calibration())
+                .unwrap();
         let has_marker = |r: &FindingsRecord| {
             r.findings
                 .iter()
@@ -1087,6 +1268,127 @@ mod tests {
         write_record(&paths.findings_latest(), &dirty).unwrap();
         let got = load_or_recompute_from(dir.path(), &paths, &cfg, "HEAD", &head_sha).unwrap();
         assert!(!has_marker(&got), "dirty-scan cache must force a recompute");
+    }
+
+    #[test]
+    fn old_ref_never_reuses_current_lcov_as_baseline_input() {
+        use crate::core::config::Config;
+        use crate::core::findings_cache::{observation_hash_from_paths, write_record};
+        use crate::test_support::{commit, init_repo};
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit(
+            dir.path(),
+            "lib.rs",
+            "fn old() {}\n",
+            "tester@example.com",
+            "old",
+        );
+        let old_sha = git::head_sha(dir.path()).unwrap();
+        commit(
+            dir.path(),
+            "lib.rs",
+            "fn current() {}\n",
+            "tester@example.com",
+            "current",
+        );
+
+        let paths = HealPaths::new(dir.path());
+        paths.ensure().unwrap();
+        let mut config = Config::default();
+        config.features.test.enabled = true;
+        config.features.test.coverage.enabled = true;
+        config.features.test.coverage.lcov_paths = vec!["lcov.info".into()];
+        config.save(&paths.config()).unwrap();
+        std::fs::write(
+            dir.path().join("lcov.info"),
+            "SF:lib.rs\nLF:1\nLH:0\nend_of_record\n",
+        )
+        .unwrap();
+        let cfg = load_from_project(dir.path()).unwrap();
+        let current_input_hash =
+            observation_hash_from_paths(dir.path(), &cfg, &paths.config(), &paths.calibration())
+                .unwrap();
+        let cached = FindingsRecord::new(
+            Some(old_sha.clone()),
+            true,
+            current_input_hash,
+            vec![finding("marker", Severity::High)],
+        );
+        write_record(&paths.findings_latest(), &cached).unwrap();
+
+        let got = load_or_recompute_from(dir.path(), &paths, &cfg, &old_sha, &old_sha).unwrap();
+        assert!(
+            !got.findings.iter().any(|f| f.metric == "marker"),
+            "an old ref must be rescanned in its own worktree"
+        );
+        assert!(
+            got.findings.iter().all(|f| f.metric != "coverage_pct"),
+            "current-worktree lcov must not be treated as old-ref coverage"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn old_ref_rejects_symlinked_observation_parent() {
+        use crate::core::config::Config;
+        use crate::test_support::{commit, git as run_git, init_repo};
+        use std::os::unix::fs::symlink;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        std::fs::write(outside.path().join("lcov.info"), "external").unwrap();
+        init_repo(dir.path());
+        commit(
+            dir.path(),
+            "lib.rs",
+            "fn old() {}\n",
+            "tester@example.com",
+            "old source",
+        );
+        symlink(outside.path(), dir.path().join("reports")).unwrap();
+        run_git(dir.path(), &["add", "reports"]);
+        run_git(
+            dir.path(),
+            &[
+                "-c",
+                "user.email=tester@example.com",
+                "-c",
+                "user.name=tester",
+                "commit",
+                "-q",
+                "-m",
+                "symlinked report",
+            ],
+        );
+        let old_sha = git::head_sha(dir.path()).unwrap();
+
+        run_git(dir.path(), &["rm", "-q", "reports"]);
+        std::fs::create_dir(dir.path().join("reports")).unwrap();
+        commit(
+            dir.path(),
+            "reports/.keep",
+            "",
+            "tester@example.com",
+            "replace report symlink",
+        );
+
+        let paths = HealPaths::new(dir.path());
+        paths.ensure().unwrap();
+        let mut config = Config::default();
+        config.features.test.enabled = true;
+        config.features.test.coverage.enabled = true;
+        config.features.test.coverage.lcov_paths = vec!["reports/lcov.info".into()];
+        config.save(&paths.config()).unwrap();
+        let cfg = load_from_project(dir.path()).unwrap();
+
+        let error = load_or_recompute_from(dir.path(), &paths, &cfg, &old_sha, &old_sha)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("symlink component"), "{error}");
     }
 
     #[test]

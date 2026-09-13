@@ -37,6 +37,7 @@
 //! surfaces as drift. Hard-failing here would make every rename break
 //! the build for one commit.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -122,12 +123,24 @@ impl DocPairsFile {
     /// error: the contract is "stale shape ⇒ rerun the generator",
     /// matching `findings_cache::read_latest`.
     pub fn read(project: &Path, pairs_path: &str) -> Result<Option<Self>> {
-        let abs = project.join(pairs_path);
-        let raw = match std::fs::read_to_string(&abs) {
-            Ok(s) => s,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(source) => return Err(Error::Io { path: abs, source }),
+        let Some(mut file) = crate::core::config::open_observation_file(
+            project,
+            "[features.docs].pairs_path",
+            pairs_path,
+        )
+        .map_err(|message| Error::ConfigInvalid {
+            path: project.join(".heal/config.toml"),
+            message,
+        })?
+        else {
+            return Ok(None);
         };
+        let abs = project.join(pairs_path);
+        let mut raw = String::new();
+        file.read_to_string(&mut raw).map_err(|source| Error::Io {
+            path: abs.clone(),
+            source,
+        })?;
         let parsed: Self = serde_json::from_str(&raw).map_err(|source| Error::CacheParse {
             path: abs.clone(),
             source,

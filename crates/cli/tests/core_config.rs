@@ -1,5 +1,6 @@
 use heal_cli::core::config::{
-    assign_workspace, Config, CrossWorkspacePolicy, DrainSpec, DrainTier, HotspotMatch,
+    assign_workspace, load_from_project, Config, CrossWorkspacePolicy, DrainSpec, DrainTier,
+    HotspotMatch,
 };
 use heal_cli::core::finding::{Finding, Location};
 use heal_cli::core::severity::Severity;
@@ -577,6 +578,74 @@ fn workspaces_validate_rejects_absolute_path() {
     "#;
     let parsed = Config::from_toml_str(cfg).unwrap();
     assert!(parsed.validate(Path::new("/heal/config.toml")).is_err());
+}
+
+#[test]
+fn observation_input_paths_reject_absolute_and_parent_escape() {
+    for cfg in [
+        r#"
+            [features.docs]
+            enabled = false
+            pairs_path = "/tmp/doc_pairs.json"
+        "#,
+        r#"
+            [features.docs]
+            enabled = false
+            pairs_path = "../doc_pairs.json"
+        "#,
+        r#"
+            [features.test]
+            enabled = false
+            [features.test.coverage]
+            enabled = false
+            lcov_paths = ["/tmp/lcov.info"]
+        "#,
+        r#"
+            [features.test]
+            enabled = false
+            [features.test.coverage]
+            enabled = false
+            lcov_paths = ["coverage/../../lcov.info"]
+        "#,
+    ] {
+        let parsed = Config::from_toml_str(cfg).unwrap();
+        let error = parsed
+            .validate(Path::new("/heal/config.toml"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("project-relative"), "{error}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn observation_input_paths_reject_direct_and_parent_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    let project = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::create_dir(project.path().join(".heal")).unwrap();
+    std::fs::write(outside.path().join("lcov.info"), "external").unwrap();
+
+    let mut cfg = Config::default();
+    cfg.features.test.enabled = true;
+    cfg.features.test.coverage.enabled = true;
+    cfg.features.test.coverage.lcov_paths = vec!["direct.info".into()];
+    symlink(
+        outside.path().join("lcov.info"),
+        project.path().join("direct.info"),
+    )
+    .unwrap();
+    cfg.save(&project.path().join(".heal/config.toml")).unwrap();
+    let direct = load_from_project(project.path()).unwrap_err().to_string();
+    assert!(direct.contains("symlink component"), "{direct}");
+
+    std::fs::remove_file(project.path().join("direct.info")).unwrap();
+    symlink(outside.path(), project.path().join("reports")).unwrap();
+    cfg.features.test.coverage.lcov_paths = vec!["reports/lcov.info".into()];
+    cfg.save(&project.path().join(".heal/config.toml")).unwrap();
+    let parent = load_from_project(project.path()).unwrap_err().to_string();
+    assert!(parent.contains("symlink component"), "{parent}");
 }
 
 #[test]

@@ -72,13 +72,13 @@ Strict / Default / Lenient のどれにするかを聞き、`.heal/config.toml` 
 
 ## 4. TODO リストを見る
 
-Severity ごとにまとまった、すぐ手をつけられる項目の一覧です。
+有効 Drain Tier と Severity でまとまり、同一ファミリ内では Hotspot スコア降順になった項目の一覧です。
 
 ```sh
 heal status
 ```
 
-ファイル単位の TODO リストを Severity 別に表示します。フィルタや JSON 出力は [CLI › heal status](/heal/ja/cli/#heal-status) を参照。
+ファイル単位の TODO リストを Tier、Severity、スコア順で表示します。フィルタや JSON 出力は [CLI › heal status](/heal/ja/cli/#heal-status) を参照。
 
 ## 5. エージェントに監査と修正を任せる
 
@@ -87,7 +87,7 @@ heal status
 ```sh
 # 常時オン — Code ファミリ:
 claude /heal-code-review     # 出力をシステムとして読み解く。問題のあるコードを精読し、優先度付きのリファクタ TODO を返す。コードは触らない。
-claude /heal-code-patch      # TODO を機械的に解消。1 コミット 1 修正、Severity 順に進め、push も amend もしない。
+claude /heal-code-patch      # T0 を機械的に解消。1 コミット 1 修正、Tier / Severity / ファミリ内スコア順に進め、push も amend もしない。
 
 # [features.docs] が ON のとき:
 claude /heal-doc-review      # Diátaxis レンズでドキュメントを監査。読者がどこで迷うかを見つける。

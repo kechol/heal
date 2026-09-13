@@ -8,10 +8,12 @@
 //! from `McCabe` / `SonarQube` so a uniformly-rotten codebase cannot
 //! quietly flatten the ladder.
 //!
-//! Hotspot uses an independent percentile space with **no floor** so
-//! the top 10% (`score >= p90`) is structurally guaranteed regardless
-//! of churn / size; the `hotspot=true` flag rides on top of Severity
-//! rather than collapsing into it.
+//! Hotspot uses an independent percentile space plus a family-specific
+//! absolute graduation floor. With five or more valid scores, both the
+//! top-decile (`score >= p90`) and floor gates apply. Smaller cohorts use
+//! the floor alone because a relative percentile is not meaningful.
+//! The `hotspot=true` flag rides on top of Severity rather than
+//! collapsing into it.
 //!
 //! Layout on disk:
 //!
@@ -82,10 +84,10 @@ pub const FLOOR_OK_HOTSPOT: f64 = 22.0;
 /// coverage = decent" gives the gap floor, and any file touched at
 /// least once in the churn window is considered active. Below this
 /// product the file is either dormant or already nearly-fully tested,
-/// so the percentile classifier shouldn't promote it to hot.
-/// Erring low is safe (calibration percentiles still gate the upper
-/// end); erring high silently drops legitimate test-debt hotspots
-/// from the drain queue.
+/// so the classifier shouldn't promote it to hot. Erring low is safe:
+/// cohorts of at least five still require p90, while cohorts of 1–4
+/// intentionally use the absolute floor alone. Erring high silently
+/// drops legitimate test-debt hotspots from the drain queue.
 pub const FLOOR_OK_TEST_HOTSPOT: f64 = 25.0;
 
 /// `[calibration.doc_hotspot]` graduation gate for the per-pair
@@ -395,17 +397,23 @@ pub struct HotspotCalibration {
 }
 
 impl HotspotCalibration {
-    /// True iff `score >= p90` AND `score >= floor_ok` (when set) —
-    /// i.e. the file sits in the top 10% AND its absolute composite
-    /// score is non-trivial. Hotspot is a **flag**, not a Severity:
-    /// it rides on top of any Finding via `Finding.hotspot` so the
-    /// two axes (how bad? how often touched?) stay independent.
+    /// With a valid percentile calibration, true iff `score >= p90`
+    /// AND `score >= floor_ok` (when set). A `NaN` p90 denotes a cohort
+    /// below [`MIN_SAMPLES_FOR_PERCENTILES`]; those cohorts use their
+    /// absolute `floor_ok` alone. Legacy `NaN` calibrations without a
+    /// floor remain inactive. Hotspot is a **flag**, not a Severity.
     #[must_use]
     pub fn flag(&self, score: f64) -> bool {
+        if !score.is_finite() {
+            return false;
+        }
         if let Some(floor) = self.floor_ok {
             if score < floor {
                 return false;
             }
+        }
+        if !self.p90.is_finite() {
+            return self.floor_ok.is_some();
         }
         score >= self.p90
     }
@@ -421,7 +429,8 @@ impl HotspotCalibration {
     /// literature-anchored [`FLOOR_OK_HOTSPOT`].
     #[must_use]
     pub fn from_distribution_with_floor(scores: &[f64], floor_ok: Option<f64>) -> Self {
-        if scores.len() < MIN_SAMPLES_FOR_PERCENTILES {
+        let mut sorted: Vec<f64> = scores.iter().copied().filter(|v| v.is_finite()).collect();
+        if sorted.len() < MIN_SAMPLES_FOR_PERCENTILES {
             return Self {
                 p50: f64::NAN,
                 p75: f64::NAN,
@@ -430,7 +439,6 @@ impl HotspotCalibration {
                 floor_ok,
             };
         }
-        let mut sorted: Vec<f64> = scores.iter().copied().filter(|v| v.is_finite()).collect();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         Self {
             p50: percentile(&sorted, 50.0),
@@ -946,6 +954,57 @@ mod tests {
         assert!(!h.flag(50.0));
         assert!(h.flag(67.0));
         assert!(h.flag(200.0));
+    }
+
+    #[test]
+    fn hotspot_small_cohorts_use_only_the_family_floor() {
+        for (floor, scores) in [
+            (FLOOR_OK_HOTSPOT, vec![]),
+            (FLOOR_OK_TEST_HOTSPOT, vec![25.0]),
+            (FLOOR_OK_DOC_HOTSPOT, vec![1.0, 2.0, 3.0, 5.0]),
+        ] {
+            let h = HotspotCalibration::from_distribution_with_floor(&scores, Some(floor));
+            assert!(h.p90.is_nan());
+            assert!(!h.flag(floor - 0.01));
+            assert!(h.flag(floor));
+            assert!(h.flag(floor + 0.01));
+            assert!(!h.flag(f64::NAN));
+            assert!(!h.flag(f64::INFINITY));
+        }
+    }
+
+    #[test]
+    fn hotspot_five_valid_scores_preserve_percentile_gate() {
+        let h = HotspotCalibration::from_distribution_with_floor(
+            &[22.0, 30.0, 40.0, 50.0, 60.0],
+            Some(FLOOR_OK_HOTSPOT),
+        );
+        assert!(h.p90.is_finite());
+        assert!(!h.flag(50.0));
+        assert!(h.flag(h.p90));
+        assert!(h.flag(60.0));
+    }
+
+    #[test]
+    fn hotspot_non_finite_values_do_not_count_toward_minimum_sample() {
+        let h = HotspotCalibration::from_distribution_with_floor(
+            &[22.0, 30.0, 40.0, 50.0, f64::NAN, f64::INFINITY],
+            Some(FLOOR_OK_HOTSPOT),
+        );
+        assert!(h.p90.is_nan());
+        assert!(h.flag(FLOOR_OK_HOTSPOT));
+    }
+
+    #[test]
+    fn legacy_nan_hotspot_without_floor_stays_inactive() {
+        let h = HotspotCalibration {
+            p50: f64::NAN,
+            p75: f64::NAN,
+            p90: f64::NAN,
+            p95: f64::NAN,
+            floor_ok: None,
+        };
+        assert!(!h.flag(1_000.0));
     }
 
     #[test]

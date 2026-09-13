@@ -6,6 +6,8 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use anyhow::{bail, Result};
+
 use crate::core::calibration::{
     Calibration, CalibrationMeta, HotspotCalibration, MetricCalibration, MetricCalibrations,
     MetricFloors, FLOOR_CCN, FLOOR_COGNITIVE, FLOOR_DUPLICATION_PCT, FLOOR_OK_CCN,
@@ -73,9 +75,9 @@ pub struct ObserverReports {
     pub todo_density: Option<TodoDensityReport>,
     /// Per-source-file line coverage parsed from an externally-generated
     /// lcov.info file. `None` whenever `[features.test.coverage]` is
-    /// disabled, the user is running a single-metric scan that doesn't
-    /// need it, or the configured `lcov_paths` resolve to nothing on
-    /// disk.
+    /// disabled or the user is running a single-metric scan that doesn't
+    /// need it. An enabled scan with no readable report is retained with
+    /// explicit missing/read-error provenance.
     pub coverage: Option<CoverageReport>,
     /// Per-test-file skipped-test ratio. `None` whenever
     /// `[features.test]` is disabled or no `test_paths` are configured.
@@ -106,26 +108,42 @@ pub(crate) fn run_all(
     project: &Path,
     cfg: &Config,
     only: Option<MetricKind>,
+    family: Option<crate::feature::Family>,
     workspace: Option<&Path>,
 ) -> ObserverReports {
+    if workspace
+        .is_some_and(|under| !crate::observer::shared::walk::workspace_is_within(project, under))
+    {
+        return ObserverReports::default();
+    }
+    let selected = |m: MetricKind| {
+        only.map_or_else(
+            || family.is_none_or(|f| crate::feature::Family::for_metric(m.json_key()) == f),
+            |filter| filter == m,
+        )
+    };
     let want = |m: MetricKind| match only {
-        None => true,
-        Some(o) if o == m => true,
-        Some(MetricKind::Hotspot) if matches!(m, MetricKind::Churn | MetricKind::Complexity) => {
+        _ if selected(m) => true,
+        _ if selected(MetricKind::Hotspot)
+            && matches!(m, MetricKind::Churn | MetricKind::Complexity) =>
+        {
             true
         }
         // test_hotspot is `commits × uncov_pct` — needs both Churn and
         // CoveragePct as inputs, so a `--metric test-hotspot` run pulls
         // them in even when neither was named.
-        Some(MetricKind::TestHotspot)
-            if matches!(m, MetricKind::Churn | MetricKind::CoveragePct) =>
+        _ if selected(MetricKind::TestHotspot)
+            && cfg.features.test.enabled
+            && cfg.features.test.coverage.enabled
+            && matches!(m, MetricKind::Churn | MetricKind::CoveragePct) =>
         {
             true
         }
         // doc_hotspot needs Churn (paired-src volatility) plus
         // DocFreshness (staleness) plus DocDrift (dangling idents).
-        Some(MetricKind::DocHotspot)
-            if matches!(
+        _ if selected(MetricKind::DocHotspot)
+            && cfg.features.docs.enabled
+            && matches!(
                 m,
                 MetricKind::Churn | MetricKind::DocFreshness | MetricKind::DocDrift
             ) =>
@@ -150,25 +168,32 @@ pub(crate) fn run_all(
         LocReport::default()
     };
     let complexity_observer = ComplexityObserver::from_config(cfg).with_workspace(ws_buf.clone());
-    let churn = (want(MetricKind::Churn) && cfg.metrics.is_enabled("churn")).then(|| {
-        ChurnObserver::from_config(cfg)
-            .with_workspace(ws_buf.clone())
-            .scan(project)
-    });
-    let change_coupling = (want(MetricKind::ChangeCoupling)
+    let churn_observer = (want(MetricKind::Churn) && cfg.metrics.is_enabled("churn"))
+        .then(|| ChurnObserver::from_config(cfg).with_workspace(ws_buf.clone()));
+    let coupling_observer = (want(MetricKind::ChangeCoupling)
         && cfg.metrics.is_enabled("change_coupling"))
-    .then(|| {
-        ChangeCouplingObserver::from_config(cfg)
-            .with_workspace(ws_buf.clone())
-            .scan(project)
-    })
-    .map(|mut report| {
-        crate::observer::code::change_coupling::classify_and_filter(
-            &mut report,
-            loc.primary.as_deref(),
-        );
-        report
-    });
+    .then(|| ChangeCouplingObserver::from_config(cfg).with_workspace(ws_buf.clone()));
+    let history = if churn_observer.is_some() || coupling_observer.is_some() {
+        crate::observer::shared::git::collect_history(
+            project,
+            cfg.git.since_days,
+            &cfg.exclude_lines(),
+            ws_buf.as_deref(),
+            churn_observer.is_some(),
+        )
+    } else {
+        crate::observer::shared::git::History::default()
+    };
+    let churn = churn_observer.map(|observer| observer.scan_history(&history));
+    let change_coupling = coupling_observer
+        .map(|observer| observer.scan_history(&history))
+        .map(|mut report| {
+            crate::observer::code::change_coupling::classify_and_filter(
+                &mut report,
+                loc.primary.as_deref(),
+            );
+            report
+        });
     // Docs prep is gated on whether any consumer was actually
     // requested — `heal metrics --metric ccn` shouldn't pay
     // ~300 `stat()` calls + the doc-body I/O when nothing
@@ -323,10 +348,10 @@ pub(crate) fn run_all(
         && cfg.features.test.enabled
         && cfg.features.test.coverage.enabled)
         .then(|| {
-            // Universe-completion is load-bearing here — files that
-            // the lcov reporter dropped are the most important hot
-            // candidates, and they only enter the universe via
-            // ChurnReport. The `want()` extension ensures churn ran.
+            // Churn supplies edit frequency for files that have an
+            // explicit measured coverage entry. Files absent from LCOV
+            // remain unmeasured and do not become Test Hotspots. The
+            // `want()` extension ensures churn ran for the composition.
             let ch = churn.as_ref();
             let cov = coverage.as_ref();
             ch.map(|ch| compose_test_hotspot(ch, cov))
@@ -607,9 +632,9 @@ fn build_metric_calibrations(
     // Per-family hotspots: same `HotspotCalibration` shape as code
     // hotspot, anchored on `FLOOR_OK_TEST_HOTSPOT` /
     // `FLOOR_OK_DOC_HOTSPOT`. The floor is intentionally low — high
-    // floors silently block legitimate hot files from drain queues,
-    // whereas low floors only over-decorate in tiny projects, which
-    // calibration percentiles still gate.
+    // floors silently block legitimate hot files from drain queues.
+    // Cohorts of 1–4 use this absolute floor alone; cohorts of at least
+    // five additionally require the calibrated p90 threshold.
     let test_hotspot = reports.test_hotspot.as_ref().and_then(|h| {
         let scores: Vec<f64> = h
             .entries
@@ -699,27 +724,60 @@ pub(crate) fn build_record(
     cfg: &Config,
     head_sha: Option<String>,
     worktree_clean: bool,
-) -> crate::core::findings_cache::FindingsRecord {
-    let calibration = Calibration::load(&paths.calibration())
-        .ok()
-        .map(|c| c.with_overrides(cfg));
-    let owned;
-    let cal_ref = if let Some(c) = calibration.as_ref() {
-        c
-    } else {
-        owned = Calibration::default();
-        &owned
-    };
-    let reports = run_all(scan_root, cfg, None, None);
-    let findings = classify(&reports, cal_ref, cfg);
-    let config_hash =
-        crate::core::findings_cache::config_hash_from_paths(&paths.config(), &paths.calibration());
-    crate::core::findings_cache::FindingsRecord::new(
+) -> Result<crate::core::findings_cache::FindingsRecord> {
+    let ((findings, coverage_observation), config_hash) = observe_with_stable_hash(
+        || {
+            Ok(crate::core::findings_cache::observation_hash_from_paths(
+                scan_root,
+                cfg,
+                &paths.config(),
+                &paths.calibration(),
+            )?)
+        },
+        || {
+            let observed_cfg = Config::load(&paths.config())?;
+            if observed_cfg != *cfg {
+                bail!("configuration changed after HEAL loaded it; retry when it is stable");
+            }
+            crate::core::config::validate_observation_paths_at(
+                &observed_cfg,
+                scan_root,
+                &paths.config(),
+            )?;
+            let calibration = Calibration::load(&paths.calibration())
+                .ok()
+                .map(|c| c.with_overrides(&observed_cfg))
+                .unwrap_or_default();
+            let reports = run_all(scan_root, &observed_cfg, None, None, None);
+            let findings = classify(&reports, &calibration, &observed_cfg);
+            let coverage_observation = reports.coverage.as_ref().map(CoverageReport::observation);
+            Ok((findings, coverage_observation))
+        },
+    )?;
+    Ok(crate::core::findings_cache::FindingsRecord::new(
         head_sha,
         worktree_clean,
         config_hash,
         findings,
     )
+    .with_coverage_observation(coverage_observation))
+}
+
+const MAX_STABLE_OBSERVATION_ATTEMPTS: usize = 3;
+
+fn observe_with_stable_hash<T>(
+    mut observation_hash: impl FnMut() -> Result<String>,
+    mut observe: impl FnMut() -> Result<T>,
+) -> Result<(T, String)> {
+    for _ in 0..MAX_STABLE_OBSERVATION_ATTEMPTS {
+        let before = observation_hash()?;
+        let observed = observe()?;
+        let after = observation_hash()?;
+        if before == after {
+            return Ok((observed, before));
+        }
+    }
+    bail!("observation inputs changed while HEAL was scanning; retry when they are stable")
 }
 
 fn non_empty(values: &[f64]) -> bool {
@@ -743,6 +801,157 @@ mod tests {
     use crate::observer::code::hotspot::{HotspotEntry, HotspotReport, HotspotTotals};
     use std::collections::HashSet;
     use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    #[test]
+    fn family_filter_skips_unrelated_observers_but_keeps_hotspot_dependencies() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("lib.rs"), "pub fn value() -> u8 { 1 }\n").unwrap();
+        let mut cfg = Config::default();
+        cfg.features.docs.enabled = true;
+        cfg.features.test.enabled = true;
+
+        let code = run_all(
+            dir.path(),
+            &cfg,
+            None,
+            Some(crate::feature::Family::Code),
+            None,
+        );
+        assert!(code.loc.total_files() > 0);
+        assert!(code.coverage.is_none());
+        assert!(code.skip_ratio.is_none());
+        assert!(code.doc_link_health.is_none());
+        assert!(code.todo_density.is_none());
+
+        let test_without_coverage = run_all(
+            dir.path(),
+            &cfg,
+            None,
+            Some(crate::feature::Family::Test),
+            None,
+        );
+        assert!(test_without_coverage.churn.is_none());
+        assert!(test_without_coverage.coverage.is_none());
+        assert!(test_without_coverage.skip_ratio.is_some());
+
+        cfg.features.test.coverage.enabled = true;
+        let test = run_all(
+            dir.path(),
+            &cfg,
+            None,
+            Some(crate::feature::Family::Test),
+            None,
+        );
+        assert_eq!(test.loc.total_files(), 0);
+        assert!(test.complexity.files.is_empty());
+        assert!(test.duplication.is_none());
+        assert!(test.lcom.is_none());
+        assert!(test.change_coupling.is_none());
+        assert!(test.churn.is_some(), "test_hotspot depends on churn");
+        assert!(test.coverage.is_some());
+        assert!(test.skip_ratio.is_some());
+    }
+
+    #[test]
+    fn workspace_outside_project_returns_no_observer_results() {
+        let project = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        std::fs::write(outside.path().join("outside.rs"), "pub fn outside() {}\n").unwrap();
+        let reports = run_all(
+            project.path(),
+            &Config::default(),
+            None,
+            None,
+            Some(outside.path()),
+        );
+        assert_eq!(reports.loc.total_files(), 0);
+        assert!(reports.complexity.files.is_empty());
+        assert!(reports.churn.is_none());
+    }
+
+    #[test]
+    fn lexical_parent_workspace_keeps_loc_behavior() {
+        let project = TempDir::new().unwrap();
+        std::fs::create_dir(project.path().join("pkg")).unwrap();
+        std::fs::write(project.path().join("pkg/source.rs"), "pub fn source() {}\n").unwrap();
+        let workspace = project.path().join("pkg/../pkg");
+        let reports = run_all(
+            project.path(),
+            &Config::default(),
+            Some(MetricKind::Loc),
+            None,
+            Some(&workspace),
+        );
+        assert_eq!(reports.loc.total_files(), 1);
+    }
+
+    #[test]
+    fn disabled_docs_skip_doc_hotspot_dependencies() {
+        let project = TempDir::new().unwrap();
+        let reports = run_all(
+            project.path(),
+            &Config::default(),
+            Some(MetricKind::DocHotspot),
+            None,
+            None,
+        );
+        assert!(reports.churn.is_none());
+        assert!(reports.doc_freshness.is_none());
+        assert!(reports.doc_drift.is_none());
+        assert!(reports.doc_hotspot.is_none());
+    }
+
+    #[test]
+    fn observation_retries_until_its_hash_is_stable() {
+        use std::cell::RefCell;
+        use std::collections::VecDeque;
+
+        let hashes = RefCell::new(VecDeque::from(["old", "new", "new", "new"]));
+        let scans = std::cell::Cell::new(0usize);
+        let (value, hash) = observe_with_stable_hash(
+            || Ok(hashes.borrow_mut().pop_front().unwrap().to_owned()),
+            || {
+                scans.set(scans.get() + 1);
+                Ok(scans.get())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(value, 2);
+        assert_eq!(hash, "new");
+        assert_eq!(scans.get(), 2);
+    }
+
+    #[test]
+    fn observation_fails_after_repeated_input_changes() {
+        let next = std::cell::Cell::new(0usize);
+        let err = observe_with_stable_hash(
+            || {
+                next.set(next.get() + 1);
+                Ok(next.get().to_string())
+            },
+            || Ok(()),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("inputs changed"));
+        assert_eq!(next.get(), MAX_STABLE_OBSERVATION_ATTEMPTS * 2);
+    }
+
+    #[test]
+    fn record_build_rejects_config_changed_after_caller_load() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let paths = crate::core::HealPaths::new(tmp.path());
+        paths.ensure().unwrap();
+        let disk_cfg = Config::default();
+        disk_cfg.save(&paths.config()).unwrap();
+        let mut stale_cfg = disk_cfg;
+        stale_cfg.metrics.top_n = 99;
+
+        let err = build_record(tmp.path(), &paths, &stale_cfg, None, true).unwrap_err();
+        assert!(err.to_string().contains("configuration changed"));
+    }
 
     /// Synthesize a small but representative `ObserverReports` +
     /// `Calibration` pair. The numbers are picked so each metric has at

@@ -26,7 +26,7 @@ binary that ships with each release. Upgrade with the usual
 
 ## Cargo
 
-If you already have a Rust toolchain on `PATH` (1.85 or newer):
+If you already have a Rust toolchain on `PATH` (1.90 or newer):
 
 ```sh
 cargo install heal-cli
