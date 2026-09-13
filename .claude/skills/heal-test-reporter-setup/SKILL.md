@@ -180,7 +180,7 @@ prefer pinning there over a bare global install. For mise:
 ```toml
 # mise.toml
 [tools]
-"cargo:cargo-llvm-cov" = "0.8.5"
+"cargo:cargo-llvm-cov" = "0.9.1"
 ```
 
 Surface this as a follow-up in the run summary; don't second-guess
@@ -365,7 +365,7 @@ End with one summary block:
 
 ```
 Detected:        Rust workspace + Python pipeline (polyglot)
-Reporter:        cargo-llvm-cov 0.8.5 (Rust)  pytest-cov 5.0 (Python)
+Reporter:        cargo-llvm-cov 0.9.1 (Rust)  pytest-cov 5.0 (Python)
 Config edits:    [features.test.coverage].enabled  false → true
                  lcov_paths: defaults sufficient (no edit)
                  post_commit_refresh: skipped (Rust run >30 s)

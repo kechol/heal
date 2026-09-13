@@ -183,7 +183,7 @@ Prioritized TODO:
   T1 Mechanical (hand to /heal-doc-patch):
     - docs/cli.md:42 broken link to ./old-flag.md
     - docs/api.md:18 dangling identifier `OldStruct`
-    - docs/install.md FIXME: pin Rust version (use 1.85, see CI)
+    - docs/install.md FIXME: pin Rust version (use 1.90, see CI)
   T2 Interpretive (user drives):
     - docs/cli.md: rewrite Step 3 after observer rename
     - docs/concept.md: clarify what 'workspace' means after monorepo support

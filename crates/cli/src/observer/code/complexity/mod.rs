@@ -100,7 +100,7 @@ fn collect_scopes(parsed: &ParsedFile) -> Vec<(FunctionScope, Node<'_>)> {
 
     let mut scopes = Vec::new();
     while let Some(m) = matches.next() {
-        for cap in m.captures.iter().filter(|c| c.index == q.captures.scope) {
+        for cap in m.captures().iter().filter(|c| c.index == q.captures.scope) {
             scopes.push((scope_from_node(cap.node, &parsed.source), cap.node));
         }
     }

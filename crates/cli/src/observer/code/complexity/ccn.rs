@@ -15,7 +15,7 @@ pub(crate) fn compute(parsed: &ParsedFile, scope: Node<'_>, nested_starts: &[usi
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(&q.query, scope, parsed.source.as_bytes());
     while let Some(m) = matches.next() {
-        for cap in m.captures {
+        for cap in m.captures() {
             if is_inside_nested_function(cap.node, nested_starts, scope_start) {
                 continue;
             }

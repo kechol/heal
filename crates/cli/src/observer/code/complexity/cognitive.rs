@@ -55,7 +55,7 @@ fn build_role_map(
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(query, scope, source);
     while let Some(m) = matches.next() {
-        for cap in m.captures {
+        for cap in m.captures() {
             let role = if cap.index == captures.if_ {
                 Role::If
             } else if cap.index == captures.else_ {
@@ -162,7 +162,7 @@ impl<'p> Walker<'p> {
 }
 
 fn direct_child_of_kind<'tree>(node: Node<'tree>, kind: &str) -> Option<Node<'tree>> {
-    let count = u32::try_from(node.child_count()).unwrap_or(u32::MAX);
+    let count = node.child_count();
     (0..count)
         .filter_map(|i| node.child(i))
         .find(|child| child.kind() == kind)

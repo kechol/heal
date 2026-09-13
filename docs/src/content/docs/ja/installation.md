@@ -20,7 +20,7 @@ brew install kechol/tap/heal-cli
 
 ## Cargo
 
-`PATH` に Rust ツールチェーン（1.85 以上）がすでに通っている場合:
+`PATH` に Rust ツールチェーン（1.90 以上）がすでに通っている場合:
 
 ```sh
 cargo install heal-cli

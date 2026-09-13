@@ -262,7 +262,7 @@ fn classes_in(parsed: &ParsedFile, file: &Path) -> Vec<ClassLcom> {
     let mut out: Vec<ClassLcom> = Vec::new();
     while let Some(m) = matches.next() {
         for cap in m
-            .captures
+            .captures()
             .iter()
             .filter(|c| c.index == q.captures.class_scope)
         {

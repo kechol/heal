@@ -65,7 +65,7 @@ Index: [.claude/rules/README.md](./.claude/rules/README.md).
 
 ## Toolchain & commands
 
-Rust 1.85+ (MSRV in `Cargo.toml` `workspace.package.rust-version`).
+Rust 1.90+ (MSRV in `Cargo.toml` `workspace.package.rust-version`).
 `cargo` on `PATH` via the standard rustup install, or at
 `~/.cargo/bin/cargo`.
 

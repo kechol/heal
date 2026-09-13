@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Build requirements
+
+- **Source builds now require Rust 1.90 or newer**, matching tree-sitter
+  0.27. CI checks the minimum version in addition to stable Rust.
+
+### Maintenance
+
+- Upgrade tree-sitter to 0.27 and tokei to 15, refresh Rust dependencies,
+  and migrate query capture access to tree-sitter's current API.
+- Update CI actions, cargo-dist to 0.33, and cargo-llvm-cov to 0.9.1.
+
 ### Features
 
 - **Practical work ordering and accepted-item re-review.** Findings now
