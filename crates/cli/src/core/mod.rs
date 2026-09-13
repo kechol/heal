@@ -13,6 +13,7 @@ pub mod hash;
 pub mod monorepo;
 pub mod paths;
 pub mod severity;
+pub(crate) mod source_cache;
 pub mod term;
 
 pub use error::{Error, Result};

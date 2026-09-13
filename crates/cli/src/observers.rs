@@ -108,26 +108,42 @@ pub(crate) fn run_all(
     project: &Path,
     cfg: &Config,
     only: Option<MetricKind>,
+    family: Option<crate::feature::Family>,
     workspace: Option<&Path>,
 ) -> ObserverReports {
+    if workspace
+        .is_some_and(|under| !crate::observer::shared::walk::workspace_is_within(project, under))
+    {
+        return ObserverReports::default();
+    }
+    let selected = |m: MetricKind| {
+        only.map_or_else(
+            || family.is_none_or(|f| crate::feature::Family::for_metric(m.json_key()) == f),
+            |filter| filter == m,
+        )
+    };
     let want = |m: MetricKind| match only {
-        None => true,
-        Some(o) if o == m => true,
-        Some(MetricKind::Hotspot) if matches!(m, MetricKind::Churn | MetricKind::Complexity) => {
+        _ if selected(m) => true,
+        _ if selected(MetricKind::Hotspot)
+            && matches!(m, MetricKind::Churn | MetricKind::Complexity) =>
+        {
             true
         }
         // test_hotspot is `commits × uncov_pct` — needs both Churn and
         // CoveragePct as inputs, so a `--metric test-hotspot` run pulls
         // them in even when neither was named.
-        Some(MetricKind::TestHotspot)
-            if matches!(m, MetricKind::Churn | MetricKind::CoveragePct) =>
+        _ if selected(MetricKind::TestHotspot)
+            && cfg.features.test.enabled
+            && cfg.features.test.coverage.enabled
+            && matches!(m, MetricKind::Churn | MetricKind::CoveragePct) =>
         {
             true
         }
         // doc_hotspot needs Churn (paired-src volatility) plus
         // DocFreshness (staleness) plus DocDrift (dangling idents).
-        Some(MetricKind::DocHotspot)
-            if matches!(
+        _ if selected(MetricKind::DocHotspot)
+            && cfg.features.docs.enabled
+            && matches!(
                 m,
                 MetricKind::Churn | MetricKind::DocFreshness | MetricKind::DocDrift
             ) =>
@@ -152,25 +168,32 @@ pub(crate) fn run_all(
         LocReport::default()
     };
     let complexity_observer = ComplexityObserver::from_config(cfg).with_workspace(ws_buf.clone());
-    let churn = (want(MetricKind::Churn) && cfg.metrics.is_enabled("churn")).then(|| {
-        ChurnObserver::from_config(cfg)
-            .with_workspace(ws_buf.clone())
-            .scan(project)
-    });
-    let change_coupling = (want(MetricKind::ChangeCoupling)
+    let churn_observer = (want(MetricKind::Churn) && cfg.metrics.is_enabled("churn"))
+        .then(|| ChurnObserver::from_config(cfg).with_workspace(ws_buf.clone()));
+    let coupling_observer = (want(MetricKind::ChangeCoupling)
         && cfg.metrics.is_enabled("change_coupling"))
-    .then(|| {
-        ChangeCouplingObserver::from_config(cfg)
-            .with_workspace(ws_buf.clone())
-            .scan(project)
-    })
-    .map(|mut report| {
-        crate::observer::code::change_coupling::classify_and_filter(
-            &mut report,
-            loc.primary.as_deref(),
-        );
-        report
-    });
+    .then(|| ChangeCouplingObserver::from_config(cfg).with_workspace(ws_buf.clone()));
+    let history = if churn_observer.is_some() || coupling_observer.is_some() {
+        crate::observer::shared::git::collect_history(
+            project,
+            cfg.git.since_days,
+            &cfg.exclude_lines(),
+            ws_buf.as_deref(),
+            churn_observer.is_some(),
+        )
+    } else {
+        crate::observer::shared::git::History::default()
+    };
+    let churn = churn_observer.map(|observer| observer.scan_history(&history));
+    let change_coupling = coupling_observer
+        .map(|observer| observer.scan_history(&history))
+        .map(|mut report| {
+            crate::observer::code::change_coupling::classify_and_filter(
+                &mut report,
+                loc.primary.as_deref(),
+            );
+            report
+        });
     // Docs prep is gated on whether any consumer was actually
     // requested — `heal metrics --metric ccn` shouldn't pay
     // ~300 `stat()` calls + the doc-body I/O when nothing
@@ -725,7 +748,7 @@ pub(crate) fn build_record(
                 .ok()
                 .map(|c| c.with_overrides(&observed_cfg))
                 .unwrap_or_default();
-            let reports = run_all(scan_root, &observed_cfg, None, None);
+            let reports = run_all(scan_root, &observed_cfg, None, None, None);
             let findings = classify(&reports, &calibration, &observed_cfg);
             let coverage_observation = reports.coverage.as_ref().map(CoverageReport::observation);
             Ok((findings, coverage_observation))
@@ -778,6 +801,106 @@ mod tests {
     use crate::observer::code::hotspot::{HotspotEntry, HotspotReport, HotspotTotals};
     use std::collections::HashSet;
     use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    #[test]
+    fn family_filter_skips_unrelated_observers_but_keeps_hotspot_dependencies() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("lib.rs"), "pub fn value() -> u8 { 1 }\n").unwrap();
+        let mut cfg = Config::default();
+        cfg.features.docs.enabled = true;
+        cfg.features.test.enabled = true;
+
+        let code = run_all(
+            dir.path(),
+            &cfg,
+            None,
+            Some(crate::feature::Family::Code),
+            None,
+        );
+        assert!(code.loc.total_files() > 0);
+        assert!(code.coverage.is_none());
+        assert!(code.skip_ratio.is_none());
+        assert!(code.doc_link_health.is_none());
+        assert!(code.todo_density.is_none());
+
+        let test_without_coverage = run_all(
+            dir.path(),
+            &cfg,
+            None,
+            Some(crate::feature::Family::Test),
+            None,
+        );
+        assert!(test_without_coverage.churn.is_none());
+        assert!(test_without_coverage.coverage.is_none());
+        assert!(test_without_coverage.skip_ratio.is_some());
+
+        cfg.features.test.coverage.enabled = true;
+        let test = run_all(
+            dir.path(),
+            &cfg,
+            None,
+            Some(crate::feature::Family::Test),
+            None,
+        );
+        assert_eq!(test.loc.total_files(), 0);
+        assert!(test.complexity.files.is_empty());
+        assert!(test.duplication.is_none());
+        assert!(test.lcom.is_none());
+        assert!(test.change_coupling.is_none());
+        assert!(test.churn.is_some(), "test_hotspot depends on churn");
+        assert!(test.coverage.is_some());
+        assert!(test.skip_ratio.is_some());
+    }
+
+    #[test]
+    fn workspace_outside_project_returns_no_observer_results() {
+        let project = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        std::fs::write(outside.path().join("outside.rs"), "pub fn outside() {}\n").unwrap();
+        let reports = run_all(
+            project.path(),
+            &Config::default(),
+            None,
+            None,
+            Some(outside.path()),
+        );
+        assert_eq!(reports.loc.total_files(), 0);
+        assert!(reports.complexity.files.is_empty());
+        assert!(reports.churn.is_none());
+    }
+
+    #[test]
+    fn lexical_parent_workspace_keeps_loc_behavior() {
+        let project = TempDir::new().unwrap();
+        std::fs::create_dir(project.path().join("pkg")).unwrap();
+        std::fs::write(project.path().join("pkg/source.rs"), "pub fn source() {}\n").unwrap();
+        let workspace = project.path().join("pkg/../pkg");
+        let reports = run_all(
+            project.path(),
+            &Config::default(),
+            Some(MetricKind::Loc),
+            None,
+            Some(&workspace),
+        );
+        assert_eq!(reports.loc.total_files(), 1);
+    }
+
+    #[test]
+    fn disabled_docs_skip_doc_hotspot_dependencies() {
+        let project = TempDir::new().unwrap();
+        let reports = run_all(
+            project.path(),
+            &Config::default(),
+            Some(MetricKind::DocHotspot),
+            None,
+            None,
+        );
+        assert!(reports.churn.is_none());
+        assert!(reports.doc_freshness.is_none());
+        assert!(reports.doc_drift.is_none());
+        assert!(reports.doc_hotspot.is_none());
+    }
 
     #[test]
     fn observation_retries_until_its_hash_is_stable() {

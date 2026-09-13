@@ -105,6 +105,11 @@ impl HealPaths {
         self.findings_dir().join("accepted.json")
     }
 
+    #[must_use]
+    pub(crate) fn source_cache(&self) -> PathBuf {
+        self.root.join("cache/source-v1.json")
+    }
+
     /// Create every standard subdirectory. Idempotent.
     pub fn ensure(&self) -> std::io::Result<()> {
         for dir in [self.root.as_path(), &self.findings_dir()] {

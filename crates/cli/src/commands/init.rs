@@ -411,7 +411,7 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<InitialScan> {
         Err(e) => return Err(e.into()),
     };
 
-    let reports = run_all(project, &cfg, None, None);
+    let reports = run_all(project, &cfg, None, None, None);
     let primary_language = reports.loc.primary.clone();
     let calibration = build_calibration(project, &reports, &cfg);
     calibration.save(&paths.calibration())?;

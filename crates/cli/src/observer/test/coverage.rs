@@ -452,11 +452,12 @@ mod tests {
     #[test]
     fn parses_lcov_when_enabled() {
         let tmp = TempDir::new().unwrap();
+        let (source_name, source) = crate::observer::shared::lang::test_source_fixture();
         fs::create_dir_all(tmp.path().join("src")).unwrap();
-        fs::write(tmp.path().join("src/lib.rs"), "pub fn live() {}\n").unwrap();
+        fs::write(tmp.path().join("src").join(source_name), source).unwrap();
         fixture(
             &tmp,
-            "SF:src/lib.rs\nDA:1,0\nDA:2,0\nDA:3,0\nLF:3\nLH:0\nend_of_record\n",
+            &format!("SF:src/{source_name}\nDA:1,0\nDA:2,0\nDA:3,0\nLF:3\nLH:0\nend_of_record\n"),
         );
         let cfg = cfg_enabled();
         let report = CoverageObserver::from_config(&cfg).scan(tmp.path());
@@ -496,27 +497,40 @@ mod tests {
     #[test]
     fn emits_findings_only_for_uncovered_files() {
         let tmp = TempDir::new().unwrap();
+        let (source_name, source) = crate::observer::shared::lang::test_source_fixture();
+        let extension = Path::new(source_name)
+            .extension()
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let full_name = format!("full.{extension}");
+        let half_name = format!("half.{extension}");
         fs::create_dir_all(tmp.path().join("src")).unwrap();
-        fs::write(tmp.path().join("src/full.rs"), "pub fn full() {}\n").unwrap();
-        fs::write(tmp.path().join("src/half.rs"), "pub fn half() {}\n").unwrap();
+        fs::write(tmp.path().join("src").join(&full_name), source).unwrap();
+        fs::write(tmp.path().join("src").join(&half_name), source).unwrap();
         fixture(
             &tmp,
-            "\
-SF:src/full.rs
+            &format!(
+                "\
+SF:src/{full_name}
 LF:5
 LH:5
 end_of_record
-SF:src/half.rs
+SF:src/{half_name}
 LF:4
 LH:2
 end_of_record
-",
+"
+            ),
         );
         let cfg = cfg_enabled();
         let report = CoverageObserver::from_config(&cfg).scan(tmp.path());
         let findings = report.into_findings();
         assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].location.file, PathBuf::from("src/half.rs"),);
+        assert_eq!(
+            findings[0].location.file,
+            PathBuf::from("src").join(half_name)
+        );
         assert!(findings[0].summary.starts_with("Coverage=50%"));
     }
 

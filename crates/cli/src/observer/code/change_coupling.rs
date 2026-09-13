@@ -35,10 +35,9 @@
 //! the per-commit fan-out at `BULK_COMMIT_FILE_LIMIT`; configurable knob
 //! is deferred to v0.2.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use git2::{Repository, Sort};
 use serde::{Deserialize, Serialize};
 
 use crate::core::config::Config;
@@ -47,7 +46,7 @@ use crate::core::severity::Severity;
 use crate::feature::{decorate, Feature, FeatureKind, FeatureMeta, HotspotIndex};
 
 use crate::observer::shared::file_role::{file_role, FileRole};
-use crate::observer::shared::walk::{since_cutoff, ExcludeMatcher};
+use crate::observer::shared::git::{collect_history, History};
 use crate::observer::{impl_workspace_builder, ObservationMeta, Observer};
 use crate::observers::ObserverReports;
 
@@ -111,6 +110,24 @@ impl ChangeCouplingObserver {
 
     #[must_use]
     pub fn scan(&self, root: &Path) -> ChangeCouplingReport {
+        if !self.enabled {
+            return ChangeCouplingReport {
+                since_days: self.since_days,
+                min_coupling: self.min_coupling,
+                ..ChangeCouplingReport::default()
+            };
+        }
+        let history = collect_history(
+            root,
+            self.since_days,
+            &self.excluded,
+            self.workspace.as_deref(),
+            false,
+        );
+        self.scan_history(&history)
+    }
+
+    pub(crate) fn scan_history(&self, history: &History) -> ChangeCouplingReport {
         let mut report = ChangeCouplingReport {
             since_days: self.since_days,
             min_coupling: self.min_coupling,
@@ -119,52 +136,11 @@ impl ChangeCouplingObserver {
         if !self.enabled {
             return report;
         }
-        let Ok(repo) = Repository::discover(root) else {
-            return report;
-        };
-        let Ok(head_commit) = repo.head().and_then(|head| head.peel_to_commit()) else {
-            return report;
-        };
-        let cutoff_secs = since_cutoff(head_commit.time().seconds(), self.since_days);
-        let Ok(mut revwalk) = repo.revwalk() else {
-            return report;
-        };
-        if revwalk.set_sorting(Sort::TIME).is_err() || revwalk.push_head().is_err() {
-            return report;
-        }
-
         let mut pair_counts: HashMap<(PathBuf, PathBuf), u32> = HashMap::new();
         let mut file_commits: HashMap<PathBuf, u32> = HashMap::new();
         let mut commits_considered: u32 = 0;
-        // git2 yields paths relative to the repo root, so the workspace
-        // target stays relative — no per-call `root.join` in the diff
-        // loop.
-        let workspace_target = crate::observer::shared::walk::resolve_workspace_target(
-            root,
-            self.workspace.as_deref(),
-            false,
-        );
-        let matcher = ExcludeMatcher::compile(root, &self.excluded)
-            .expect("exclude patterns validated at config load");
-
-        for oid_res in revwalk {
-            let Ok(oid) = oid_res else {
-                continue;
-            };
-            let Ok(commit) = repo.find_commit(oid) else {
-                continue;
-            };
-            if commit.time().seconds() < cutoff_secs {
-                break;
-            }
-            if Self::absorb_commit(
-                &repo,
-                &commit,
-                workspace_target.as_deref(),
-                &matcher,
-                &mut pair_counts,
-                &mut file_commits,
-            ) {
+        for commit in &history.commits {
+            if Self::absorb_paths(&commit.paths, &mut pair_counts, &mut file_commits) {
                 commits_considered = commits_considered.saturating_add(1);
             }
         }
@@ -195,41 +171,11 @@ impl ChangeCouplingObserver {
     /// Also bumps every surviving file's individual commit counter
     /// (`file_commits`) so the post-pass can distinguish symmetric pairs
     /// from one-way ones.
-    fn absorb_commit(
-        repo: &Repository,
-        commit: &git2::Commit<'_>,
-        workspace_target: Option<&Path>,
-        matcher: &ExcludeMatcher,
+    fn absorb_paths(
+        paths: &[PathBuf],
         pair_counts: &mut HashMap<(PathBuf, PathBuf), u32>,
         file_commits: &mut HashMap<PathBuf, u32>,
     ) -> bool {
-        let Ok(commit_tree) = commit.tree() else {
-            return false;
-        };
-        let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
-        let Ok(diff) = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit_tree), None)
-        else {
-            return false;
-        };
-
-        let mut paths: BTreeSet<PathBuf> = BTreeSet::new();
-        for delta in diff.deltas() {
-            let Some(path) = delta.new_file().path() else {
-                continue;
-            };
-            if path.as_os_str().is_empty() {
-                continue;
-            }
-            // Workspace check (single strip_prefix on already-resolved
-            // target) first — cheaper than the gitignore matcher.
-            if !crate::observer::shared::walk::path_under(path, workspace_target) {
-                continue;
-            }
-            if matcher.is_excluded(path, false) {
-                continue;
-            }
-            paths.insert(path.to_path_buf());
-        }
         if paths.is_empty() || paths.len() > BULK_COMMIT_FILE_LIMIT {
             return false;
         }
@@ -238,7 +184,7 @@ impl ChangeCouplingObserver {
         // included — that's the denominator `P(other | self)` needs to
         // tell a leader (frequently changes alone) apart from a
         // follower (always tags along with the partner).
-        for path in &paths {
+        for path in paths {
             let entry = file_commits.entry(path.clone()).or_insert(0);
             *entry = entry.saturating_add(1);
         }

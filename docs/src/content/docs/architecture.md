@@ -95,11 +95,18 @@ same Severity ladder and the same drain queue.
 | `.heal/findings/accepted.json`   | `heal mark accept` (called by `/heal-code-review`)                     | When the team accepts an intrinsic finding.             |
 | `.heal/findings/regressed.jsonl` | `heal status` (reconcile pass)                                         | When a fixed finding is re-detected.                    |
 | `.heal/doc_pairs.json`           | `/heal-doc-pair-setup` skill (when `[features.docs]` is on)            | When the user runs the skill; HEAL is read-only.        |
+| `.heal/cache/source-v1.json`     | source observers                                                       | After source analysis changes; safe to delete.          |
 | `<agent>/skills/heal-*/`         | `heal init` (per detected agent) / `heal skills install` (Claude only) | Once per agent; refresh with `heal init --force --yes`. |
 
 There is no event log, no monthly rotation, no `.heal/snapshots/`,
 `.heal/logs/`, or `.heal/reports/` directory. heal keeps only the
 current state plus the small audit trail in `regressed.jsonl`.
+
+`.heal/cache/` is different from the tracked findings cache. It contains only
+disposable Complexity, LCOM, and Duplication token data for unchanged source
+files and ignores itself in git. heal validates file contents before every
+reuse; deleting the directory, a corrupt entry, or a write failure simply
+causes normal source analysis.
 
 `.heal/docs/` is the one exception: when `/heal-doc-scaffold` runs,
 it writes the generated documentation tree to the directory named by

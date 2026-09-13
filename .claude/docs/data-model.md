@@ -262,6 +262,18 @@ T0; status, current-side diff, and the hook only notify. Machine output
 uses `accepted_rereview[].reasons` values `severity_increased` and
 `became_hotspot`.
 
+### Disposable source-analysis cache
+
+`.heal/cache/source-v1.json` is local, ignored, and safe to delete. It stores
+only derived Complexity metrics, LCOM classes, and Duplication token hashes;
+source text and tree-sitter trees are never persisted. Each entry validates
+relative path, byte size, stable FNV-1a content hash, language, analyzer
+version, and a capability mask before reuse. A missing capability, old or
+corrupt format, write failure, or race is a cache miss and falls back to normal
+analysis. The file is replaced from the current source inventory, so deleted
+files and unbounded generations do not accumulate. This is not metrics history
+and does not alter `FindingsRecord` freshness.
+
 ---
 
 ## `Severity` and `SeverityCounts` (`core::severity`)

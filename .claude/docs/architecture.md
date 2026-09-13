@@ -26,10 +26,10 @@ Layered view of `heal-cli` (the only published crate; binary `heal`).
 │   test/  coverage_pct  skip_ratio  lcov reader                       │
 │          (gated on cfg.features.test.enabled)                        │
 │   shared/ walk (gitignore + workspace) lang (tree-sitter)            │
-│           git (git2)  file_role (is_test_file matcher)               │
+│           git (git2 + shared history) file_role (is_test_file)       │
 ├──────────────────────────────────────────────────────────────────────┤
 │ core                   src/core/*                                    │
-│   config  calibration  finding  findings_cache  severity             │
+│   config  calibration  finding  findings_cache  source_cache         │
 │   paths  fs  hash  monorepo  term  error                             │
 ├──────────────────────────────────────────────────────────────────────┤
 │ harness integration    src/claude_settings.rs  src/skill_assets.rs   │
@@ -80,6 +80,8 @@ observers::run_all(project, cfg, only=None, workspace=None)
   │   OrphanPages, TodoDensity
   └── CoverageObserver,         ([features.test] / .test.coverage)
       SkipRatioObserver
+  source walk uses at most 8 workers, rejoins by original path order,
+  and validates reusable derived data in .heal/cache/source-v1.json
   ↓
 feature::FeatureRegistry::builtin().lower_all(reports, cfg, cal)
   → Vec<Finding> with severity + hotspot flag
@@ -166,22 +168,23 @@ commit.
 
 ## Pipeline ordering
 
-`observers::run_all` is **sequential**, not parallel. The bottleneck is
-tree-sitter parsing inside Complexity; no rayon-style fan-out today.
+`observers::run_all` keeps report assembly in a fixed order. Its shared source
+stage analyzes files with at most eight workers, reuses parsers within each
+worker, and rejoins results in the original path order before aggregation.
 
 Order is fixed and meaningful:
 
 1. **Loc** first — scans the worktree, computes primary language. Other
    observers consume `LocReport.primary` (e.g. ChangeCoupling's PairClass
    filter is language-aware).
-2. **Complexity** — single tree-sitter pass per file produces both CCN
-   and Cognitive.
-3. **Churn** — git revwalk over `since_days` window. Diffs each commit
-   against **its first parent only** (avoids double-counting merge
-   commits). Cap: skip commits with > `BULK_COMMIT_FILE_LIMIT = 50` files
-   for ChangeCoupling (lockfile bumps, mass-renames).
-4. **ChangeCoupling** — same revwalk pattern. Pair counts → lift filter
-   → PairClass demotion.
+2. **Complexity** — the shared tree-sitter source pass produces CCN and
+   Cognitive together, plus the inputs needed by Duplication and Lcom.
+3. **Churn** — a shared git history collector walks the `since_days` window
+   once and diffs each commit against **its first parent only** (avoids
+   double-counting merge commits).
+4. **ChangeCoupling** — consumes the same collected history. Its pair counts
+   apply the lift filter and PairClass demotion; commits with more than
+   `BULK_COMMIT_FILE_LIMIT = 50` files are excluded here, not from Churn.
 5. **Duplication** — tree-sitter token streams + Rabin-Karp rolling hash
    keyed by FNV-1a 64-bit per token (kind_id + text). When
    `[features.docs]` is on, a parallel Markdown / RST pass runs with

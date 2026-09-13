@@ -143,11 +143,8 @@ pub(crate) struct LcomAccumulator {
 }
 
 impl LcomAccumulator {
-    pub(crate) fn add(&mut self, rel: &Path, lang: Language, parsed: &ParsedFile) {
-        if !lang.supports_lcom() {
-            return;
-        }
-        self.classes.extend(classes_in(parsed, rel));
+    pub(crate) fn add_classes(&mut self, classes: Vec<ClassLcom>) {
+        self.classes.extend(classes);
     }
 }
 
@@ -254,7 +251,7 @@ impl IntoFindings for LcomReport {
 }
 
 /// Walk every class scope in the parsed file, computing per-class LCOM.
-fn classes_in(parsed: &ParsedFile, file: &Path) -> Vec<ClassLcom> {
+pub(crate) fn classes_in(parsed: &ParsedFile, file: &Path) -> Vec<ClassLcom> {
     let q = parsed.lang.lcom_query();
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(&q.query, parsed.tree.root_node(), parsed.source.as_bytes());

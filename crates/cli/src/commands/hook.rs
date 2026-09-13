@@ -58,7 +58,7 @@ fn run_commit(project: &Path, paths: &HealPaths) -> Result<()> {
         Err(e) => return Err(e.into()),
     };
 
-    let reports = run_all(project, &cfg, None, None);
+    let reports = run_all(project, &cfg, None, None, None);
     let (calibration, mut findings) = classify_with_calibration(paths, &cfg, &reports);
     // Filter the nudge through accepted findings so the per-commit
     // Critical / High counts match `heal status` instead of shaming
@@ -259,7 +259,7 @@ mod tests {
     /// every nudge test runs the same `run_all → classify → write_nudge`
     /// pipeline; only the calibration step and assertions vary.
     fn nudge_output(dir: &Path, paths: &HealPaths, cfg: &Config) -> String {
-        let reports = run_all(dir, cfg, None, None);
+        let reports = run_all(dir, cfg, None, None, None);
         let (calibration, findings) = classify_with_calibration(paths, cfg, &reports);
         let mut buf: Vec<u8> = Vec::new();
         let coverage = reports.coverage.as_ref().map(CoverageReport::observation);

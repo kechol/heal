@@ -2,6 +2,7 @@
 //! function-shaped scope, then compute classical CCN and Sonar-style Cognitive
 //! Complexity for each scope.
 
+use std::collections::HashMap;
 use std::ops::Range;
 
 use anyhow::{anyhow, Context, Result};
@@ -52,14 +53,31 @@ pub struct FunctionMetric {
 /// `parse` returning None) — partial parses with ERROR nodes still succeed,
 /// since real-world code in editor hooks is often mid-edit.
 pub fn parse(source: String, lang: Language) -> Result<ParsedFile> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&lang.ts_language())
-        .with_context(|| format!("failed to load {} grammar", lang.name()))?;
-    let tree = parser
-        .parse(&source, None)
-        .ok_or_else(|| anyhow!("tree-sitter returned no tree for {} input", lang.name()))?;
-    Ok(ParsedFile { source, lang, tree })
+    ParserPool::default().parse(source, lang)
+}
+
+#[derive(Default)]
+pub(crate) struct ParserPool {
+    parsers: HashMap<Language, Parser>,
+}
+
+impl ParserPool {
+    pub(crate) fn parse(&mut self, source: String, lang: Language) -> Result<ParsedFile> {
+        let parser = match self.parsers.entry(lang) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                let mut parser = Parser::new();
+                parser
+                    .set_language(&lang.ts_language())
+                    .with_context(|| format!("failed to load {} grammar", lang.name()))?;
+                entry.insert(parser)
+            }
+        };
+        let tree = parser
+            .parse(&source, None)
+            .ok_or_else(|| anyhow!("tree-sitter returned no tree for {} input", lang.name()))?;
+        Ok(ParsedFile { source, lang, tree })
+    }
 }
 
 #[must_use]

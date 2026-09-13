@@ -19,6 +19,12 @@
 
 ### Features
 
+- **Large codebase scans reuse unchanged source analysis.** Source files are
+  parsed in a bounded worker pool, selected metric families skip unrelated
+  observers, workspace walks start at the requested subtree, and Churn shares
+  one history walk with Change Coupling. Reusable Complexity, LCOM, and
+  Duplication token data lives under the disposable `.heal/cache/` directory;
+  deleting it is safe and corrupt or unwritable caches fall back to a full scan.
 - **Practical work ordering and accepted-item re-review.** Findings now
   carry an optional family-local `hotspot_score`. `heal status` and the
   bundled review/patch skills order work by drain Tier, Severity, then

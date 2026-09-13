@@ -2,10 +2,14 @@
 //! against tempdir layouts, `CoverageReport` lookup helpers, and
 //! severity classification through `Feature::lower`.
 
-use std::path::{Path, PathBuf};
+#[cfg(feature = "lang-rust")]
+use std::path::Path;
+use std::path::PathBuf;
 
 use heal_cli::core::config::{Config, TestConfig, TestCoverageConfig};
-use heal_cli::core::finding::{CoverageObservationState, Finding, IntoFindings};
+use heal_cli::core::finding::CoverageObservationState;
+#[cfg(feature = "lang-rust")]
+use heal_cli::core::finding::{Finding, IntoFindings};
 use heal_cli::observer::test::coverage::{CoverageObserver, CoverageReport};
 
 mod common;
@@ -25,6 +29,7 @@ fn cfg_test_coverage_enabled() -> Config {
     cfg
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn single_existing_lcov_path_reads_as_before() {
     // Single-package projects: one path matches, missing candidates
@@ -48,6 +53,7 @@ fn single_existing_lcov_path_reads_as_before() {
     assert_eq!(report.sources, vec![PathBuf::from("coverage/lcov.info")]);
 }
 
+#[cfg(feature = "lang-typescript")]
 #[test]
 fn merges_every_existing_lcov_path() {
     // Polyglot monorepo: every package emits its own lcov.info and
@@ -91,6 +97,7 @@ fn merges_every_existing_lcov_path() {
     );
 }
 
+#[cfg(feature = "lang-typescript")]
 #[test]
 fn resolves_package_relative_sf_paths() {
     // vitest / jest / scoverage run from the package root and emit
@@ -111,6 +118,7 @@ fn resolves_package_relative_sf_paths() {
     assert_eq!(report.entries[0].path, PathBuf::from("pkg-a/src/foo.ts"));
 }
 
+#[cfg(feature = "lang-typescript")]
 #[test]
 fn colliding_entries_across_files_max_merge() {
     // A hand-merged root lcov.info can coexist with the per-package
@@ -140,6 +148,7 @@ fn colliding_entries_across_files_max_merge() {
     assert!((report.entries[0].line_coverage_pct - 70.0).abs() < 1e-9);
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn returns_empty_when_no_lcov_file_present() {
     let dir = tempfile::tempdir().unwrap();
@@ -152,6 +161,7 @@ fn returns_empty_when_no_lcov_file_present() {
     assert_eq!(report.unmeasured_files, vec![PathBuf::from("src/lib.rs")]);
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn partial_report_lists_only_unmeasured_production_sources() {
     let dir = tempfile::tempdir().unwrap();
@@ -210,6 +220,7 @@ fn returns_empty_when_feature_disabled() {
     assert!(report.entries.is_empty());
 }
 
+#[cfg(feature = "lang-rust")]
 #[test]
 fn into_findings_skips_fully_covered_files() {
     let dir = tempfile::tempdir().unwrap();

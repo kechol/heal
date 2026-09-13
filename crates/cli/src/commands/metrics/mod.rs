@@ -57,7 +57,9 @@ pub fn run(
         }
     }
 
-    let reports = cfg.as_ref().map(|c| run_all(project, c, metric, workspace));
+    let reports = cfg
+        .as_ref()
+        .map(|c| run_all(project, c, metric, feature, workspace));
 
     let sections = all_sections();
 
@@ -272,7 +274,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         init_project(dir.path());
         let cfg = load_from_project(dir.path()).unwrap();
-        let reports = run_all(dir.path(), &cfg, None, None);
+        let reports = run_all(dir.path(), &cfg, None, None, None);
         let sections = all_sections();
 
         let payload = build_json(
@@ -309,7 +311,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         init_project(dir.path());
         let cfg = load_from_project(dir.path()).unwrap();
-        let reports = run_all(dir.path(), &cfg, Some(MetricKind::Loc), None);
+        let reports = run_all(dir.path(), &cfg, Some(MetricKind::Loc), None, None);
         let sections = all_sections();
 
         let payload = build_json(
@@ -337,11 +339,37 @@ mod tests {
     }
 
     #[test]
+    fn metric_filter_keeps_legacy_precedence_over_mismatched_family() {
+        let dir = TempDir::new().unwrap();
+        init_project(dir.path());
+        let cfg = load_from_project(dir.path()).unwrap();
+        let reports = run_all(
+            dir.path(),
+            &cfg,
+            Some(MetricKind::Loc),
+            Some(Family::Test),
+            None,
+        );
+        let payload = build_json(
+            true,
+            Some(&cfg),
+            Some(&reports),
+            Some(MetricKind::Loc),
+            Some(Family::Test),
+            None,
+            &all_sections(),
+        );
+        assert!(payload["worst"]["languages"]
+            .as_array()
+            .is_some_and(|languages| !languages.is_empty()));
+    }
+
+    #[test]
     fn build_json_feature_filter_narrows_to_family_keys() {
         let dir = TempDir::new().unwrap();
         init_project(dir.path());
         let cfg = load_from_project(dir.path()).unwrap();
-        let reports = run_all(dir.path(), &cfg, None, None);
+        let reports = run_all(dir.path(), &cfg, None, None, None);
         let sections = all_sections();
 
         let payload = build_json(
@@ -392,7 +420,7 @@ mod tests {
         init_project(dir.path());
         let ws = dir.path().join("crates/foo");
         let cfg = load_from_project(dir.path()).unwrap();
-        let reports = run_all(dir.path(), &cfg, None, Some(&ws));
+        let reports = run_all(dir.path(), &cfg, None, None, Some(&ws));
         let sections = all_sections();
         let payload = build_json(
             true,
