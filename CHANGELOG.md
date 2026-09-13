@@ -2,20 +2,35 @@
 
 ## Unreleased
 
-### Build requirements
+## v0.6.0 — 2026-09-13
 
+The large-codebase and practical-ordering release. Scans reuse unchanged
+source analysis, `heal status` orders work by family-local Hotspot score,
+accepted findings resurface when their premise changes, and coverage /
+cache freshness become reproducible across checkouts.
+
+### ⚠ BREAKING — findings schema v8, confined inputs, Rust 1.90
+
+- **`FINDINGS_RECORD_VERSION` is now 8.** v6 expanded `config_hash` to
+  include enabled LCOV/doc-pair logical paths, state, and bytes; v7 added
+  `coverage_observation`; v8 added the optional `hotspot_score`.
+  **Migration:** none by hand — older `latest.json` files invalidate and
+  rebuild automatically on the next `heal status`.
+- **Observation inputs must live inside the project.**
+  `[features.test.coverage].lcov_paths` and `[features.docs].pairs_path`
+  must be nonempty, project-relative paths that do not escape the project
+  root; config loading rejects anything else. Reads open each path
+  component without following symlinks, so a report reached through a
+  symlink is no longer read. Previously a scan of an older ref could read
+  live files outside the checkout, making the same commit observe
+  different inputs depending on where it was checked out.
+  **Migration:** write both keys relative to the project root, and have
+  the reporter write (or copy) its output inside the repository instead of
+  pointing at an absolute path or a symlink.
 - **Source builds now require Rust 1.90 or newer**, matching tree-sitter
   0.27. CI checks the minimum version in addition to stable Rust.
-
-### Maintenance
-
-- Upgrade tree-sitter to 0.27 and tokei to 15, refresh Rust dependencies,
-  and migrate query capture access to tree-sitter's current API.
-- Update the docs site to Astro 7.3, Sharp 0.35.4, and TypeScript 6;
-  refresh transitive dependencies, including the nanoid security fix.
-  TypeScript 7 remains excluded until Astro's checker supports it.
-- Update CI actions, cargo-dist to 0.33, and cargo-llvm-cov to 0.9.1.
-  Docs pull requests now run formatting, type checking, and site builds.
+  **Migration:** run `rustup update` before `cargo install heal-cli`.
+  Prebuilt release binaries are unaffected.
 
 ### Features
 
@@ -45,31 +60,37 @@
 
 ### Fixes
 
-- Keep deeply nested source analysis off the worker call stack, preserve
-  excluded-parent semantics when a workspace has a negated ignore rule, and
-  skip source caches that pass through symlinked state directories or files.
-- **Freshness, measurement provenance, and small-project Hotspots are
-  deterministic.** `FINDINGS_RECORD_VERSION` is now 8. v6 expanded
-  `config_hash` to include enabled LCOV/doc-pair logical paths, state,
-  and bytes; v7 added `coverage_observation`; v8 added the optional
-  `hotspot_score`. Older `latest.json` files invalidate and rebuild
-  automatically. The same HEAD no longer reuses stale ignored LCOV or
-  doc-pair content, and git history windows use the observed ref's
-  commit timestamp instead of the wall clock.
 - **Missing coverage is no longer treated as measured 0%.** Machine
   output distinguishes `missing`, `read_error`, `partial`, and
   `complete` observations and lists unmeasured production files. Only
   files actually present in LCOV can produce coverage findings or Test
-  Hotspots; an explicit 0% record still does. Human output points
-  incomplete observations to reporter/package-scope setup.
+  Hotspots; an explicit 0% record still does. LCOV records for test,
+  generated, excluded, or deleted files are ignored. Human output points
+  incomplete observations to reporter/package-scope setup, and
+  `heal diff --json` now exposes the coverage observation of each side.
+- **Cache freshness and history windows are reproducible.** The same HEAD
+  no longer reuses stale ignored LCOV or doc-pair content, and git history
+  windows use the observed ref's commit timestamp instead of the wall
+  clock. Editing the config or calibration while a scan runs now triggers
+  a rescan (or an explicit error) instead of caching results under stale
+  rules.
 - **Hotspot calibration works for 1–4 finite candidates.** Small cohorts
   use only the existing family floor (Code 22, Test 25, Docs 5); cohorts
   of 5+ retain p90 plus the floor. Non-finite scores never flag. This is
   an absolute fallback, not a percentile claim or outcome guarantee.
+- **Filtered `heal status --json` counts match the findings shown.**
+  `severity_counts`, `workspaces`, and re-review notices are recomputed
+  after workspace, feature, metric, path, and Severity filters, and
+  workspace counts exclude accepted findings the same way the top-level
+  totals do. Coverage provenance follows workspace/path scope and is
+  omitted when a non-Test family or non-coverage metric is selected.
 - **Concurrent state writes no longer share a staging file.** Atomic
   writes use unique temporary files in the destination directory, so
   overlapping commands cannot truncate or rename each other's writes.
   Failed writes clean up their temporary files.
+- Keep deeply nested source analysis off the worker call stack, preserve
+  excluded-parent semantics when a workspace has a negated ignore rule, and
+  skip source caches that pass through symlinked state directories or files.
 - **`[features.test.coverage].lcov_paths` reads every existing file
   instead of first-match-wins (#29).** In a polyglot monorepo where
   each package emits its own `lcov.info`, only the first existing
@@ -85,6 +106,18 @@
   list naming every merged file; the singular `source` field stays
   as the first entry for back-compat. Single-package projects see
   identical output.
+
+### Chore
+
+- Upgrade tree-sitter to 0.27 and tokei to 15, refresh Rust dependencies,
+  and migrate query capture access to tree-sitter's current API.
+- Update the docs site to Astro 7.3, Sharp 0.35.4, and TypeScript 6;
+  refresh transitive dependencies, including the nanoid security fix.
+  TypeScript 7 remains excluded until Astro's checker supports it. The
+  earlier Astro 7 bump also unblocked the docs workflow, whose `npm ci`
+  failed on Starlight 0.41's peer dependency.
+- Update CI actions, cargo-dist to 0.33, and cargo-llvm-cov to 0.9.1.
+  Docs pull requests now run formatting, type checking, and site builds.
 
 ## v0.5.0 — 2026-07-08
 
