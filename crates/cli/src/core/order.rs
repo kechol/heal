@@ -1,5 +1,5 @@
 //! Drain-queue order: the single definition shared by `heal status`, the
-//! patch skills (through `heal status --json`), and the Q9 backtest.
+//! patch skills (through `heal status --json`), and the drain-order backtest.
 //!
 //! Tier, then Severity, then the family-local `hotspot_score`, then
 //! deterministic metric / path / id ties. When `[features.semantic]`

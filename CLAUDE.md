@@ -61,7 +61,7 @@ issue comment, and CHANGELOG line is public** the moment it lands on
 | Workspace-wide conventions (lints, tests, docs co-update)                | [.claude/docs/conventions.md](./.claude/docs/conventions.md)           |
 | **Canonical names** (the term contract)                                  | [.claude/docs/glossary.md](./.claude/docs/glossary.md)                 |
 | Prior art — tools, papers, books, and what was rejected and why          | [.claude/docs/prior-art.md](./.claude/docs/prior-art.md)               |
-| `[features.semantic]` (Jev) tasks, lowering, Q9 backtest                  | [.claude/docs/semantic.md](./.claude/docs/semantic.md)                 |
+| `[features.semantic]` (Jev) tasks, lowering, drain-order backtest        | [.claude/docs/semantic.md](./.claude/docs/semantic.md)                 |
 | Design philosophy — *why* HEAL is shaped this way; what's ruled out      | [.claude/docs/design-philosophy.md](./.claude/docs/design-philosophy.md) |
 
 Prescriptive rules are auto-loaded from `.claude/rules/` per the

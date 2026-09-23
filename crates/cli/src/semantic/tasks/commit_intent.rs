@@ -1,4 +1,4 @@
-//! Q7 `commit_intent`: classify each commit in the churn window as a fix,
+//! `commit_intent`: classify each commit in the churn window as a fix,
 //! a feature, a refactor, … and derive a per-file `fix_ratio`.
 //!
 //! Files where bug fixes concentrate keep attracting defects — a pattern

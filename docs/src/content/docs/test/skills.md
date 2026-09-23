@@ -111,5 +111,16 @@ subject + `Refs: F#<finding_id>` trailer, never push / amend /
 `--no-verify`. Findings whose metric belongs to the Code or Docs
 families are skipped.
 
+**With [Semantic (Jev)](/heal/semantic/) enabled**, the skill can also
+remove tests that check nothing: a `test_value` finding marked `delete`
+at confidence 0.9 or higher, one test per commit, only while the suite
+still passes and coverage does not drop, unless the test checked only
+its own mocks or nothing at all (without coverage data it only lists
+the test for review). `test_duplicate` pairs are deleted or
+merged into one parameterized test, and a mock of a plain value is
+replaced by the real value. After each commit it runs
+`heal semantic ask --task verify_tests --diff HEAD~1..HEAD` and undoes
+a commit whose new test only checks its own mocks.
+
 Trigger phrases: "fix the test findings", "drain the test cache",
 "add tests heal flagged", "/heal-test-patch".

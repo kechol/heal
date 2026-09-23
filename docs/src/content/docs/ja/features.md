@@ -76,7 +76,7 @@ claude /heal-doc-pair-setup
 
 > _「このコード・テスト・ドキュメントは、書いてあるとおりの意味になっているか?」_
 
-メトリクスでは答えられない問いを TypeSafe の分類モデル Jev に投げ、その答えを Code・Test・Docs の各ファミリに加えます。HEAL の中でネットワークに内容を送るのはこの機能だけで、それも `heal semantic ask` を実行したときだけです。何が送られるか、API キー、料金は [Semantic (Jev)](/heal/ja/semantic/) を参照してください。
+メトリクスでは答えられない問いを TypeSafe の分類モデル Jev に投げ、その答えを Code・Test・Docs の各ファミリに加えます。heal の中でネットワークに内容を送るのはこの機能だけで、それも `heal semantic ask` を実行したときだけです。何が送られるか、API キー、料金は [Semantic (Jev)](/heal/ja/semantic/) を参照してください。
 
 ```toml
 [features.semantic]

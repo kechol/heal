@@ -1,4 +1,4 @@
-//! D9 and H5: reading the docs through the concept vocabulary.
+//! Reading the docs through the concept vocabulary.
 //!
 //! - `doc_concept` — classify every doc section into a concept of
 //!   `.heal/concepts.toml` (the same vocabulary the `concept` task maps the
@@ -9,7 +9,7 @@
 //!   keep one and link to it) or contradict each other
 //!   (`doc_concept.conflict`)? Catches reworded duplication that the
 //!   token-exact Markdown duplication pass cannot.
-//! - `doc_pairs` (H5, on demand) — for docs without a pair, which source
+//! - `doc_pairs` (on demand) — for docs without a pair, which source
 //!   file the page mainly documents, with a real probability. Replaces the
 //!   fixed confidence the pair-setup skill used for its own guesses.
 

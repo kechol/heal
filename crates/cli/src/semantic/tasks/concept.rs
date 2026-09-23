@@ -1,4 +1,4 @@
-//! C12 `concept`: classify every production function into one concept of
+//! `concept`: classify every production function into one concept of
 //! `.heal/concepts.toml`, then read the resulting concept map for three
 //! structural problems a metric cannot see:
 //!

@@ -35,7 +35,7 @@ deserialises as garbage. The one exception is `regressed.jsonl`
 ## R3. Schema-versioned shapes bump on any contract change
 
 `FindingsRecord` is versioned by `FINDINGS_RECORD_VERSION` (currently
-`8`). Bump on:
+`9`). Bump on:
 
 - A field rename.
 - A field semantic change (units, sentinel meaning).
@@ -134,6 +134,13 @@ classifies (severity assignment) and decorates (hotspot flag).
 
 Don't classify in the observer. Don't bypass `Feature::lower` from
 the orchestrator.
+
+The one other place that assigns Severity is `semantic::lower::apply`,
+which runs after the Feature pass and builds Findings from cached Jev
+verdicts (`Task::lower` via `tasks::common::finding`). It is capped at
+`High`: a classifier verdict is a candidate for a person to judge,
+never `Critical` on its own. It must stay offline and must not
+re-classify observer Findings — it only adds Findings and notes.
 
 ## R12. Per-file severity uses `cmp::max`
 

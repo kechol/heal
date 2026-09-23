@@ -1,4 +1,4 @@
-//! C13 naming tasks.
+//! Naming tasks.
 //!
 //! - `term_drift` — two words that name the same domain thing inside one
 //!   concept (`user` / `account`). Built on the `concept` map: candidate

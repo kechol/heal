@@ -11,16 +11,16 @@ test actually checks anything, whether a doc still describes the code.
 The optional `[features.semantic]` family asks those questions to
 [Jev](https://docs.typesafe.ai/), a classifier from TypeSafe. Jev does
 not write text or code. It answers each question with a probability,
-so HEAL can turn the answers into findings the same way it does for
+so heal can turn the answers into findings the same way it does for
 every other metric.
 
 Everything in this family is **off by default**. If you never enable
-it, HEAL behaves exactly as before.
+it, heal behaves exactly as before.
 
 ## What gets sent, and when
 
 - Only `heal semantic ask` sends anything. It sends the pieces of
-  code, tests, or documentation that HEAL has already selected (for
+  code, tests, or documentation that heal has already selected (for
   example, functions in files that change often), to the TypeSafe API.
 - `heal auth jev status` checks that your API key works. It sends the
   key, but no project content.
@@ -44,6 +44,7 @@ config:
 enabled = true
 # model = "jev-1.13.0"   # pinned version; moving aliases are rejected
 # max_usd = 1.0          # stop a single run before it spends more
+# concurrency = 8        # requests in flight at once
 # exclude = ["secrets/", "*.pem"]
 ```
 
@@ -83,13 +84,18 @@ heal semantic ask --prune     # also remove answers nothing refers to anymore
 
 Answers are saved in `.heal/semantic/verdicts/`, one file per task.
 Commit that directory: teammates then see the same results without an
-API key, and HEAL only asks about code that changed since the last run.
+API key, and heal only asks about code that changed since the last run.
 If two branches both add answers, you can reduce merge conflicts with:
 
 ```text
 # .gitattributes
 .heal/semantic/verdicts/*.jsonl merge=union
 ```
+
+Answers from the on-demand checks below and from `focus` describe one
+person's work in progress, so they are kept in
+`.heal/cache/semantic/verdicts/` instead. That directory is ignored by
+git and safe to delete.
 
 ## What HEAL asks
 
@@ -125,7 +131,10 @@ With answers saved, `heal status` still groups findings by tier and
 severity exactly as before. Inside each group, it then prefers files
 where a defect costs more, code that is hard to work with, files where
 bug fixes keep landing, and cheaper fixes — before falling back to the
-usual hotspot score. Without saved answers the order is unchanged.
+usual hotspot score. Without saved answers the order is unchanged. The
+bundled patch skills, and your scripts, read the same order from
+`heal status --json`: every finding in a queue carries `drain_rank`
+(1 is next, counted per family) and `drain_tier`.
 
 To prepare for a specific piece of work, describe it in a file and run:
 
@@ -152,9 +161,10 @@ description = "Derives thresholds from the project's own metric distribution."
 ```
 
 The patch and review skills also run on-demand checks
-(`verify_patch`, `verify_tests`, `verify_proposal`, `name_choice`) with `--task`. They
-double-check the agent's own work and are never part of a plain
-`heal semantic ask`.
+(`verify_patch`, `verify_tests`, `verify_proposal`, `name_choice`) with
+`--task`. `verify_patch` and `verify_tests` judge the commits given with
+`--diff` (for example `--diff HEAD~1..HEAD`). These checks double-check
+the agent's own work and are never part of a plain `heal semantic ask`.
 
 ## Cost
 

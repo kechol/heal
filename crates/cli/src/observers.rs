@@ -798,7 +798,7 @@ pub(crate) fn base_observation(
 }
 
 /// Observe `scan_root` with a calibration computed from `scan_root`
-/// itself, then run the semantic post-pass. Used by the dev-only Q9
+/// itself, then run the semantic post-pass. Used by the dev-only drain-order
 /// backtest (`examples/backtest.rs`): a past checkout must be ranked with
 /// the distribution it had then, or today's thresholds leak future
 /// information into the ranking.

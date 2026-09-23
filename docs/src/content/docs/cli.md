@@ -19,12 +19,12 @@ The day-to-day surface — these are the four you'll actually type.
 | `heal diff`   | Compare the live worktree against an earlier commit (default: the calibration baseline). Like `git diff` for findings. |
 
 With the opt-in [Semantic (Jev)](/heal/semantic/) family enabled, two
-more commands join them. They are the only HEAL commands that connect
+more commands join them. They are the only heal commands that connect
 to the network:
 
 | Command             | Purpose                                                                                     |
 | ------------------- | ------------------------------------------------------------------------------------------- |
-| `heal semantic ask` | Ask Jev about the code, tests, and docs HEAL selected, and save the answers under `.heal/`. |
+| `heal semantic ask` | Ask Jev about the code, tests, and docs heal selected, and save the answers under `.heal/`. |
 | `heal auth jev`     | Store, check, or remove your Jev API key (`set` / `status` / `clear`).                      |
 
 ## Automation commands
@@ -356,6 +356,8 @@ heal semantic ask --task <id>        # one task (repeatable)
 heal semantic ask --refresh          # re-ask even where an answer is saved
 heal semantic ask --prune            # drop saved answers nothing refers to
 heal semantic ask --check            # only check the key against the API
+heal semantic ask --task focus --focus plan.md    # rank for the work in plan.md
+heal semantic ask --task verify_patch --diff HEAD~1..HEAD   # judge a commit range
 heal semantic ask --json             # machine-readable run report
 ```
 

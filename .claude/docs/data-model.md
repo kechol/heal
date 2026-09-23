@@ -81,10 +81,10 @@ The full result of one `heal status` run. Written to
 see identical drain queues without re-scanning.
 
 ```rust
-pub const FINDINGS_RECORD_VERSION: u32 = 8;
+pub const FINDINGS_RECORD_VERSION: u32 = 9;
 
 pub struct FindingsRecord {
-    pub version: u32,                // currently 8
+    pub version: u32,                // currently 9
     pub id: String,                  // FNV-1a hex of (head_sha, config_hash, worktree_clean)
     pub head_sha: Option<String>,    // None outside git or HEAD unborn
     pub worktree_clean: bool,
@@ -110,7 +110,7 @@ byte-identical content, keeping `git status` clean.
 
 ### Schema versioning
 
-`FINDINGS_RECORD_VERSION` is currently **8**. v1 → v2 renamed
+`FINDINGS_RECORD_VERSION` is currently **9**. v1 → v2 renamed
 `check_id → id` and `regressed_check_id → regressed_in_record_id`.
 v2 → v3 (Unreleased v0.4 cycle) bundles every new addition since
 v0.3.2: the `[features.docs]` family of metric strings

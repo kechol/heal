@@ -5,17 +5,17 @@
 //! into one score — and never change Tier or Severity, so Severity and
 //! Hotspot stay orthogonal (`design-philosophy.md` §1.3).
 //!
-//! - `consequence` (Q1) — what a failure in this file would cost, from
+//! - `consequence` — what a failure in this file would cost, from
 //!   development tooling to data integrity.
-//! - `triage` (H1 + Q2 + H4, H8) — for drain-queue findings: the patch
+//! - `triage` — for drain-queue findings: the patch
 //!   skill's gate (mechanical / false positive / escalate), the effort a
 //!   fix takes, the accept reason if it is a false positive, and for
 //!   duplication whether the copies express one idea.
-//! - `friction` (Q5 + H3) — for High / Critical complexity and LCOM: the
+//! - `friction` — for High / Critical complexity and LCOM: the
 //!   three frictions `design-philosophy.md` §5.1 names (hard to change,
 //!   hard to test, hard to read), asked separately, and the review
 //!   skill's triage class.
-//! - `focus` (Q4) — with `--focus <file>`: how much the described work
+//! - `focus` — with `--focus <file>`: how much the described work
 //!   will touch each file. "Make the change easy, then make the easy
 //!   change" (Kent Beck): refactor first what the next task will touch.
 
@@ -74,7 +74,7 @@ fn note_file(
     }
 }
 
-// ---------------------------------------------------------------- Q1
+// ---------------------------------------------------------------- consequence
 
 pub struct Consequence;
 
@@ -142,7 +142,7 @@ impl Task for Consequence {
     }
 }
 
-// ---------------------------------------------------------- H1 + Q2 + H4
+// ---------------------------------------------------------- triage
 
 pub struct Triage;
 
@@ -310,7 +310,7 @@ impl Task for Triage {
     }
 }
 
-// ----------------------------------------------------------- Q5 + H3
+// ----------------------------------------------------------- friction
 
 pub struct Friction;
 
@@ -402,7 +402,7 @@ impl Task for Friction {
     }
 }
 
-// ---------------------------------------------------------------- Q4
+// ---------------------------------------------------------------- focus
 
 pub struct Focus;
 

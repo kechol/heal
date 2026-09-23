@@ -118,7 +118,7 @@ ANSI colors when stdout is a TTY.
 heal status [--metric <FindingMetric>] [--feature <FamilyFilter>]
             [--workspace <PATH>] [--path <PREFIX>]
             [--severity <SeverityFilter>] [--all] [--json]
-            [--refresh] [--top <N>] [--no-pager]
+            [--refresh] [--top <N>] [--no-pager] [--focus <FILE>]
 ```
 
 Pipeline (`commands/status.rs:44-112`):

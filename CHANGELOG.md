@@ -35,7 +35,7 @@
   the only commands that open a connection. Every other command reads the
   verdict cache offline; when the family is enabled, verdict files are part
   of `config_hash`, so a changed verdict re-renders `heal status`.
-- **`concept` task (C12)** classifies every function into the team's
+- **`concept` task** classifies every function into the team's
   concept vocabulary (`.heal/concepts.toml`, written by the new
   `/heal-concepts-setup` skill) and reports `concept_mix`,
   `concept_misplaced`, and `concept_scatter` findings. The approach
@@ -91,7 +91,7 @@
 - `/heal-code-patch` and `/heal-code-review` read semantic notes when
   present and verify their own work with `verify_patch` /
   `verify_proposal`; without `[features.semantic]` they behave as before.
-- **`commit_intent` task (Q7)** classifies recent commits and decorates
+- **`commit_intent` task** classifies recent commits and decorates
   Code findings with a per-file bug-fix ratio (`semantic.fix_ratio`).
 - `heal status --metric` accepts `concept`, `naming`, `test-value`,
   `mock-scope`, `test-duplicate`, `doc-structure`, `doc-placement`, and

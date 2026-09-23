@@ -1,7 +1,7 @@
 //! `.heal/concepts.toml` — the project's concept vocabulary.
 //!
 //! A short list of the ideas the codebase is built from, each with a
-//! one-line definition. The `concept` (C12) and `doc_concept` (D9)
+//! one-line definition. The `concept` and `doc_concept`
 //! semantic tasks classify every function and doc section into one of
 //! them; Jev cannot invent names, so the vocabulary is written by the
 //! agent (`/heal-concepts-setup`) and reviewed by the team. Tracked in git

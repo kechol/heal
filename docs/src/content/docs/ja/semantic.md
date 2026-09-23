@@ -3,31 +3,20 @@ title: Semantic (Jev)
 description: TypeSafe の分類モデル Jev による判定（opt-in）。何が送られるか、API キーの設定、答えの保存のしかた。
 ---
 
-HEAL のメトリクスは、ソースと git の履歴からローカルで計算します。
-どこが変えにくいかは分かりますが、**コードが何を意味しているか**までは分かりません。
-たとえば、関数の名前が中身と合っているか、テストが本当に何かを確かめているか、
-ドキュメントの説明がまだコードと合っているか、といったことです。
+heal のメトリクスは、ソースと git の履歴からローカルで計算します。どこが変えにくいかは分かりますが、**コードが何を意味しているか**までは分かりません。たとえば、関数の名前が中身と合っているか、テストが本当に何かを確かめているか、ドキュメントの説明がまだコードと合っているか、といったことです。
 
-opt-in の `[features.semantic]` は、こうした問いを TypeSafe の分類モデル
-[Jev](https://docs.typesafe.ai/) に投げます。Jev は文章やコードを書きません。
-問いごとに確率で答えるので、HEAL はほかのメトリクスと同じように、
-その答えを Finding にできます。
+opt-in の `[features.semantic]` は、こうした問いを TypeSafe の分類モデル [Jev](https://docs.typesafe.ai/) に投げます。Jev は文章やコードを書きません。問いごとに確率で答えるので、heal はほかのメトリクスと同じように、その答えを Finding にできます。
 
-この機能は**既定では無効**です。有効にしなければ、HEAL の動きは今までと変わりません。
+この機能は**既定では無効**です。有効にしなければ、heal の動きは今までと変わりません。
 
 ## 何が、いつ送られるか
 
-- 送信するのは `heal semantic ask` だけです。HEAL があらかじめ選んだコード・テスト・
-  ドキュメントの一部（よく変更されるファイルの関数など）を TypeSafe の API に送ります。
-- `heal auth jev status` は API キーが使えるかを確かめます。キーは送りますが、
-  プロジェクトの中身は送りません。
-- それ以外のコマンド（`heal status`、`heal metrics`、`heal diff`、post-commit hook）は
-  ネットワークにつながりません。`heal semantic ask` が保存した答えを読むだけです。
+- 送信するのは `heal semantic ask` だけです。heal があらかじめ選んだコード・テスト・ドキュメントの一部（よく変更されるファイルの関数など）を TypeSafe の API に送ります。
+- `heal auth jev status` は API キーが使えるかを確かめます。キーは送りますが、プロジェクトの中身は送りません。
+- それ以外のコマンド（`heal status`、`heal metrics`、`heal diff`、post-commit hook）はネットワークにつながりません。`heal semantic ask` が保存した答えを読むだけです。
 - `[features.semantic].exclude` に一致するファイルは送りません。
 
-TypeSafe は、利用者のデータをモデルの学習に使わないとしています。データを保持しない契約
-（ZDR）は enterprise プランだけです。非公開のコードベースで有効にする前に、
-[TypeSafe の規約](https://docs.typesafe.ai/legal.md)を確認してください。
+TypeSafe は、利用者のデータをモデルの学習に使わないとしています。データを保持しない契約（ZDR）は enterprise プランだけです。非公開のコードベースで有効にする前に、[TypeSafe の規約](https://docs.typesafe.ai/legal.md)を確認してください。
 
 ## 有効にする
 
@@ -38,16 +27,15 @@ TypeSafe は、利用者のデータをモデルの学習に使わないとし�
 enabled = true
 # model = "jev-1.13.0"   # バージョンを固定する。動くエイリアスは使えない
 # max_usd = 1.0          # 1 回の実行でこれ以上使う前に止める
+# concurrency = 8        # 同時に送るリクエストの数
 # exclude = ["secrets/", "*.pem"]
 ```
 
-有効にすると、`heal status` は保存された答えを使って TODO リストを並べ替えます。
-同梱の patch 系スキルは、自分の変更を Jev に確かめさせます。
+有効にすると、`heal status` は保存された答えを使って TODO リストを並べ替えます。同梱の patch 系スキルは、自分の変更を Jev に確かめさせます。
 
 ## API キーを設定する
 
-キーは一人ひとりが自分のものを使います。
-[TypeSafe のコンソール](https://console.typesafe.ai/)で取得したら、環境変数に入れるか、
+キーは一人ひとりが自分のものを使います。[TypeSafe のコンソール](https://console.typesafe.ai/)で取得したら、環境変数に入れるか、
 
 ```sh
 export TYPESAFE_API_KEY=...
@@ -61,9 +49,7 @@ heal auth jev status    # キーの出どころを表示し、使えるか確か
 heal auth jev clear     # 保存したキーを消す
 ```
 
-キーが `.heal/` の下に書かれることはありません。環境変数 `TYPESAFE_API_KEY` と
-保存したファイルの両方がある場合は、環境変数が優先されます。`TYPESAFEAI_API_KEY`
-も読むので、ほかの Jev 向けツールで使っているキーをそのまま使えます。
+キーが `.heal/` の下に書かれることはありません。環境変数 `TYPESAFE_API_KEY` と保存したファイルの両方がある場合は、環境変数が優先されます。`TYPESAFEAI_API_KEY` も読むので、ほかの Jev 向けツールで使っているキーをそのまま使えます。
 
 ## 問い合わせる
 
@@ -73,20 +59,18 @@ heal semantic ask             # 問い合わせて、答えを保存する
 heal semantic ask --prune     # どこからも参照されなくなった答えも消す
 ```
 
-答えは `.heal/semantic/verdicts/` に、タスクごとに 1 ファイルで保存されます。
-このディレクトリは commit してください。チームメイトは API キーがなくても同じ結果を見られ、
-HEAL は前回から変わったコードだけを問い合わせます。
-2 つのブランチがそれぞれ答えを追加したときの衝突は、次の設定で減らせます。
+答えは `.heal/semantic/verdicts/` に、タスクごとに 1 ファイルで保存されます。このディレクトリは commit してください。チームメイトは API キーがなくても同じ結果を見られ、heal は前回から変わったコードだけを問い合わせます。2 つのブランチがそれぞれ答えを追加したときの衝突は、次の設定で減らせます。
 
 ```text
 # .gitattributes
 .heal/semantic/verdicts/*.jsonl merge=union
 ```
 
+後述の確認用タスクと `focus` の答えは、一人ひとりの作業中の内容についての答えなので、代わりに `.heal/cache/semantic/verdicts/` に保存します。このディレクトリは git の対象外で、消しても問題ありません。
+
 ## HEAL が問うこと
 
-問いの種類を「タスク」と呼びます。`[features.semantic.tasks.<id>] enabled = false` で個別に止められ、
-`cutoff = 0.7` のように、Finding にするのに必要な確率を変えられます。
+問いの種類を「タスク」と呼びます。`[features.semantic.tasks.<id>] enabled = false` で個別に止められ、`cutoff = 0.7` のように、Finding にするのに必要な確率を変えられます。
 
 | タスク               | 問うこと                                                                                                       | どこに現れるか                                                             |
 | -------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -112,10 +96,7 @@ HEAL は前回から変わったコードだけを問い合わせます。
 
 ### TODO リストの並び順
 
-答えが保存されていても、`heal status` は今までどおり tier と severity でまとめます。
-そのうえで各まとまりの中を、不具合の損失が大きいファイル、扱いにくいコード、
-バグ修正が集中するファイル、手間の小さい修正の順に並べ、最後にいつもの hotspot の値で並べます。
-答えがなければ、並び順は今までと変わりません。
+答えが保存されていても、`heal status` は今までどおり tier と severity でまとめます。そのうえで各まとまりの中を、不具合の損失が大きいファイル、扱いにくいコード、バグ修正が集中するファイル、手間の小さい修正の順に並べ、最後にいつもの hotspot の値で並べます。答えがなければ、並び順は今までと変わりません。同梱の patch 系スキルやスクリプトは、同じ並び順を `heal status --json` から読めます。キューに入る Finding にはそれぞれ `drain_rank`（1 が次に扱うもの。ファミリーごとに数える）と `drain_tier` が付きます。
 
 特定の作業に備えたいときは、作業の内容をファイルに書いて次を実行します。
 
@@ -126,9 +107,7 @@ heal status --focus plan.md
 
 ### 概念の語彙
 
-`concept` タスクには、コードを形づくる概念の一覧が `.heal/concepts.toml` に必要です。
-Jev は渡された名前の中から選ぶだけで、名前を作ることはありません。
-同梱のスキルで下書きを作り、見直してから commit してください。
+`concept` タスクには、コードを形づくる概念の一覧が `.heal/concepts.toml` に必要です。Jev は渡された名前の中から選ぶだけで、名前を作ることはありません。同梱のスキルで下書きを作り、見直してから commit してください。
 
 ```sh
 claude /heal-concepts-setup
@@ -140,23 +119,16 @@ id = "calibration"
 description = "Derives thresholds from the project's own metric distribution."
 ```
 
-patch 系と review のスキルは、`--task` を付けて確認用のタスク（`verify_patch`、`verify_tests`、`verify_proposal`、
-`name_choice`）も実行します。エージェント自身の作業を確かめるためのもので、
-`--task` なしの `heal semantic ask` では実行されません。
+patch 系と review のスキルは、`--task` を付けて確認用のタスク（`verify_patch`、`verify_tests`、`verify_proposal`、`name_choice`）も実行します。`verify_patch` と `verify_tests` は、`--diff` で渡した commit（例: `--diff HEAD~1..HEAD`）を判定します。どれもエージェント自身の作業を確かめるためのもので、`--task` なしの `heal semantic ask` では実行されません。
 
 ## 料金
 
-Jev の料金は入力の分だけです（執筆時点で、入力 10 億 tokens あたり $42）。
-`--dry-run` は送る前に見積もりを表示し、`max_usd` は上限を超える前に実行を止めます。
-中規模のリポジトリなら、1 回の実行は数セント程度です。
+Jev の料金は入力の分だけです（執筆時点で、入力 10 億 tokens あたり $42）。`--dry-run` は送る前に見積もりを表示し、`max_usd` は上限を超える前に実行を止めます。中規模のリポジトリなら、1 回の実行は数セント程度です。
 
 ## 結果は候補として扱う
 
-分類モデルは間違えることがあり、しきい値に近いスコアはモデルのバージョンによって少し変わります。
-HEAL はモデルのバージョンを固定し、保存した答えを使い回すので結果は安定しますが、
-semantic の Finding は、人が見て判断する候補として扱ってください。
+分類モデルは間違えることがあり、しきい値に近いスコアはモデルのバージョンによって少し変わります。heal はモデルのバージョンを固定し、保存した答えを使い回すので結果は安定しますが、semantic の Finding は、人が見て判断する候補として扱ってください。
 
 ## 無効にする
 
-`enabled = false` にします。次の `heal status` で semantic の Finding はすべて消え、
-並び順も元に戻ります。保存した答えは、消すまで `.heal/semantic/` に残ります。
+`enabled = false` にします。次の `heal status` で semantic の Finding はすべて消え、並び順も元に戻ります。保存した答えは、消すまで `.heal/semantic/` に残ります。

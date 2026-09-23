@@ -195,7 +195,8 @@ pub struct SemanticAskArgs {
     /// Remove cached verdicts that no current subject refers to.
     #[arg(long)]
     pub prune: bool,
-    /// Only confirm the key and the configured model against the API.
+    /// Only confirm the key against the API (and the configured model,
+    /// when the API's model list names it; pinned versions are unlisted).
     #[arg(long, conflicts_with_all = ["dry_run", "refresh", "prune"])]
     pub check: bool,
     /// Describe upcoming work (a file path, or `-` for stdin) so focus-aware

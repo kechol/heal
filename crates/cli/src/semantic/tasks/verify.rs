@@ -1,12 +1,12 @@
 //! On-demand verification tasks: an independent check of what an agent
 //! just wrote, instead of the agent grading its own work.
 //!
-//! - `verify_patch` (V1 + V3) — given `--diff <range>`, does the change
+//! - `verify_patch` — given `--diff <range>`, does the change
 //!   only relocate complexity, reflexively flip a flat condition into
 //!   negated guard clauses, change behaviour, or carry a commit message
 //!   that does not describe it? The patch skills run this after each
 //!   commit and revert a commit that fails.
-//! - `verify_proposal` (V4) — given `--focus proposals.json`, the five
+//! - `verify_proposal` — given `--focus proposals.json`, the five
 //!   readability questions of `heal-code-review/references/readability.md`
 //!   §3, one question each.
 //!

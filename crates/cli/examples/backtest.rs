@@ -1,4 +1,4 @@
-//! Q9 — dev-only backtest of HEAL's drain order.
+//! Dev-only backtest of HEAL's drain order.
 //!
 //! Not a user-facing command: it exists so maintainers can check, with
 //! numbers, whether a change to the ordering (for example a new

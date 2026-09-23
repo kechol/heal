@@ -103,6 +103,15 @@ trailer, never push / amend / `--no-verify`. Findings whose
 metric belongs to the docs or test families are skipped — those
 go through `/heal-doc-patch` / `/heal-test-patch`.
 
+**With [Semantic (Jev)](/heal/semantic/) enabled**, the skill reads
+the semantic notes on each finding as a second opinion, and after each
+commit runs `heal semantic ask --task verify_patch --diff HEAD~1..HEAD`.
+When Jev reports that complexity only moved, a condition was flipped
+into early returns, the commit message does not match the change, or
+a refactor changed behaviour, the skill undoes that commit, notes why,
+and moves on to the next finding. Without the family or a key, nothing
+changes.
+
 Trigger phrases: "fix the heal findings", "drain the cache",
 "work through the TODO list", "/heal-code-patch".
 

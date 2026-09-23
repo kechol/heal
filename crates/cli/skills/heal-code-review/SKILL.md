@@ -78,7 +78,7 @@ classified `Finding`:
 
 ```jsonc
 {
-  "version": 8,
+  "version": 9,
   "id": "...",                // deterministic FNV-1a of head/config/clean
   "head_sha": "...",
   "worktree_clean": true,

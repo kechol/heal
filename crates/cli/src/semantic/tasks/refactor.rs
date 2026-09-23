@@ -1,13 +1,13 @@
 //! Tasks that help drain CCN / Cognitive / duplication findings.
 //!
-//! - `split_points` (C14) — for a High / Critical CCN or Cognitive
+//! - `split_points` — for a High / Critical CCN or Cognitive
 //!   function, ask for each pair of adjacent statement blocks whether
 //!   they serve one step of the function. Low answers are the boundaries
 //!   where an extracted function would have one purpose of its own; the
 //!   agent then names the pieces. This is a semantic cut, not "move this
 //!   branch out", which is how HEAL avoids the relocate trap
 //!   (`design-philosophy.md` §5.2).
-//! - `fix_pattern` (H2) — which of the patch skill's allow-listed
+//! - `fix_pattern` — which of the patch skill's allow-listed
 //!   refactorings fits a drain-queue finding, or none. Replaces the
 //!   agent's own pattern pick with a scored one.
 

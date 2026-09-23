@@ -66,4 +66,6 @@ description: '[features.test] 向け同梱スキル 3 種 — /heal-test-reporte
 
 **制約**: 1 finding = 1 commit、Conventional Commit subject + `Refs: F#<finding_id>` trailer、push / amend / `--no-verify` はしない。Code または Docs ファミリのメトリクスに属する findings はスキップ。
 
+**[Semantic (Jev)](/heal/ja/semantic/) を有効にしている場合**は、何も確かめていないテストの削除もします。対象は `delete` と判定され、確信度が 0.9 以上の `test_value` の finding です。1 commit で 1 テストずつ、テストスイートが通り、カバレッジが下がらないときだけ消します。ただし、そのテストが自分の mock しか確かめていないか、何も確かめていないなら、カバレッジが下がっても消します（カバレッジのデータがなければ、レビュー用に一覧を出すだけです）。`test_duplicate` のペアは削除するか、1 つのパラメータ化テストにまとめ、ただの値を差し替えている mock は本物の値に置き換えます。commit のたびに `heal semantic ask --task verify_tests --diff HEAD~1..HEAD` を実行し、新しいテストが自分の mock しか確かめていなければ、その commit を取り消します。
+
 トリガーフレーズ: 「fix the test findings」、「drain the test cache」、「add tests heal flagged」、「/heal-test-patch」。

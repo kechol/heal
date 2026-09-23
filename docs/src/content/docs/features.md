@@ -112,7 +112,7 @@ claude /heal-doc-pair-setup
 
 Asks TypeSafe's Jev classifier questions that metrics cannot answer
 and adds the answers to the Code, Test, and Docs families. It is the
-only part of HEAL that sends content over the network, and only when
+only part of heal that sends content over the network, and only when
 you run `heal semantic ask`. See [Semantic (Jev)](/heal/semantic/)
 for what is sent, the API key, and cost.
 

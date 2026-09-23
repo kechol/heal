@@ -93,6 +93,28 @@ key form matches `MetricsConfig` field names.
 | `skip_ratio` | `SkipRatio` (`SkipRatioFeature` / `FeatureKind::Observer`) | `skip-ratio` | `[features.test]` only. Per-test-file ratio of skipped tests to total tests, expressed as a percentage. Detected via tree-sitter walks of language-specific markers (Rust `#[ignore]`, Python `@pytest.mark.skip` / `@unittest.skipIf`, JS/TS `it.skip` / `xit`, Go `t.Skip()` deduped per enclosing `Test*` function, ScalaTest `ignore` / `pending`). Calibrated against `[calibration.skip_ratio]`; literature anchors > 1 % Medium / > 5 % High / > 20 % Critical via the fallback cascade. Findings emitted only for files with at least one skipped test. |
 | `test_hotspot` | `TestHotspot` (`TestHotspotFeature` / `Family::Test`) | `test-hotspot` | `[features.test.coverage]` only. Per-measured-production-src-file `commits × uncov_pct` composite. LCOV-absent files are unmeasured and excluded; explicit measured 0% is a 100% gap. Severity always `Ok`; the score's job is to flip `hotspot=true` on **other** Test-family Findings (`coverage_pct`). Calibration: `HotspotCalibration` with `floor_ok = FLOOR_OK_TEST_HOTSPOT = 25.0`, configurable via `[features.test.hotspot] floor_ok`. |
 | `doc_hotspot` | `DocHotspot` (`DocHotspotFeature` / `Family::Docs`) | `doc-hotspot` | `[features.docs]` only. Per-pair `paired_src_churn × debt` where `debt = src_commits_since_doc + weight_drift × dangling_idents`. Domain = paired pairs from `doc_pairs.json` (standalone docs stay covered by `orphan_pages` / `todo_density`). Severity always `Ok`; decorates Docs-family Findings via `hotspot=true` on the doc and every paired src. `weight_drift` default `1.0`; `floor_ok = FLOOR_OK_DOC_HOTSPOT = 5.0`; both configurable under `[features.docs.hotspot]`. |
+| `concept_mix` | (under `Concept`) | (under `concept`) | `[features.semantic]` only. A file whose classified code spans several concepts of `.heal/concepts.toml`. |
+| `concept_misplaced` | (under `Concept`) | (under `concept`) | `[features.semantic]` only. A function whose concept is another file's home concept; `fix_hint` names the move target. |
+| `concept_scatter` | (under `Concept`) | (under `concept`) | `[features.semantic]` only. A concept spread over many files with no home. |
+| `concept` | `Concept` | `concept` | Umbrella in CLI; selects every `concept_*` Finding. **No** Finding has `metric = "concept"`. |
+| `term_drift` | (under `Naming`) | (under `naming`) | `[features.semantic]` only. Two words that name one domain thing inside a concept. |
+| `name_mismatch` | (under `Naming`) | (under `naming`) | `[features.semantic]` only. A function name that contradicts or hides what the body does. |
+| `naming` | `Naming` | `naming` | Umbrella in CLI; selects `term_drift` and `name_mismatch`. **No** Finding has `metric = "naming"`. |
+| `test_value` | `TestValue` | `test-value` | `[features.semantic]` + `[features.test]`. A test case to delete (checks nothing real) or rewrite (brittle). |
+| `mock_scope` | `MockScope` | `mock-scope` | `[features.semantic]` + `[features.test]`. A mock that replaces the subject, an internal collaborator, or a pure value. |
+| `test_duplicate` | `TestDuplicate` | `test-duplicate` | `[features.semantic]` + `[features.test]`. Two cases in one file that test the same thing or could be one parameterized test. |
+| `doc_structure.split` | (under `DocStructure`) | (under `doc-structure`) | `[features.semantic]` + `[features.docs]`. A page that holds more than one document. |
+| `doc_structure.mixed_mode` | (under `DocStructure`) | (under `doc-structure`) | Same gate. A page that mixes documentation kinds (tutorial, how-to, reference, explanation, …). |
+| `doc_structure.merge` | (under `DocStructure`) | (under `doc-structure`) | Same gate. Neighbouring short pages that read as one document. |
+| `doc_placement` | `DocPlacement` | `doc-placement` | Same gate. A page that belongs in another section of the doc tree. |
+| `doc_drift.semantic` | (under `DocDrift`) | (under `doc-drift`) | Same gate. Type 3 drift: a paired doc section that states what the code no longer does. |
+| `doc_concept.gap` | (under `DocConcept`) | (under `doc-concept`) | Same gate plus `.heal/concepts.toml`. A sizeable concept no doc section explains. |
+| `doc_concept.duplicate` | (under `DocConcept`) | (under `doc-concept`) | Same gate. Sections of two pages that repeat each other. |
+| `doc_concept.conflict` | (under `DocConcept`) | (under `doc-concept`) | Same gate. Sections of two pages that contradict each other. |
+
+Semantic Findings (every row above marked `[features.semantic]`) are
+built from cached Jev verdicts by `semantic::lower::apply`, capped at
+`High`.
 
 Don't invent new submetric strings without bumping `FINDINGS_RECORD_VERSION`
 (see `.claude/rules/data-model.md`).
@@ -175,6 +197,12 @@ Drain tiers (from `[policy.drain]` in config and `core::config::DrainTier`):
 `critical:hotspot`). The `:hotspot` suffix means "Required" — match only
 when the Finding has `hotspot=true`.
 
+In `heal status --json` the Tier appears as `Finding.drain_tier`
+(`"must"` / `"should"` / `"advisory"`) next to `Finding.drain_rank`, the
+1-based position in the Finding's family queue (the rendered order,
+semantic axes included). Both are render-time, like `accepted`; never
+"priority", "score", or "position".
+
 ---
 
 ## Workspaces (monorepos)
@@ -193,12 +221,6 @@ The list of detected manifests is fixed: `package.json` (with
 `workspaces`), `pnpm-workspace.yaml`, `Cargo.toml` (with `[workspace]`),
 `go.work`, `nx.json`, `turbo.json`. Don't invent custom signals — extend
 the enum in `core::monorepo` instead.
-
-In `heal status --json` the Tier appears as `Finding.drain_tier`
-(`"must"` / `"should"` / `"advisory"`) next to `Finding.drain_rank`, the
-1-based position in the Finding's family queue (the rendered order,
-semantic axes included). Both are render-time, like `accepted`; never
-"priority", "score", or "position".
 
 ---
 

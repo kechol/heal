@@ -1,6 +1,6 @@
 //! Docs-family tasks. All need `[features.docs] enabled = true`.
 //!
-//! - `doc_structure` (D7, H6) — docjev's classify-and-split
+//! - `doc_structure` — docjev's classify-and-split
 //!   (jerryjliu/docjev, Apache-2.0) applied to Markdown: every section is
 //!   classified by document kind (the four Diátaxis modes plus changelog,
 //!   ADR, runbook, glossary), and every section boundary is asked
@@ -10,10 +10,10 @@
 //!   continue one document → `doc_structure.merge`. Boundaries within
 //!   0.1 of the threshold are flagged for review rather than acted on,
 //!   as docjev does.
-//! - `doc_placement` (D8, H9) — which section of the doc tree each page
+//! - `doc_placement` — which section of the doc tree each page
 //!   belongs under; a page filed elsewhere → `doc_placement`. The chosen
 //!   section also becomes the registration slot for `orphan_pages`.
-//! - `doc_drift_semantic` (D1) — for each paired doc section and its
+//! - `doc_drift_semantic` — for each paired doc section and its
 //!   sources: does the section state something the code no longer does?
 //!   Type 3 drift in `.claude/docs/observers.md` terms →
 //!   `doc_drift.semantic`.
@@ -68,7 +68,7 @@ fn line_count(s: &Section) -> u32 {
     s.end_line - s.start_line + 1
 }
 
-// ------------------------------------------------------------ D7 + H6
+// ------------------------------------------------------------ doc_structure
 
 pub const DOC_KINDS: [(&str, &str); 9] = [
     (
@@ -395,7 +395,7 @@ impl Task for DocStructure {
                     lowered.findings.push(f);
                 }
             }
-            // H6: the page's kind on its existing docs-family findings.
+            // The page's kind on its existing docs-family findings.
             let page_kind = kind_of(&secs);
             for f in ctx.findings.iter().filter(|f| {
                 f.location.file == doc_path && Family::for_metric(&f.metric) == Family::Docs
@@ -417,7 +417,7 @@ impl Task for DocStructure {
     }
 }
 
-// ------------------------------------------------------------ D8 + H9
+// ------------------------------------------------------------ doc_placement
 
 pub struct DocPlacement;
 
@@ -548,7 +548,7 @@ impl Task for DocPlacement {
                 }
                 _ => 0.0,
             };
-            // H9: orphans get the chosen section as their link slot.
+            // Orphans get the chosen section as their link slot.
             for f in ctx
                 .findings
                 .iter()
@@ -590,7 +590,7 @@ impl Task for DocPlacement {
     }
 }
 
-// ------------------------------------------------------------------ D1
+// ------------------------------------------------------------------ doc_drift_semantic
 
 pub struct DocDriftSemantic;
 

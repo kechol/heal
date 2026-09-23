@@ -7,17 +7,17 @@
 //! question per pillar, so a test that exists only to raise coverage —
 //! common in agent-written suites — can be found and removed.
 //!
-//! - `test_value` (T7) — per test case: does it fail when the behaviour
+//! - `test_value` — per test case: does it fail when the behaviour
 //!   its name claims breaks; does it fail after a behaviour-preserving
 //!   rewrite; what does it actually check; does the code under test
 //!   contain logic that can be wrong. → `test_value` findings labelled
 //!   `delete` or `rewrite`.
-//! - `mock_scope` (T8) — per mock set-up: what it replaces. Mocks belong
+//! - `mock_scope` — per mock set-up: what it replaces. Mocks belong
 //!   at out-of-process boundaries; mocking an internal collaborator ties
 //!   the test to implementation details. → `mock_scope` findings.
-//! - `test_triage` (H7) — the test-review skill's classifications:
+//! - `test_triage` — the test-review skill's classifications:
 //!   uncovered source band, skip reason.
-//! - `verify_tests` (V2, on demand) — the `test_value` / `mock_scope`
+//! - `verify_tests` (on demand) — the `test_value` / `mock_scope`
 //!   questions for tests added in `--diff`, so a patch session can stop a
 //!   worthless test before it lands.
 
@@ -36,7 +36,7 @@ use crate::semantic::tasks::common::{
     parse_file, TestMatcher,
 };
 
-// ------------------------------------------------------------- T7
+// ------------------------------------------------------------- test_value
 
 pub const CHECKS: [(&str, &str); 5] = [
     (
@@ -316,7 +316,7 @@ impl Task for TestValue {
     }
 }
 
-// ------------------------------------------------------------- T8
+// ------------------------------------------------------------- mock_scope
 
 pub const MOCK_KINDS: [(&str, &str); 4] = [
     ("boundary", "An out-of-process dependency the test cannot control: network, database, file system, clock, randomness, or a third-party service."),
@@ -473,7 +473,7 @@ impl Task for MockScope {
     }
 }
 
-// ------------------------------------------------------------- H7
+// ------------------------------------------------------------- test_triage
 
 pub struct TestTriage;
 
@@ -635,7 +635,7 @@ impl Task for TestTriage {
     }
 }
 
-// ------------------------------------------------------------- T9
+// ------------------------------------------------------------- test_duplicate
 
 pub struct TestDuplicate;
 
@@ -812,7 +812,7 @@ impl Task for TestDuplicate {
     }
 }
 
-// ------------------------------------------------------------- V2
+// ------------------------------------------------------------- verify_tests
 
 pub struct VerifyTests;
 
