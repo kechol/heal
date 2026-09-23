@@ -16,6 +16,7 @@ pub mod api;
 pub mod client;
 pub mod cost;
 pub mod credentials;
+pub mod lower;
 pub mod pacer;
 pub mod plan;
 pub mod runner;

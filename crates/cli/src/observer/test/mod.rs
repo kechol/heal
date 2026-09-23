@@ -7,6 +7,7 @@
 //! HEAL never executes tests. Generation of the lcov file is the
 //! user's contract — the binary is a read-only consumer.
 
+pub mod cases;
 pub mod coverage;
 pub mod hotspot;
 pub mod lcov;

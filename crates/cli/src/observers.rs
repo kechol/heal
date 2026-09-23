@@ -750,6 +750,8 @@ pub(crate) fn build_record(
                 .unwrap_or_default();
             let reports = run_all(scan_root, &observed_cfg, None, None, None);
             let findings = classify(&reports, &calibration, &observed_cfg);
+            let findings =
+                crate::semantic::lower::apply(scan_root, &observed_cfg, &reports, findings);
             let coverage_observation = reports.coverage.as_ref().map(CoverageReport::observation);
             Ok((findings, coverage_observation))
         },
@@ -761,6 +763,24 @@ pub(crate) fn build_record(
         findings,
     )
     .with_coverage_observation(coverage_observation))
+}
+
+/// Observer reports plus the ordinary families' Findings for `scan_root`,
+/// without the semantic post-pass. `heal semantic ask` plans its questions
+/// from this, so it sees exactly what `semantic::lower::apply` sees during
+/// `heal status`.
+pub(crate) fn base_observation(
+    scan_root: &Path,
+    paths: &crate::core::HealPaths,
+    cfg: &Config,
+) -> (ObserverReports, Vec<Finding>) {
+    let calibration = Calibration::load(&paths.calibration())
+        .ok()
+        .map(|c| c.with_overrides(cfg))
+        .unwrap_or_default();
+    let reports = run_all(scan_root, cfg, None, None, None);
+    let findings = classify(&reports, &calibration, cfg);
+    (reports, findings)
 }
 
 const MAX_STABLE_OBSERVATION_ATTEMPTS: usize = 3;

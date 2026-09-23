@@ -86,11 +86,15 @@ pub fn run_ask(project: &Path, args: &AskArgs) -> Result<()> {
         ),
         None => None,
     };
-    let mut ctx = TaskContext::new(project, &cfg).map_err(anyhow::Error::msg)?;
+    let paths = HealPaths::new(project);
+    let (reports, base) = crate::observers::base_observation(project, &paths, &cfg);
+    let mut ctx = TaskContext::new(project, &cfg)
+        .map_err(anyhow::Error::msg)?
+        .with_base(&reports, &base);
     ctx.focus = focus.as_deref();
     ctx.diff_range = args.diff.as_deref();
 
-    let mut store = VerdictStore::new(HealPaths::new(project).semantic_verdicts());
+    let mut store = VerdictStore::new(paths.semantic_verdicts());
     let report = runner::run(
         &selected,
         &ctx,
@@ -147,7 +151,7 @@ fn select_tasks<'a>(
         .iter()
         .filter(|t| {
             if requested.is_empty() {
-                enabled(t.id())
+                enabled(t.id()) && !t.on_demand()
             } else {
                 requested.iter().any(|r| r == t.id())
             }

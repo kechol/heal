@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### ⚠ BREAKING — findings schema v9
+
+- **`FINDINGS_RECORD_VERSION` is now 9.** Findings gain an optional
+  `semantic` decoration map, and the `[features.semantic]` family adds new
+  metric strings. Projects that do not enable the family get records that
+  are otherwise byte-identical to v8. **Migration:** none by hand — older
+  `latest.json` files invalidate and rebuild on the next `heal status`.
+
 ### Features — `[features.semantic]` (Jev, opt-in)
 
 - **New opt-in family `[features.semantic]`** that asks TypeSafe's

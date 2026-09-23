@@ -101,12 +101,14 @@ derives `#[serde(deny_unknown_fields)]`. Typos surface as
 `ConfigInvalid` schema errors at load. Don't relax — the strict mode
 prevents "why is my setting being ignored" support burden.
 
-## R8. Per-metric Toggle pattern is symmetric
+## R8. Programmatic defaults equal serde defaults
 
-`Toggle::enabled()` and `Default::default()` must produce the **same**
-struct. The pin test
-`programmatic_default_matches_serde_default` enforces it. New
-`*Config` follows the same pattern.
+`Config::default()` (and every nested `*Config::default()`) must
+produce the **same** struct serde builds from an empty `config.toml`.
+The pin test `programmatic_default_matches_serde_default`
+(`crates/cli/tests/core_config.rs`) enforces it. A new `*Config`
+keeps its `#[serde(default = …)]` functions and its `Default` impl
+returning identical values.
 
 ## R9. `floor_*` overrides go in `config.toml`, not `calibration.toml`
 

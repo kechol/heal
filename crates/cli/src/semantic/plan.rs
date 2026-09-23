@@ -87,6 +87,7 @@ mod tests {
                 instructions: json!(text),
                 criteria: None,
             },
+            meta: serde_json::Value::Null,
         }
     }
 

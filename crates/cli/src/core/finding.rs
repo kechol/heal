@@ -18,6 +18,8 @@
 
 use std::path::PathBuf;
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::core::hash::{fnv1a_64_chunked, fnv1a_hex};
@@ -159,6 +161,32 @@ pub struct Finding {
     /// projects' caches stay byte-identical to v3.
     #[serde(default, skip_serializing_if = "is_false")]
     pub is_test_file: bool,
+    /// Decorations from `[features.semantic]` verdicts, keyed by note name
+    /// (`consequence`, `effort`, `friction.change`, `split_points`, …).
+    /// Filled by `semantic::lower::apply` from cached verdicts only, never
+    /// from a network call. Not part of the id. Empty (and absent from
+    /// JSON) whenever the family is disabled.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub semantic: BTreeMap<String, SemanticNote>,
+}
+
+/// One semantic decoration on a Finding.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SemanticNote {
+    /// The selected label (`choice` / `score` level) or `"true"` /
+    /// `"false"` for a `noul` read against its cutoff.
+    pub label: String,
+    /// Strength of the label: the probability of the selected option, or
+    /// the `noul` probability, or the normalised score.
+    pub p: f64,
+    /// Provider confidence (for `noul`, distance from 0.5 scaled to 0..=1).
+    pub confidence: f64,
+    /// Line numbers the note points at (split points, mock sites, …).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lines: Vec<u32>,
+    /// Extra free-form context for skills (e.g. the suggested target module).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 #[inline]
@@ -189,6 +217,7 @@ impl Finding {
             fix_hint: None,
             accepted: false,
             is_test_file: false,
+            semantic: BTreeMap::new(),
         }
     }
 
@@ -456,8 +485,10 @@ mod tests {
             fix_hint: None,
             accepted: false,
             is_test_file: false,
+            semantic: BTreeMap::new(),
         };
         let json = serde_json::to_string(&f).unwrap();
+        assert!(!json.contains("semantic"));
         assert!(!json.contains("locations"));
         assert!(!json.contains("fix_hint"));
         assert!(!json.contains("workspace"));

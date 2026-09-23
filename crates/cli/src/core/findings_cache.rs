@@ -82,8 +82,11 @@ use crate::core::severity::SeverityCounts;
 /// v7 adds `coverage_observation`, separating missing/partial reporter
 /// provenance from measured `coverage_pct` findings. v8 adds the optional
 /// per-finding `hotspot_score` used for deterministic within-family work
-/// order; the score does not affect IDs, Severity, or drain Tier.
-pub const FINDINGS_RECORD_VERSION: u32 = 8;
+/// order; the score does not affect IDs, Severity, or drain Tier. v9 adds
+/// the `[features.semantic]` family: the optional per-finding `semantic`
+/// decoration map and the semantic metric strings. Records from projects
+/// without the family enabled are otherwise byte-identical to v8.
+pub const FINDINGS_RECORD_VERSION: u32 = 9;
 
 /// One execution of `heal status`. The unit of read in the cache:
 /// `latest.json` holds the single most-recent record. `heal diff` reads

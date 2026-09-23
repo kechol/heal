@@ -304,6 +304,7 @@ mod tests {
                         instructions: json!(format!("is {i} odd?")),
                         criteria: None,
                     },
+                    meta: serde_json::Value::Null,
                 })
                 .collect();
             Ok(vec![Group {
