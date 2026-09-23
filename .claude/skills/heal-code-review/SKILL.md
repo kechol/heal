@@ -81,7 +81,7 @@ classified `Finding`:
 
 ```jsonc
 {
-  "version": 8,
+  "version": 9,
   "id": "...",                // deterministic FNV-1a of head/config/clean
   "head_sha": "...",
   "worktree_clean": true,
@@ -228,10 +228,11 @@ highest-Severity items individually.
 - **Advisory** — everything else above `Severity::Ok`. Mention as a
   count, never as TODO entries.
 
-Within T0, sort higher Severity first, then descending `hotspot_score`
-within the Code family. Missing scores sort last; ties use metric, path,
-then finding id. This is the same order as human `heal status`; never mix raw
-scores across families or invent a combined score. Cap the TODO list at
+Within T0, follow ascending `drain_rank` (counted within the Code
+family; it applies Severity, the `[features.semantic]` axes, and
+`hotspot_score` exactly as human `heal status` prints them). Never
+re-derive the order, mix raw scores across families, or invent a
+combined score. Cap the TODO list at
 the top 8 — beyond that the list dilutes. If the user asked for
 "everything", you may extend into T1; never auto-extend into Advisory.
 

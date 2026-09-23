@@ -162,9 +162,10 @@ candidate.
 
 ## §5 Prioritization heuristic
 
-Preserve the machine queue order exactly: effective Drain Tier, then
-Severity, then descending family-local `hotspot_score`; missing scores
-sort last, and ties use metric, path, then finding id. Hotspot is a
+Preserve the machine queue order exactly: ascending `drain_rank` from
+`heal status --json` (effective Drain Tier, then Severity, then the
+`[features.semantic]` axes, then descending family-local `hotspot_score`;
+missing scores sort last, and ties use metric, path, then finding id). Hotspot is a
 decoration and re-review signal, not an extra ordering key. Document
 purpose and remedy type can inform the proposed fix, but they must not
 reorder the queue.
