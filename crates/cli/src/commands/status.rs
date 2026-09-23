@@ -88,7 +88,21 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     // see the previous owner's state until they remembered to refresh.
     let head_sha = git::head_sha(project);
     let worktree_clean = git::worktree_clean(project).unwrap_or(false);
-    let cached = if args.refresh {
+
+    let focus = match args.focus.as_deref() {
+        Some("-") => {
+            Some(std::io::read_to_string(std::io::stdin()).context("reading --focus from stdin")?)
+        }
+        Some(path) => Some(
+            std::fs::read_to_string(path)
+                .with_context(|| format!("reading --focus file {path}"))?,
+        ),
+        None => None,
+    };
+    // `--focus` always rescans and never reads or writes `latest.json`
+    // (see `build_record_focused` below), so skip the freshness check's
+    // cache read and `config_hash` recomputation entirely when it is set.
+    let cached = if args.refresh || focus.is_some() {
         None
     } else {
         read_latest_if_fresh(
@@ -103,16 +117,6 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     };
     let must_scan = cached.is_none();
 
-    let focus = match args.focus.as_deref() {
-        Some("-") => {
-            Some(std::io::read_to_string(std::io::stdin()).context("reading --focus from stdin")?)
-        }
-        Some(path) => Some(
-            std::fs::read_to_string(path)
-                .with_context(|| format!("reading --focus file {path}"))?,
-        ),
-        None => None,
-    };
     let (mut record, regressed) = if let Some(focus) = focus.as_deref() {
         let record = crate::observers::build_record_focused(
             project,

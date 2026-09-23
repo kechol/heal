@@ -249,7 +249,7 @@ pub fn finding_excerpt(ctx: &TaskContext<'_>, f: &Finding) -> Option<String> {
         return Some(numbered_range(
             &src,
             line.saturating_sub(40).max(1),
-            line + 40,
+            line.saturating_add(40),
         ));
     }
     Some(numbered_range(&src, 1, 200))

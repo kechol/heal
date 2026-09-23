@@ -352,6 +352,43 @@ fn mock_items(
 
 pub struct MockScope;
 
+/// For each answered mock site, how many sites with the same text in the
+/// same file come before it by line. Identical mock lines share a text
+/// hash, so the rank keeps their Finding ids apart.
+fn mock_occurrence_ranks(answered: &[Answered<'_>]) -> Vec<usize> {
+    let mut by_text: BTreeMap<(&str, &str), Vec<(u64, usize)>> = BTreeMap::new();
+    for (i, a) in answered.iter().enumerate() {
+        let m = &a.item.meta;
+        by_text
+            .entry((
+                m["file"].as_str().unwrap_or(""),
+                m["text"].as_str().unwrap_or(""),
+            ))
+            .or_default()
+            .push((m["line"].as_u64().unwrap_or(0), i));
+    }
+    let mut ranks = vec![0; answered.len()];
+    for sites in by_text.values_mut() {
+        sites.sort_unstable();
+        for (rank, &(_, i)) in sites.iter().enumerate() {
+            ranks[i] = rank;
+        }
+    }
+    ranks
+}
+
+/// Seed for a `mock_scope` Finding id. Structural rather than a line
+/// number, so the id survives edits above the mock; only the second and
+/// later identical lines in a file carry their rank.
+fn mock_seed(text: &str, rank: usize) -> String {
+    let hash = crate::semantic::store::content_hash(text.as_bytes());
+    if rank == 0 {
+        format!("mock_scope:{hash}")
+    } else {
+        format!("mock_scope:{hash}:{rank}")
+    }
+}
+
 impl Task for MockScope {
     fn id(&self) -> &'static str {
         "mock_scope"
@@ -399,8 +436,9 @@ impl Task for MockScope {
     }
     fn lower(&self, ctx: &TaskContext<'_>, answered: &[Answered<'_>]) -> Lowered {
         let cutoff = ctx.cutoff(self, 0.6);
+        let ranks = mock_occurrence_ranks(answered);
         let mut lowered = Lowered::default();
-        for a in answered {
+        for (a, rank) in answered.iter().zip(ranks) {
             let Some(answer) = a.answer else { continue };
             let Some((kind, p, _)) = chosen(answer) else {
                 continue;
@@ -423,10 +461,7 @@ impl Task for MockScope {
                 Some(line),
                 None,
                 format!("{summary}: `{text}`"),
-                &format!(
-                    "mock_scope:{}",
-                    crate::semantic::store::content_hash(text.as_bytes())
-                ),
+                &mock_seed(text, rank),
                 severity,
             );
             f.fix_hint = Some(hint.to_owned());
@@ -951,6 +986,35 @@ mod tests {
         let b = word_set("assert_eq!(add(2, 2), 4); parse input");
         assert!(jaccard(&a, &b) >= DUP_SIMILARITY);
         assert!(jaccard(&a, &word_set("totally different words here")) < 0.2);
+    }
+
+    #[test]
+    fn identical_mock_lines_get_distinct_line_free_seeds() {
+        let item = |file: &str, line: u32, text: &str| Item {
+            key: format!("{file}:{line}"),
+            question: Question::Noul {
+                instructions: json!("x"),
+                criteria: None,
+            },
+            meta: json!({"file": file, "line": line, "text": text}),
+        };
+        let items = [
+            item("a_test.rs", 40, "let db = MockDb::new();"),
+            item("a_test.rs", 12, "let db = MockDb::new();"),
+            item("a_test.rs", 20, "let clock = FakeClock::new();"),
+            item("b_test.rs", 5, "let db = MockDb::new();"),
+        ];
+        let answered: Vec<Answered<'_>> = items
+            .iter()
+            .map(|item| Answered { item, answer: None })
+            .collect();
+        assert_eq!(mock_occurrence_ranks(&answered), [1, 0, 0, 0]);
+        let first = mock_seed("let db = MockDb::new();", 0);
+        assert_ne!(first, mock_seed("let db = MockDb::new();", 1));
+        assert!(
+            !first.contains(":12"),
+            "the seed must not carry a line number"
+        );
     }
 
     #[test]

@@ -160,16 +160,14 @@ pub fn run(
         }
         if let Some(client) = client.filter(|_| !dry_run) {
             if report.fatal.is_none() && !report.stopped_by_budget {
-                let queue: Vec<(usize, &Batch)> = planned.batches.iter().map(|b| (0, b)).collect();
                 let out = dispatch(
-                    &queue,
-                    1,
+                    &planned.batches,
                     client,
                     semantic.max_usd - reserved,
                     semantic.concurrency,
                 );
                 reserved += out.reserved;
-                for (_, key, answer) in out.answers {
+                for (key, answer) in out.answers {
                     planned.report.answered += 1;
                     store
                         .insert(
@@ -182,7 +180,7 @@ pub fn run(
                         )
                         .map_err(anyhow::Error::msg)?;
                 }
-                planned.report.failed = out.failed[0];
+                planned.report.failed = out.failed;
                 report.stopped_by_budget |= out.over_budget;
                 if report.fatal.is_none() {
                     report.fatal = out.fatal;
@@ -221,33 +219,30 @@ pub fn run(
 }
 
 struct Dispatched {
-    answers: Vec<(usize, String, Answer)>,
+    answers: Vec<(String, Answer)>,
     reserved: f64,
-    failed: Vec<usize>,
+    failed: usize,
     over_budget: bool,
     fatal: Option<String>,
     errors: Vec<String>,
 }
 
-/// Send `queue` with up to `concurrency` requests in flight. Each batch
-/// reserves its estimated price before it is sent; the batch that would
-/// cross `budget` and everything after it stay unsent. A setup failure
-/// (bad key, no credit, unknown model) stops every worker, since every
-/// batch would fail the same way.
-fn dispatch(
-    queue: &[(usize, &Batch)],
-    task_count: usize,
-    client: &JevClient,
-    budget: f64,
-    concurrency: usize,
-) -> Dispatched {
+/// Send one task's `queue` with up to `concurrency` requests in flight.
+/// Each batch reserves its estimated price under a lock before it is
+/// sent, so the reserved total never exceeds `budget`. The first batch
+/// whose reservation would cross it stays unsent and no worker claims
+/// another; with `concurrency > 1`, a later batch another worker claimed
+/// first may still go out, so the cutoff is not strictly in queue order.
+/// A setup failure (bad key, no credit, unknown model) stops every
+/// worker, since every batch would fail the same way.
+fn dispatch(queue: &[Batch], client: &JevClient, budget: f64, concurrency: usize) -> Dispatched {
     let reserved = Mutex::new(0.0_f64);
     let stop = AtomicBool::new(false);
     let over_budget = AtomicBool::new(false);
     let fatal: Mutex<Option<String>> = Mutex::new(None);
     let errors: Mutex<Vec<String>> = Mutex::new(Vec::new());
-    let answers: Mutex<Vec<(usize, String, Answer)>> = Mutex::new(Vec::new());
-    let failed: Vec<AtomicUsize> = (0..task_count).map(|_| AtomicUsize::new(0)).collect();
+    let answers: Mutex<Vec<(String, Answer)>> = Mutex::new(Vec::new());
+    let failed = AtomicUsize::new(0);
     let next = AtomicUsize::new(0);
     let workers = concurrency.min(queue.len()).max(1);
 
@@ -258,7 +253,7 @@ fn dispatch(
                     return;
                 }
                 let i = next.fetch_add(1, Ordering::SeqCst);
-                let Some(&(ti, batch)) = queue.get(i) else {
+                let Some(batch) = queue.get(i) else {
                     return;
                 };
                 let est = usd_for(batch.est_tokens as u64);
@@ -276,14 +271,14 @@ fn dispatch(
                         let mut out = answers.lock().expect("answers lock");
                         for key in batch.questions.keys() {
                             if let Some(a) = res.answers.get(key) {
-                                out.push((ti, key.clone(), a.clone()));
+                                out.push((key.clone(), a.clone()));
                             } else {
-                                failed[ti].fetch_add(1, Ordering::SeqCst);
+                                failed.fetch_add(1, Ordering::SeqCst);
                             }
                         }
                     }
                     Err(e) => {
-                        failed[ti].fetch_add(batch.questions.len(), Ordering::SeqCst);
+                        failed.fetch_add(batch.questions.len(), Ordering::SeqCst);
                         if e.kind == JevErrorKind::Setup {
                             stop.store(true, Ordering::SeqCst);
                             fatal
@@ -301,11 +296,11 @@ fn dispatch(
 
     let mut answers = answers.into_inner().expect("answers");
     // Worker interleaving must not leak into the store's insert order.
-    answers.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+    answers.sort_by(|a, b| a.0.cmp(&b.0));
     Dispatched {
         reserved: reserved.into_inner().expect("reserve"),
         answers,
-        failed: failed.iter().map(|f| f.load(Ordering::SeqCst)).collect(),
+        failed: failed.load(Ordering::SeqCst),
         over_budget: over_budget.load(Ordering::SeqCst),
         fatal: fatal.into_inner().expect("fatal"),
         errors: errors.into_inner().expect("errors"),
