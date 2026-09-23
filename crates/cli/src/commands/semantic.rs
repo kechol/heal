@@ -9,7 +9,7 @@ use anyhow::{anyhow, bail, Context, Result};
 
 use crate::core::config::load_from_project;
 use crate::core::HealPaths;
-use crate::semantic::client::{JevClient, UreqTransport};
+use crate::semantic::client::{model_listed, JevClient, UreqTransport};
 use crate::semantic::credentials::{default_credentials_path, resolve};
 use crate::semantic::runner::{self, AskOptions, AskReport};
 use crate::semantic::store::VerdictStore;
@@ -65,14 +65,14 @@ pub fn run_ask(project: &Path, args: &AskArgs) -> Result<()> {
             Ok(m) => m,
             Err(e) => setup_exit(&format!("Jev API check failed: {e}")),
         };
-        if !models.is_empty() && !models.iter().any(|m| m == &semantic.model) {
-            setup_exit(&format!(
-                "the key is valid but model `{}` is not available to it (available: {})",
-                semantic.model,
-                models.join(", ")
-            ));
+        if model_listed(&models, &semantic.model) {
+            println!("Jev API reachable; model `{}` available.", semantic.model);
+        } else {
+            println!(
+                "Jev API reachable; key accepted. {}",
+                unlisted_model_note(&semantic.model, &models)
+            );
         }
-        println!("Jev API reachable; model `{}` available.", semantic.model);
         return Ok(());
     }
 
@@ -120,6 +120,21 @@ pub fn run_ask(project: &Path, args: &AskArgs) -> Result<()> {
         std::process::exit(SEMANTIC_SETUP_EXIT_CODE);
     }
     Ok(())
+}
+
+/// Why a model missing from `GET /v1/models` is not an error: the
+/// listing names only the moving aliases, so a pinned version is
+/// confirmed by the first `heal semantic ask` request instead.
+pub fn unlisted_model_note(model: &str, listed: &[String]) -> String {
+    format!(
+        "Model `{model}` is not in the API's model list ({}); pinned versions are not \
+         listed, and an unknown one stops the first `heal semantic ask` request.",
+        if listed.is_empty() {
+            "empty".to_owned()
+        } else {
+            listed.join(", ")
+        }
+    )
 }
 
 /// Print `message` and exit with [`SEMANTIC_SETUP_EXIT_CODE`]: the run

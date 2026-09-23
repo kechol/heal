@@ -3,7 +3,8 @@
 //! One request carries a single `state` plus a map of independent typed
 //! questions; the response answers every question under the same key.
 //! Field names follow the published API reference verbatim
-//! (<https://docs.typesafe.ai/api.md>).
+//! (<https://docs.typesafe.ai/api.md>); the response shape below was
+//! confirmed against the live API (`jev-1.13.0`, 2026-09-23).
 
 use std::collections::BTreeMap;
 
@@ -117,6 +118,11 @@ pub enum Answer {
         #[serde(default)]
         confidence: f64,
     },
+    /// `score` is the probability-weighted mean of the 0-based levels,
+    /// so it is fractional: measured 2.38 for level probabilities
+    /// `{0: 0.01, 1: 0.03, 2: 0.54, 3: 0.42}`. Thresholds compare it as
+    /// a real number (`>= 2.5` for "level 3"), never as an index. The
+    /// server's `legend` (level → criterion text) is not kept.
     Score {
         score: f64,
         #[serde(default)]
@@ -198,22 +204,34 @@ mod tests {
         assert!(q.validate().is_err());
     }
 
+    /// A response body recorded verbatim from the live API (2026-09-23),
+    /// one question of each type.
+    const LIVE_RESPONSE: &str = r#"{"model":"jev-1.13.0","answers":{"n1":{"type":"noul","noul":0.53},"c1":{"type":"choice","choice":"misleading","confidence":1.0,"probabilities":{"misleading":1.0,"accurate":0.0,"vague":0.0}},"s1":{"type":"score","score":2.38,"confidence":0.53,"legend":{"0":"All three agree.","1":"Minor wording mismatch.","2":"One of the three disagrees with the others.","3":"Name and body disagree in meaning."},"probabilities":{"0":0.01,"1":0.03,"2":0.54,"3":0.42}}},"usage":{"input_tokens":508,"output_tokens":78}}"#;
+
     #[test]
-    fn parses_every_answer_type() {
-        let body = json!({
-            "model": "jev-1.13.0",
-            "answers": {
-                "a": {"type": "noul", "noul": 0.8},
-                "b": {"type": "choice", "choice": "x", "probabilities": {"x": 0.7, "y": 0.3}, "confidence": 0.6},
-                "c": {"type": "score", "score": 2.0, "legend": {"0": "n/a"}, "probabilities": {"2": 0.9}, "confidence": 0.9}
-            },
-            "usage": {"input_tokens": 120, "output_tokens": 4}
-        });
-        let r: Response = serde_json::from_value(body).unwrap();
-        assert_eq!(r.usage.input_tokens, 120);
-        assert!((r.answers["a"].strength(0) - 0.8).abs() < 1e-9);
-        assert!((r.answers["b"].strength(0) - 0.7).abs() < 1e-9);
-        assert!((r.answers["c"].strength(4) - 2.0 / 3.0).abs() < 1e-9);
-        assert!((r.answers["a"].confidence() - 0.6).abs() < 1e-9);
+    fn parses_a_live_response_of_every_answer_type() {
+        let r: Response = serde_json::from_str(LIVE_RESPONSE).unwrap();
+        assert_eq!(r.model.as_deref(), Some("jev-1.13.0"));
+        assert_eq!(r.usage.input_tokens, 508);
+        assert_eq!(r.usage.output_tokens, 78);
+        assert!((r.answers["n1"].strength(0) - 0.53).abs() < 1e-9);
+        assert!((r.answers["n1"].confidence() - 0.06).abs() < 1e-9);
+        assert!((r.answers["c1"].strength(0) - 1.0).abs() < 1e-9);
+        let Answer::Score {
+            score,
+            probabilities,
+            confidence,
+        } = &r.answers["s1"]
+        else {
+            panic!("s1 is a score");
+        };
+        // The score is the expected level, not an index.
+        let expected: f64 = probabilities
+            .iter()
+            .map(|(level, p)| level.parse::<f64>().unwrap() * p)
+            .sum();
+        assert!((score - expected).abs() < 0.02);
+        assert!((confidence - 0.53).abs() < 1e-9);
+        assert!((r.answers["s1"].strength(4) - 2.38 / 3.0).abs() < 1e-9);
     }
 }

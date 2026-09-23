@@ -12,6 +12,7 @@ use anyhow::{anyhow, Result};
 use serde::Serialize;
 
 use crate::core::config::{load_from_project, SemanticConfig};
+use crate::semantic::client::model_listed;
 use crate::semantic::credentials::{self, default_credentials_path, resolve};
 
 fn credentials_file() -> Result<std::path::PathBuf> {
@@ -88,13 +89,17 @@ pub fn run_status(project: &Path, json: bool, offline: bool) -> Result<()> {
         model_available: None,
         error: None,
     };
+    let mut listed = Vec::new();
     if resolved.is_some() && !offline {
         match super::semantic::build_client(&model)
             .and_then(|c| c.list_models().map_err(|e| anyhow!("{e}")))
         {
             Ok(models) => {
                 report.reachable = Some(true);
-                report.model_available = Some(models.is_empty() || models.contains(&model));
+                // `None` rather than `false` when unlisted: the listing
+                // omits pinned versions, so it cannot rule a model out.
+                report.model_available = model_listed(&models, &model).then_some(true);
+                listed = models;
             }
             Err(e) => {
                 report.reachable = Some(false);
@@ -102,9 +107,7 @@ pub fn run_status(project: &Path, json: bool, offline: bool) -> Result<()> {
             }
         }
     }
-    let ok = report.configured
-        && report.reachable != Some(false)
-        && report.model_available != Some(false);
+    let ok = report.configured && report.reachable != Some(false);
     if json {
         super::emit_json(&report);
     } else {
@@ -115,13 +118,12 @@ pub fn run_status(project: &Path, json: bool, offline: bool) -> Result<()> {
             ),
         }
         match report.reachable {
+            Some(true) if report.model_available == Some(true) => {
+                println!("API: reachable; model `{model}` available");
+            }
             Some(true) => println!(
-                "API: reachable; model `{model}` {}",
-                if report.model_available == Some(true) {
-                    "available"
-                } else {
-                    "NOT available to this key"
-                }
+                "API: reachable; key accepted. {}",
+                super::semantic::unlisted_model_note(&model, &listed)
             ),
             Some(false) => println!(
                 "API: check failed: {}",

@@ -460,7 +460,10 @@ that sends project content over the network (`scope.md` R5).
    `semantic::credentials::resolve` (env `TYPESAFE_API_KEY` →
    `TYPESAFEAI_API_KEY` → `<config dir>/heal/credentials.toml`, mode
    0600 enforced), transport `UreqTransport` (rustls + OS roots).
-   `--check` stops after `GET /v1/models`.
+   `--check` stops after `GET /v1/models`. The listing names only the
+   moving aliases (`jev-latest`, `jev-preview`; measured 2026-09-23),
+   so a pinned model it omits is reported as unconfirmed, not as an
+   error (`client::model_listed`).
 4. For each task: `Task::plan` → groups of `(key, Question)` sharing
    one `state`. Keys already in `VerdictStore` are skipped unless
    `--refresh`. `plan::pack` splits a group into requests under the
@@ -468,8 +471,9 @@ that sends project content over the network (`scope.md` R5).
    state over budget is counted as `oversized_groups`, never
    truncated.
 5. `dispatch` sends up to `concurrency` requests at once, reserving
-   each batch's estimated USD against `max_usd` first; auth failures
-   stop every worker. Answers are inserted in sorted order.
+   each batch's estimated USD against `max_usd` first; a
+   `JevErrorKind::Setup` failure (401/402/403, or 400 `Unknown model`)
+   stops every worker and exits 2. Answers are inserted in sorted order.
 6. `--prune` drops verdicts no current subject references.
 7. `VerdictStore::save` writes only changed task files.
 
@@ -484,7 +488,9 @@ failed/oversized_groups/pruned`, `requests_sent`, `input_tokens`,
 per-user credentials file (0600, via a private tempfile + rename).
 `status` prints the masked key and its source, then — unless
 `--offline` — calls `GET /v1/models` (the second and last network
-call site). `clear` deletes the file. Nothing is ever written under
+call site). `model_available` is `true` when the model is listed and
+`null` otherwise; never `false`, since the listing omits pinned
+versions. `clear` deletes the file. Nothing is ever written under
 `.heal/`.
 
 ## Exit codes (full table)
@@ -494,7 +500,7 @@ call site). `clear` deletes the file. Nothing is ever written under
 | 0 | success | normal happy path; broken pipe on `heal status` pager |
 | 1 | unspecified error | any anyhow `Err(_)` propagation |
 | 2 | LOC threshold exceeded | `heal diff` only, when project LOC > `[diff].max_loc_threshold` |
-| 2 | semantic setup required | `heal semantic ask` / `heal auth jev status`: `[features.semantic]` disabled, no API key, key rejected (401/402/403), or model unavailable (`SEMANTIC_SETUP_EXIT_CODE`) |
+| 2 | semantic setup required | `heal semantic ask` / `heal auth jev status`: `[features.semantic]` disabled, no API key, key rejected (401/402/403), or model unknown to the API (400 `Unknown model` on the first `heal semantic ask` request) (`SEMANTIC_SETUP_EXIT_CODE`) |
 
 No other documented exit codes. Don't invent new ones without updating
 this table and `docs/cli.md`.

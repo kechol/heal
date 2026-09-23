@@ -355,12 +355,13 @@ heal semantic ask                    # ask every enabled task
 heal semantic ask --task <id>        # one task (repeatable)
 heal semantic ask --refresh          # re-ask even where an answer is saved
 heal semantic ask --prune            # drop saved answers nothing refers to
-heal semantic ask --check            # only confirm the key and model
+heal semantic ask --check            # only check the key against the API
 heal semantic ask --json             # machine-readable run report
 ```
 
 Exit code `2` means something only you can fix: the feature is
-disabled, no API key is configured, or the key was rejected.
+disabled, no API key is configured, the key was rejected, or the API
+does not know the configured `model`.
 
 ## `heal auth jev`
 

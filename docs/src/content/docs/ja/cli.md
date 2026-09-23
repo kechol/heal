@@ -224,12 +224,12 @@ heal semantic ask                    # 有効なタスクをすべて問い合�
 heal semantic ask --task <id>        # 1 つのタスクだけ（複数指定可）
 heal semantic ask --refresh          # 答えが保存済みでも問い合わせ直す
 heal semantic ask --prune            # どこからも参照されない答えを消す
-heal semantic ask --check            # キーとモデルの確認だけ
+heal semantic ask --check            # キーが使えるかの確認だけ
 heal semantic ask --json             # 実行結果を JSON で出す
 ```
 
 終了コード `2` は、利用者にしか直せない問題を表します。機能が無効、API キーが未設定、
-キーが拒否された、のいずれかです。
+キーが拒否された、設定した `model` を API が知らない、のいずれかです。
 
 ## `heal auth jev`
 

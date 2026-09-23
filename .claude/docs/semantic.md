@@ -33,6 +33,23 @@ heal semantic ask                     heal status / heal diff
 - A task failing to plan is logged and skipped; it never fails
   `heal status`.
 
+## Live API behaviour (measured 2026-09-23, `jev-1.13.0`)
+
+- `POST /v1/systemone` answers `{model, answers, usage}` exactly as
+  `semantic::api::Response` expects; `model` echoes the pinned id.
+- `score` is the probability-weighted mean of the 0-based levels
+  (fractional, e.g. 2.38), not an index. Thresholds compare it as a
+  real number. The extra `legend` field is dropped.
+- `GET /v1/models` returns `{"models":[{"name","description",
+  "release_date"}]}` and lists only `jev-latest` / `jev-preview`.
+  Pinned ids are usable but unlisted, so the listing can confirm a
+  model, never rule one out.
+- An unknown model is HTTP 400 `api_usage_error` / `Unknown model:
+  <id>` → `JevErrorKind::Setup`, which stops the run (exit 2).
+  An empty `questions` map is HTTP 422, so there is no free probe.
+- Every code-family task on this repository (505 requests, 2.24M
+  input tokens) cost $0.094 and took 31 s at `concurrency = 8`.
+
 ## Tasks
 
 | id | Family | Question | Output |

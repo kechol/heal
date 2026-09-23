@@ -56,7 +56,8 @@ pub struct AskReport {
     pub usd: f64,
     /// Dispatch stopped before a batch that would cross `max_usd`.
     pub stopped_by_budget: bool,
-    /// First fatal error (bad key, no credit). Remaining batches were skipped.
+    /// First fatal error (bad key, no credit, unknown model). Remaining
+    /// batches were skipped.
     pub fatal: Option<String>,
     pub errors: Vec<String>,
 }
@@ -230,9 +231,9 @@ struct Dispatched {
 
 /// Send `queue` with up to `concurrency` requests in flight. Each batch
 /// reserves its estimated price before it is sent; the batch that would
-/// cross `budget` and everything after it stay unsent. An auth failure
-/// (bad key, no credit) stops every worker, since every batch would fail
-/// the same way.
+/// cross `budget` and everything after it stay unsent. A setup failure
+/// (bad key, no credit, unknown model) stops every worker, since every
+/// batch would fail the same way.
 fn dispatch(
     queue: &[(usize, &Batch)],
     task_count: usize,
@@ -283,7 +284,7 @@ fn dispatch(
                     }
                     Err(e) => {
                         failed[ti].fetch_add(batch.questions.len(), Ordering::SeqCst);
-                        if e.kind == JevErrorKind::Auth {
+                        if e.kind == JevErrorKind::Setup {
                             stop.store(true, Ordering::SeqCst);
                             fatal
                                 .lock()

@@ -124,8 +124,9 @@ impl Transport for UreqTransport {
 pub enum JevErrorKind {
     /// Send fewer questions (the one recoverable 400).
     TooBig,
-    /// Fix the key or the account; retrying will not help.
-    Auth,
+    /// Fix the key, the account, or `[features.semantic].model`;
+    /// retrying will not help, and neither will any other batch.
+    Setup,
     /// Retried already; the network or the service failed.
     Transient,
     /// Give up on this batch.
@@ -152,10 +153,14 @@ impl std::fmt::Display for JevError {
 impl std::error::Error for JevError {}
 
 impl JevError {
+    /// An id the server does not know comes back as HTTP 400
+    /// `{"detail":{"error_type":"api_usage_error","message":"Unknown
+    /// model: <id>"}}` (measured against the live API, 2026-09-23).
     fn classify(status: u16, body: &str) -> JevErrorKind {
         match status {
             400 if body.contains("max_tokens_exceeded") => JevErrorKind::TooBig,
-            401..=403 => JevErrorKind::Auth,
+            400 if body.contains("Unknown model") => JevErrorKind::Setup,
+            401..=403 => JevErrorKind::Setup,
             500..=599 => JevErrorKind::Transient,
             _ => JevErrorKind::Other,
         }
@@ -426,13 +431,26 @@ impl JevClient {
     }
 }
 
-/// Accepts both `{"data":[{"id":..}]}` (OpenAI-style) and a bare list of
-/// ids or objects, since the public reference documents the endpoint but
-/// not the envelope.
+/// Whether `model` appears in a `GET /v1/models` listing. Not being
+/// listed does not make a model unusable: the listing names only the
+/// moving aliases (`jev-latest`, `jev-preview`), while pinned versions
+/// such as `jev-1.13.0` are accepted by `/v1/systemone` without being
+/// listed (measured against the live API, 2026-09-23). An id the server
+/// does not know is caught by the first `/v1/systemone` request instead,
+/// as a [`JevErrorKind::Setup`] error that stops the run.
+#[must_use]
+pub fn model_listed(models: &[String], model: &str) -> bool {
+    models.iter().any(|m| m == model)
+}
+
+/// The live API answers `{"models":[{"name","description",
+/// "release_date"}]}` (measured, 2026-09-23). An OpenAI-style
+/// `{"data":[{"id":..}]}` and a bare list of ids are accepted too, since
+/// the public reference documents the endpoint but not the envelope.
 fn model_ids(v: &Value) -> Vec<String> {
     let list = v
-        .get("data")
-        .or_else(|| v.get("models"))
+        .get("models")
+        .or_else(|| v.get("data"))
         .unwrap_or(v)
         .as_array()
         .cloned()
@@ -440,9 +458,12 @@ fn model_ids(v: &Value) -> Vec<String> {
     let mut ids: Vec<String> = list
         .iter()
         .filter_map(|item| {
-            item.as_str()
-                .map(str::to_owned)
-                .or_else(|| item.get("id").and_then(Value::as_str).map(str::to_owned))
+            item.as_str().map(str::to_owned).or_else(|| {
+                ["name", "id"]
+                    .iter()
+                    .find_map(|k| item.get(*k).and_then(Value::as_str))
+                    .map(str::to_owned)
+            })
         })
         .collect();
     ids.sort();
@@ -583,8 +604,29 @@ mod tests {
         let mut qs = BTreeMap::new();
         qs.insert("a".to_owned(), noul("x"));
         let e = c.ask(&json!("s"), &qs).unwrap_err();
-        assert_eq!(e.kind, JevErrorKind::Auth);
+        assert_eq!(e.kind, JevErrorKind::Setup);
         assert_eq!(n.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn unknown_model_is_a_setup_error_not_a_split() {
+        let n = Arc::new(AtomicUsize::new(0));
+        let n2 = n.clone();
+        let c = client(FakeTransport::new(move |_, _| {
+            n2.fetch_add(1, Ordering::SeqCst);
+            Ok(HttpResponse {
+                status: 400,
+                // Recorded from the live API (2026-09-23).
+                body: r#"{"detail":{"error_type":"api_usage_error","message":"Unknown model: jev-0.0.1"}}"#
+                    .into(),
+                retry_after: None,
+            })
+        }));
+        let qs: BTreeMap<String, Question> = (0..4).map(|i| (format!("q{i}"), noul("x"))).collect();
+        let e = c.ask_splitting(&json!("s"), &qs).unwrap_err();
+        assert_eq!(e.kind, JevErrorKind::Setup);
+        assert_eq!(n.load(Ordering::SeqCst), 1);
+        assert_eq!(c.spend().splits, 0);
     }
 
     #[test]
@@ -634,13 +676,27 @@ mod tests {
     }
 
     #[test]
-    fn list_models_accepts_common_envelopes() {
+    fn list_models_reads_the_live_envelope() {
+        // Recorded from the live API (2026-09-23): pinned versions are
+        // not listed, only the moving aliases.
         let c = client(FakeTransport::new(|_, _| {
-            Ok(ok(
-                &json!({"data": [{"id": "jev-1.13.0"}, {"id": "jev-latest"}]}),
-            ))
+            Ok(ok(&json!({"models": [
+                {"name": "jev-latest", "description": "latest", "release_date": "2026-09-10T18:38:01+00:00"},
+                {"name": "jev-preview", "description": "preview", "release_date": "2026-09-10T18:39:06+00:00"}
+            ]})))
         }));
-        assert_eq!(c.list_models().unwrap(), vec!["jev-1.13.0", "jev-latest"]);
+        let models = c.list_models().unwrap();
+        assert_eq!(models, vec!["jev-latest", "jev-preview"]);
+        assert!(!model_listed(&models, "jev-1.13.0"));
+        assert!(model_listed(&models, "jev-latest"));
+    }
+
+    #[test]
+    fn list_models_accepts_other_envelopes() {
+        assert_eq!(
+            model_ids(&json!({"data": [{"id": "jev-1.13.0"}, {"id": "jev-latest"}]})),
+            vec!["jev-1.13.0", "jev-latest"]
+        );
         assert_eq!(model_ids(&json!(["b", "a"])), vec!["a", "b"]);
     }
 
