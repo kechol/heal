@@ -62,11 +62,12 @@ pub enum PairSource {
     /// Directory layout mirrors src to doc (e.g. `src/foo.rs` ↔
     /// `docs/foo.md`).
     Mirror,
-    /// LLM inference filled the gap when no syntactic signal sufficed.
+    /// Model inference filled the gap when no syntactic signal sufficed:
+    /// the setup skill's own reading, or the `[features.semantic]`
+    /// `doc_pairs` task, whose probability lands in `confidence`. There is
+    /// deliberately no separate Jev value: older binaries parse this enum
+    /// strictly, so a new variant would break a teammate's `heal status`.
     Llm,
-    /// Chosen by the `[features.semantic]` `doc_pairs` task (Jev) among
-    /// candidate sources; `confidence` is the model's probability.
-    Jev,
     /// User-authored. Preserved across regeneration.
     Manual,
 }

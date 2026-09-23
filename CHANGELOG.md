@@ -55,8 +55,11 @@
   slot for orphan pages; `doc_concept` / `doc_overlap` read the docs
   through the concept vocabulary (concepts no doc explains, sections
   that repeat or contradict each other); on-demand `doc_pairs` gives
-  `/heal-doc-pair-setup` scored pair suggestions (new pair source
-  `"jev"`); `doc_drift_semantic` adds `doc_drift` Type 3
+  `/heal-doc-pair-setup` pair suggestions, asking about each candidate
+  source separately so one page can pair with several files (written as
+  `source: "llm"` with the lowest probability as `confidence`, so
+  `doc_pairs.json` stays readable by older versions); `doc_drift_semantic`
+  adds `doc_drift` Type 3
   (`doc_drift.semantic`): paired sections that are partly outdated or
   state what the code no longer does. It and `name_mismatch` read the
   answer's level probabilities, so an answer split between "not

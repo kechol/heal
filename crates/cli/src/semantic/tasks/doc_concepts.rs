@@ -335,7 +335,7 @@ impl Task for DocOverlap {
 
 pub struct DocPairs;
 
-const PAIRS_INSTRUCTIONS: &str = "The state is the start of one documentation page. Choose the source file this page mainly documents, or none.";
+const PAIRS_INSTRUCTIONS: &str = "The state is the start of one documentation page. Judge whether the page documents the behaviour implemented in the named source file. A page may document several files.";
 const MAX_PAIR_CANDIDATES: usize = 20;
 
 fn path_words(p: &Path) -> BTreeSet<String> {
@@ -393,50 +393,76 @@ impl Task for DocPairs {
                 .filter(|(n, _)| *n > 0)
                 .collect();
             scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1)));
-            let mut options: Vec<(String, String)> = scored
-                .into_iter()
-                .take(MAX_PAIR_CANDIDATES)
-                .map(|(_, s)| {
-                    (
-                        s.to_string_lossy().into_owned(),
-                        format!("The page mainly documents `{}`.", s.display()),
-                    )
-                })
-                .collect();
-            if options.is_empty() {
+            if scored.is_empty() {
                 continue;
             }
-            options.push((
-                "none".to_owned(),
-                "The page does not mainly document any one of these files.".to_owned(),
-            ));
+            // One yes/no per candidate, not a single choice: a page often
+            // documents several files, and "pick the one file" drove the
+            // live model to `none` on every page of this repository.
             let state = format!("Page: {}\n\n{head}", doc.display());
-            let list: Vec<&str> = options.iter().map(|(k, _)| k.as_str()).collect();
+            let items = scored
+                .into_iter()
+                .take(MAX_PAIR_CANDIDATES)
+                .map(|(_, src)| {
+                    let src = src.to_string_lossy().into_owned();
+                    Item {
+                        key: ctx.key(self, &src, &state),
+                        question: Question::Noul {
+                            instructions: json!(format!(
+                                "{PAIRS_INSTRUCTIONS}\nSource file: `{src}`"
+                            )),
+                            criteria: Some(NoulCriteria {
+                                yes: json!(format!(
+                                    "The page explains behaviour that `{src}` implements."
+                                )),
+                                no: json!(format!("The page does not describe what `{src}` does.")),
+                            }),
+                        },
+                        meta: json!({"doc": doc.to_string_lossy(), "src": src}),
+                    }
+                })
+                .collect();
             groups.push(Group {
-                items: vec![Item {
-                    key: ctx.key(self, &list.join("|"), &state),
-                    question: Question::Choice {
-                        instructions: json!(PAIRS_INSTRUCTIONS),
-                        criteria: criteria(&options),
-                    },
-                    meta: json!({"doc": doc.to_string_lossy()}),
-                }],
+                items,
                 state: json!(state),
             });
         }
         Ok(groups)
     }
-    fn report(&self, _ctx: &TaskContext<'_>, answered: &[Answered<'_>]) -> Option<Value> {
-        let rows: Vec<Value> = answered
-            .iter()
-            .filter_map(|a| {
-                let (src, p, conf) = chosen(a.answer?)?;
-                (src != "none").then(|| {
-                    json!({"doc": a.item.meta["doc"], "src": src, "confidence": p, "model_confidence": conf, "source": "jev"})
+    /// One entry per doc, shaped like a `doc_pairs.json` pair: every
+    /// candidate at or above the cutoff in `srcs` (most likely first),
+    /// `confidence` = the lowest of their probabilities, and `scores` with
+    /// each listed source's probability.
+    fn report(&self, ctx: &TaskContext<'_>, answered: &[Answered<'_>]) -> Option<Value> {
+        let cutoff = ctx.cutoff(self, 0.6);
+        let mut by_doc: BTreeMap<&str, Vec<(&str, f64)>> = BTreeMap::new();
+        for a in answered {
+            let Some(p) = a.answer.and_then(noul_p) else {
+                continue;
+            };
+            let (Some(doc), Some(src)) = (a.item.meta["doc"].as_str(), a.item.meta["src"].as_str())
+            else {
+                continue;
+            };
+            if p >= cutoff {
+                by_doc.entry(doc).or_default().push((src, p));
+            }
+        }
+        let rows: Vec<Value> = by_doc
+            .into_iter()
+            .map(|(doc, mut srcs)| {
+                srcs.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+                let confidence = srcs.iter().map(|(_, p)| *p).fold(1.0_f64, f64::min);
+                json!({
+                    "doc": doc,
+                    "srcs": srcs.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
+                    "confidence": confidence,
+                    "scores": srcs.iter().map(|(s, p)| ((*s).to_owned(), json!(p))).collect::<serde_json::Map<_, _>>(),
+                    "source": "llm",
                 })
             })
             .collect();
-        Some(json!({"pairs": rows}))
+        Some(json!({"pairs": rows, "cutoff": cutoff}))
     }
 }
 
@@ -444,6 +470,51 @@ impl Task for DocPairs {
 mod tests {
     use super::*;
     use crate::semantic::tasks::testing::noul as answer_noul;
+
+    #[test]
+    fn doc_pairs_report_keeps_every_source_above_the_cutoff() {
+        let cfg = crate::core::config::Config::default();
+        let ctx = TaskContext::new(Path::new("."), &cfg).unwrap();
+        let item = |doc: &str, src: &str| Item {
+            key: format!("{doc}|{src}"),
+            question: Question::Noul {
+                instructions: json!(""),
+                criteria: None,
+            },
+            meta: json!({"doc": doc, "src": src}),
+        };
+        // Probabilities measured on this repository's test metrics page.
+        let items = [
+            item("docs/test/metrics.md", "src/test/coverage.rs"),
+            item("docs/test/metrics.md", "src/test/skip_ratio.rs"),
+            item("docs/test/metrics.md", "src/test/hotspot.rs"),
+            item("docs/test/metrics.md", "src/code/lcom.rs"),
+            item("docs/other.md", "src/auth.rs"),
+        ];
+        let answers = [0.67, 0.83, 0.75, 0.39, 0.01].map(answer_noul);
+        let answered: Vec<Answered<'_>> = items
+            .iter()
+            .zip(&answers)
+            .map(|(item, a)| Answered {
+                item,
+                answer: Some(a),
+            })
+            .collect();
+        let report = DocPairs.report(&ctx, &answered).unwrap();
+        let pairs = report["pairs"].as_array().unwrap();
+        assert_eq!(pairs.len(), 1, "{report}");
+        assert_eq!(pairs[0]["doc"], "docs/test/metrics.md");
+        assert_eq!(
+            pairs[0]["srcs"],
+            json!([
+                "src/test/skip_ratio.rs",
+                "src/test/hotspot.rs",
+                "src/test/coverage.rs"
+            ])
+        );
+        assert!((pairs[0]["confidence"].as_f64().unwrap() - 0.67).abs() < 1e-9);
+        assert_eq!(pairs[0]["source"], "llm");
+    }
 
     #[test]
     fn overlap_lowers_duplicates_and_conflicts() {
