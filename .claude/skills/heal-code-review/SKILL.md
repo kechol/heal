@@ -2,7 +2,7 @@
 name: heal-code-review
 description: Read every finding produced by `heal status --all --feature code --json`, deeply investigate the user's codebase, and return one architectural reading plus a prioritized refactor TODO list — grounded in the metric literature and module-depth / layering / DDD vocabulary. Works on any language and shape of project; respects the codebase's existing design. Read-only — proposes only. The write counterpart is `/heal-code-patch`. Trigger on "what does heal say?", "review the codebase health", "where should we refactor?", "/heal-code-review".
 metadata:
-  heal-version: 0.4.0
+  heal-version: 0.6.0
   heal-source: bundled
 ---
 
@@ -81,10 +81,11 @@ classified `Finding`:
 
 ```jsonc
 {
-  "version": 2,
-  "id": "...",                // ULID; lexicographic order = chronological
+  "version": 8,
+  "id": "...",                // deterministic FNV-1a of head/config/clean
   "head_sha": "...",
   "worktree_clean": true,
+  "config_hash": "...",
   "severity_counts": { "critical": 3, "high": 11, "medium": 22, "ok": 0 },
   "findings": [
     {
@@ -92,6 +93,7 @@ classified `Finding`:
       "metric": "ccn",
       "severity": "critical",
       "hotspot": true,
+      "hotspot_score": 140.0,  // family-local ordering only; not part of id
       "location":  { "file": "src/payments/engine.ts", "line": 120, "symbol": "processOrder" },
       "locations": [],         // multi-site findings (duplication / coupling) populate this
       "summary":   "CCN=28",
@@ -145,15 +147,20 @@ the design tree with the user.
 
 ### Phase 1 — Explore
 
-1. **Capture the cache.** Read the full `FindingsRecord` JSON.
+1. **Capture the cache.** Read the full `FindingsRecord` JSON. Exclude every
+   finding with `accepted=true` before clustering or ranking. Keep
+   `accepted_rereview` notices informational; they do not requeue accepted
+   findings.
 2. **Cluster the findings.**
    - **By file.** Multiple findings on one path → architectural
      target.
    - **By metric.** Which signal dominates — does this codebase
      have a complexity problem, a duplication problem, a coupling
      problem? The dominant axis sets the reading's frame.
-   - **By hotspot flag.** `hotspot=true` is a leverage multiplier;
-     the same Severity with the flag should usually outrank without.
+   - **By effective drain tier and hotspot score.** The flag can move a
+     finding into a higher tier through `[policy.drain]`; within the same
+     Tier and Severity, use descending `hotspot_score`. The flag alone does
+     not outrank a higher score.
 3. **Read the top files.** For every file with `≥ 2` non-Ok
    findings, *or* a Critical finding, *or* `hotspot=true`: open
    the file. Summarize what it does in one sentence. Don't trust
@@ -221,9 +228,12 @@ highest-Severity items individually.
 - **Advisory** — everything else above `Severity::Ok`. Mention as a
   count, never as TODO entries.
 
-Within T0, sort `Critical 🔥` first. Cap the TODO list at the top 8 —
-beyond that the list dilutes. If the user asked for "everything", you
-may extend into T1; never auto-extend into Advisory.
+Within T0, sort higher Severity first, then descending `hotspot_score`
+within the Code family. Missing scores sort last; ties use metric, path,
+then finding id. This is the same order as human `heal status`; never mix raw
+scores across families or invent a combined score. Cap the TODO list at
+the top 8 — beyond that the list dilutes. If the user asked for
+"everything", you may extend into T1; never auto-extend into Advisory.
 
 Each entry is exactly **5 lines**:
 
@@ -362,6 +372,58 @@ the categorical skips that fall under *Intrinsic* or *Cohesive*:
 True positives where the fix is a human call (architectural
 boundary, business rule, public API contract) go to the *deferred
 questions* list at the end of Phase 2 — not the TODO list.
+
+## With `[features.semantic]`
+
+When `[features.semantic]` is enabled, add these to the evidence you
+read in Phase 1. When they are absent, the review works as before.
+
+- **Concept map findings** name the concept involved, which turns a
+  metric into a design statement: `concept_mix` (a file carrying two or
+  more concepts → split along those concepts; the `fix_hint` lists the
+  functions per concept), `concept_misplaced` (a function whose concept
+  lives in another file → move it), `concept_scatter` (a concept with no
+  home → consolidate). Cross-check them with LCOM clusters and change
+  coupling: a split backed by all three is the strongest proposal you
+  can make.
+- **`term_drift`** — two words for one thing inside a concept. Propose
+  one word, preferring the glossary's term.
+- **`name_mismatch`** — the name or doc comment promises something the
+  body does not do. Propose candidate names; check them with
+  `heal semantic ask --task name_choice --focus <file> --json`.
+- **`semantic.triage_class`** on High / Critical CCN, Cognitive, and
+  LCOM findings pre-classifies them for the Triage table below
+  (`symptomatic`, `intrinsic`, `cohesive_procedural`). Confirm it
+  against the code; a confident `intrinsic` or `cohesive_procedural` is
+  an accept candidate, not a refactor.
+- **`semantic.friction.change` / `.test` / `.read`** say which friction
+  the code causes. Let the dominant one pick the remedy: hard to test →
+  separate the logic from its dependencies; hard to read → rename and
+  extract named steps; hard to change → reduce what a change must know.
+- **`semantic.consequence`** (`dev` … `critical`) — rank TODO items in
+  critical and user-facing code first.
+- **Upcoming work?** When the user describes the next task, write it to
+  a file and run `heal semantic ask --task focus --focus <file>` then
+  `heal status --focus <file>`: the files that work will touch rise to
+  the top, and refactoring them first makes the change easier.
+- **Notes on existing findings** (`semantic.fix_pattern`,
+  `semantic.split_points`, `semantic.fix_ratio`) are evidence, not
+  verdicts. A high `fix_ratio` says bug fixes keep landing in that file.
+- **No `.heal/concepts.toml` yet?** Suggest `/heal-concepts-setup`.
+
+**Check proposals before presenting them.** Write the TODO items you
+intend to present to a JSON file —
+`{"proposals":[{"id":"1","text":"<the proposal>","files":["<path>"]}]}`
+— and run:
+
+```sh
+heal semantic ask --task verify_proposal --focus <file> --json
+```
+
+A proposal whose `pass` is `false` failed at least one of the five
+readability questions (`references/readability.md` §3): move it to the
+deferred questions instead of the TODO list. If the command exits with
+code 2, fall back to asking the five questions yourself.
 
 ## Output format
 

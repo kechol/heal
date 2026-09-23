@@ -2,7 +2,7 @@
 name: heal-test-reporter-setup
 description: Detect the project's language stack (Rust / Python / JS-TS / Go / Scala or mixed), then with per-step `AskUserQuestion` approval install the lcov reporter, flip `[features.test.coverage].enabled` in `.heal/config.toml`, run the reporter, optionally wire `[features.test.coverage].post_commit_refresh` so HEAL's post-commit hook re-runs the reporter in the background, and verify HEAL picks up the resulting `lcov.info`. Edits `.heal/config.toml` and runs install / reporter commands; CI workflow edits stay a copy-pasteable proposal. Trigger on "set up coverage reporting", "configure lcov for heal", "wire up coverage", "refresh lcov on every commit", "/heal-test-reporter-setup".
 metadata:
-  heal-version: 0.4.0
+  heal-version: 0.6.0
   heal-source: bundled
 ---
 
@@ -52,9 +52,10 @@ not the commands.
 
 ## Mental model
 
-The HEAL observer reads `lcov.info` from one of the configured
-`lcov_paths`. Default search order (set in
-`[features.test.coverage]`):
+The HEAL observer reads **every** existing `lcov.info` named by the
+configured `lcov_paths` and merges them — a polyglot monorepo lists
+one path per package and each one counts. Default search order (set
+in `[features.test.coverage]`):
 
 ```toml
 lcov_paths = [
@@ -65,10 +66,11 @@ lcov_paths = [
 ]
 ```
 
-The skill makes sure **at least one of these paths** holds a
-current `lcov.info` after the project's test run. The right
-reporter is the one whose default output matches; when it
-doesn't, extend `lcov_paths` rather than fight the tool.
+The skill makes sure **every package's reporter output** lands at
+one of these paths after the project's test run — add one entry per
+package in a monorepo. The right reporter is the one whose default
+output matches; when it doesn't, extend `lcov_paths` rather than
+fight the tool.
 
 ## Pre-flight
 

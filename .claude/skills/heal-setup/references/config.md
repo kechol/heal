@@ -106,15 +106,17 @@ repos with no shared history.
 
 ### `[metrics.hotspot]` — composition of CCN × Churn
 
-Flag, not a Severity. Files in the top 10% by composed score get
-`hotspot=true` on their findings; the drain policy uses this to gate
-T0 vs Advisory. Disable via `[metrics] disabled = ["hotspot", ...]`
-only on tiny repos where complexity and churn agree trivially.
+Flag, not a Severity. With at least 5 finite candidates, a composed
+score must clear both p90 and the Code floor (22); with 1–4 candidates,
+the absolute floor alone is used. Non-finite scores never flag. The
+drain policy uses `hotspot=true` to gate T0 vs Advisory. Disable via
+`[metrics] disabled = ["hotspot", ...]` only where the signal is not
+useful.
 
 | Key                  | Type             | Default | Meaning                                                                                                                                |
 |----------------------|------------------|---------|----------------------------------------------------------------------------------------------------------------------------------------|
-| `weight_churn`       | `f64`            | `1.0`   | Relative weight of churn in the geometric-mean composition.                                                                            |
-| `weight_complexity`  | `f64`            | `1.0`   | Relative weight of complexity. Bumping one above the other amplifies that signal — leave equal unless the calibration shows imbalance. |
+| `weight_churn`       | `f64`            | `1.0`   | Churn scale factor. While both weights are positive, changing it scales every score equally and does not change rank; `0.0` removes this side.       |
+| `weight_complexity`  | `f64`            | `1.0`   | Complexity scale factor. While both weights are positive, changing it scales every score equally and does not change rank; `0.0` removes this side.  |
 | `top_n`              | `Option<usize>`  | `None`  | Override the top-hotspots list width. Also drives the new-in-top-N membership diff in snapshots.                                       |
 
 ### `[metrics.change_coupling]`

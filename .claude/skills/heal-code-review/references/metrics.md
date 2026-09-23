@@ -152,8 +152,11 @@ day-to-day verdict.
 
 ## `hotspot` — Composite (churn × complexity)
 
-- **Definition.** `score = commits × ccn_sum × weights` per file, then
-  flagged when `score ≥ p90` of the per-project distribution.
+- **Definition.** `score = commits × ccn_sum × weights` per file. With
+  at least 5 finite candidates, a flag requires `score ≥ p90` and the
+  Code floor 22; with 1–4 candidates, floor 22 alone applies. Non-finite
+  scores never flag. While both weights are positive, changing either
+  scales every score equally and does not change rank.
 - **Literature.** Tornhill, *Your Code as a Crime Scene* and
   *Software Design X-Rays*. Empirically a small fraction of files
   (often <10%) accounts for the majority of post-release defects;
@@ -208,11 +211,12 @@ fits the per-project distribution and clamps to the literature
 anchors above, so the *absolute* threshold (e.g. CCN 20) and the
 *project-relative* signal ("top 5% of files in this repo") line up.
 
-The orthogonal **`hotspot` flag** lifts a finding's leverage: a
-`Critical 🔥` finding (Critical AND hotspot=true) is the highest-priority
-target because the cost of a fix is multiplied by how often the file
-gets touched. Same Severity without the flag is still actionable, but
-the leverage is lower.
+The orthogonal **`hotspot` flag** marks a high-leverage file and can
+affect its effective Drain Tier under policy. Within the same Tier and
+Severity, however, descending family-local `hotspot_score` controls the
+work order; a plain finding with a higher score can therefore precede a
+flagged finding. Missing scores sort last, followed by metric, path, and
+finding id ties.
 
 When in doubt about a Severity, read the metric's literature
 threshold above and judge against absolute values — calibration is

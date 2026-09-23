@@ -82,6 +82,9 @@ How the entry was produced. Values:
 - `"mention"` — a doc backtick-spans an identifier defined in the
   src.
 - `"mirror"` — directory layout mirrors src to doc.
+- `"jev"` — chosen by `heal semantic ask --task doc_pairs`
+  (`[features.semantic]`) among candidate sources; `confidence` is the
+  model's probability for the chosen source.
 - `"llm"` — model-inferred (the `/heal-doc-pair-setup` skill's
   Phase 3 pass).
 - `"manual"` — user-authored or user-promoted. **Preserved across

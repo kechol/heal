@@ -2,7 +2,7 @@
 name: heal-cli
 description: Concise, complete reference for the `heal` CLI — every subcommand, flag, and JSON contract an AI coding agent needs to drive HEAL programmatically. Load this when you're about to shell out to `heal` and want the exact command shape, the JSON schema it returns, and the `.heal/` files it reads or writes. Trigger on "how do I run heal …?", "what does `heal metrics --json` return?", "is there a heal command for …?", "/heal-cli".
 metadata:
-  heal-version: 0.3.2
+  heal-version: 0.6.0
   heal-source: bundled
 ---
 
@@ -59,12 +59,13 @@ Behind the scenes:
 - A post-commit git hook re-runs every observer, classifies the result
   against `.heal/calibration.toml`, and prints a one-line nudge.
   Failures are swallowed so HEAL never blocks a commit. No event log
-  is written — `latest.json` (refreshed on `heal status --refresh`) is
+  is written — `latest.json` (maintained by `heal status`) is
   the live state.
 - `heal status` writes its result to `.heal/findings/latest.json`. The
   cache is single-record by design — there is no historical stream.
-  Re-running on the same `(head_sha, config_hash, worktree_clean=true)`
-  is a free cache hit.
+  Re-running with the same HEAD, clean worktree, config, calibration,
+  and enabled observation inputs is a free cache hit. Missing or stale
+  state is rescanned and replaced automatically.
 - `.heal/findings/fixed.json` (a `BTreeMap<finding_id, FixedFinding>`)
   and `.heal/findings/regressed.jsonl` track the per-finding fix
   history.
@@ -94,8 +95,9 @@ overwrite the file. JSON shape:
 
 ### `heal status [args] [--json]`
 
-The single source of truth for the current TODO list. Renders cached
-findings; pass `--refresh` to rescan first. Useful args:
+The single source of truth for the current TODO list. Reuses fresh
+cached findings, automatically rescans missing/stale state, and accepts
+`--refresh` to force a rescan. Useful args:
 
 - `--refresh` — rescan and overwrite `.heal/findings/latest.json`.
 - `--all` — surface Medium and Ok tiers (default hides them).
@@ -117,18 +119,19 @@ findings; pass `--refresh` to rescan first. Useful args:
   before parsing stdout.
 - `--path <PATH-PREFIX>` — restrict to findings under a path
   (renamed from `--feature` in v0.4 — that flag now selects family).
-- `--top <N>` — cap each Severity bucket.
+- `--top <N>` — cap each rendered Tier/Severity bucket.
 
 JSON shape: `FindingsRecord` — same shape as `.heal/findings/latest.json`.
 Key fields:
 
 ```jsonc
 {
-  "version": 4,
+  "version": 8,
   "id": "9f8e7d6c5b4a3210",                  // FNV-1a hex of (head_sha, config_hash, worktree_clean)
   "head_sha": "deadbeef…",
   "worktree_clean": true,
   "config_hash": "…",
+  "coverage_observation": { "state": "complete", "configured_sources": ["lcov.info"], "sources": ["lcov.info"], "unreadable_sources": [], "unmeasured_files": [] },
   "severity_counts": { "critical": 3, "high": 11, "medium": 22, "ok": 0 },
   "findings": [
     {
@@ -136,6 +139,7 @@ Key fields:
       "metric": "ccn",
       "severity": "critical",                      // or "high" / "medium" / "ok"
       "hotspot": true,
+      "hotspot_score": 140.0,                    // family-local ordering only; not part of id
       "location":  { "file": "…", "line": 120, "symbol": "…" },
       "locations": [],                             // populated for duplication / coupling
       "summary":   "CCN=28",
@@ -145,39 +149,48 @@ Key fields:
 }
 ```
 
-### `heal diff [<git-ref>] [--all] [--json]`
+### `heal diff [<git-ref>] [--all] [--hide-accepted] [--json]`
 
 Diff the current findings against a `FindingsRecord` for the resolved
-git ref. Default ref is `HEAD`: "how does my live worktree compare to
-the last commit?"
+git ref. Default ref is the calibration baseline SHA (recorded by
+`heal init` / `heal calibrate --force`), falling back to `HEAD` when
+no baseline is recorded: "how much have we drained since
+calibration?"
 
 `<git-ref>` accepts anything `git rev-parse` understands —
 `HEAD`, `main`, `v0.2.1`, `HEAD~3`, or a (partial / full) SHA. If
-`.heal/findings/latest.json` already corresponds to the resolved ref
-(matching `head_sha`), `heal diff` reads it directly. On a miss it
-materialises the source at the ref via `git worktree add --detach`,
-runs the observer pipeline there using the *current* `config.toml` /
-`calibration.toml` (apples-to-apples), and tears the worktree down on
-exit. Gated by `[diff].max_loc_threshold` (default `200_000` LOC) —
-over the threshold the command exits with code 2 and prints a manual
-two-branch recipe. The right-hand side is always a fresh in-memory
-scan of the current worktree (never persisted).
+the resolved ref is the checked-out HEAD and `.heal/findings/latest.json`
+matches its full `(head_sha, observation-input config_hash,
+worktree_clean)` triple, `heal diff` reads it directly. Older refs and
+other misses materialise the source via `git worktree
+add --detach`, runs the observer pipeline there using the *current*
+`config.toml` / `calibration.toml` (apples-to-apples), and tears the
+worktree down on exit. Gated by `[diff].max_loc_threshold` (default
+`200_000` LOC) — over the threshold the command exits with code 2
+and prints a manual two-branch recipe. The right-hand side is always
+a fresh in-memory scan of the current worktree (never persisted).
 
 Buckets: Resolved / Regressed / Improved / New / Unchanged, plus a
 progress percentage. Pass `--all` to also surface Improved +
-Unchanged. JSON shape:
+Unchanged. Entries whose current finding is accepted (via
+`heal mark accept`) render with a `📌 accepted` marker;
+`--hide-accepted` drops them from the human output entirely (JSON is
+never filtered). JSON shape:
 
 ```jsonc
 {
   "from_ref":     "HEAD",
   "from_sha":     "deadbeef…",
   "to_head_sha":  "deadbeef…",
+  "from_coverage_observation": { "state": "missing", "configured_sources": ["lcov.info"], "sources": [], "unreadable_sources": [], "unmeasured_files": ["src/a.ts"] },
+  "to_coverage_observation":   { "state": "complete", "configured_sources": ["lcov.info"], "sources": ["lcov.info"], "unreadable_sources": [], "unmeasured_files": [] },
   "resolved":     [{ "finding_id": "ccn:…", "metric": "ccn", "file": "src/a.ts",
                      "from_severity": "high", "to_severity": null,
                      "from_hotspot": false, "hotspot": false }],
   "regressed":    [],
   "improved":     [],
-  "new_findings": [],
+  "new_findings": [],            // entries carry "accepted": true when the
+                                 // current finding is accepted (omitted when false)
   "unchanged":    [],
   "progress_pct":     0.25,    // population-side: resolved.len() / from.findings.len()
   "t0_total":         4,       // T0 (Critical AND hotspot) baseline count
