@@ -34,6 +34,13 @@ tree-sitter-scala = "0.26"
 tree-sitter-rust = "0.24"
 ignore = "0.4"
 git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
+# HTTP client for the opt-in `[features.semantic]` family. Only
+# `heal semantic ask` and `heal auth jev status` open connections.
+# `rustls-no-provider` keeps webpki-roots out: trust roots come from
+# the OS store via rustls-native-certs, so corporate CAs keep working.
+ureq = { version = "3.4", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

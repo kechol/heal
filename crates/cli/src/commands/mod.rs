@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod calibrate;
 pub mod diff;
 pub mod hook;
@@ -5,6 +6,7 @@ pub mod hook_install;
 pub mod init;
 pub mod mark;
 pub mod metrics;
+pub mod semantic;
 pub mod skills;
 pub mod status;
 

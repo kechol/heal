@@ -21,6 +21,9 @@ FindingsRecord`, `heal check → heal status`, `heal status → heal metrics`,
 | **Feature** | "lowering", "classifier" | The post-observer pass that turns reports into `Vec<Finding>`. Trait `Feature` in `crates/cli/src/feature.rs`. Distinct from "metric"; one Feature can lower multiple metrics (e.g. Complexity → CCN + Cognitive). |
 | **Finding** | "issue", "violation", "alert", "result" | One row in the cache. See `data-model.md`. |
 | **the loop** | "drain", "harness loop" | Observe → classify → drain (review/patch). The HEAL backronym's "Loop". |
+| **Jev** | "the LLM", "the AI", "GPT" | TypeSafe's classifier model behind `[features.semantic]`. Returns typed probabilities, never text. Write "Jev" in prose, `jev` in commands (`heal auth jev`). |
+| **semantic task** | "rule", "check", "prompt" | One kind of question HEAL asks Jev (`semantic::task::Task`). Has a stable id used as the verdict file name and the `[features.semantic.tasks.<id>]` key. |
+| **verdict** | "answer cache", "result", "judgment" | One cached Jev answer (`semantic::store::Verdict`), stored in `.heal/semantic/verdicts/<task>.jsonl`. |
 
 ---
 
@@ -41,6 +44,8 @@ reappear in code or text.
 | `heal mark-fixed --finding-id … --commit-sha …` | **deprecated alias** for `heal mark fix` | Hidden. Prints a stderr deprecation warning and delegates. Kept so v0.2 skill bundles keep working until `heal skills update`. |
 | `heal skills install\|update\|status\|uninstall` | live | — |
 | `heal calibrate` | live | `--reason`, `--check` were removed; do not add back. |
+| `heal semantic ask` | live, opt-in (`[features.semantic]`) | The only command that sends project content over the network. |
+| `heal auth jev set\|status\|clear` | live | `status` is the only other network call (key check). Keys never go under `.heal/`. |
 | ~~`heal checks`~~ | **removed** | Old persistent-snapshots view. |
 | ~~`heal compact`~~ | **removed** | Compaction job for retired snapshots. |
 | ~~`heal logs`~~ | **removed** | Log-rotation viewer. |

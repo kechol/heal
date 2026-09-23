@@ -35,8 +35,11 @@ issue comment, and CHANGELOG line is public** the moment it lands on
   to a stranger who lands here from a Google search. Avoid in-jokes,
   internal shorthand, or aggressive language.
 - **No telemetry, no network calls.** HEAL is a local tool. The only
-  network access is `git2` against the local repo. Don't add
-  HTTP clients, version-check pings, or analytics.
+  network access is `git2` against the local repo, plus the opt-in
+  `[features.semantic]` family: `heal semantic ask` and
+  `heal auth jev status` talk to the TypeSafe Jev API, and nothing
+  else does (the HTTP client lives in `crates/cli/src/semantic/client.rs`).
+  Don't add other HTTP clients, version-check pings, or analytics.
 - **Attribution.** When borrowing an algorithm or pattern from a
   paper / blog post / other OSS project, cite it in code comments
   and / or `CHANGELOG.md`. Don't paste code from incompatible

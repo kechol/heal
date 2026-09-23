@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Features — `[features.semantic]` (Jev, opt-in)
+
+- **New opt-in family `[features.semantic]`** that asks TypeSafe's
+  [Jev](https://docs.typesafe.ai/) classifier questions metrics cannot
+  answer. Disabled by default; with it off, HEAL behaves exactly as before.
+- **`heal semantic ask`** — plans questions locally, skips anything already
+  cached, packs requests under Jev's 32Ki-state / 64Ki-request ceilings,
+  prices the run (`--dry-run`), enforces `max_usd`, and writes typed answers
+  to `.heal/semantic/verdicts/<task>.jsonl`. Flags: `--task`, `--dry-run`,
+  `--refresh`, `--prune`, `--check`, `--focus`, `--diff`, `--json`.
+- **`heal auth jev set | status | clear`** — per-user key storage (mode 600,
+  outside `.heal/`); `TYPESAFE_API_KEY` / `TYPESAFEAI_API_KEY` take
+  precedence. `status` confirms the key against the API.
+- **Network boundary.** `heal semantic ask` and `heal auth jev status` are
+  the only commands that open a connection. Every other command reads the
+  verdict cache offline; when the family is enabled, verdict files are part
+  of `config_hash`, so a changed verdict re-renders `heal status`.
+- TLS uses rustls with the OS trust store (`rustls-native-certs`), so a
+  corporate CA installed on the machine keeps working. Client pacing,
+  retry, and split-on-`max_tokens_exceeded` behaviour follow
+  [mizchi/jev-lint](https://github.com/mizchi/jev-lint) (MIT).
+
 ## v0.6.0 — 2026-09-13
 
 The large-codebase and practical-ordering release. Scans reuse unchanged

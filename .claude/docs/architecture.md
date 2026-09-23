@@ -263,6 +263,10 @@ in the same PR (see `.claude/rules/terminology.md`):
 - No Claude Code hooks registered by HEAL anymore. Only the post-commit
   **git** hook. `heal hook edit` / `heal hook stop` exist as silent
   no-ops for back-compat — `heal skills install` actively sweeps them.
+- No network access outside `heal semantic ask` and `heal auth jev
+  status` (`semantic::client` is the only HTTP client). Observers,
+  `Feature::lower`, `heal status`, and the post-commit hook read
+  verdicts from `.heal/semantic/verdicts/` and never connect.
 
 ---
 

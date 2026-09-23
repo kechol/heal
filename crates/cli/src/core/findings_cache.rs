@@ -420,6 +420,25 @@ pub fn observation_hash_from_paths(
             push_observation_file(&mut chunks, "lcov", rel, file);
         }
     }
+    if cfg.features.semantic.enabled {
+        // Verdicts change what `heal status` renders without touching HEAD
+        // or the worktree (the directory may be untracked), so every
+        // verdict file is an observation input. Sorted by file name; the
+        // logical path keeps host paths out of the digest.
+        let dir = crate::core::paths::HealPaths::new(observation_root).semantic_verdicts();
+        for path in crate::semantic::store::verdict_files(&dir) {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            push_file(
+                &mut chunks,
+                "semantic_verdicts",
+                &format!(".heal/semantic/verdicts/{name}"),
+                &path,
+            );
+        }
+    }
     let refs: Vec<&[u8]> = chunks.iter().map(Vec::as_slice).collect();
     Ok(fnv1a_hex(fnv1a_64_chunked(&refs)))
 }
@@ -753,6 +772,37 @@ mod tests {
         std::fs::remove_file(tmp.path().join("ignored/lcov.info")).unwrap();
         let deleted = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
         assert_eq!(missing, deleted);
+    }
+
+    #[test]
+    fn observation_hash_tracks_semantic_verdicts_only_when_enabled() {
+        let tmp = TempDir::new().unwrap();
+        let config = tmp.path().join("config.toml");
+        let calibration = tmp.path().join("calibration.toml");
+        std::fs::write(&config, b"cfg").unwrap();
+        std::fs::write(&calibration, b"cal").unwrap();
+        let verdicts = tmp.path().join(".heal/semantic/verdicts");
+        std::fs::create_dir_all(&verdicts).unwrap();
+
+        let mut cfg = Config::default();
+        let off = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
+        std::fs::write(verdicts.join("t.jsonl"), b"{}\n").unwrap();
+        assert_eq!(
+            off,
+            observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap(),
+            "verdicts must not matter while the family is disabled"
+        );
+
+        cfg.features.semantic.enabled = true;
+        let with_one =
+            observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
+        std::fs::write(verdicts.join("t.jsonl"), b"{\"x\":1}\n").unwrap();
+        let edited = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
+        assert_ne!(with_one, edited);
+        std::fs::remove_file(verdicts.join("t.jsonl")).unwrap();
+        let none = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
+        assert_ne!(edited, none);
+        assert_eq!(off, none, "no verdict files contributes no chunks");
     }
 
     #[test]

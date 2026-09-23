@@ -439,6 +439,45 @@ Leaves non-bundled sibling skills intact.
 
 ---
 
+## `heal semantic ask`
+
+`commands/semantic.rs` → `semantic::runner::run`. The **only** command
+that sends project content over the network (`scope.md` R5).
+
+1. Load config; exit 2 unless `[features.semantic] enabled`.
+2. Select tasks from `semantic::task::registry()` (`--task` repeatable;
+   default = every `task_enabled` task). Unknown ids error.
+3. Build the client unless `--dry-run`: key via
+   `semantic::credentials::resolve` (env `TYPESAFE_API_KEY` →
+   `TYPESAFEAI_API_KEY` → `<config dir>/heal/credentials.toml`, mode
+   0600 enforced), transport `UreqTransport` (rustls + OS roots).
+   `--check` stops after `GET /v1/models`.
+4. For each task: `Task::plan` → groups of `(key, Question)` sharing
+   one `state`. Keys already in `VerdictStore` are skipped unless
+   `--refresh`. `plan::pack` splits a group into requests under the
+   state (32Ki) and request (64Ki) budgets with a 0.85 margin; a
+   state over budget is counted as `oversized_groups`, never
+   truncated.
+5. `dispatch` sends up to `concurrency` requests at once, reserving
+   each batch's estimated USD against `max_usd` first; auth failures
+   stop every worker. Answers are inserted in sorted order.
+6. `--prune` drops verdicts no current subject references.
+7. `VerdictStore::save` writes only changed task files.
+
+`--json` emits `AskReport` (`model`, `dry_run`, `tasks[]` with
+`subjects/cached/to_ask/requests/est_input_tokens/est_usd/answered/
+failed/oversized_groups/pruned`, `requests_sent`, `input_tokens`,
+`usd`, `stopped_by_budget`, `fatal`, `errors`).
+
+## `heal auth jev <set|status|clear>`
+
+`commands/auth.rs`. `set` reads one line from stdin and writes the
+per-user credentials file (0600, via a private tempfile + rename).
+`status` prints the masked key and its source, then — unless
+`--offline` — calls `GET /v1/models` (the second and last network
+call site). `clear` deletes the file. Nothing is ever written under
+`.heal/`.
+
 ## Exit codes (full table)
 
 | Code | Meaning | Triggered by |
@@ -446,6 +485,7 @@ Leaves non-bundled sibling skills intact.
 | 0 | success | normal happy path; broken pipe on `heal status` pager |
 | 1 | unspecified error | any anyhow `Err(_)` propagation |
 | 2 | LOC threshold exceeded | `heal diff` only, when project LOC > `[diff].max_loc_threshold` |
+| 2 | semantic setup required | `heal semantic ask` / `heal auth jev status`: `[features.semantic]` disabled, no API key, key rejected (401/402/403), or model unavailable (`SEMANTIC_SETUP_EXIT_CODE`) |
 
 No other documented exit codes. Don't invent new ones without updating
 this table and `docs/cli.md`.

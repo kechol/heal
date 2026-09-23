@@ -23,6 +23,7 @@ pub mod core;
 pub mod feature;
 pub mod observer;
 pub mod observers;
+pub mod semantic;
 pub mod skill_assets;
 #[cfg(test)]
 mod test_support;

@@ -105,6 +105,20 @@ impl HealPaths {
         self.findings_dir().join("accepted.json")
     }
 
+    /// `[features.semantic]` state: `<root>/semantic/`. Tracked by git in
+    /// user repositories (like `config.toml`) so every teammate reads the
+    /// same verdicts without holding an API key.
+    #[must_use]
+    pub fn semantic_dir(&self) -> PathBuf {
+        self.root.join("semantic")
+    }
+
+    /// Verdict cache written by `heal semantic ask`, one JSONL file per task.
+    #[must_use]
+    pub fn semantic_verdicts(&self) -> PathBuf {
+        self.semantic_dir().join("verdicts")
+    }
+
     #[must_use]
     pub(crate) fn source_cache(&self) -> PathBuf {
         self.root.join("cache/source-v1.json")

@@ -86,3 +86,6 @@ ignore = { workspace = true }
 git2 = { workspace = true }
 tempfile = { workspace = true }
 rustix = { workspace = true }
+ureq = { workspace = true }
+rustls = { workspace = true }
+rustls-native-certs = { workspace = true }

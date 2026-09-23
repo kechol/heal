@@ -16,6 +16,14 @@ description: heal のサブコマンドを日々の重要度順に並べた一�
 | `heal status` | 現在の TODO リストを表示する（`--refresh` で再スキャン）。`.heal/findings/` を読みます。                       |
 | `heal diff`   | ライブ worktree と過去のコミットを比較する（デフォルトは calibration の基準 SHA）。findings の `git diff` 版。 |
 
+opt-in の [Semantic (Jev)](/heal/ja/semantic/) を有効にすると、コマンドが 2 つ増えます。
+HEAL のコマンドのうち、ネットワークにつながるのはこの 2 つだけです。
+
+| コマンド            | 用途                                                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| `heal semantic ask` | HEAL が選んだコード・テスト・ドキュメントについて Jev に問い合わせ、答えを `.heal/` に保存する。 |
+| `heal auth jev`     | Jev の API キーを保存・確認・削除する（`set` / `status` / `clear`）。                            |
+
 ## 自動化向けコマンド
 
 git の post-commit フックや同梱の Claude スキル経由で、ユーザーの代わりに走るコマンドです。`--help` には表示されません。
@@ -200,6 +208,36 @@ heal は **絶対に** 自動で recalibrate しません。コードベース�
 - `config.toml` の `floor_critical` / `floor_ok` を変えて、パーセンタイルラダーを合わせて作り直したいとき。
 
 生成された `calibration.toml` の先頭には、ファイルの来歴を示すコメントヘッダが付きます。ファイルを開いただけでドキュメントなしに来歴をたどれるようにするためです。`floor_critical` / `floor_ok` の上書きは `calibration.toml` ではなく `config.toml` 側に置いてください。さもないと `heal calibrate --force` で消えてしまいます。
+
+## `heal semantic ask`
+
+`[features.semantic] enabled = true` のときだけ使えます。何が送られるかは
+[Semantic (Jev)](/heal/ja/semantic/) を参照してください。
+
+```sh
+heal semantic ask --dry-run          # 計画と見積もりだけ。何も送らない
+heal semantic ask                    # 有効なタスクをすべて問い合わせる
+heal semantic ask --task <id>        # 1 つのタスクだけ（複数指定可）
+heal semantic ask --refresh          # 答えが保存済みでも問い合わせ直す
+heal semantic ask --prune            # どこからも参照されない答えを消す
+heal semantic ask --check            # キーとモデルの確認だけ
+heal semantic ask --json             # 実行結果を JSON で出す
+```
+
+終了コード `2` は、利用者にしか直せない問題を表します。機能が無効、API キーが未設定、
+キーが拒否された、のいずれかです。
+
+## `heal auth jev`
+
+```sh
+printf '%s\n' "$KEY" | heal auth jev set   # ユーザーの設定ファイルに保存（mode 600）
+heal auth jev status                        # キーの出どころと、実際に使えるかの確認
+heal auth jev status --offline              # 通信での確認を省く
+heal auth jev clear                         # 保存したキーを消す
+```
+
+`TYPESAFE_API_KEY`（または `TYPESAFEAI_API_KEY`）が、保存したキーより優先されます。
+キーが `.heal/` の下に書かれることはありません。
 
 ## キャッシュを覗く
 

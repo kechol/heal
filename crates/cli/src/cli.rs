@@ -156,6 +156,90 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Opt-in judgments from `TypeSafe`'s Jev classifier
+    /// (`[features.semantic]`). `ask` is the only HEAL command that sends
+    /// project content over the network; every other command reads the
+    /// verdicts it caches under `.heal/semantic/verdicts/`.
+    Semantic {
+        #[command(subcommand)]
+        action: SemanticAction,
+    },
+    /// Manage API keys for optional integrations. Keys are stored per
+    /// user, never under `.heal/`.
+    Auth {
+        #[command(subcommand)]
+        provider: AuthProvider,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SemanticAction {
+    /// Ask Jev about the subjects each enabled task selects, skipping
+    /// anything already cached, and write the answers to
+    /// `.heal/semantic/verdicts/`.
+    Ask(SemanticAskArgs),
+}
+
+#[allow(clippy::struct_excessive_bools)] // every flag is independent CLI surface
+#[derive(Debug, Clone, clap::Args)]
+pub struct SemanticAskArgs {
+    /// Run only this task (repeatable). Default: every enabled task.
+    #[arg(long = "task", value_name = "ID")]
+    pub tasks: Vec<String>,
+    /// Plan and price the run without sending anything.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Re-ask subjects that already have a cached verdict.
+    #[arg(long)]
+    pub refresh: bool,
+    /// Remove cached verdicts that no current subject refers to.
+    #[arg(long)]
+    pub prune: bool,
+    /// Only confirm the key and the configured model against the API.
+    #[arg(long, conflicts_with_all = ["dry_run", "refresh", "prune"])]
+    pub check: bool,
+    /// Describe upcoming work (a file path, or `-` for stdin) so focus-aware
+    /// tasks can rank what that work will touch.
+    #[arg(long, value_name = "FILE")]
+    pub focus: Option<String>,
+    /// Git revision range whose change verify tasks judge (e.g. `HEAD~1..HEAD`).
+    #[arg(long, value_name = "RANGE")]
+    pub diff: Option<String>,
+    /// Emit the run report as JSON.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AuthProvider {
+    /// `TypeSafe` Jev (`[features.semantic]`).
+    Jev {
+        #[command(subcommand)]
+        action: JevAuthAction,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Subcommand)]
+pub enum JevAuthAction {
+    /// Read a key from stdin and store it in the per-user credentials
+    /// file (mode 600). `TYPESAFE_API_KEY` still takes precedence.
+    Set {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show where the key comes from and confirm it against the API.
+    Status {
+        #[arg(long)]
+        json: bool,
+        /// Skip the network check; report only the local configuration.
+        #[arg(long)]
+        offline: bool,
+    },
+    /// Delete the stored key.
+    Clear {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Metric filter for `heal metrics --metric`. clap renders these in
@@ -598,6 +682,30 @@ impl Cli {
             } => commands::mark::run_fix_legacy(&project, &finding_id, &commit_sha, json),
             Command::Skills { action } => commands::skills::run(&project, action),
             Command::Calibrate { force, json } => commands::calibrate::run(&project, force, json),
+            Command::Semantic {
+                action: SemanticAction::Ask(args),
+            } => commands::semantic::run_ask(
+                &project,
+                &commands::semantic::AskArgs {
+                    tasks: args.tasks,
+                    dry_run: args.dry_run,
+                    refresh: args.refresh,
+                    prune: args.prune,
+                    check: args.check,
+                    json: args.json,
+                    focus: args.focus,
+                    diff: args.diff,
+                },
+            ),
+            Command::Auth {
+                provider: AuthProvider::Jev { action },
+            } => match action {
+                JevAuthAction::Set { json } => commands::auth::run_set(json),
+                JevAuthAction::Status { json, offline } => {
+                    commands::auth::run_status(&project, json, offline)
+                }
+                JevAuthAction::Clear { json } => commands::auth::run_clear(json),
+            },
         }
     }
 }
@@ -609,6 +717,40 @@ mod tests {
 
     fn parse(args: &[&str]) -> Cli {
         Cli::try_parse_from(args).unwrap_or_else(|e| panic!("parse failed for {args:?}: {e}"))
+    }
+
+    #[test]
+    fn parses_semantic_ask_and_auth() {
+        let cli = parse(&[
+            "heal",
+            "semantic",
+            "ask",
+            "--task",
+            "a",
+            "--task",
+            "b",
+            "--dry-run",
+            "--json",
+        ]);
+        match cli.command {
+            Command::Semantic {
+                action: SemanticAction::Ask(a),
+            } => {
+                assert_eq!(a.tasks, ["a", "b"]);
+                assert!(a.dry_run && a.json && !a.check);
+            }
+            other => panic!("expected Semantic, got {other:?}"),
+        }
+        assert!(Cli::try_parse_from(["heal", "semantic", "ask", "--check", "--dry-run"]).is_err());
+        let cli = parse(&["heal", "auth", "jev", "status", "--offline"]);
+        assert!(matches!(
+            cli.command,
+            Command::Auth {
+                provider: AuthProvider::Jev {
+                    action: JevAuthAction::Status { offline: true, .. }
+                }
+            }
+        ));
     }
 
     #[test]

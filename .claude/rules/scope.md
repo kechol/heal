@@ -57,6 +57,12 @@ noise). Two consequences agents must keep load-bearing:
   short-circuit this gate — the user fetching a teammate's
   `latest.json` at a different HEAD relies on it.
 
+**This repository is the exception.** HEAL's own root `.gitignore`
+ignores `/.heal/` entirely so dogfooding (`heal init --force`,
+repeated rescans, throwaway verdicts) never dirties the tree. That
+is a property of this repo, not of the product: user repositories
+track `.heal/` as described here and in R6.
+
 ## R5. v0.x out-of-scope features
 
 Don't propose these without explicit roadmap discussion:
@@ -66,20 +72,32 @@ Don't propose these without explicit roadmap discussion:
 - Multi-agent provider abstraction.
 - Languages beyond TypeScript / JavaScript / Rust / Python / Go / Scala.
 - Cloud sync, telemetry, network access (HEAL is local-only;
-  network access = `git2` over the local repo only).
+  network access = `git2` over the local repo only). The single
+  exception is the opt-in `[features.semantic]` family: only
+  `heal semantic ask` and `heal auth jev status` may connect, and
+  only to the TypeSafe Jev API. No other command, hook, or observer
+  may open a connection, with or without the feature enabled.
 - `[features.docs]` extensions deferred past v0.4: external HTTP
   link checking, executable example verification, issue-tracker /
   Stack Overflow question coverage, readability scores, terminology
   consistency vs a glossary, structural-depth analysis. `doc_drift`
   Type 2 (signature mismatch via per-language code-block parsing)
-  and Type 3 (semantic drift via LLM) also defer — only Type 1
-  (dangling identifier) ships in v0.4.
+  also defers. Type 3 (semantic drift) ships only through
+  `[features.semantic]` (Jev verdicts), never as an LLM call from
+  an observer.
 
 ## R6. New `.heal/` files require a decision
 
-`.heal/*.toml` is tracked (team contract); `.heal/findings/*` is
-untracked (per-run state). New top-level files have to fall on one
-side, with a documented reason. When in doubt, open an issue first.
+In user repositories everything under `.heal/` is tracked:
+`.heal/*.toml` and `.heal/doc_pairs.json` are the team contract,
+`.heal/findings/*` is shared per-commit state (R4), and
+`.heal/semantic/verdicts/*.jsonl` is the Jev verdict cache — tracked
+so teammates without an API key read the same verdicts and
+`latest.json` stays byte-identical across them. Secrets never go
+under `.heal/`; the Jev key lives in the environment or in the
+per-user `credentials.toml`. (`.heal/cache/` is the one untracked,
+machine-local directory.) New top-level files must state which side
+they fall on and why. When in doubt, open an issue first.
 
 ## R7. No marketplace, no plugin distribution
 

@@ -72,7 +72,155 @@ pub struct FeaturesConfig {
     pub docs: DocsConfig,
     #[serde(default)]
     pub test: TestConfig,
+    #[serde(default)]
+    pub semantic: SemanticConfig,
 }
+
+/// Task ids accepted under `[features.semantic.tasks.<id>]`. Must equal
+/// the ids registered in `crate::semantic::task::registry` (pinned by a
+/// test there); kept here so config validation does not depend on the
+/// semantic module.
+pub const SEMANTIC_TASK_IDS: &[&str] = &[];
+
+/// Model aliases that move when a new release ships. Rejected so a
+/// verdict cache can never silently mix answers from two models.
+const MOVING_MODEL_ALIASES: &[&str] = &["jev-latest", "jev-preview"];
+
+/// `[features.semantic]` — opt-in judgments from `TypeSafe`'s Jev
+/// classifier (<https://docs.typesafe.ai/>). While `enabled = false`
+/// nothing in HEAL changes. When enabled, `heal semantic ask` (and the
+/// key check in `heal auth jev status`) are the only commands that open a
+/// network connection; they send the selected code or prose to the
+/// `TypeSafe` API and store the answers under `.heal/semantic/verdicts/`.
+/// Every other command reads those verdicts offline.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SemanticConfig {
+    /// Master switch. Also turns on the semantic ordering axes in
+    /// `heal status` and the verification step of the patch skills.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Pinned model id. Moving aliases (`jev-latest`, `jev-preview`) are
+    /// rejected: verdicts are cached, and a cache must not mix models.
+    #[serde(default = "SemanticConfig::default_model")]
+    pub model: String,
+    /// Estimated spend ceiling for one `heal semantic ask` run, in USD.
+    /// The run stops dispatching before a batch that would cross it.
+    /// This is a local guard, not a provider billing cap.
+    #[serde(default = "SemanticConfig::default_max_usd")]
+    pub max_usd: f64,
+    /// Requests in flight at once.
+    #[serde(default = "SemanticConfig::default_concurrency")]
+    pub concurrency: usize,
+    /// Gitignore-syntax globs for files whose content is never sent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude: Vec<String>,
+    /// Per-task overrides keyed by task id.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tasks: BTreeMap<String, SemanticTaskConfig>,
+}
+
+impl Eq for SemanticConfig {}
+
+impl SemanticConfig {
+    pub const DEFAULT_MODEL: &'static str = "jev-1.13.0";
+    const DEFAULT_MAX_USD: f64 = 1.0;
+    const DEFAULT_CONCURRENCY: usize = 8;
+    const MAX_CONCURRENCY: usize = 64;
+
+    fn default_model() -> String {
+        Self::DEFAULT_MODEL.to_owned()
+    }
+    fn default_max_usd() -> f64 {
+        Self::DEFAULT_MAX_USD
+    }
+    fn default_concurrency() -> usize {
+        Self::DEFAULT_CONCURRENCY
+    }
+
+    /// Whether `task` runs: the master switch, then the per-task switch
+    /// (tasks default to on once the family is enabled).
+    #[must_use]
+    pub fn task_enabled(&self, task: &str) -> bool {
+        self.enabled && self.tasks.get(task).is_none_or(|t| t.enabled)
+    }
+
+    /// Per-task cutoff override, if any.
+    #[must_use]
+    pub fn cutoff(&self, task: &str) -> Option<f64> {
+        self.tasks.get(task).and_then(|t| t.cutoff)
+    }
+
+    fn validate(&self) -> std::result::Result<(), String> {
+        let model = self.model.trim();
+        if model.is_empty() {
+            return Err("[features.semantic].model must not be empty".to_owned());
+        }
+        if MOVING_MODEL_ALIASES.contains(&model) {
+            return Err(format!(
+                "[features.semantic].model `{model}` is a moving alias; pin a version such as `{}`",
+                Self::DEFAULT_MODEL
+            ));
+        }
+        if !self.max_usd.is_finite() || self.max_usd <= 0.0 {
+            return Err("[features.semantic].max_usd must be a positive number".to_owned());
+        }
+        if self.concurrency == 0 || self.concurrency > Self::MAX_CONCURRENCY {
+            return Err(format!(
+                "[features.semantic].concurrency must be between 1 and {}",
+                Self::MAX_CONCURRENCY
+            ));
+        }
+        validate_gitignore_lines(&self.exclude)?;
+        for (id, task) in &self.tasks {
+            if !SEMANTIC_TASK_IDS.contains(&id.as_str()) {
+                return Err(format!(
+                    "unknown [features.semantic.tasks] entry `{id}`; known tasks: {}",
+                    if SEMANTIC_TASK_IDS.is_empty() {
+                        "(none)".to_owned()
+                    } else {
+                        SEMANTIC_TASK_IDS.join(", ")
+                    }
+                ));
+            }
+            if let Some(c) = task.cutoff {
+                if !(0.0..=1.0).contains(&c) {
+                    return Err(format!(
+                        "[features.semantic.tasks.{id}].cutoff must be within 0.0..=1.0"
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Default for SemanticConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            model: Self::default_model(),
+            max_usd: Self::DEFAULT_MAX_USD,
+            concurrency: Self::DEFAULT_CONCURRENCY,
+            exclude: Vec::new(),
+            tasks: BTreeMap::new(),
+        }
+    }
+}
+
+/// `[features.semantic.tasks.<id>]`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SemanticTaskConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Probability at or above which a verdict becomes a Finding (or a
+    /// decoration). `None` uses the task's shipped cutoff.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cutoff: Option<f64>,
+}
+
+impl Eq for SemanticTaskConfig {}
 
 /// `[features.docs]` — optional doc-quality observers that compare
 /// committed documentation against the source it describes (drift,
@@ -1387,6 +1535,13 @@ impl Config {
                 message,
             }
         })?;
+        self.features
+            .semantic
+            .validate()
+            .map_err(|message| Error::ConfigInvalid {
+                path: path.to_path_buf(),
+                message,
+            })?;
         Ok(())
     }
 

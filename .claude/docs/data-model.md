@@ -319,10 +319,32 @@ Config { project, git, metrics, policy, diff, features }
         │     ├── StandaloneDocsConfig { include, exclude }
         │     └── DocFreshnessConfig { high_commits = 5,
         │                               critical_commits = 20 }
-        └── TestConfig { enabled = false, test_paths, coverage }
-              └── TestCoverageConfig { enabled = false, lcov_paths,
-                                       post_commit_refresh = None }
+        ├── TestConfig { enabled = false, test_paths, coverage }
+        │     └── TestCoverageConfig { enabled = false, lcov_paths,
+        │                              post_commit_refresh = None }
+        └── SemanticConfig { enabled = false, model = "jev-1.13.0",
+                             max_usd = 1.0, concurrency = 8, exclude,
+                             tasks: BTreeMap<id, SemanticTaskConfig> }
+              └── SemanticTaskConfig { enabled = true, cutoff = None }
 ```
+
+`SemanticConfig.model` rejects the moving aliases `jev-latest` /
+`jev-preview`; `tasks` keys must be in `core::config::SEMANTIC_TASK_IDS`
+(pinned equal to `semantic::task::registry()` by a test). The API key
+is **not** a config field — `deny_unknown_fields` rejects `api_key`.
+
+## Verdict cache (`semantic::store`)
+
+`.heal/semantic/verdicts/<task>.jsonl` — one `Verdict { key, model,
+answer }` per line, sorted by key. `key = verdict_key(task,
+criteria_hash, model, subject, state)` via `fnv1a_64_chunked`
+(`invariants.md` R5). On read, duplicate keys (e.g. after a
+`merge=union`) resolve to the lexicographically smallest line.
+`Answer` is the wire answer (`noul` / `choice` / `score`) verbatim.
+When `[features.semantic]` is enabled every verdict file is an
+observation input of `config_hash` (label `semantic_verdicts`,
+logical path `.heal/semantic/verdicts/<file>`), so `latest.json`
+invalidates when verdicts change without HEAD moving.
 
 `DuplicationConfig` adds a `docs_min_tokens = 100` field that the
 Markdown duplication pass uses when `[features.docs]` is on. The
