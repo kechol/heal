@@ -24,7 +24,10 @@ FindingsRecord`, `heal check → heal status`, `heal status → heal metrics`,
 | **Jev** | "the LLM", "the AI", "GPT" | TypeSafe's classifier model behind `[features.semantic]`. Returns typed probabilities, never text. Write "Jev" in prose, `jev` in commands (`heal auth jev`). |
 | **semantic task** | "rule", "check", "prompt" | One kind of question HEAL asks Jev (`semantic::task::Task`). Has a stable id used as the verdict file name and the `[features.semantic.tasks.<id>]` key. |
 | **concept vocabulary** | "taxonomy", "tags", "categories" | `.heal/concepts.toml`: the team's list of concepts (id + one-line responsibility) that the `concept` / `term_drift` / `doc_concept` tasks classify into. Written by `/heal-concepts-setup`. |
-| **verdict** | "answer cache", "result", "judgment" | One cached Jev answer (`semantic::store::Verdict`), stored in `.heal/semantic/verdicts/<task>.jsonl`. |
+| **verdict** | "answer cache", "result", "judgment" | One cached Jev answer (`semantic::store::Verdict`), stored in `.heal/semantic/verdicts/<task>.jsonl` (shared tasks) or `.heal/cache/semantic/verdicts/<task>.jsonl` (the rest). |
+| **on-demand task** | "manual task", "ad-hoc check" | A semantic task that runs only with `heal semantic ask --task <id>` (`Task::on_demand`): the `verify_*` checks, `name_choice`, `doc_pairs`. Its answer is `tasks[].result` in `--json`, not a Finding. |
+| **shared task** | "tracked task", "team task" | A semantic task whose verdicts are team state (`Task::shared`): tracked and hashed into `config_hash`. Every task except the on-demand ones and `focus`. |
+| **semantic note** | "annotation", "tag", "label" | `Finding.semantic[<name>]`, a `SemanticNote { label, p, confidence, lines, detail }` decorating an existing Finding from a cached verdict (e.g. `consequence`, `fix_ratio`). Never part of `Finding.id`. |
 
 ---
 
@@ -135,6 +138,9 @@ below). Constants live in `core::calibration` (`FLOOR_CCN`,
 | `.heal/findings/fixed.json` | `heal mark fix` writes; `heal status` reconciles | **yes** | `BTreeMap<finding_id, FixedFinding>`. Bounded by outstanding claims. |
 | `.heal/findings/regressed.jsonl` | `heal status` appends | **yes** | Append-only audit trail of re-detected fixes. |
 | `.heal/findings/accepted.json` | `heal mark accept` writes; renderers read | **yes** | `BTreeMap<finding_id, AcceptedFinding>`. Team contract for "won't fix / intrinsic" findings. Decorates `Finding.accepted: bool` at render time. |
+| `.heal/concepts.toml` | `/heal-concepts-setup` writes; semantic tasks read | **yes** | Concept vocabulary (`[[concept]] { id, description }`). Team contract; an observation input of `config_hash` while `[features.semantic]` is on. |
+| `.heal/semantic/verdicts/<task>.jsonl` | `heal semantic ask` writes; `heal status` reads | **yes** | Jev verdicts of shared tasks, one per line, sorted by key. Tracked so teammates without an API key see the same Findings. |
+| `.heal/cache/semantic/verdicts/<task>.jsonl` | `heal semantic ask` writes | no | Verdicts of on-demand tasks and `focus`: one person's input, never hashed. |
 | `.heal/doc_pairs.json` | `/heal-doc-pair-setup` writes; HEAL binary reads | **yes** | `[features.docs]` SSoT. `DocPairsFile` (schema-versioned by `DOC_PAIRS_VERSION`). Maps Layer A doc paths to one or more srcs. HEAL never auto-generates it — `R3` (no auto-recalibration) extends to this file. |
 
 | Term | Canonical | Wrong / drift |

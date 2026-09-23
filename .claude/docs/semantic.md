@@ -20,7 +20,12 @@ heal semantic ask                     heal status / heal diff
 
 - `semantic::task::Task` — `id`, `criteria_text` (hashed into every
   key), `plan` (subjects → `Group { state, items[] }`), `lower`
-  (cached answers → `Lowered { findings, notes }`), `on_demand`.
+  (cached answers → `Lowered { findings, notes }`), `on_demand`,
+  `shared` (default `!on_demand`; `focus` overrides to false).
+- `VerdictStore::for_project` routes shared tasks to the tracked
+  `.heal/semantic/verdicts/` and the rest to the untracked
+  `.heal/cache/semantic/verdicts/`; only shared files feed
+  `config_hash`.
 - `Item.meta` carries what `lower` needs (file, symbol, finding id,
   lines). It is never sent.
 - Keys: `verdict_key(task, criteria_hash, model, subject, state)`.

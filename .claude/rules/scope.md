@@ -95,7 +95,11 @@ In user repositories everything under `.heal/` is tracked:
 classify against (team contract, like `config.toml`), and
 `.heal/semantic/verdicts/*.jsonl` is the Jev verdict cache — tracked
 so teammates without an API key read the same verdicts and
-`latest.json` stays byte-identical across them. Secrets never go
+`latest.json` stays byte-identical across them. Verdicts of tasks that
+judge one person's input (on-demand checks such as `verify_patch`,
+and `focus`) are not team state: they live in the untracked
+`.heal/cache/semantic/verdicts/` and stay out of `config_hash`, so a
+patch session never dirties the worktree. Secrets never go
 under `.heal/`; the Jev key lives in the environment or in the
 per-user `credentials.toml`. (`.heal/cache/` is the one untracked,
 machine-local directory.) New top-level files must state which side

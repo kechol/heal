@@ -39,7 +39,7 @@ pub(crate) fn apply(
     if enabled.is_empty() {
         return findings;
     }
-    let mut store = VerdictStore::new(crate::core::HealPaths::new(scan_root).semantic_verdicts());
+    let mut store = VerdictStore::for_project(&crate::core::HealPaths::new(scan_root));
     let (new_findings, notes) = {
         let Ok(ctx) = TaskContext::new(scan_root, cfg) else {
             return findings;

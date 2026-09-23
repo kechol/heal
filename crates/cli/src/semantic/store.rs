@@ -1,4 +1,6 @@
-//! Verdict cache: `.heal/semantic/verdicts/<task>.jsonl`.
+//! Verdict cache: `.heal/semantic/verdicts/<task>.jsonl` for team
+//! verdicts, `.heal/cache/semantic/verdicts/<task>.jsonl` (untracked) for
+//! tasks that are not [`crate::semantic::task::Task::shared`].
 //!
 //! Only `heal semantic ask` writes here. Every other command reads the
 //! cache and never calls the network, so `heal status` stays a pure
@@ -57,20 +59,62 @@ pub fn content_hash(bytes: &[u8]) -> String {
 #[derive(Debug)]
 pub struct VerdictStore {
     dir: PathBuf,
+    local: Option<LocalVerdicts>,
     tasks: BTreeMap<String, BTreeMap<String, Verdict>>,
     dirty: BTreeSet<String>,
 }
 
+/// Where the verdicts of non-shared tasks go instead of `dir`.
+#[derive(Debug)]
+struct LocalVerdicts {
+    dir: PathBuf,
+    /// Created (as `*`) when missing, so the directory stays untracked.
+    gitignore: PathBuf,
+    tasks: BTreeSet<String>,
+}
+
+/// Ids of registered tasks whose verdicts are machine-local.
+#[must_use]
+pub fn local_task_ids() -> BTreeSet<String> {
+    crate::semantic::task::registry()
+        .iter()
+        .filter(|t| !t.shared())
+        .map(|t| t.id().to_owned())
+        .collect()
+}
+
 impl VerdictStore {
-    /// `dir` is `.heal/semantic/verdicts`. Nothing is read until a task is
-    /// first touched.
+    /// Every task in `dir`. Nothing is read until a task is first touched.
     #[must_use]
     pub fn new(dir: impl Into<PathBuf>) -> Self {
         Self {
             dir: dir.into(),
+            local: None,
             tasks: BTreeMap::new(),
             dirty: BTreeSet::new(),
         }
+    }
+
+    /// The project's store: shared tasks in `.heal/semantic/verdicts`,
+    /// the others in `.heal/cache/semantic/verdicts`.
+    #[must_use]
+    pub fn for_project(paths: &crate::core::HealPaths) -> Self {
+        let mut store = Self::new(paths.semantic_verdicts());
+        store.local = Some(LocalVerdicts {
+            dir: paths.local_semantic_verdicts(),
+            gitignore: paths.cache_gitignore(),
+            tasks: local_task_ids(),
+        });
+        store
+    }
+
+    fn local_for(&self, task: &str) -> Option<&LocalVerdicts> {
+        self.local.as_ref().filter(|l| l.tasks.contains(task))
+    }
+
+    fn file_for(&self, task: &str) -> PathBuf {
+        let dir = self.local_for(task).map_or(&self.dir, |l| &l.dir);
+        Self::path_for(dir, task)
     }
 
     #[must_use]
@@ -80,7 +124,7 @@ impl VerdictStore {
 
     fn load(&mut self, task: &str) -> Result<&mut BTreeMap<String, Verdict>, String> {
         if !self.tasks.contains_key(task) {
-            let map = read_file(&Self::path_for(&self.dir, task))?;
+            let map = read_file(&self.file_for(task))?;
             self.tasks.insert(task.to_owned(), map);
         }
         Ok(self.tasks.get_mut(task).expect("just inserted"))
@@ -141,7 +185,13 @@ impl VerdictStore {
     pub fn save(&mut self) -> Result<Vec<PathBuf>, String> {
         let mut written = Vec::new();
         for task in std::mem::take(&mut self.dirty) {
-            let path = Self::path_for(&self.dir, &task);
+            let path = self.file_for(&task);
+            if let Some(local) = self.local_for(&task) {
+                if !local.gitignore.exists() {
+                    crate::core::fs::atomic_write(&local.gitignore, b"*\n")
+                        .map_err(|e| e.to_string())?;
+                }
+            }
             let map = &self.tasks[&task];
             if map.is_empty() {
                 match std::fs::remove_file(&path) {
@@ -247,6 +297,51 @@ mod tests {
             "unchanged insert must not rewrite"
         );
         assert_eq!(again.get("t", "b").unwrap(), Some(v("b", 0.2)));
+    }
+
+    #[test]
+    fn non_shared_tasks_go_to_the_untracked_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = crate::core::HealPaths::new(dir.path());
+        let mut s = VerdictStore::for_project(&paths);
+        s.insert("verify_patch", v("a", 0.9)).unwrap();
+        s.insert("focus", v("b", 0.2)).unwrap();
+        s.insert("concept", v("c", 0.5)).unwrap();
+        s.save().unwrap();
+
+        let shared = paths.semantic_verdicts();
+        let local = paths.local_semantic_verdicts();
+        assert!(VerdictStore::path_for(&shared, "concept").exists());
+        for task in ["verify_patch", "focus"] {
+            assert!(VerdictStore::path_for(&local, task).exists(), "{task}");
+            assert!(!VerdictStore::path_for(&shared, task).exists(), "{task}");
+        }
+        assert_eq!(
+            std::fs::read_to_string(paths.cache_gitignore()).unwrap(),
+            "*\n"
+        );
+
+        let mut again = VerdictStore::for_project(&paths);
+        assert!(again.contains("verify_patch", "a").unwrap());
+        assert!(again.contains("focus", "b").unwrap());
+    }
+
+    #[test]
+    fn every_on_demand_task_is_local() {
+        let local = local_task_ids();
+        for t in crate::semantic::task::registry() {
+            if t.on_demand() {
+                assert!(local.contains(t.id()), "{}", t.id());
+            }
+            for dep in t.depends_on() {
+                assert!(
+                    !t.shared() || !local.contains(*dep),
+                    "shared `{}` depends on local `{dep}`",
+                    t.id()
+                );
+            }
+        }
+        assert!(local.contains("focus"));
     }
 
     #[test]

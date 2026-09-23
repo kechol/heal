@@ -186,6 +186,16 @@ pub trait Task: Sync {
         false
     }
 
+    /// Whether this task's verdicts are team state: tracked under
+    /// `.heal/semantic/verdicts/` and part of `config_hash`. Tasks that
+    /// judge one person's input (a diff, a proposal, planned work) keep
+    /// theirs in the untracked `.heal/cache/semantic/verdicts/` instead,
+    /// so running them never dirties the worktree or another teammate's
+    /// cache freshness. A shared task must not depend on one that is not.
+    fn shared(&self) -> bool {
+        !self.on_demand()
+    }
+
     /// Tasks whose cached answers `plan` / `lower` read through
     /// [`TaskContext::prior_answer`]. They must come earlier in the registry.
     fn depends_on(&self) -> &'static [&'static str] {

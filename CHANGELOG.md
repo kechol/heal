@@ -19,7 +19,10 @@
   cached, packs requests under Jev's 32Ki-state / 64Ki-request ceilings,
   prices the run (`--dry-run`), enforces `max_usd`, stops with exit 2 as
   soon as the key is rejected or the API does not know the configured
-  model, and writes typed answers to `.heal/semantic/verdicts/<task>.jsonl`.
+  model, and writes typed answers to `.heal/semantic/verdicts/<task>.jsonl`
+  (tracked). On-demand checks and `focus` write to the untracked
+  `.heal/cache/semantic/verdicts/` instead, so a patch session never
+  dirties the worktree.
   Flags: `--task`, `--dry-run`,
   `--refresh`, `--prune`, `--check`, `--focus`, `--diff`, `--json`.
 - **`heal auth jev set | status | clear`** — per-user key storage (mode 600,

@@ -426,6 +426,10 @@ impl Task for Focus {
     fn summary(&self) -> &'static str {
         "with --focus <file>: how much the described work touches each flagged file"
     }
+    /// One person's planned work is not team state.
+    fn shared(&self) -> bool {
+        false
+    }
     fn criteria_text(&self) -> String {
         format!("{FOCUS_INSTRUCTIONS}\n{}", FOCUS_LEVELS.join("\n"))
     }

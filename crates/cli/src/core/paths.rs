@@ -126,6 +126,21 @@ impl HealPaths {
         self.semantic_dir().join("verdicts")
     }
 
+    /// Verdicts of tasks that are not [`crate::semantic::task::Task::shared`]
+    /// (on-demand checks, `focus`): machine-local, under the untracked
+    /// `cache/` directory.
+    #[must_use]
+    pub fn local_semantic_verdicts(&self) -> PathBuf {
+        self.root.join("cache/semantic/verdicts")
+    }
+
+    /// `cache/.gitignore`, which keeps the whole `cache/` directory
+    /// untracked.
+    #[must_use]
+    pub fn cache_gitignore(&self) -> PathBuf {
+        self.root.join("cache/.gitignore")
+    }
+
     #[must_use]
     pub(crate) fn source_cache(&self) -> PathBuf {
         self.root.join("cache/source-v1.json")

@@ -1,6 +1,8 @@
 //! `heal semantic ask` — the one command that sends project content to
-//! the Jev API (`[features.semantic]`). Everything it learns is written to
-//! `.heal/semantic/verdicts/`; `heal status` reads that cache offline.
+//! the Jev API (`[features.semantic]`). Team verdicts are written to
+//! `.heal/semantic/verdicts/`, one person's (on-demand checks, `focus`) to
+//! the untracked `.heal/cache/semantic/verdicts/`; `heal status` reads
+//! both offline.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -94,7 +96,7 @@ pub fn run_ask(project: &Path, args: &AskArgs) -> Result<()> {
     ctx.focus = focus.as_deref();
     ctx.diff_range = args.diff.as_deref();
 
-    let mut store = VerdictStore::new(paths.semantic_verdicts());
+    let mut store = VerdictStore::for_project(&paths);
     let report = runner::run(
         &selected,
         &ctx,

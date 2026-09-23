@@ -425,9 +425,11 @@ pub fn observation_hash_from_paths(
     }
     if cfg.features.semantic.enabled {
         // Verdicts change what `heal status` renders without touching HEAD
-        // or the worktree (the directory may be untracked), so every
-        // verdict file is an observation input. Sorted by file name; the
-        // logical path keeps host paths out of the digest.
+        // or the worktree (the directory may be untracked), so every team
+        // verdict file is an observation input. Files of tasks that are not
+        // `Task::shared` (left behind here by older runs) are skipped: they
+        // never change a Finding. Sorted by file name; the logical path
+        // keeps host paths out of the digest.
         let heal = crate::core::paths::HealPaths::new(observation_root);
         push_file(
             &mut chunks,
@@ -436,11 +438,16 @@ pub fn observation_hash_from_paths(
             &heal.concepts(),
         );
         let dir = heal.semantic_verdicts();
+        let local = crate::semantic::store::local_task_ids();
         for path in crate::semantic::store::verdict_files(&dir) {
-            let name = path
-                .file_name()
+            let stem = path
+                .file_stem()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
+            if local.contains(&stem) {
+                continue;
+            }
+            let name = format!("{stem}.jsonl");
             push_file(
                 &mut chunks,
                 "semantic_verdicts",
@@ -816,6 +823,14 @@ mod tests {
             none,
             observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap(),
             "stable while nothing changes"
+        );
+        for local in ["verify_patch", "focus"] {
+            std::fs::write(verdicts.join(format!("{local}.jsonl")), b"{}\n").unwrap();
+        }
+        assert_eq!(
+            none,
+            observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap(),
+            "one person's verdicts (on-demand checks, focus) are not team state"
         );
         std::fs::write(tmp.path().join(".heal/concepts.toml"), b"[[concept]]\n").unwrap();
         assert_ne!(

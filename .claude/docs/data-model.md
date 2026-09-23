@@ -348,10 +348,17 @@ criteria_hash, model, subject, state)` via `fnv1a_64_chunked`
 (`invariants.md` R5). On read, duplicate keys (e.g. after a
 `merge=union`) resolve to the lexicographically smallest line.
 `Answer` is the wire answer (`noul` / `choice` / `score`) verbatim.
-When `[features.semantic]` is enabled every verdict file is an
-observation input of `config_hash` (label `semantic_verdicts`,
-logical path `.heal/semantic/verdicts/<file>`), so `latest.json`
-invalidates when verdicts change without HEAD moving.
+When `[features.semantic]` is enabled every verdict file of a shared
+task is an observation input of `config_hash` (label
+`semantic_verdicts`, logical path `.heal/semantic/verdicts/<file>`),
+so `latest.json` invalidates when verdicts change without HEAD moving.
+
+Tasks whose `Task::shared()` is false — every on-demand task and
+`focus` — are routed by `VerdictStore::for_project` to
+`.heal/cache/semantic/verdicts/<task>.jsonl` instead: untracked
+(`save` writes `.heal/cache/.gitignore` = `*` when missing) and never
+hashed (`store::local_task_ids`). A shared task must not depend on a
+local one (pinned by a test).
 
 `DuplicationConfig` adds a `docs_min_tokens = 100` field that the
 Markdown duplication pass uses when `[features.docs]` is on. The
