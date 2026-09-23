@@ -41,6 +41,15 @@
   table-driven test; on-demand `verify_tests` checks tests added in a diff.
   `/heal-test-patch` can now remove tests that check nothing, under a
   confidence and coverage guard.
+- **Doc tasks:** `doc_structure` classifies every doc section by kind
+  (Diátaxis plus changelog / ADR / runbook / glossary) and asks where a
+  new document starts, reporting pages to split, merge, or keep to one
+  mode — docjev's classify-and-split applied to Markdown
+  ([jerryjliu/docjev](https://github.com/jerryjliu/docjev), Apache-2.0);
+  `doc_placement` finds pages filed under the wrong section and the link
+  slot for orphan pages; `doc_drift_semantic` adds `doc_drift` Type 3
+  (`doc_drift.semantic`): paired sections that state what the code no
+  longer does.
 - **Drain order uses semantic axes.** `consequence`, `triage` (gate,
   effort, accept reason), `friction` (hard to change / test / read, and
   triage class), and `focus` decorate findings; `core::order` compares

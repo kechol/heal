@@ -53,6 +53,9 @@ heal semantic ask                     heal status / heal diff
 | `test_triage` (H7) | test | `coverage_pct` findings → `choice` pure_logic / coordination / io_boundary; skipped cases in `skip_ratio` files → `choice` environment / slow / broken / pending | notes `coverage_band`, `skip_reason` (majority label, detail per test) |
 | `test_duplicate` (T9) | test | needs `[features.test]`. Pairs of non-skipped cases in one file with body word-set Jaccard ≥ 0.6 (≤30 per file) → `choice` same_case / parameterizable / different | `test_duplicate` (Medium) at the later case, `locations` = the earlier one |
 | `verify_tests` (V2, on demand) | test | `--diff` → the `test_value` questions for test cases overlapping added lines, the `mock_scope` question for added mock lines | `report`: `tests[] {label}`, `mocks[] {kind, bad}`, `pass` |
+| `doc_structure` (D7 + H6) | docs | needs `[features.docs]`. Every non-empty section of standalone + paired Markdown docs → `choice` kind (Diátaxis 4 + changelog / adr / runbook / glossary / other) and, from the second section on, `noul` "a separate document starts here"; short pages (≤60 lines) in one directory → `noul` merge per neighbouring pair | `doc_structure.split` (boundaries ≥ 0.7; note lists them, `detail` flags boundaries within ±0.1), `doc_structure.mixed_mode` (≥2 kinds ≥25% of lines in one document), `doc_structure.merge`; note `doc_kind` on the page's docs findings |
+| `doc_placement` (D8 + H9) | docs | each doc → `choice` over the doc directories (described by their index page or page titles) | `doc_placement` when another section wins by ≥ 0.2 at p ≥ 0.6; note `placement` on `orphan_pages` findings (the link slot) |
+| `doc_drift_semantic` (D1) | docs | paired doc sections (≤40 per doc) with the pair's sources; one state per pair when it fits, else per section → 4-level `score` n/a · accurate · partly outdated · wrong | `doc_drift.semantic` (level 3, confidence ≥ 0.5) |
 | `verify_patch` (V1 + V3, on demand) | code | `--diff <range>` → 4 `noul`: relocate, guard_clause, behaviour_change, message_mismatch; whole diff as one state, or one per file when too large | `report`: `checks` (max p per check), `flags` (≥ 0.7, excluding behaviour_change), `pass` |
 | `verify_proposal` (V4, on demand) | code | `--focus` JSON `{"proposals":[{id, text, files[]}]}` → the five readability questions, phrased so true = good | `report`: per proposal `checks`, `pass` (all ≥ 0.5) |
 
@@ -72,6 +75,10 @@ lexicographically (never summed): `focus` (0–6, 0 without a note) →
 (local 4, contained 2, cross_file 0; neutral 1). Notes with
 confidence < 0.5 are ignored. With no notes every axis is neutral, so
 the order equals the pre-semantic Tier → Severity → `hotspot_score`.
+
+H9 (the doc-patch "is this applicable?" judgments) is covered by the
+`triage` gate, which runs for docs findings too, plus `doc_placement`'s
+`placement` note for orphan registration.
 
 Test files for the semantic tasks are `tasks::common::TestMatcher`:
 the naming heuristic (`is_test_path`) **or** `[features.test].test_paths`.

@@ -9,6 +9,7 @@
 pub mod commit_intent;
 pub mod common;
 pub mod concept;
+pub mod doc_family;
 pub mod naming;
 pub mod rank;
 pub mod refactor;

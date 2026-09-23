@@ -162,6 +162,28 @@ Avoid the four traps (`references/architecture.md` §4):
   "delete some" — the deletion-side metrics (`orphan_pages`,
   `duplication`) exist for this.
 
+## With `[features.semantic]`
+
+When the family is enabled, these findings sharpen the Diátaxis
+reading. Without them, the review works as before.
+
+- **`semantic.doc_kind`** on docs findings — the page's dominant kind
+  (tutorial, how_to, reference, explanation, changelog, adr, runbook,
+  glossary). Use it instead of classifying each page yourself; check the
+  pages where it surprises you.
+- **`doc_structure.split`** — several documents share one page; the
+  summary lists the line ranges and kind of each. Propose one page per
+  document. **`doc_structure.mixed_mode`** — one document drifts between
+  modes; propose moving the minority mode out. **`doc_structure.merge`**
+  — short neighbouring pages that continue one document.
+- **`doc_placement`** — a page filed under the wrong section of the tree.
+- **`doc_drift.semantic`** — a paired section states something the code
+  no longer does (identifier-level drift is `doc_drift`). Propose the
+  corrected statement; this is Interpretive, never mechanical.
+- **`doc_concept.*`** (when present) — duplicated or conflicting
+  explanations of one concept, and concepts the code relies on that no
+  doc explains.
+
 ## Output format
 
 End with three blocks:

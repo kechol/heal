@@ -237,6 +237,9 @@ pub fn registry() -> Vec<Box<dyn Task>> {
         Box::new(t::test_family::TestTriage),
         Box::new(t::test_family::TestDuplicate),
         Box::new(t::test_family::VerifyTests),
+        Box::new(t::doc_family::DocStructure),
+        Box::new(t::doc_family::DocPlacement),
+        Box::new(t::doc_family::DocDriftSemantic),
         Box::new(t::verify::VerifyPatch),
         Box::new(t::verify::VerifyProposal),
     ]

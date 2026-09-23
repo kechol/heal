@@ -314,6 +314,20 @@ confirm first. `< 0.5` — ignore it.
   findings; a confident `cross_file` on a finding you are about to patch
   is a signal to escalate instead.
 
+### Semantic doc findings
+
+- **`orphan_pages` with `semantic.placement`** — the note names the
+  section (`dir/`) a reader would look in. Link the page from that
+  section's index or navigation; this replaces guessing the "obvious
+  slot".
+- **`doc_placement`** — the page belongs under another section. With
+  confidence ≥ 0.9, move it (`git mv`), fix every inbound link, and
+  update the site navigation in one commit. Below that, escalate.
+- **`doc_structure.split` / `.merge` / `.mixed_mode`** and
+  **`doc_drift.semantic`** are editorial decisions: escalate them to
+  `/heal-doc-review`. A split whose note detail mentions a boundary
+  "close to the threshold" needs a person to choose the cut.
+
 ## Verification per commit
 
 Markdown / RST don't have a build step in most projects, but light
