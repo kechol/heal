@@ -31,10 +31,20 @@ impl std::fmt::Display for KeySource {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ResolvedKey {
     pub key: String,
     pub source: KeySource,
+}
+
+/// Masked, so a stray `{:?}` or panic message never prints the key.
+impl std::fmt::Debug for ResolvedKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResolvedKey")
+            .field("key", &self.masked())
+            .field("source", &self.source)
+            .finish()
+    }
 }
 
 impl ResolvedKey {
@@ -57,14 +67,14 @@ pub fn mask(key: &str) -> String {
     format!("{head}…{tail}")
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CredentialsFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     jev: Option<JevCredentials>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct JevCredentials {
     api_key: String,
@@ -119,8 +129,19 @@ fn resolve_with(
         Err(e) => return Err(format!("{}: {e}", path.display())),
     };
     check_private(path)?;
-    let parsed: CredentialsFile =
-        toml::from_str(&raw).map_err(|e| format!("{}: {e}", path.display()))?;
+    let parsed: CredentialsFile = toml::from_str(&raw).map_err(|e| {
+        // Neither the error's Display (it quotes the offending line) nor its
+        // message (serde's type errors quote the value) may be printed: the
+        // offending text is usually the key itself.
+        let line = e.span().map_or(1, |s| {
+            raw[..s.start.min(raw.len())].matches('\n').count() + 1
+        });
+        format!(
+            "{}: line {line}: not a valid credentials file; expected `[jev]` with \
+             `api_key = \"<key>\"` (run `heal auth jev set` to rewrite it)",
+            path.display()
+        )
+    })?;
     Ok(parsed
         .jev
         .map(|j| j.api_key.trim().to_owned())
@@ -238,6 +259,40 @@ mod tests {
         assert_eq!(mode, 0o600);
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
         assert!(resolve_with(|_| None, Some(&path)).is_err());
+    }
+
+    /// A made-up key, assembled at run time so secret scanners that read
+    /// the source do not mistake the fixture for a real credential.
+    fn fake_key() -> String {
+        ["tk", "live", "0123456789abcdef"].join("-")
+    }
+
+    #[test]
+    fn malformed_file_errors_never_quote_the_key() {
+        let fake = fake_key();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("credentials.toml");
+        for body in [
+            format!("[jev]\napi_key = {fake}\n"),
+            format!("[jev]\nkey = \"{fake}\"\n"),
+            format!("jev = \"{fake}\"\n"),
+        ] {
+            write_private(&path, body.as_bytes()).unwrap();
+            let err = resolve_with(|_| None, Some(&path)).unwrap_err();
+            assert!(!err.contains(&fake), "leaked in: {err}");
+            assert!(err.contains("line "), "{err}");
+        }
+    }
+
+    #[test]
+    fn debug_output_masks_the_key() {
+        let r = ResolvedKey {
+            key: fake_key(),
+            source: KeySource::Env("TYPESAFE_API_KEY"),
+        };
+        let shown = format!("{r:?}");
+        assert!(!shown.contains("0123456789"), "{shown}");
+        assert!(shown.contains("tk-l…cdef"), "{shown}");
     }
 
     #[test]

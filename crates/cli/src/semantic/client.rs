@@ -19,11 +19,10 @@ use crate::semantic::api::{Question, Request, Response};
 use crate::semantic::cost::{estimate_tokens, usd_for};
 use crate::semantic::pacer::Pacer;
 
+/// The only endpoint HEAL talks to (`scope.md` R5). Deliberately not
+/// configurable: an override would send project content and the key to
+/// wherever it pointed.
 pub const DEFAULT_BASE_URL: &str = "https://api.typesafe.ai";
-
-/// Environment variables consulted for the endpoint, in order. Mirrors the
-/// key lookup so a proxy or a test server can be pointed at explicitly.
-pub const BASE_URL_VARS: [&str; 2] = ["TYPESAFE_BASE_URL", "TYPESAFEAI_BASE_URL"];
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const DEFAULT_RETRIES: u32 = 4;
@@ -73,6 +72,9 @@ impl UreqTransport {
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .tls_config(tls)
             .http_status_as_error(false)
+            // A followed 307/308 would re-send the request body (project
+            // content) to another host; surface the redirect as an error.
+            .max_redirects(0)
             .timeout_global(Some(REQUEST_TIMEOUT))
             .build()
             .into();
@@ -203,14 +205,10 @@ pub struct JevClient {
 impl JevClient {
     #[must_use]
     pub fn new(transport: Arc<dyn Transport>, api_key: String, model: String) -> Self {
-        let base_url = BASE_URL_VARS
-            .iter()
-            .find_map(|v| std::env::var(v).ok().filter(|s| !s.trim().is_empty()))
-            .unwrap_or_else(|| DEFAULT_BASE_URL.to_owned());
         Self {
             transport,
             api_key,
-            base_url: base_url.trim().trim_end_matches('/').to_owned(),
+            base_url: DEFAULT_BASE_URL.to_owned(),
             model,
             retries: DEFAULT_RETRIES,
             rate_limit_retries: DEFAULT_RATE_LIMIT_RETRIES,
@@ -228,6 +226,8 @@ impl JevClient {
         self
     }
 
+    /// Test-only: point a client with a fake transport at a dummy host.
+    #[cfg(test)]
     #[must_use]
     pub fn with_base_url(mut self, base_url: &str) -> Self {
         base_url
