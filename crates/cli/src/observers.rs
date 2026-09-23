@@ -783,6 +783,20 @@ pub(crate) fn base_observation(
     (reports, findings)
 }
 
+/// Observe `scan_root` with a calibration computed from `scan_root`
+/// itself, then run the semantic post-pass. Used by the dev-only Q9
+/// backtest (`examples/backtest.rs`): a past checkout must be ranked with
+/// the distribution it had then, or today's thresholds leak future
+/// information into the ranking.
+#[must_use]
+pub fn observe_self_calibrated(scan_root: &Path, cfg: &Config) -> (ObserverReports, Vec<Finding>) {
+    let reports = run_all(scan_root, cfg, None, None, None);
+    let calibration = build_calibration(scan_root, &reports, cfg).with_overrides(cfg);
+    let findings = classify(&reports, &calibration, cfg);
+    let findings = crate::semantic::lower::apply(scan_root, cfg, &reports, findings);
+    (reports, findings)
+}
+
 const MAX_STABLE_OBSERVATION_ATTEMPTS: usize = 3;
 
 fn observe_with_stable_hash<T>(

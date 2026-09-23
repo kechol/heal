@@ -172,7 +172,9 @@ pub trait Task: Sync {
 /// [`crate::core::config::SEMANTIC_TASK_IDS`].
 #[must_use]
 pub fn registry() -> Vec<Box<dyn Task>> {
-    Vec::new()
+    vec![Box::new(
+        crate::semantic::tasks::commit_intent::CommitIntent,
+    )]
 }
 
 #[cfg(test)]

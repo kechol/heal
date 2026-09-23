@@ -11,6 +11,7 @@ pub mod findings_cache;
 pub mod fs;
 pub mod hash;
 pub mod monorepo;
+pub mod order;
 pub mod paths;
 pub mod severity;
 pub(crate) mod source_cache;

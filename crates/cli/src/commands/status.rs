@@ -615,16 +615,7 @@ fn render_tier_section(
         } else {
             b.severity.cmp(&a.severity)
         };
-        prefix
-            .then_with(|| match (b.hotspot_score, a.hotspot_score) {
-                (Some(b), Some(a)) => b.total_cmp(&a),
-                (Some(_), None) => std::cmp::Ordering::Greater,
-                (None, Some(_)) => std::cmp::Ordering::Less,
-                (None, None) => std::cmp::Ordering::Equal,
-            })
-            .then_with(|| a.metric.cmp(&b.metric))
-            .then_with(|| a.location.file.cmp(&b.location.file))
-            .then_with(|| a.id.cmp(&b.id))
+        prefix.then_with(|| crate::core::order::within_severity(a, b))
     });
     let total = sorted.len();
     writeln!(out, "{} ({})", ansi_wrap(color, label, colorize), total)?;

@@ -91,6 +91,16 @@ If two branches both add answers, you can reduce merge conflicts with:
 .heal/semantic/verdicts/*.jsonl merge=union
 ```
 
+## What HEAL asks
+
+Each kind of question is a _task_. You can turn one off with
+`[features.semantic.tasks.<id>] enabled = false`, or change the
+probability it needs with `cutoff = 0.7`.
+
+| Task            | What it asks                                                               | Where you see it                                                 |
+| --------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `commit_intent` | Whether each recent commit was a bug fix, a feature, a refactor, and so on | Files where bug fixes concentrate move up the `heal status` list |
+
 ## Cost
 
 Jev charges for input only ($42 per billion input tokens at the time of
