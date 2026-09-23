@@ -86,6 +86,13 @@
   retry, and split-on-`max_tokens_exceeded` behaviour follow
   [mizchi/jev-lint](https://github.com/mizchi/jev-lint) (MIT).
 
+### Fixes
+
+- `heal diff --json` no longer prints git's `HEAD is now at …` line on
+  stdout ahead of the JSON document, which made the output unparseable.
+  An integration test now checks that `heal status --json` and
+  `heal diff --json` write nothing but JSON to stdout.
+
 ## v0.6.0 — 2026-09-13
 
 The large-codebase and practical-ordering release. Scans reuse unchanged

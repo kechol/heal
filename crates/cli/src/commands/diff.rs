@@ -236,18 +236,21 @@ impl WorktreeGuard {
         if let Some(parent) = workdir.parent() {
             std::fs::create_dir_all(parent).ok();
         }
-        let status = Command::new("git")
+        // `output()`, not `status()`: git prints "HEAD is now at …" on
+        // stdout, which would corrupt `heal diff --json`.
+        let out = Command::new("git")
             .arg("-C")
             .arg(project)
             .args(["worktree", "add", "--detach", "--force"])
             .arg(workdir)
             .arg(target_sha)
-            .status()
+            .output()
             .context("invoking `git worktree add`")?;
-        if !status.success() {
+        if !out.status.success() {
             return Err(anyhow!(
-                "`git worktree add` failed for {} at {target_sha}",
+                "`git worktree add` failed for {} at {target_sha}: {}",
                 workdir.display(),
+                String::from_utf8_lossy(&out.stderr).trim(),
             ));
         }
         Ok(Self {
@@ -264,7 +267,7 @@ impl Drop for WorktreeGuard {
             .arg(&self.project)
             .args(["worktree", "remove", "--force"])
             .arg(&self.workdir)
-            .status();
+            .output();
     }
 }
 
