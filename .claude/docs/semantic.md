@@ -109,11 +109,14 @@ H9 (the doc-patch "is this applicable?" judgments) is covered by the
 `triage` gate, which runs for docs findings too, plus `doc_placement`'s
 `placement` note for orphan registration.
 
-Test files for the semantic tasks are `tasks::common::TestMatcher`:
-the naming heuristic (`is_test_path`) **or** `[features.test].test_paths`.
-The default globs are root-anchored (`tests/**`) and miss nested
-`crates/<x>/tests/`, so the heuristic always applies here (unlike the
-`is_test_file` tag).
+Test files for the semantic tasks are `tasks::common::TestMatcher`.
+With the default `[features.test].test_paths` it is the naming heuristic
+(`is_test_path`) **or** the globs: the default globs are root-anchored
+(`tests/**`) and miss nested `crates/<x>/tests/`. Once a project sets its
+own `test_paths`, the globs alone decide, because the heuristic also
+claims production modules under any `test/` directory (this repository's
+`src/observer/test/`), which dropped them from `concept`, fed them to
+`mock_scope`, and hid them from `doc_pairs` candidates.
 
 Semantic Findings never exceed `High` (`tasks::common::finding`): a
 classifier is wrong often enough that a verdict alone must not put a

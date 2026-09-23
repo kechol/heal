@@ -68,6 +68,9 @@
   `hotspot_score`. Tier and Severity never change, and without notes the
   order is unchanged. `heal status --focus <file>` ranks for described
   upcoming work without writing `latest.json`.
+- Semantic tasks honour an explicit `[features.test].test_paths` alone.
+  With the default globs they still add the naming heuristic, which also
+  treats production modules under a `test/` directory as tests.
 - **Naming and refactoring tasks:** `term_drift` (two words for one
   thing within a concept), `name_mismatch` (a name or doc comment that
   does not match the body), `split_points` (step boundaries for High /

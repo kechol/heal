@@ -14,14 +14,18 @@ use crate::observer::shared::walk::ExcludeMatcher;
 use crate::semantic::api::Answer;
 use crate::semantic::task::TaskContext;
 
-/// Classifies paths as tests: `[features.test].test_paths`, or the naming
-/// heuristic. Unlike `Feature::lower`'s `is_test_file` tag (globs only when
-/// set), the heuristic always applies here, because the default globs
-/// are root-anchored (`tests/**`) and miss nested test directories such as
-/// `crates/<name>/tests/` — sending a test file to a production-code
-/// question would waste the question and skew the concept map.
+/// Classifies paths as tests for the semantic tasks.
+///
+/// With the default `[features.test].test_paths`, the naming heuristic
+/// (`is_test_path`) is added to the globs, because the default globs are
+/// root-anchored (`tests/**`) and miss nested test directories such as
+/// `crates/<name>/tests/`. Once a project sets its own `test_paths`, those
+/// globs alone decide: the heuristic also matches any `test/` directory,
+/// including production code such as a `src/observer/test/` module, and
+/// the project's explicit globs are the only way to correct that.
 pub struct TestMatcher {
     glob: Option<ExcludeMatcher>,
+    heuristic: bool,
 }
 
 impl TestMatcher {
@@ -33,12 +37,14 @@ impl TestMatcher {
         } else {
             ExcludeMatcher::compile(Path::new(""), paths).ok()
         };
-        Self { glob }
+        let heuristic =
+            glob.is_none() || *paths == crate::core::config::TestConfig::default().test_paths;
+        Self { glob, heuristic }
     }
 
     #[must_use]
     pub fn is_test(&self, path: &Path) -> bool {
-        is_test_path(path)
+        (self.heuristic && is_test_path(path))
             || self
                 .glob
                 .as_ref()
@@ -387,6 +393,27 @@ mod tests {
         // Mostly "not applicable": applies < 0.5 whatever the rest says.
         let b = score_with(&[("0", 0.61), ("1", 0.03), ("2", 0.01), ("3", 0.35)]);
         assert!(applicable_share(&b, 4, 2).unwrap().0 < 0.5);
+    }
+
+    #[test]
+    fn explicit_test_paths_replace_the_naming_heuristic() {
+        let module = Path::new("crates/cli/src/observer/test/cases.rs");
+        let nested = Path::new("crates/cli/tests/core_config.rs");
+
+        let mut cfg = crate::core::config::Config::default();
+        let ctx = TaskContext::new(Path::new("."), &cfg).unwrap();
+        let default = TestMatcher::new(&ctx);
+        assert!(default.is_test(nested), "heuristic finds nested tests");
+        assert!(
+            default.is_test(module),
+            "heuristic also claims a `test/` module"
+        );
+
+        cfg.features.test.test_paths = vec!["**/tests/**".to_owned()];
+        let ctx = TaskContext::new(Path::new("."), &cfg).unwrap();
+        let explicit = TestMatcher::new(&ctx);
+        assert!(explicit.is_test(nested));
+        assert!(!explicit.is_test(module));
     }
 
     #[test]
