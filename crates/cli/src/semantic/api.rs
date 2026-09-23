@@ -120,9 +120,11 @@ pub enum Answer {
     },
     /// `score` is the probability-weighted mean of the 0-based levels,
     /// so it is fractional: measured 2.38 for level probabilities
-    /// `{0: 0.01, 1: 0.03, 2: 0.54, 3: 0.42}`. Thresholds compare it as
-    /// a real number (`>= 2.5` for "level 3"), never as an index. The
-    /// server's `legend` (level → criterion text) is not kept.
+    /// `{0: 0.01, 1: 0.03, 2: 0.54, 3: 0.42}`. Never read it as an index.
+    /// For a rubric whose level 0 means "not applicable", read
+    /// `probabilities` instead (`tasks::common::applicable_share`): the
+    /// mean mixes "n/a" into the scale. The server's `legend` (level →
+    /// criterion text) is not kept.
     Score {
         score: f64,
         #[serde(default)]

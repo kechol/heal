@@ -30,7 +30,7 @@ use crate::observer::docs::sections::{sections, Section};
 use crate::semantic::api::{NoulCriteria, Question};
 use crate::semantic::task::{Answered, Group, Item, Lowered, Task, TaskContext};
 use crate::semantic::tasks::common::{
-    chosen, criteria, finding, note, noul_p, numbered, numbered_range, score_level,
+    applicable_share, chosen, criteria, finding, note, noul_p, numbered, numbered_range,
 };
 
 fn docs_hint(ctx: &TaskContext<'_>) -> Option<String> {
@@ -697,16 +697,26 @@ impl Task for DocDriftSemantic {
         Ok(groups)
     }
     fn lower(&self, ctx: &TaskContext<'_>, answered: &[Answered<'_>]) -> Lowered {
-        let min_conf = ctx.cutoff(self, 0.5);
+        let cutoff = ctx.cutoff(self, 0.6);
         let mut lowered = Lowered::default();
         for a in answered {
             let Some(answer) = a.answer else { continue };
-            let Some((level, conf)) = score_level(answer) else {
+            // Level 0 is "not applicable", so read the probabilities, not
+            // the mean `score` (see `applicable_share`). "Partly outdated"
+            // and "wrong" both count; the larger one picks the wording.
+            let levels = DRIFT_LEVELS.len();
+            let Some((applies, stale)) = applicable_share(answer, levels, 2) else {
                 continue;
             };
-            if level < 2.5 || conf < min_conf {
+            if applies < 0.5 || stale < cutoff {
                 continue;
             }
+            let wrong = applicable_share(answer, levels, 3).map_or(0.0, |(_, w)| w);
+            let what = if wrong * 2.0 >= stale {
+                "states something the paired code no longer does"
+            } else {
+                "has details that no longer match the paired code"
+            };
             let m = &a.item.meta;
             let title = m["title"].as_str().unwrap_or("");
             let doc = PathBuf::from(m["doc"].as_str().unwrap_or(""));
@@ -716,7 +726,7 @@ impl Task for DocDriftSemantic {
                 &doc,
                 line,
                 Some(title),
-                format!("section \"{title}\" states something the paired code no longer does"),
+                format!("section \"{title}\" {what}"),
                 &format!("doc_drift.semantic:{title}"),
                 Severity::Medium,
             );
@@ -732,6 +742,7 @@ impl Task for DocDriftSemantic {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::semantic::api::Answer;
     use crate::semantic::tasks::testing::{choice, noul as answer_noul};
 
     fn sec_item(doc: &str, i: u64, start: u32, end: u32, q: &str) -> Item {
@@ -743,6 +754,74 @@ mod tests {
             },
             meta: json!({"doc": doc, "section": i, "title": format!("S{i}"), "start": start, "end": end, "q": q}),
         }
+    }
+
+    fn drift_answer(probs: &[f64; 4]) -> Answer {
+        Answer::Score {
+            score: probs
+                .iter()
+                .zip(0_u32..)
+                .map(|(p, i)| f64::from(i) * p)
+                .sum(),
+            probabilities: probs
+                .iter()
+                .enumerate()
+                .map(|(i, p)| (i.to_string(), *p))
+                .collect(),
+            confidence: 0.0,
+        }
+    }
+
+    #[test]
+    fn drift_reads_probabilities_not_the_mean_score() {
+        let cfg = crate::core::config::Config::default();
+        let ctx = TaskContext::new(Path::new("."), &cfg).unwrap();
+        let item = |title: &str| Item {
+            key: title.to_owned(),
+            question: Question::Noul {
+                instructions: json!(""),
+                criteria: None,
+            },
+            meta: json!({"doc": "docs/a.md", "title": title, "start": 1, "lines": 10}),
+        };
+        let items = [
+            item("split"),
+            item("mostly_na"),
+            item("partly"),
+            item("fine"),
+        ];
+        // Measured shapes from the live API. `split` has mean 1.52, which
+        // the old `score >= 2.5` rule read as "accurate".
+        let answers = [
+            drift_answer(&[0.34, 0.12, 0.20, 0.34]),
+            drift_answer(&[0.61, 0.03, 0.01, 0.35]),
+            drift_answer(&[0.05, 0.20, 0.70, 0.05]),
+            drift_answer(&[0.10, 0.85, 0.04, 0.01]),
+        ];
+        let answered: Vec<Answered<'_>> = items
+            .iter()
+            .zip(&answers)
+            .map(|(item, a)| Answered {
+                item,
+                answer: Some(a),
+            })
+            .collect();
+        let lowered = DocDriftSemantic.lower(&ctx, &answered);
+        let found: Vec<(&str, &str)> = lowered
+            .findings
+            .iter()
+            .map(|f| {
+                (
+                    f.location.symbol.as_deref().unwrap_or(""),
+                    f.summary.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert_eq!(found[0].0, "split");
+        assert!(found[0].1.contains("no longer does"), "{}", found[0].1);
+        assert_eq!(found[1].0, "partly");
+        assert!(found[1].1.contains("no longer match"), "{}", found[1].1);
     }
 
     #[test]

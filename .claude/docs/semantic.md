@@ -43,8 +43,12 @@ heal semantic ask                     heal status / heal diff
 - `POST /v1/systemone` answers `{model, answers, usage}` exactly as
   `semantic::api::Response` expects; `model` echoes the pinned id.
 - `score` is the probability-weighted mean of the 0-based levels
-  (fractional, e.g. 2.38), not an index. Thresholds compare it as a
-  real number. The extra `legend` field is dropped.
+  (fractional, e.g. 2.38), not an index; `probabilities` holds each
+  level. Rubrics whose level 0 is "not applicable" (`name_mismatch`,
+  `doc_drift_semantic`) are judged from `probabilities` through
+  `tasks::common::applicable_share`: the mean mixed "n/a" into the scale
+  and hid 11 of 99 outdated sections on this repository. The extra
+  `legend` field is dropped.
 - `GET /v1/models` returns `{"models":[{"name","description",
   "release_date"}]}` and lists only `jev-latest` / `jev-preview`.
   Pinned ids are usable but unlisted, so the listing can confirm a

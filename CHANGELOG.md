@@ -57,8 +57,10 @@
   that repeat or contradict each other); on-demand `doc_pairs` gives
   `/heal-doc-pair-setup` scored pair suggestions (new pair source
   `"jev"`); `doc_drift_semantic` adds `doc_drift` Type 3
-  (`doc_drift.semantic`): paired sections that state what the code no
-  longer does.
+  (`doc_drift.semantic`): paired sections that are partly outdated or
+  state what the code no longer does. It and `name_mismatch` read the
+  answer's level probabilities, so an answer split between "not
+  applicable" and "wrong" is not averaged into "accurate".
 - **Drain order uses semantic axes.** `consequence`, `triage` (gate,
   effort, accept reason), `friction` (hard to change / test / read, and
   triage class), and `focus` decorate findings; `core::order` compares

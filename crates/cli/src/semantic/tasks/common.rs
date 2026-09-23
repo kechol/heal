@@ -188,6 +188,57 @@ pub fn score_level(answer: &Answer) -> Option<(f64, f64)> {
     }
 }
 
+/// Per-level probabilities of a `score` answer, indexed by level. When
+/// the server sent none (older verdicts, test fakes), all mass goes to the
+/// rounded `score`.
+#[must_use]
+pub fn level_probs(answer: &Answer, levels: usize) -> Option<Vec<f64>> {
+    let Answer::Score {
+        score,
+        probabilities,
+        ..
+    } = answer
+    else {
+        return None;
+    };
+    if levels == 0 {
+        return None;
+    }
+    let mut p = vec![0.0; levels];
+    if probabilities.is_empty() {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let i = (score.round().max(0.0) as usize).min(levels.saturating_sub(1));
+        p[i] = 1.0;
+    } else {
+        for (level, prob) in probabilities {
+            if let Some(slot) = level.parse::<usize>().ok().and_then(|i| p.get_mut(i)) {
+                *slot = *prob;
+            }
+        }
+    }
+    Some(p)
+}
+
+/// For a rubric whose level 0 means "not applicable" and whose other
+/// levels run from clean to worst: `(P(applies), P(level >= from |
+/// applies))`.
+///
+/// Such rubrics must not be read through `score`. The server's `score` is
+/// the probability-weighted mean over every level, so an "n/a" share drags
+/// it toward 0, and an answer split between "n/a" and the worst level
+/// reads as a middle one (measured: P(n/a) = 0.34, P(worst) = 0.34,
+/// P(level 2) = 0.20 gives `score` 1.52, below "partly wrong").
+#[must_use]
+pub fn applicable_share(answer: &Answer, levels: usize, from: usize) -> Option<(f64, f64)> {
+    let p = level_probs(answer, levels)?;
+    let applies: f64 = p.iter().skip(1).sum();
+    if applies <= 0.0 {
+        return Some((0.0, 0.0));
+    }
+    let high: f64 = p.iter().skip(from.max(1)).sum();
+    Some((applies, (high / applies).clamp(0.0, 1.0)))
+}
+
 /// A note from an answer.
 #[must_use]
 pub fn note(label: impl Into<String>, answer: &Answer, levels: usize) -> SemanticNote {
@@ -302,4 +353,51 @@ pub fn findings_on<'a>(
     file: &'a Path,
 ) -> impl Iterator<Item = &'a Finding> {
     ctx.findings.iter().filter(move |f| f.location.file == file)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn score_with(probs: &[(&str, f64)]) -> Answer {
+        let probabilities: BTreeMap<String, f64> =
+            probs.iter().map(|(k, v)| ((*k).to_owned(), *v)).collect();
+        let score = probabilities
+            .iter()
+            .map(|(k, v)| k.parse::<f64>().unwrap() * v)
+            .sum();
+        Answer::Score {
+            score,
+            probabilities,
+            confidence: 0.0,
+        }
+    }
+
+    #[test]
+    fn applicable_share_ignores_the_not_applicable_level() {
+        // Recorded from the live API: the mean reads 1.52 ("accurate"),
+        // yet two thirds of the applicable mass says outdated or wrong.
+        let a = score_with(&[("0", 0.34), ("1", 0.12), ("2", 0.20), ("3", 0.34)]);
+        let (applies, stale) = applicable_share(&a, 4, 2).unwrap();
+        assert!((applies - 0.66).abs() < 1e-9);
+        assert!((stale - 0.54 / 0.66).abs() < 1e-9);
+        let (_, wrong) = applicable_share(&a, 4, 3).unwrap();
+        assert!((wrong - 0.34 / 0.66).abs() < 1e-9);
+
+        // Mostly "not applicable": applies < 0.5 whatever the rest says.
+        let b = score_with(&[("0", 0.61), ("1", 0.03), ("2", 0.01), ("3", 0.35)]);
+        assert!(applicable_share(&b, 4, 2).unwrap().0 < 0.5);
+    }
+
+    #[test]
+    fn level_probs_fall_back_to_the_rounded_score() {
+        let a = Answer::Score {
+            score: 2.6,
+            probabilities: BTreeMap::new(),
+            confidence: 0.9,
+        };
+        assert_eq!(level_probs(&a, 4).unwrap(), [0.0, 0.0, 0.0, 1.0]);
+        assert_eq!(applicable_share(&a, 4, 3), Some((1.0, 1.0)));
+        assert!(level_probs(&Answer::Noul { noul: 0.5 }, 4).is_none());
+    }
 }

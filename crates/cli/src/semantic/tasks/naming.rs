@@ -26,7 +26,7 @@ use crate::observer::code::complexity::outer_functions;
 use crate::semantic::api::{NoulCriteria, Question};
 use crate::semantic::task::{Answered, Group, Item, Lowered, Task, TaskContext};
 use crate::semantic::tasks::common::{
-    chosen, code_files, criteria, file_states, finding, noul_p, parse_file, score_level,
+    applicable_share, chosen, code_files, criteria, file_states, finding, noul_p, parse_file,
 };
 use crate::semantic::tasks::concept::{load_concepts, ConceptTask};
 
@@ -355,13 +355,18 @@ impl Task for NameMismatch {
     }
 
     fn lower(&self, ctx: &TaskContext<'_>, answered: &[Answered<'_>]) -> Lowered {
-        let min_conf = ctx.cutoff(self, 0.5);
+        let cutoff = ctx.cutoff(self, 0.5);
         let mut lowered = Lowered::default();
         for a in answered {
-            let Some((level, conf)) = a.answer.and_then(score_level) else {
+            // Level 0 is "not applicable", so read the probabilities, not
+            // the mean `score` (see `applicable_share`).
+            let Some((applies, contradicts)) = a
+                .answer
+                .and_then(|ans| applicable_share(ans, NAME_LEVELS.len(), 3))
+            else {
                 continue;
             };
-            if level < 2.5 || conf < min_conf {
+            if applies < 0.5 || contradicts < cutoff {
                 continue;
             }
             let m = &a.item.meta;
@@ -515,6 +520,59 @@ impl Task for NameChoice {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::semantic::api::Answer;
+
+    #[test]
+    fn name_mismatch_needs_contradiction_among_applicable_readings() {
+        let cfg = crate::core::config::Config::default();
+        let ctx = TaskContext::new(Path::new("."), &cfg).unwrap();
+        let item = |symbol: &str| Item {
+            key: symbol.to_owned(),
+            question: Question::Noul {
+                instructions: json!(""),
+                criteria: None,
+            },
+            meta: json!({"file": "src/a.rs", "symbol": symbol, "start": 1}),
+        };
+        let answer = |probs: [f64; 4]| Answer::Score {
+            score: probs
+                .iter()
+                .zip(0_u32..)
+                .map(|(p, i)| f64::from(i) * p)
+                .sum(),
+            probabilities: probs
+                .iter()
+                .enumerate()
+                .map(|(i, p)| (i.to_string(), *p))
+                .collect(),
+            confidence: 0.0,
+        };
+        let items = [item("hides_io"), item("vague"), item("trivial")];
+        let answers = [
+            // A third "n/a" pulls the mean to 1.86, yet among applicable
+            // readings the name contradicts the body.
+            answer([0.33, 0.02, 0.05, 0.60]),
+            // "Arguable" is not a mismatch.
+            answer([0.01, 0.16, 0.53, 0.30]),
+            // Not applicable.
+            answer([0.70, 0.00, 0.00, 0.30]),
+        ];
+        let answered: Vec<Answered<'_>> = items
+            .iter()
+            .zip(&answers)
+            .map(|(item, a)| Answered {
+                item,
+                answer: Some(a),
+            })
+            .collect();
+        let lowered = NameMismatch.lower(&ctx, &answered);
+        let symbols: Vec<&str> = lowered
+            .findings
+            .iter()
+            .filter_map(|f| f.location.symbol.as_deref())
+            .collect();
+        assert_eq!(symbols, ["hides_io"]);
+    }
 
     #[test]
     fn words_split_every_case_style() {
