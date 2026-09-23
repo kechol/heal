@@ -33,7 +33,7 @@ pub(crate) fn apply(
     let enabled: Vec<&dyn Task> = tasks
         .iter()
         .map(AsRef::as_ref)
-        .filter(|t| cfg.features.semantic.task_enabled(t.id()))
+        .filter(|t| cfg.features.semantic.task_enabled(t.id()) && !t.on_demand())
         .collect();
     if enabled.is_empty() {
         return findings;
@@ -47,7 +47,15 @@ pub(crate) fn apply(
         let mut new_findings = Vec::new();
         let mut notes = Vec::new();
         for task in enabled {
-            match lower_task(task, &ctx, &mut store) {
+            let snapshot = match store.snapshot(task.depends_on()) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("heal: semantic task `{}` skipped: {e}", task.id());
+                    continue;
+                }
+            };
+            let tctx = ctx.with_prior(&snapshot);
+            match lower_task(task, &tctx, &mut store) {
                 Ok(lowered) => {
                     new_findings.extend(lowered.findings);
                     notes.extend(lowered.notes);

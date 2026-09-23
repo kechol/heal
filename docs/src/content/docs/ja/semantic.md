@@ -92,6 +92,10 @@ HEAL は前回から変わったコードだけを問い合わせます。
 | --------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | `commit_intent` | 最近の commit が、バグ修正・機能追加・リファクタなどのどれに当たるか | バグ修正が集中するファイルが、`heal status` の上のほうに来る               |
 | `concept`       | 各関数が、語彙のどの概念を実装しているか                             | 概念が混ざったファイル、置き場所の違う関数、多くのファイルに散らばった概念 |
+| `term_drift`    | 関数名の 2 つの単語が同じものを指しているか（`user` / `account`）    | 1 つのものに 1 つの単語を使うための rename の提案                          |
+| `name_mismatch` | 関数の名前や doc comment が、本体のしていることと合っているか        | 中身と違うことを約束している名前                                           |
+| `split_points`  | 長く複雑な関数が、1 つずつ目的を持つ手順にどこで分かれるか           | 複雑さの Finding に付く分割位置。`/heal-code-patch` が使う                 |
+| `fix_pattern`   | 複雑さや重複の Finding に、どの定番のリファクタリングが合うか        | `/heal-code-patch` の手がかりになる                                        |
 
 ### 概念の語彙
 
@@ -108,6 +112,10 @@ claude /heal-concepts-setup
 id = "calibration"
 description = "Derives thresholds from the project's own metric distribution."
 ```
+
+patch 系と review のスキルは、`--task` を付けて確認用のタスク（`verify_patch`、`verify_proposal`、
+`name_choice`）も実行します。エージェント自身の作業を確かめるためのもので、
+`--task` なしの `heal semantic ask` では実行されません。
 
 ## 料金
 

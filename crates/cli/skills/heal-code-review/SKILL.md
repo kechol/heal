@@ -370,6 +370,43 @@ True positives where the fix is a human call (architectural
 boundary, business rule, public API contract) go to the *deferred
 questions* list at the end of Phase 2 — not the TODO list.
 
+## With `[features.semantic]`
+
+When `[features.semantic]` is enabled, add these to the evidence you
+read in Phase 1. When they are absent, the review works as before.
+
+- **Concept map findings** name the concept involved, which turns a
+  metric into a design statement: `concept_mix` (a file carrying two or
+  more concepts → split along those concepts; the `fix_hint` lists the
+  functions per concept), `concept_misplaced` (a function whose concept
+  lives in another file → move it), `concept_scatter` (a concept with no
+  home → consolidate). Cross-check them with LCOM clusters and change
+  coupling: a split backed by all three is the strongest proposal you
+  can make.
+- **`term_drift`** — two words for one thing inside a concept. Propose
+  one word, preferring the glossary's term.
+- **`name_mismatch`** — the name or doc comment promises something the
+  body does not do. Propose candidate names; check them with
+  `heal semantic ask --task name_choice --focus <file> --json`.
+- **Notes on existing findings** (`semantic.fix_pattern`,
+  `semantic.split_points`, `semantic.fix_ratio`) are evidence, not
+  verdicts. A high `fix_ratio` says bug fixes keep landing in that file.
+- **No `.heal/concepts.toml` yet?** Suggest `/heal-concepts-setup`.
+
+**Check proposals before presenting them.** Write the TODO items you
+intend to present to a JSON file —
+`{"proposals":[{"id":"1","text":"<the proposal>","files":["<path>"]}]}`
+— and run:
+
+```sh
+heal semantic ask --task verify_proposal --focus <file> --json
+```
+
+A proposal whose `pass` is `false` failed at least one of the five
+readability questions (`references/readability.md` §3): move it to the
+deferred questions instead of the TODO list. If the command exits with
+code 2, fall back to asking the five questions yourself.
+
 ## Output format
 
 Cap total output at **~40 lines** for the default cache.

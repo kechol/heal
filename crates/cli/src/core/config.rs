@@ -80,7 +80,17 @@ pub struct FeaturesConfig {
 /// the ids registered in `crate::semantic::task::registry` (pinned by a
 /// test there); kept here so config validation does not depend on the
 /// semantic module.
-pub const SEMANTIC_TASK_IDS: &[&str] = &["commit_intent", "concept"];
+pub const SEMANTIC_TASK_IDS: &[&str] = &[
+    "commit_intent",
+    "concept",
+    "term_drift",
+    "name_mismatch",
+    "name_choice",
+    "split_points",
+    "fix_pattern",
+    "verify_patch",
+    "verify_proposal",
+];
 
 /// Model aliases that move when a new release ships. Rejected so a
 /// verdict cache can never silently mix answers from two models.

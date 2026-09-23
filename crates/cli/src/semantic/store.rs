@@ -117,6 +117,21 @@ impl VerdictStore {
         Ok(removed)
     }
 
+    /// Cached answers of `tasks`, for dependent tasks to read.
+    pub fn snapshot(&mut self, tasks: &[&str]) -> Result<crate::semantic::task::Snapshot, String> {
+        let mut out = crate::semantic::task::Snapshot::new();
+        for task in tasks {
+            let map = self.load(task)?;
+            out.insert(
+                (*task).to_owned(),
+                map.iter()
+                    .map(|(k, v)| (k.clone(), v.answer.clone()))
+                    .collect(),
+            );
+        }
+        Ok(out)
+    }
+
     pub fn len(&mut self, task: &str) -> Result<usize, String> {
         Ok(self.load(task)?.len())
     }

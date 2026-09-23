@@ -11,7 +11,7 @@ use crate::semantic::client::{JevClient, JevErrorKind, Spend};
 use crate::semantic::cost::usd_for;
 use crate::semantic::plan::{pack, Batch, PackError};
 use crate::semantic::store::{Verdict, VerdictStore};
-use crate::semantic::task::{Task, TaskContext};
+use crate::semantic::task::{Answered, Item, Task, TaskContext};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AskOptions {
@@ -40,6 +40,10 @@ pub struct TaskReport {
     /// Why nothing was planned, when the user can fix it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
+    /// Task-specific result for on-demand tasks (verification, name
+    /// choice), read by the skills from `--json`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -61,6 +65,7 @@ struct Planned {
     report: TaskReport,
     batches: Vec<Batch>,
     keep: BTreeSet<String>,
+    items: Vec<Item>,
 }
 
 fn plan_task(
@@ -75,6 +80,7 @@ fn plan_task(
     };
     let mut keep = BTreeSet::new();
     let mut batches = Vec::new();
+    let mut all_items = Vec::new();
     for group in task.plan(ctx)? {
         let mut pending = Vec::new();
         for item in group.items {
@@ -82,6 +88,7 @@ fn plan_task(
                 continue;
             }
             report.subjects += 1;
+            all_items.push(item.clone());
             if !opts.refresh
                 && store
                     .contains(task.id(), &item.key)
@@ -116,10 +123,14 @@ fn plan_task(
         report,
         batches,
         keep,
+        items: all_items,
     })
 }
 
-/// Run `tasks`. `client` is `None` for a dry run.
+/// Run `tasks` in order. Each task is planned, sent, and stored before the
+/// next one plans, so a task that builds on another (`term_drift` on
+/// `concept`) sees the answers of the same run. `client` is `None` for a
+/// dry run.
 pub fn run(
     tasks: &[&dyn Task],
     ctx: &TaskContext<'_>,
@@ -128,69 +139,89 @@ pub fn run(
     opts: AskOptions,
 ) -> anyhow::Result<AskReport> {
     let semantic = ctx.semantic();
+    let dry_run = opts.dry_run || client.is_none();
     let mut report = AskReport {
         model: semantic.model.clone(),
-        dry_run: opts.dry_run || client.is_none(),
+        dry_run,
         ..AskReport::default()
     };
-    let mut planned = Vec::new();
+    let mut reserved = 0.0_f64;
     for task in tasks {
-        planned.push(plan_task(*task, ctx, store, opts)?);
-    }
-    if opts.prune && !report.dry_run {
-        for p in &mut planned {
-            p.report.pruned = store
-                .prune(&p.report.task, &p.keep)
+        let snapshot = store
+            .snapshot(task.depends_on())
+            .map_err(anyhow::Error::msg)?;
+        let tctx = ctx.with_prior(&snapshot);
+        let mut planned = plan_task(*task, &tctx, store, opts)?;
+        if opts.prune && !dry_run {
+            planned.report.pruned = store
+                .prune(task.id(), &planned.keep)
                 .map_err(anyhow::Error::msg)?;
         }
+        if let Some(client) = client.filter(|_| !dry_run) {
+            if report.fatal.is_none() && !report.stopped_by_budget {
+                let queue: Vec<(usize, &Batch)> = planned.batches.iter().map(|b| (0, b)).collect();
+                let out = dispatch(
+                    &queue,
+                    1,
+                    client,
+                    semantic.max_usd - reserved,
+                    semantic.concurrency,
+                );
+                reserved += out.reserved;
+                for (_, key, answer) in out.answers {
+                    planned.report.answered += 1;
+                    store
+                        .insert(
+                            task.id(),
+                            Verdict {
+                                key,
+                                model: semantic.model.clone(),
+                                answer,
+                            },
+                        )
+                        .map_err(anyhow::Error::msg)?;
+                }
+                planned.report.failed = out.failed[0];
+                report.stopped_by_budget |= out.over_budget;
+                if report.fatal.is_none() {
+                    report.fatal = out.fatal;
+                }
+                report.errors.extend(out.errors);
+            }
+        }
+        let mut answers = Vec::with_capacity(planned.items.len());
+        for item in &planned.items {
+            answers.push(
+                store
+                    .get(task.id(), &item.key)
+                    .map_err(anyhow::Error::msg)?
+                    .map(|v| v.answer),
+            );
+        }
+        let answered: Vec<Answered<'_>> = planned
+            .items
+            .iter()
+            .zip(&answers)
+            .map(|(item, a)| Answered {
+                item,
+                answer: a.as_ref(),
+            })
+            .collect();
+        planned.report.result = task.report(&tctx, &answered);
+        report.tasks.push(planned.report);
     }
-    let Some(client) = client.filter(|_| !report.dry_run) else {
-        report.tasks = planned.into_iter().map(|p| p.report).collect();
-        return Ok(report);
-    };
-
-    let queue: Vec<(usize, &Batch)> = planned
-        .iter()
-        .enumerate()
-        .flat_map(|(ti, p)| p.batches.iter().map(move |b| (ti, b)))
-        .collect();
-    let out = dispatch(
-        &queue,
-        planned.len(),
-        client,
-        semantic.max_usd,
-        semantic.concurrency,
-    );
-
-    for (ti, key, answer) in out.answers {
-        planned[ti].report.answered += 1;
-        store
-            .insert(
-                &planned[ti].report.task,
-                Verdict {
-                    key,
-                    model: semantic.model.clone(),
-                    answer,
-                },
-            )
-            .map_err(anyhow::Error::msg)?;
+    if let Some(client) = client.filter(|_| !dry_run) {
+        let spend: Spend = client.spend();
+        report.requests_sent = spend.calls;
+        report.input_tokens = spend.input_tokens;
+        report.usd = spend.usd();
     }
-    for (p, f) in planned.iter_mut().zip(out.failed) {
-        p.report.failed = f;
-    }
-    let spend: Spend = client.spend();
-    report.requests_sent = spend.calls;
-    report.input_tokens = spend.input_tokens;
-    report.usd = spend.usd();
-    report.stopped_by_budget = out.over_budget;
-    report.fatal = out.fatal;
-    report.errors = out.errors;
-    report.tasks = planned.into_iter().map(|p| p.report).collect();
     Ok(report)
 }
 
 struct Dispatched {
     answers: Vec<(usize, String, Answer)>,
+    reserved: f64,
     failed: Vec<usize>,
     over_budget: bool,
     fatal: Option<String>,
@@ -271,6 +302,7 @@ fn dispatch(
     // Worker interleaving must not leak into the store's insert order.
     answers.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
     Dispatched {
+        reserved: reserved.into_inner().expect("reserve"),
         answers,
         failed: failed.iter().map(|f| f.load(Ordering::SeqCst)).collect(),
         over_budget: over_budget.load(Ordering::SeqCst),

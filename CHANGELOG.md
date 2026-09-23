@@ -32,6 +32,15 @@
   `/heal-concepts-setup` skill) and reports `concept_mix`,
   `concept_misplaced`, and `concept_scatter` findings. The approach
   follows conceptual cohesion (Marcus & Poshyvanyk, ICSM 2005).
+- **Naming and refactoring tasks:** `term_drift` (two words for one
+  thing within a concept), `name_mismatch` (a name or doc comment that
+  does not match the body), `split_points` (step boundaries for High /
+  Critical complexity), and `fix_pattern` (which allow-listed refactoring
+  fits). On-demand checks `name_choice`, `verify_patch`, and
+  `verify_proposal` report through `heal semantic ask --task <id> --json`.
+- `/heal-code-patch` and `/heal-code-review` read semantic notes when
+  present and verify their own work with `verify_patch` /
+  `verify_proposal`; without `[features.semantic]` they behave as before.
 - **`commit_intent` task (Q7)** classifies recent commits and decorates
   Code findings with a per-file bug-fix ratio (`semantic.fix_ratio`).
 - `heal status --metric` accepts `concept`, `naming`, `test-value`,

@@ -264,6 +264,57 @@ session with the summary format below and recommend the user run
 `/heal-code-review` to discuss the architectural moves at the proposal
 level.
 
+## With `[features.semantic]`
+
+When the project enables `[features.semantic]`, findings in
+`heal status --json` may carry a `semantic` map of notes (label, `p`,
+`confidence`, optional `lines` / `detail`) and the cache may hold
+semantic findings. Everything below is additive: when a note or finding
+is absent, follow the rest of this skill unchanged.
+
+**Read confidence the same way everywhere.** `confidence ≥ 0.9` — act
+on the note. `0.5–0.9` — read the code and confirm before acting.
+`< 0.5` — ignore the note and decide as you would without it.
+
+- **`semantic.fix_pattern`** (CCN / Cognitive / duplication) names the
+  allow-list pattern that fits (`form_template_method`, `lookup_table`,
+  `consolidate_fragments`, `decompose_conditional`, `extract_variable`,
+  `named_constant`) or `none`. A confident `none` means the finding is
+  not mechanical: treat it as escalate-list.
+- **`semantic.split_points`** (CCN / Cognitive) gives the lines where the
+  function's steps begin (`lines`) and the resulting ranges (`detail`).
+  Extract along those boundaries — one step per function, each named
+  for its purpose — instead of pulling out branches.
+- **Semantic findings you may drain mechanically**, one per commit, with
+  the usual verification:
+  - `concept_misplaced` — move the function to the file in `fix_hint`,
+    update imports and callers, change nothing else.
+  - `name_mismatch` / `term_drift` for symbols that are **not** part of a
+    public API: write two to four candidate names, compare them with
+    `heal semantic ask --task name_choice --focus <file> --json` (see the
+    `fix_hint`), and rename only when the result says `"rename": true`.
+    The build and the tests must pass after the rename.
+- **Escalate instead:** `concept_mix`, `concept_scatter`, and any rename
+  of a public API (exported items, CLI flags, JSON fields). Those are
+  design decisions for `/heal-code-review`.
+
+**Verify each commit before marking it.** After committing and before
+`heal mark fix`, run:
+
+```sh
+heal semantic ask --task verify_patch --diff HEAD~1..HEAD --json
+```
+
+Read `tasks[0].result`. When `pass` is `false` — `flags` contains
+`relocate` (complexity moved, not removed), `guard_clause` (a flat
+condition flipped into negated early returns), or `message_mismatch` —
+or when `checks.behaviour_change ≥ 0.7` for a change meant to keep
+behaviour, undo that one commit (`git reset --hard HEAD~1`; the
+pre-flight guaranteed a clean tree, so this discards only your own
+commit), note why, and move to the next finding. If the command exits
+with code 2 (no key, or the family is off), skip this check and carry
+on as before.
+
 ## Anti-patterns to stop on mid-loop
 
 Three failure modes that compound damage if you don't stop early. Theory

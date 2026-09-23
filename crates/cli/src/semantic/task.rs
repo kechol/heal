@@ -37,7 +37,13 @@ pub struct TaskContext<'a> {
     pub focus: Option<&'a str>,
     /// `heal semantic ask --diff <range>`: the change a verify task judges.
     pub diff_range: Option<&'a str>,
+    /// Cached answers of the tasks this task depends on
+    /// ([`Task::depends_on`]), keyed by task id then verdict key.
+    pub prior: Option<&'a Snapshot>,
 }
+
+/// Read-only view of cached answers: task id → verdict key → answer.
+pub type Snapshot = std::collections::BTreeMap<String, std::collections::BTreeMap<String, Answer>>;
 
 impl<'a> TaskContext<'a> {
     pub fn new(project: &'a Path, config: &'a Config) -> Result<Self, String> {
@@ -51,7 +57,29 @@ impl<'a> TaskContext<'a> {
             findings: &[],
             focus: None,
             diff_range: None,
+            prior: None,
         })
+    }
+
+    /// The same context with `prior` answers available.
+    #[must_use]
+    pub fn with_prior<'b>(&'b self, prior: &'b Snapshot) -> TaskContext<'b> {
+        TaskContext {
+            project: self.project,
+            config: self.config,
+            exclude: self.exclude.clone(),
+            reports: self.reports,
+            findings: self.findings,
+            focus: self.focus,
+            diff_range: self.diff_range,
+            prior: Some(prior),
+        }
+    }
+
+    /// A cached answer of a dependency task.
+    #[must_use]
+    pub fn prior_answer(&self, task: &str, key: &str) -> Option<&Answer> {
+        self.prior?.get(task)?.get(key)
     }
 
     #[must_use]
@@ -158,6 +186,19 @@ pub trait Task: Sync {
         false
     }
 
+    /// Tasks whose cached answers `plan` / `lower` read through
+    /// [`TaskContext::prior_answer`]. They must come earlier in the registry.
+    fn depends_on(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// Result returned directly by `heal semantic ask --json` (on-demand
+    /// tasks: verification, name choice). `None` for tasks that only feed
+    /// `heal status` through [`Task::lower`].
+    fn report(&self, _ctx: &TaskContext<'_>, _answered: &[Answered<'_>]) -> Option<Value> {
+        None
+    }
+
     /// Why the task planned nothing, when the user can fix it (a missing
     /// input file, a disabled prerequisite). Shown by `heal semantic ask`.
     fn setup_hint(&self, _ctx: &TaskContext<'_>) -> Option<String> {
@@ -182,6 +223,13 @@ pub fn registry() -> Vec<Box<dyn Task>> {
     vec![
         Box::new(t::commit_intent::CommitIntent),
         Box::new(t::concept::ConceptTask),
+        Box::new(t::naming::TermDrift),
+        Box::new(t::naming::NameMismatch),
+        Box::new(t::naming::NameChoice),
+        Box::new(t::refactor::SplitPoints),
+        Box::new(t::refactor::FixPattern),
+        Box::new(t::verify::VerifyPatch),
+        Box::new(t::verify::VerifyProposal),
     ]
 }
 

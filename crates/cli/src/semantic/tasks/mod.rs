@@ -1,9 +1,17 @@
 //! The semantic tasks HEAL ships. Each file is one task; the registry in
 //! [`crate::semantic::task::registry`] lists them in a stable order.
 
+// Task code mostly builds prompt text. `format!` into a `String` reads
+// better there than `write!` chains, and the allocations are dwarfed by
+// the network round trip the text is built for.
+#![allow(clippy::format_push_string, clippy::format_collect)]
+
 pub mod commit_intent;
 pub mod common;
 pub mod concept;
+pub mod naming;
+pub mod refactor;
+pub mod verify;
 
 #[cfg(test)]
 #[allow(dead_code)] // shared by every task's tests; not all use every helper

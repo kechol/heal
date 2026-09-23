@@ -97,10 +97,14 @@ Each kind of question is a _task_. You can turn one off with
 `[features.semantic.tasks.<id>] enabled = false`, or change the
 probability it needs with `cutoff = 0.7`.
 
-| Task            | What it asks                                                               | Where you see it                                                                                 |
-| --------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `commit_intent` | Whether each recent commit was a bug fix, a feature, a refactor, and so on | Files where bug fixes concentrate move up the `heal status` list                                 |
-| `concept`       | Which concept of your vocabulary each function implements                  | Files that mix concepts, functions that belong elsewhere, and concepts scattered over many files |
+| Task            | What it asks                                                                 | Where you see it                                                                                 |
+| --------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `commit_intent` | Whether each recent commit was a bug fix, a feature, a refactor, and so on   | Files where bug fixes concentrate move up the `heal status` list                                 |
+| `concept`       | Which concept of your vocabulary each function implements                    | Files that mix concepts, functions that belong elsewhere, and concepts scattered over many files |
+| `term_drift`    | Whether two words in function names mean the same thing (`user` / `account`) | One word per thing — rename suggestions                                                          |
+| `name_mismatch` | Whether a function's name or doc comment matches what its body does          | Names that promise something the code does not do                                                |
+| `split_points`  | Where a long, complex function divides into steps with one purpose each      | Split lines on complexity findings, used by `/heal-code-patch`                                   |
+| `fix_pattern`   | Which standard refactoring fits a complexity or duplication finding          | Guides `/heal-code-patch`                                                                        |
 
 ### The concept vocabulary
 
@@ -118,6 +122,11 @@ claude /heal-concepts-setup
 id = "calibration"
 description = "Derives thresholds from the project's own metric distribution."
 ```
+
+The patch and review skills also run on-demand checks
+(`verify_patch`, `verify_proposal`, `name_choice`) with `--task`. They
+double-check the agent's own work and are never part of a plain
+`heal semantic ask`.
 
 ## Cost
 
