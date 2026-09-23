@@ -14,9 +14,12 @@ use crate::observer::shared::walk::ExcludeMatcher;
 use crate::semantic::api::Answer;
 use crate::semantic::task::TaskContext;
 
-/// Classifies paths as tests the same way `Feature::lower` tags
-/// `is_test_file`: `[features.test].test_paths` when set, else the naming
-/// heuristic.
+/// Classifies paths as tests: `[features.test].test_paths`, or the naming
+/// heuristic. Unlike `Feature::lower`'s `is_test_file` tag (globs only when
+/// set), the heuristic always applies here, because the default globs
+/// are root-anchored (`tests/**`) and miss nested test directories such as
+/// `crates/<name>/tests/` — sending a test file to a production-code
+/// question would waste the question and skew the concept map.
 pub struct TestMatcher {
     glob: Option<ExcludeMatcher>,
 }
@@ -35,10 +38,11 @@ impl TestMatcher {
 
     #[must_use]
     pub fn is_test(&self, path: &Path) -> bool {
-        match &self.glob {
-            Some(m) => m.is_excluded(path, false),
-            None => is_test_path(path),
-        }
+        is_test_path(path)
+            || self
+                .glob
+                .as_ref()
+                .is_some_and(|m| m.is_excluded(path, false))
     }
 }
 
@@ -249,6 +253,47 @@ pub fn finding_excerpt(ctx: &TaskContext<'_>, f: &Finding) -> Option<String> {
         ));
     }
     Some(numbered_range(&src, 1, 200))
+}
+
+/// The production file a test file most likely exercises, by naming
+/// convention: `foo_test.rs` / `foo.test.ts` / `foo.spec.js` /
+/// `test_foo.py` / `foo_test.go` → `foo.<ext>` next to it, and
+/// `tests/foo.rs` / `test/foo.py` / `__tests__/foo.ts` → the same name
+/// under `src/` (or the parent directory). Only existing files count.
+#[must_use]
+pub fn guess_src_for_test(ctx: &TaskContext<'_>, test: &Path) -> Option<PathBuf> {
+    let ext = test.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let stem = test.file_stem()?.to_str()?;
+    let base = stem
+        .strip_suffix("_test")
+        .or_else(|| stem.strip_suffix(".test"))
+        .or_else(|| stem.strip_suffix(".spec"))
+        .or_else(|| stem.strip_prefix("test_"))
+        .or_else(|| stem.strip_suffix("Test"))
+        .or_else(|| stem.strip_suffix("Spec"))
+        .unwrap_or(stem);
+    let file = if ext.is_empty() {
+        base.to_owned()
+    } else {
+        format!("{base}.{ext}")
+    };
+    let dir = test.parent().unwrap_or_else(|| Path::new(""));
+    let mut candidates = vec![dir.join(&file)];
+    let parts: Vec<&str> = dir.iter().filter_map(|c| c.to_str()).collect();
+    if let Some(i) = parts
+        .iter()
+        .position(|p| matches!(*p, "tests" | "test" | "__tests__" | "spec"))
+    {
+        let mut prefix: PathBuf = parts[..i].iter().collect();
+        let rest: PathBuf = parts[i + 1..].iter().collect();
+        candidates.push(prefix.join("src").join(&rest).join(&file));
+        candidates.push(prefix.join(&rest).join(&file));
+        prefix.push(&file);
+        candidates.push(prefix);
+    }
+    candidates
+        .into_iter()
+        .find(|c| c.as_path() != test && ctx.project.join(c).is_file())
 }
 
 /// Findings of the ordinary families on `file`.

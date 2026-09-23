@@ -238,6 +238,27 @@ weakest safety net".
 - **Re-enabling by weakening assertions.** "Unskip and swap
   `assert_eq!` for `assert!`" trades real signal for green CI.
 
+## With `[features.semantic]`
+
+When the family is enabled, three more signals feed the pyramid
+reading. Without them, the review works as before.
+
+- **`test_value`** — a test that would pass with the behaviour its name
+  claims broken (`delete`) or that is tied to implementation details
+  (`rewrite`). The note's detail lists all four answers. Recommend
+  deleting tests that only restate their mocks, the framework, or
+  constants; they cost run time and maintenance and protect nothing.
+  Agent-written suites accumulate these fastest.
+- **`mock_scope`** — a mock of the code under test (`subject`, High) or
+  of an internal collaborator. Mocks belong at process boundaries.
+- **`semantic.coverage_band`** on `coverage_pct` — `pure_logic`
+  (unit-test it), `coordination` (a thin integration test), or
+  `io_boundary` (test at a higher layer; do not chase unit coverage).
+- **`semantic.skip_reason`** on `skip_ratio` — `environment`, `slow`,
+  `broken`, or `pending`; the detail lists each skipped test.
+- **`test_duplicate`** (when present) — near-identical tests to merge
+  into one table-driven test.
+
 ## Output format
 
 End with three blocks:

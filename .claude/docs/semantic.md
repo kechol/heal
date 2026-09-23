@@ -48,6 +48,10 @@ heal semantic ask                     heal status / heal diff
 | `name_choice` (C13, on demand) | code | `--focus` JSON `{"candidates":[{file, symbol, names[]}]}` → `choice` current vs candidates | `report`: `choices[] {best, p, p_current, rename}`; `rename` iff best ≠ current, `p − p_current ≥ 0.2`, confidence ≥ 0.5 |
 | `split_points` (C14) | code | High / Critical CCN / Cognitive functions; body statements merged into ≥3-line segments (≤30) → `noul` per adjacent pair "same step?" | note `split_points` on those findings: `lines` = boundaries with p ≤ 0.3, `detail` = step ranges |
 | `fix_pattern` (H2) | code | T0 / T1 CCN / Cognitive / duplication findings → `choice` over the patch allow-list + `none` | note `fix_pattern` |
+| `test_value` (T7) | test | needs `[features.test]`. Every non-skipped test case → `noul` regression, `noul` brittle, `choice` checks (behaviour / mock_values / framework / constants_or_types / nothing), `noul` has_logic; state = test file + the guessed source file when both fit | `test_value` (Medium) labelled `delete` (trivial checks with confidence ≥ 0.9 and regression < 0.5, or has_logic < 0.2 and regression < 0.5) or `rewrite` (regression ≥ 0.5 and brittle ≥ 0.7); note `test_value` carries the four answers |
+| `mock_scope` (T8) | test | needs `[features.test]`. Every lexical mock site (`observer::test::cases::mock_sites`) → `choice` boundary / subject / internal_collaborator / pure_value | `mock_scope` for non-boundary kinds with p ≥ 0.6 (High for `subject`, else Medium) |
+| `test_triage` (H7) | test | `coverage_pct` findings → `choice` pure_logic / coordination / io_boundary; skipped cases in `skip_ratio` files → `choice` environment / slow / broken / pending | notes `coverage_band`, `skip_reason` (majority label, detail per test) |
+| `verify_tests` (V2, on demand) | test | `--diff` → the `test_value` questions for test cases overlapping added lines, the `mock_scope` question for added mock lines | `report`: `tests[] {label}`, `mocks[] {kind, bad}`, `pass` |
 | `verify_patch` (V1 + V3, on demand) | code | `--diff <range>` → 4 `noul`: relocate, guard_clause, behaviour_change, message_mismatch; whole diff as one state, or one per file when too large | `report`: `checks` (max p per check), `flags` (≥ 0.7, excluding behaviour_change), `pass` |
 | `verify_proposal` (V4, on demand) | code | `--focus` JSON `{"proposals":[{id, text, files[]}]}` → the five readability questions, phrased so true = good | `report`: per proposal `checks`, `pass` (all ≥ 0.5) |
 
@@ -67,6 +71,12 @@ lexicographically (never summed): `focus` (0–6, 0 without a note) →
 (local 4, contained 2, cross_file 0; neutral 1). Notes with
 confidence < 0.5 are ignored. With no notes every axis is neutral, so
 the order equals the pre-semantic Tier → Severity → `hotspot_score`.
+
+Test files for the semantic tasks are `tasks::common::TestMatcher`:
+the naming heuristic (`is_test_path`) **or** `[features.test].test_paths`.
+The default globs are root-anchored (`tests/**`) and miss nested
+`crates/<x>/tests/`, so the heuristic always applies here (unlike the
+`is_test_file` tag).
 
 Semantic Findings never exceed `High` (`tasks::common::finding`): a
 classifier is wrong often enough that a verdict alone must not put a

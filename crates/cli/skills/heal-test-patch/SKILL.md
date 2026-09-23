@@ -1,6 +1,6 @@
 ---
 name: heal-test-patch
-description: Drain `[features.test]` findings from the cache, applying mechanical fixes (writing missing unit tests for uncovered hot paths, aligning drifted tests, re-enabling skipped tests whose reason no longer holds) one finding per commit. Refuses to start on a dirty worktree, runs the test suite for every commit, refuses to weaken assertions or skip flakes. Does NOT push or open PRs. Trigger on "fix the test findings", "drain the test cache", "add tests heal flagged", "/heal-test-patch".
+description: Drain `[features.test]` findings from the cache, applying mechanical fixes (writing missing unit tests for uncovered hot paths, aligning drifted tests, re-enabling skipped tests whose reason no longer holds, and — with `[features.semantic]` — removing tests that check nothing but their own mocks) one finding per commit. Refuses to start on a dirty worktree, runs the test suite for every commit, refuses to weaken assertions or skip flakes. Does NOT push or open PRs. Trigger on "fix the test findings", "drain the test cache", "add tests heal flagged", "remove useless tests", "/heal-test-patch".
 ---
 
 # heal-test-patch
@@ -323,6 +323,48 @@ confirm first. `< 0.5` — ignore it.
   drain order already prefers cheaper fixes among equally important
   findings; a confident `cross_file` on a finding you are about to patch
   is a signal to escalate instead.
+
+### Removing tests that check nothing (`test_value`, `mock_scope`)
+
+`test_value` findings name tests that would not fail if the behaviour
+their name claims broke. Removing them is a new mechanical fix, allowed
+only under these guards (it is not "weakening assertions": the test
+never checked the behaviour in the first place):
+
+- The note `semantic.test_value` says `delete` **and** its confidence
+  is ≥ 0.9. Anything less is a proposal for `/heal-test-review`.
+- One test per commit. The suite passes before and after.
+- Never delete a failing test (that rule above still holds).
+- Coverage guard: when `[features.test.coverage]` is enabled, re-run
+  the coverage reporter and `heal status --refresh --feature test
+  --json`. If the source file's coverage dropped, keep the deletion only
+  when the note's detail says `checks=mock_values` or `checks=nothing`
+  (those lines were never really verified) and say so in the commit
+  message; otherwise undo the commit. When coverage is not configured,
+  do not delete: list the test for review instead.
+- Commit as `test(heal): remove <test> (checked <what>)`.
+
+`semantic.test_value` = `rewrite` means the test checks behaviour but
+also implementation details (private calls, call counts, internal
+layout). Rewrite its assertions against observable behaviour; never
+delete it.
+
+`mock_scope` findings: a mock of a `pure_value` can be replaced by the
+real value mechanically. A mock of the `subject` or of an
+`internal_collaborator` needs a design decision — escalate.
+
+**Verify the tests you write.** After committing new or changed tests
+and before `heal mark fix`, run:
+
+```sh
+heal semantic ask --task verify_tests --diff HEAD~1..HEAD --json
+```
+
+When `tasks[0].result.pass` is `false`, a test you wrote checks only its
+mocks, checks nothing, or mocks an internal collaborator. Undo that one
+commit (`git reset --hard HEAD~1`), rewrite the test against real
+behaviour, and try again. Exit code 2 (no key / family off) means skip
+this check.
 
 ## Verification per commit
 

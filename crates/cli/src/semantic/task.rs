@@ -232,6 +232,10 @@ pub fn registry() -> Vec<Box<dyn Task>> {
         Box::new(t::naming::NameChoice),
         Box::new(t::refactor::SplitPoints),
         Box::new(t::refactor::FixPattern),
+        Box::new(t::test_family::TestValue),
+        Box::new(t::test_family::MockScope),
+        Box::new(t::test_family::TestTriage),
+        Box::new(t::test_family::VerifyTests),
         Box::new(t::verify::VerifyPatch),
         Box::new(t::verify::VerifyProposal),
     ]

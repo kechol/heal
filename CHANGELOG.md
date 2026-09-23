@@ -32,6 +32,14 @@
   `/heal-concepts-setup` skill) and reports `concept_mix`,
   `concept_misplaced`, and `concept_scatter` findings. The approach
   follows conceptual cohesion (Marcus & Poshyvanyk, ICSM 2005).
+- **Test tasks:** `test_value` flags tests that would not catch the
+  behaviour their name claims breaking (delete) or that are tied to
+  implementation details (rewrite), after Khorikov's four pillars of a
+  good unit test; `mock_scope` flags mocks of the code under test or of
+  internal collaborators; `test_triage` classifies uncovered code and
+  skip reasons; on-demand `verify_tests` checks tests added in a diff.
+  `/heal-test-patch` can now remove tests that check nothing, under a
+  confidence and coverage guard.
 - **Drain order uses semantic axes.** `consequence`, `triage` (gate,
   effort, accept reason), `friction` (hard to change / test / read, and
   triage class), and `focus` decorate findings; `core::order` compares

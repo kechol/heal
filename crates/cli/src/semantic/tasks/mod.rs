@@ -12,6 +12,7 @@ pub mod concept;
 pub mod naming;
 pub mod rank;
 pub mod refactor;
+pub mod test_family;
 pub mod verify;
 
 #[cfg(test)]
