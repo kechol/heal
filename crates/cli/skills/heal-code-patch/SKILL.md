@@ -266,6 +266,10 @@ level.
 
 ## With `[features.semantic]`
 
+The drain order in `heal status` already includes the semantic axes
+(consequence, friction, bug-fix ratio, effort); keep following the order
+it prints.
+
 When the project enables `[features.semantic]`, findings in
 `heal status --json` may carry a `semantic` map of notes (label, `p`,
 `confidence`, optional `lines` / `detail`) and the cache may hold
@@ -276,6 +280,18 @@ is absent, follow the rest of this skill unchanged.
 on the note. `0.5–0.9` — read the code and confirm before acting.
 `< 0.5` — ignore the note and decide as you would without it.
 
+- **`semantic.gate`** — `mechanical` (apply from the allow-list),
+  `false_positive` (propose `heal mark accept`; `semantic.accept_reason`
+  names the categorical reason), or `escalate` (stop and surface). A
+  confident gate replaces your own three-way decision; below 0.9, read
+  the code and decide, using the note as a second opinion.
+- **`semantic.effort`** — `local`, `contained`, or `cross_file`. The
+  drain order already prefers cheaper fixes among equally important
+  findings; a confident `cross_file` on a finding you are about to patch
+  is a signal to escalate instead.
+- **`semantic.duplication_real`** — `false` (with confidence) means the
+  copies only look alike and would change for different reasons: do not
+  merge them; propose accept instead.
 - **`semantic.fix_pattern`** (CCN / Cognitive / duplication) names the
   allow-list pattern that fits (`form_template_method`, `lookup_table`,
   `consolidate_fragments`, `decompose_conditional`, `extract_variable`,

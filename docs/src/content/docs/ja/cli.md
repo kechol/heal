@@ -209,6 +209,9 @@ heal は **絶対に** 自動で recalibrate しません。コードベース�
 
 生成された `calibration.toml` の先頭には、ファイルの来歴を示すコメントヘッダが付きます。ファイルを開いただけでドキュメントなしに来歴をたどれるようにするためです。`floor_critical` / `floor_ok` の上書きは `calibration.toml` ではなく `config.toml` 側に置いてください。さもないと `heal calibrate --force` で消えてしまいます。
 
+`[features.semantic]` が有効なら、`heal status --focus <file>` で、ファイルに書いた作業に合わせて並べられます
+（[Semantic (Jev)](/heal/ja/semantic/) を参照）。この場合は必ず再スキャンし、保存済みの TODO リストは更新しません。
+
 ## `heal semantic ask`
 
 `[features.semantic] enabled = true` のときだけ使えます。何が送られるかは

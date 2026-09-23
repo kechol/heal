@@ -333,6 +333,13 @@ Config { project, git, metrics, policy, diff, features }
 (pinned equal to `semantic::task::registry()` by a test). The API key
 is **not** a config field — `deny_unknown_fields` rejects `api_key`.
 
+`Finding.semantic: BTreeMap<String, SemanticNote { label, p,
+confidence, lines, detail }>` — decorations from cached verdicts, never
+part of the id. Note names in use: `fix_ratio`, `consequence`, `gate`,
+`effort`, `accept_reason`, `duplication_real`, `friction.change`,
+`friction.test`, `friction.read`, `triage_class`, `focus`,
+`split_points`, `fix_pattern`. Skipped from JSON when empty.
+
 ## Verdict cache (`semantic::store`)
 
 `.heal/semantic/verdicts/<task>.jsonl` — one `Verdict { key, model,

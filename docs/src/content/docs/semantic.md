@@ -97,14 +97,33 @@ Each kind of question is a _task_. You can turn one off with
 `[features.semantic.tasks.<id>] enabled = false`, or change the
 probability it needs with `cutoff = 0.7`.
 
-| Task            | What it asks                                                                 | Where you see it                                                                                 |
-| --------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `commit_intent` | Whether each recent commit was a bug fix, a feature, a refactor, and so on   | Files where bug fixes concentrate move up the `heal status` list                                 |
-| `concept`       | Which concept of your vocabulary each function implements                    | Files that mix concepts, functions that belong elsewhere, and concepts scattered over many files |
-| `term_drift`    | Whether two words in function names mean the same thing (`user` / `account`) | One word per thing — rename suggestions                                                          |
-| `name_mismatch` | Whether a function's name or doc comment matches what its body does          | Names that promise something the code does not do                                                |
-| `split_points`  | Where a long, complex function divides into steps with one purpose each      | Split lines on complexity findings, used by `/heal-code-patch`                                   |
-| `fix_pattern`   | Which standard refactoring fits a complexity or duplication finding          | Guides `/heal-code-patch`                                                                        |
+| Task            | What it asks                                                                                                            | Where you see it                                                                                 |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `commit_intent` | Whether each recent commit was a bug fix, a feature, a refactor, and so on                                              | Files where bug fixes concentrate move up the `heal status` list                                 |
+| `consequence`   | What a defect in each flagged file would cost, from dev tooling to data integrity                                       | Critical code moves up the `heal status` list                                                    |
+| `triage`        | Whether a drain-queue finding is a mechanical fix, a false positive, or needs a design decision, and how big the fix is | Guides the patch skills; smaller fixes come first                                                |
+| `friction`      | Whether complex code is hard to change, to test, or to read, and whether the complexity is intrinsic                    | Code that really hurts moves up                                                                  |
+| `focus`         | How much a task you describe will touch each file (`--focus`)                                                           | `heal status --focus` puts the files to prepare first on top                                     |
+| `concept`       | Which concept of your vocabulary each function implements                                                               | Files that mix concepts, functions that belong elsewhere, and concepts scattered over many files |
+| `term_drift`    | Whether two words in function names mean the same thing (`user` / `account`)                                            | One word per thing — rename suggestions                                                          |
+| `name_mismatch` | Whether a function's name or doc comment matches what its body does                                                     | Names that promise something the code does not do                                                |
+| `split_points`  | Where a long, complex function divides into steps with one purpose each                                                 | Split lines on complexity findings, used by `/heal-code-patch`                                   |
+| `fix_pattern`   | Which standard refactoring fits a complexity or duplication finding                                                     | Guides `/heal-code-patch`                                                                        |
+
+### Order of the TODO list
+
+With answers saved, `heal status` still groups findings by tier and
+severity exactly as before. Inside each group, it then prefers files
+where a defect costs more, code that is hard to work with, files where
+bug fixes keep landing, and cheaper fixes — before falling back to the
+usual hotspot score. Without saved answers the order is unchanged.
+
+To prepare for a specific piece of work, describe it in a file and run:
+
+```sh
+heal semantic ask --task focus --focus plan.md
+heal status --focus plan.md
+```
 
 ### The concept vocabulary
 

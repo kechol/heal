@@ -32,6 +32,13 @@
   `/heal-concepts-setup` skill) and reports `concept_mix`,
   `concept_misplaced`, and `concept_scatter` findings. The approach
   follows conceptual cohesion (Marcus & Poshyvanyk, ICSM 2005).
+- **Drain order uses semantic axes.** `consequence`, `triage` (gate,
+  effort, accept reason), `friction` (hard to change / test / read, and
+  triage class), and `focus` decorate findings; `core::order` compares
+  them one after another inside each Tier + Severity bucket before
+  `hotspot_score`. Tier and Severity never change, and without notes the
+  order is unchanged. `heal status --focus <file>` ranks for described
+  upcoming work without writing `latest.json`.
 - **Naming and refactoring tasks:** `term_drift` (two words for one
   thing within a concept), `name_mismatch` (a name or doc comment that
   does not match the body), `split_points` (step boundaries for High /

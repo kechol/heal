@@ -521,6 +521,12 @@ pub struct StatusArgs {
     /// Cap each Tier/Severity bucket at N rendered file rows.
     #[arg(long, value_name = "N")]
     pub top: Option<usize>,
+    /// Rank for upcoming work described in FILE (`-` for stdin), using the
+    /// cached `[features.semantic]` `focus` verdicts from
+    /// `heal semantic ask --focus FILE`. Always rescans and never writes
+    /// `.heal/findings/latest.json`.
+    #[arg(long, value_name = "FILE")]
+    pub focus: Option<String>,
     /// Skip the pager and write directly to stdout. By default
     /// `heal status` pipes through `$PAGER` (or `less`) when stdout
     /// is a terminal — same convention as `git diff` / `git log`.

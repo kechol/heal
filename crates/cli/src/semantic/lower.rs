@@ -25,6 +25,7 @@ pub(crate) fn apply(
     cfg: &Config,
     reports: &ObserverReports,
     findings: Vec<Finding>,
+    focus: Option<&str>,
 ) -> Vec<Finding> {
     if !cfg.features.semantic.enabled {
         return findings;
@@ -43,7 +44,8 @@ pub(crate) fn apply(
         let Ok(ctx) = TaskContext::new(scan_root, cfg) else {
             return findings;
         };
-        let ctx = ctx.with_base(reports, &findings);
+        let mut ctx = ctx.with_base(reports, &findings);
+        ctx.focus = focus;
         let mut new_findings = Vec::new();
         let mut notes = Vec::new();
         for task in enabled {
@@ -176,6 +178,7 @@ mod tests {
             &cfg,
             &ObserverReports::default(),
             base.clone(),
+            None,
         );
         assert_eq!(out, base);
     }

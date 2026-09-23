@@ -224,6 +224,33 @@ pub fn finding(
     f
 }
 
+/// The code a Finding is about, numbered: its function when the symbol
+/// resolves, else ±40 lines around its line, else the file's first 200
+/// lines. `None` when the file may not be sent or cannot be read.
+#[must_use]
+pub fn finding_excerpt(ctx: &TaskContext<'_>, f: &Finding) -> Option<String> {
+    let src = ctx.read_sendable(&f.location.file)?;
+    if let (Some(symbol), Some(lang)) = (&f.location.symbol, Language::from_path(&f.location.file))
+    {
+        if let Ok(parsed) = parse(src.clone(), lang) {
+            if let Some(func) = crate::observer::code::complexity::outer_functions(&parsed)
+                .into_iter()
+                .find(|x| &x.name == symbol)
+            {
+                return Some(numbered_range(&src, func.start_row, func.end_row));
+            }
+        }
+    }
+    if let Some(line) = f.location.line {
+        return Some(numbered_range(
+            &src,
+            line.saturating_sub(40).max(1),
+            line + 40,
+        ));
+    }
+    Some(numbered_range(&src, 1, 200))
+}
+
 /// Findings of the ordinary families on `file`.
 pub fn findings_on<'a>(
     ctx: &'a TaskContext<'_>,

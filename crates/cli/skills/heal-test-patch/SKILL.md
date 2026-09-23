@@ -303,6 +303,27 @@ When you can't articulate *what should be true regardless of how
 the function is written*, the finding is undocumented behavior
 and belongs in escalate.
 
+## With `[features.semantic]`
+
+When the project enables `[features.semantic]`, findings in
+`heal status --json` may carry a `semantic` map of notes (label, `p`,
+`confidence`). Everything here is additive: without a note, follow the
+rest of this skill unchanged. Keep following the order `heal status`
+prints; it already includes the semantic axes.
+
+`confidence ≥ 0.9` — act on the note. `0.5–0.9` — read the files and
+confirm first. `< 0.5` — ignore it.
+
+- **`semantic.gate`** — `mechanical` (apply from the allow-list),
+  `false_positive` (propose `heal mark accept`; `semantic.accept_reason`
+  names the categorical reason), or `escalate` (stop and surface). A
+  confident gate replaces your own three-way decision; below 0.9, read
+  the code and decide, using the note as a second opinion.
+- **`semantic.effort`** — `local`, `contained`, or `cross_file`. The
+  drain order already prefers cheaper fixes among equally important
+  findings; a confident `cross_file` on a finding you are about to patch
+  is a signal to escalate instead.
+
 ## Verification per commit
 
 Run the project's test runner and confirm green before every

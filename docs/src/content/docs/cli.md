@@ -336,6 +336,11 @@ this command. Put `floor_critical` / `floor_ok` overrides in
 `config.toml`, not `calibration.toml` — that way `heal calibrate
 --force` doesn't clobber them.
 
+With `[features.semantic]` enabled, `heal status --focus <file>`
+ranks for the work described in the file (see
+[Semantic (Jev)](/heal/semantic/)). It always rescans and does not
+update the saved TODO list.
+
 ## `heal semantic ask`
 
 Only available when `[features.semantic] enabled = true`. See

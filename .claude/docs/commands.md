@@ -439,6 +439,15 @@ Leaves non-bundled sibling skills intact.
 
 ---
 
+### `heal status --focus <file>`
+
+Reads the focus text (`-` = stdin), calls
+`observers::build_record_focused`, and renders that record without
+writing `latest.json` or reconciling `fixed.json` — a focused view is
+one person's upcoming work, not shared per-commit state. The `focus`
+notes come from verdicts `heal semantic ask --task focus --focus <file>`
+cached for the same text.
+
 ## `heal semantic ask`
 
 `commands/semantic.rs` → `semantic::runner::run`. The **only** command

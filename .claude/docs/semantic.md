@@ -38,6 +38,10 @@ heal semantic ask                     heal status / heal diff
 | id | Family | Question | Output |
 |---|---|---|---|
 | `commit_intent` (Q7) | core | `choice` fix / feature / refactor / test / docs / chore per commit in the churn window (≤1000 newest) | note `fix_ratio` on every Code Finding of a touched file: `p` = fix commits / answered commits |
+| `consequence` (Q1) | core | files with a non-Ok Finding → 4-level `score` on the first 200 lines: dev · internal · user_facing · critical | note `consequence` on every non-Ok Finding of the file |
+| `triage` (H1 + Q2 + H4, H8) | core | T0 / T1 Findings (all families) → `choice` gate (mechanical / false_positive / escalate), `choice` effort (local / contained / cross_file), `choice` accept_reason (the family's categorical reasons from the patch skills + none); duplication adds `noul` duplication_real | notes `gate`, `effort`, `accept_reason`, `duplication_real` |
+| `friction` (Q5 + H3) | core | High+ CCN / Cognitive / LCOM → `noul` × 3 (change / test / read) + `choice` triage_class (symptomatic / intrinsic / cohesive_procedural) | notes `friction.change`, `friction.test`, `friction.read`, `triage_class` |
+| `focus` (Q4) | core | needs `--focus` text; files with a non-Ok Finding (≤300) → 4-level `score` none · read · touch · change | note `focus` (only rendered by `heal status --focus`, which rescans and never writes `latest.json`) |
 | `concept` (C12) | code | `choice` over `.heal/concepts.toml` (+ `other`) per outer function ≥3 lines; state = numbered file, or ±40-line windows when the file exceeds the state budget | `concept_mix` (≥2 concepts ≥25% of a file's classified LOC, file ≥60 LOC; High at ≥3), `concept_misplaced` (function's concept ≠ file home, another file's home = that concept; Medium, `fix_hint` = move target), `concept_scatter` (concept in ≥5 files, none ≥40%; Medium, `locations` = other files) |
 | `term_drift` (C13) | code | depends on `concept`. Per concept, frequent non-verb words of function names (≥2 names, top 8) that never co-occur → `noul` "same thing?" | `term_drift` (p ≥ 0.7; location = first file of the minority word, `locations` = its other files) |
 | `name_mismatch` (C13) | code | functions in files with a hotspot Code finding, plus functions with a ≥Medium CCN / Cognitive finding → 4-level `score` (n/a · matches · arguable · contradicts / hides an effect) | `name_mismatch` (level 3, confidence ≥ 0.5; Medium) |
@@ -53,6 +57,16 @@ the answers of the same run through `TaskContext::prior_answer`.
 On-demand tasks (`on_demand() == true`) only run with `--task <id>`,
 never during `heal status`; their `report` is `tasks[].result` in
 `--json`.
+
+### Drain order axes (`core::order::within_severity`)
+
+Inside one Tier + Severity bucket, before `hotspot_score`, compared
+lexicographically (never summed): `focus` (0–6, 0 without a note) →
+`consequence` (0 dev … 6 critical; neutral 3) → friction (2 if any
+≥ 0.7, 0 if all < 0.3, neutral 1) → `fix_ratio` (quarters) → `effort`
+(local 4, contained 2, cross_file 0; neutral 1). Notes with
+confidence < 0.5 are ignored. With no notes every axis is neutral, so
+the order equals the pre-semantic Tier → Severity → `hotspot_score`.
 
 Semantic Findings never exceed `High` (`tasks::common::finding`): a
 classifier is wrong often enough that a verdict alone must not put a

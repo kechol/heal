@@ -82,6 +82,10 @@ pub struct FeaturesConfig {
 /// semantic module.
 pub const SEMANTIC_TASK_IDS: &[&str] = &[
     "commit_intent",
+    "consequence",
+    "triage",
+    "friction",
+    "focus",
     "concept",
     "term_drift",
     "name_mismatch",

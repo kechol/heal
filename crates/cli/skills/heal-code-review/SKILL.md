@@ -388,6 +388,21 @@ read in Phase 1. When they are absent, the review works as before.
 - **`name_mismatch`** — the name or doc comment promises something the
   body does not do. Propose candidate names; check them with
   `heal semantic ask --task name_choice --focus <file> --json`.
+- **`semantic.triage_class`** on High / Critical CCN, Cognitive, and
+  LCOM findings pre-classifies them for the Triage table below
+  (`symptomatic`, `intrinsic`, `cohesive_procedural`). Confirm it
+  against the code; a confident `intrinsic` or `cohesive_procedural` is
+  an accept candidate, not a refactor.
+- **`semantic.friction.change` / `.test` / `.read`** say which friction
+  the code causes. Let the dominant one pick the remedy: hard to test →
+  separate the logic from its dependencies; hard to read → rename and
+  extract named steps; hard to change → reduce what a change must know.
+- **`semantic.consequence`** (`dev` … `critical`) — rank TODO items in
+  critical and user-facing code first.
+- **Upcoming work?** When the user describes the next task, write it to
+  a file and run `heal semantic ask --task focus --focus <file>` then
+  `heal status --focus <file>`: the files that work will touch rise to
+  the top, and refactoring them first makes the change easier.
 - **Notes on existing findings** (`semantic.fix_pattern`,
   `semantic.split_points`, `semantic.fix_ratio`) are evidence, not
   verdicts. A high `fix_ratio` says bug fixes keep landing in that file.

@@ -75,7 +75,13 @@ them:
 
 Mixing the axes (e.g. "promote High to Critical because it's a
 hotspot") would collapse the table back into one number, which
-defeats the point. See `terminology.md` R6 and
+defeats the point.
+
+`[features.semantic]` adds more axes the same way: consequence,
+friction, bug-fix ratio, effort, and focus are Finding decorations,
+compared one after another inside a Tier and Severity bucket before
+`hotspot_score` (`core::order`). None of them changes Tier or
+Severity, and they are never summed into a score. See `terminology.md` R6 and
 `crates/cli/src/observer/hotspot.rs`.
 
 ---

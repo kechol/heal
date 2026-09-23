@@ -103,7 +103,27 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     };
     let must_scan = cached.is_none();
 
-    let (mut record, regressed) = if must_scan {
+    let focus = match args.focus.as_deref() {
+        Some("-") => {
+            Some(std::io::read_to_string(std::io::stdin()).context("reading --focus from stdin")?)
+        }
+        Some(path) => Some(
+            std::fs::read_to_string(path)
+                .with_context(|| format!("reading --focus file {path}"))?,
+        ),
+        None => None,
+    };
+    let (mut record, regressed) = if let Some(focus) = focus.as_deref() {
+        let record = crate::observers::build_record_focused(
+            project,
+            &paths,
+            &cfg,
+            head_sha,
+            worktree_clean,
+            Some(focus),
+        )?;
+        (record, Vec::new())
+    } else if must_scan {
         let record = build_record(project, &paths, &cfg, head_sha, worktree_clean)?;
         write_record(&paths.findings_latest(), &record)?;
         let regs = reconcile_fixed(
@@ -646,9 +666,43 @@ fn render_tier_section(
         } else {
             ""
         };
-        writeln!(out, "  {}{hotspot}  {summary}", file.display())?;
+        writeln!(
+            out,
+            "  {}{hotspot}  {summary}{}",
+            file.display(),
+            semantic_tags(&fs)
+        )?;
     }
     Ok(())
+}
+
+/// Short `[focus · consequence · effort]` suffix from the first confident
+/// `[features.semantic]` note of each kind among a file row's findings.
+/// Empty when the family is off or nothing has been asked yet.
+fn semantic_tags(fs: &[&Finding]) -> String {
+    let pick = |name: &str| {
+        fs.iter().find_map(|f| {
+            f.semantic
+                .get(name)
+                .filter(|n| n.confidence >= 0.5)
+                .map(|n| n.label.replace('_', "-"))
+        })
+    };
+    let mut tags = Vec::new();
+    if let Some(focus) = pick("focus").filter(|l| l != "none") {
+        tags.push(format!("focus: {focus}"));
+    }
+    if let Some(c) = pick("consequence") {
+        tags.push(c);
+    }
+    if let Some(e) = pick("effort") {
+        tags.push(e);
+    }
+    if tags.is_empty() {
+        String::new()
+    } else {
+        format!("  [{}]", tags.join(" · "))
+    }
 }
 
 /// Run-length-encode adjacent identical labels into `label(N)` form so

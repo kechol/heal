@@ -222,6 +222,10 @@ pub fn registry() -> Vec<Box<dyn Task>> {
     use crate::semantic::tasks as t;
     vec![
         Box::new(t::commit_intent::CommitIntent),
+        Box::new(t::rank::Consequence),
+        Box::new(t::rank::Triage),
+        Box::new(t::rank::Friction),
+        Box::new(t::rank::Focus),
         Box::new(t::concept::ConceptTask),
         Box::new(t::naming::TermDrift),
         Box::new(t::naming::NameMismatch),
