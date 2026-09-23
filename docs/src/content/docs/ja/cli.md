@@ -84,7 +84,7 @@ heal skills uninstall --target all   # 全 tree を削除
 
 スキルセットは `heal` バイナリに同梱されているので、各サブコマンドは常にバイナリに対応するバージョンに対して動きます。`update` はドリフト認識付きで、手編集されたファイルはターゲット単位で残します(`--force` で上書き可)。Claude target の `install` / `update` は `.claude/settings.json` から legacy な `heal hook edit` / `heal hook stop` エントリも掃除します(Codex target には対応する settings ファイルがないため何もしません)。
 
-同梱されるスキルは 11 個、機能ファミリ別:
+同梱されるスキルは 12 個、機能ファミリ別:
 
 **Code(常時オン):**
 
@@ -92,6 +92,7 @@ heal skills uninstall --target all   # 全 tree を削除
 - `/heal-code-patch`(write) — T0 を有効 Tier、Severity、ファミリ内スコア順に 1 コミット 1 finding ずつ解消。
 - `/heal-cli` — `heal` CLI の簡潔なリファレンス。
 - `/heal-setup` — セットアップウィザード。calibrate → strictness 選択 → `config.toml` 書き出し のあと、オプションの `[features.docs]` / `[features.test]` を有効化するかを順に確認し、有効化を選んだ場合は `/heal-doc-pair-setup` / `/heal-test-reporter-setup` まで連携します。calibration ドリフトを検知して `heal calibrate --force` も提案します。
+- `/heal-concepts-setup`(`.heal/concepts.toml` を書く) — opt-in の [Semantic (Jev)](/heal/ja/semantic/) のタスクが、コードと doc を分類するための概念の語彙を下書きします。
 
 **`[features.docs]`**(オプトイン):
 

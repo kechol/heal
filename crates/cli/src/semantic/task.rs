@@ -240,6 +240,9 @@ pub fn registry() -> Vec<Box<dyn Task>> {
         Box::new(t::doc_family::DocStructure),
         Box::new(t::doc_family::DocPlacement),
         Box::new(t::doc_family::DocDriftSemantic),
+        Box::new(t::doc_concepts::DocConcept),
+        Box::new(t::doc_concepts::DocOverlap),
+        Box::new(t::doc_concepts::DocPairs),
         Box::new(t::verify::VerifyPatch),
         Box::new(t::verify::VerifyProposal),
     ]

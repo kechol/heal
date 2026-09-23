@@ -76,6 +76,10 @@ heal skills install --target all     # 検出有無に関わらず全 target に
 
 コードベースが大きく動いて基準を動かしたくなったとき、または Critical を持続的に解消し終えたときは再実行を — そういう局面では `heal calibrate --force` も推奨します。
 
+## `/heal-concepts-setup` — 概念の語彙
+
+opt-in の [Semantic (Jev)](/heal/ja/semantic/) でだけ使います。コード・用語集・docs を読んで、コードベースを形づくる概念の一覧（それぞれ 1 行の責務付き）を下書きし、一緒に見直してから `.heal/concepts.toml` に書きます。HEAL はこの一覧を使って、各関数と doc の節を概念に分類し、概念が混ざったファイル、置き場所の違う関数、同じものを指す別々の単語、どの doc も説明していない概念を見つけます。
+
 ## メンテナンス
 
 ```sh

@@ -74,7 +74,7 @@ After `heal init`:
     └── heal-test-patch/
 ```
 
-All eleven bundled skills extract together — same source bytes for
+All twelve bundled skills extract together — same source bytes for
 every supported agent target — regardless of which feature
 families are enabled. Turning `[features.docs]` or `[features.test]`
 on later makes the already-installed skill body relevant without a

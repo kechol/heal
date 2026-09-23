@@ -203,9 +203,14 @@ targets* below.
 | `heal-setup` | `/heal-setup` | Calibrate + write `.heal/config.toml`; gate `[features.docs]` / `[features.test]` (chains to `/heal-doc-pair-setup` / `/heal-test-reporter-setup`). **Was** `heal-config`. |
 | `heal-code-review` | `/heal-code-review` | Read-only architectural analysis. **Was** `heal-code-check`. |
 | `heal-code-patch` | `/heal-code-patch` | Drain cache, one finding per commit. **Was** `heal-code-fix`. |
+| `heal-concepts-setup` | `/heal-concepts-setup` | `[features.semantic]`. Draft the concept vocabulary with the user and write `.heal/concepts.toml`. |
 | `heal-doc-pair-setup` | `/heal-doc-pair-setup` | `[features.docs]` only. Detect doc ⇔ src pairs and write `.heal/doc_pairs.json`. SSoT writer. |
+| `heal-doc-scaffold` | `/heal-doc-scaffold` | `[features.docs]` only. Stand up the doc tree from codebase signals under `scaffold_root`. |
 | `heal-doc-review` | `/heal-doc-review` | `[features.docs]` only. Read-only Diátaxis-grounded review of doc findings. |
 | `heal-doc-patch` | `/heal-doc-patch` | `[features.docs]` only. Mechanical drain of doc findings (broken links, dangling identifiers, resolvable TODOs). |
+| `heal-test-reporter-setup` | `/heal-test-reporter-setup` | `[features.test]` only. Install and wire an lcov reporter with per-step approval. |
+| `heal-test-review` | `/heal-test-review` | `[features.test]` only. Read-only test-pyramid review of test findings. |
+| `heal-test-patch` | `/heal-test-patch` | `[features.test]` only. Mechanical drain of test findings. |
 
 The pair `heal-code-review` ↔ `heal-code-patch` and the parallel
 `heal-doc-review` ↔ `heal-doc-patch` are intentional: review =

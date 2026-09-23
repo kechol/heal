@@ -120,7 +120,7 @@ The Claude target's `install` / `update` also sweep legacy
 `heal hook edit` / `heal hook stop` entries from
 `.claude/settings.json`; Codex has no sibling settings file.
 
-The bundled set ships eleven skills, grouped by feature family:
+The bundled set ships twelve skills, grouped by feature family:
 
 **Code (always on):**
 
@@ -137,6 +137,9 @@ The bundled set ships eleven skills, grouped by feature family:
   and `/heal-test-reporter-setup` when you opt in. Also detects
   calibration drift and recommends `heal calibrate --force` when
   warranted.
+- `/heal-concepts-setup` (write `.heal/concepts.toml`) drafts the
+  concept vocabulary the opt-in [Semantic (Jev)](/heal/semantic/)
+  tasks classify code and docs into.
 
 **`[features.docs]`** (opt-in):
 

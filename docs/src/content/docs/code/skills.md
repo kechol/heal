@@ -126,6 +126,16 @@ Re-run when the codebase shifts enough that the bar should move,
 or when every Critical has been drained for a sustained run —
 the skill recommends `heal calibrate --force` in those cases.
 
+## `/heal-concepts-setup` — concept vocabulary
+
+Only for the opt-in [Semantic (Jev)](/heal/semantic/) family. Reads
+your code, glossary, and docs, drafts a list of the concepts the
+codebase is built from — each with a one-line responsibility — reviews
+it with you, and writes `.heal/concepts.toml`. HEAL then maps every
+function and doc section to one of those concepts to find files that
+mix concepts, functions that belong elsewhere, words that mean the same
+thing, and concepts no doc explains.
+
 ## Maintenance
 
 ```sh

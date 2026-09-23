@@ -9,10 +9,11 @@ HEAL is a Rust CLI (binary: `heal`, single crate `heal-cli`) that
 turns code-health signals into work for AI coding agents. It runs an
 observer pipeline (the always-on Code family — LOC, CCN/Cognitive,
 Churn, Change Coupling, Duplication, Hotspot, LCOM — plus the opt-in
-`[features.docs]` and `[features.test]` families), classifies findings
-against per-codebase calibration, and surfaces them via `heal status` /
-`heal metrics` / `heal diff` plus eleven bundled Claude skills (four
-code, four docs, three test).
+`[features.docs]` and `[features.test]` families, and the opt-in
+`[features.semantic]` family that asks TypeSafe's Jev classifier typed
+questions), classifies findings against per-codebase calibration, and
+surfaces them via `heal status` / `heal metrics` / `heal diff` plus
+twelve bundled skills (five code, four docs, three test).
 
 For the user-facing overview see [README.md](./README.md).
 

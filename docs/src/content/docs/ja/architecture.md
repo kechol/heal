@@ -68,7 +68,7 @@ heal status  ──►  calibration.toml で Finding を分類
     └── heal-test-patch/
 ```
 
-同梱の 11 スキルは検出した各エージェントへ同一バイト列で展開されます。`[features.docs]` や `[features.test]` を後から有効化したときに、すでにインストール済みのスキル本体がそのまま意味を持つようになる仕組みです(再展開は不要)。
+同梱の 12 スキルは検出した各エージェントへ同一バイト列で展開されます。`[features.docs]` や `[features.test]` を後から有効化したときに、すでにインストール済みのスキル本体がそのまま意味を持つようになる仕組みです(再展開は不要)。
 
 `config.toml`、`calibration.toml`、`findings/` の中身はすべて git で追跡されるので、同じコミット上のチームメイトは同じ Severity ラダーと解消キューを共有できます。
 

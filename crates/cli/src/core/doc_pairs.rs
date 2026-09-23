@@ -64,6 +64,9 @@ pub enum PairSource {
     Mirror,
     /// LLM inference filled the gap when no syntactic signal sufficed.
     Llm,
+    /// Chosen by the `[features.semantic]` `doc_pairs` task (Jev) among
+    /// candidate sources; `confidence` is the model's probability.
+    Jev,
     /// User-authored. Preserved across regeneration.
     Manual,
 }

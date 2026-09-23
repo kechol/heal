@@ -100,6 +100,9 @@ pub const SEMANTIC_TASK_IDS: &[&str] = &[
     "doc_structure",
     "doc_placement",
     "doc_drift_semantic",
+    "doc_concept",
+    "doc_overlap",
+    "doc_pairs",
     "verify_patch",
     "verify_proposal",
 ];

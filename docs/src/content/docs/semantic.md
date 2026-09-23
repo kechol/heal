@@ -116,6 +116,8 @@ probability it needs with `cutoff = 0.7`.
 | `doc_structure`      | What kind of document each section is (tutorial, how-to, reference, explanation, …) and where a new document starts           | Pages to split, merge, or keep to one mode (needs `[features.docs]`)                             |
 | `doc_placement`      | Which section of your docs a reader would look in for each page                                                               | Pages filed in the wrong place, and where to link orphan pages                                   |
 | `doc_drift_semantic` | Whether a paired doc section still describes what the code does                                                               | Sections that state something the code no longer does                                            |
+| `doc_concept`        | Which concept of your vocabulary each doc section explains                                                                    | Concepts the code relies on that no doc explains                                                 |
+| `doc_overlap`        | Whether two pages explain the same concept twice, or contradict each other                                                    | Explanations to merge, and contradictions to fix                                                 |
 
 ### Order of the TODO list
 

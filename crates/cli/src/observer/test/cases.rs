@@ -335,6 +335,9 @@ pub fn mock_sites(source: &str, lang: Language) -> Vec<MockSite> {
 }
 
 #[cfg(test)]
+// Every test here is gated on one grammar; single-language builds
+// (`invariants.md` R15) compile the module with none of them.
+#[allow(unused_imports)]
 mod tests {
     use super::*;
     use crate::observer::code::complexity::parse;

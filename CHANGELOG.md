@@ -47,7 +47,11 @@
   mode — docjev's classify-and-split applied to Markdown
   ([jerryjliu/docjev](https://github.com/jerryjliu/docjev), Apache-2.0);
   `doc_placement` finds pages filed under the wrong section and the link
-  slot for orphan pages; `doc_drift_semantic` adds `doc_drift` Type 3
+  slot for orphan pages; `doc_concept` / `doc_overlap` read the docs
+  through the concept vocabulary (concepts no doc explains, sections
+  that repeat or contradict each other); on-demand `doc_pairs` gives
+  `/heal-doc-pair-setup` scored pair suggestions (new pair source
+  `"jev"`); `doc_drift_semantic` adds `doc_drift` Type 3
   (`doc_drift.semantic`): paired sections that state what the code no
   longer does.
 - **Drain order uses semantic axes.** `consequence`, `triage` (gate,
@@ -63,6 +67,7 @@
   Critical complexity), and `fix_pattern` (which allow-listed refactoring
   fits). On-demand checks `name_choice`, `verify_patch`, and
   `verify_proposal` report through `heal semantic ask --task <id> --json`.
+- New bundled skill **`/heal-concepts-setup`** (twelve skills in total).
 - `/heal-code-patch` and `/heal-code-review` read semantic notes when
   present and verify their own work with `verify_patch` /
   `verify_proposal`; without `[features.semantic]` they behave as before.
