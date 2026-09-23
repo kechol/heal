@@ -37,7 +37,8 @@
   implementation details (rewrite), after Khorikov's four pillars of a
   good unit test; `mock_scope` flags mocks of the code under test or of
   internal collaborators; `test_triage` classifies uncovered code and
-  skip reasons; on-demand `verify_tests` checks tests added in a diff.
+  skip reasons; `test_duplicate` finds tests to delete or merge into a
+  table-driven test; on-demand `verify_tests` checks tests added in a diff.
   `/heal-test-patch` can now remove tests that check nothing, under a
   confidence and coverage guard.
 - **Drain order uses semantic axes.** `consequence`, `triage` (gate,

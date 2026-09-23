@@ -95,6 +95,7 @@ pub const SEMANTIC_TASK_IDS: &[&str] = &[
     "test_value",
     "mock_scope",
     "test_triage",
+    "test_duplicate",
     "verify_tests",
     "verify_patch",
     "verify_proposal",

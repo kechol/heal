@@ -600,6 +600,183 @@ impl Task for TestTriage {
     }
 }
 
+// ------------------------------------------------------------- T9
+
+pub struct TestDuplicate;
+
+/// Word-set Jaccard similarity at which two tests become a candidate pair.
+const DUP_SIMILARITY: f64 = 0.6;
+const MAX_DUP_PAIRS_PER_FILE: usize = 30;
+
+const DUP_KINDS: [(&str, &str); 3] = [
+    ("same_case", "Both tests check the same behaviour with the same kind of input; one of them adds nothing."),
+    ("parameterizable", "Both check the same behaviour with different inputs; they could be one table-driven or parameterized test."),
+    ("different", "They check different behaviour or genuinely different input classes."),
+];
+const DUP_INSTRUCTIONS: &str =
+    "The state shows two test cases from one test file. Decide how they relate.";
+
+fn word_set(text: &str) -> BTreeSet<String> {
+    text.split(|c: char| !c.is_alphanumeric() && c != '_')
+        .filter(|w| w.len() >= 3)
+        .map(str::to_lowercase)
+        .collect()
+}
+
+fn jaccard(a: &BTreeSet<String>, b: &BTreeSet<String>) -> f64 {
+    let inter = a.intersection(b).count();
+    let union = a.union(b).count();
+    if union == 0 {
+        0.0
+    } else {
+        #[allow(clippy::cast_precision_loss)]
+        let v = inter as f64 / union as f64;
+        v
+    }
+}
+
+impl Task for TestDuplicate {
+    fn id(&self) -> &'static str {
+        "test_duplicate"
+    }
+    fn summary(&self) -> &'static str {
+        "near-identical tests in one file: delete one, or merge into a table-driven test"
+    }
+    fn criteria_text(&self) -> String {
+        let mut s = DUP_INSTRUCTIONS.to_owned();
+        for (k, v) in DUP_KINDS {
+            s.push_str(&format!("\n{k}: {v}"));
+        }
+        s
+    }
+    fn setup_hint(&self, ctx: &TaskContext<'_>) -> Option<String> {
+        (!ctx.config.features.test.enabled)
+            .then(|| "needs [features.test] enabled = true".to_owned())
+    }
+    fn plan(&self, ctx: &TaskContext<'_>) -> anyhow::Result<Vec<Group>> {
+        if !ctx.config.features.test.enabled {
+            return Ok(Vec::new());
+        }
+        let labels: Vec<(String, String)> = DUP_KINDS
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect();
+        let mut groups = Vec::new();
+        for file in code_files(ctx).1 {
+            let Some(parsed) = parse_file(ctx, &file) else {
+                continue;
+            };
+            let cases: Vec<TestCase> = test_cases(&parsed)
+                .into_iter()
+                .filter(|c| !c.skipped)
+                .collect();
+            let bodies: Vec<BTreeSet<String>> = cases
+                .iter()
+                .map(|c| word_set(parsed.source.get(c.byte_range.clone()).unwrap_or("")))
+                .collect();
+            let mut pairs = Vec::new();
+            for i in 0..cases.len() {
+                for j in i + 1..cases.len() {
+                    let sim = jaccard(&bodies[i], &bodies[j]);
+                    if sim >= DUP_SIMILARITY {
+                        pairs.push((sim, i, j));
+                    }
+                }
+            }
+            pairs.sort_by(|a, b| {
+                b.0.total_cmp(&a.0)
+                    .then_with(|| (a.1, a.2).cmp(&(b.1, b.2)))
+            });
+            pairs.truncate(MAX_DUP_PAIRS_PER_FILE);
+            for (_, i, j) in pairs {
+                let (a, b) = (&cases[i], &cases[j]);
+                let state = format!(
+                    "File: {}\n\nTest A:\n{}\nTest B:\n{}",
+                    file.display(),
+                    crate::semantic::tasks::common::numbered_range(
+                        &parsed.source,
+                        a.start_line,
+                        a.end_line
+                    ),
+                    crate::semantic::tasks::common::numbered_range(
+                        &parsed.source,
+                        b.start_line,
+                        b.end_line
+                    )
+                );
+                groups.push(Group {
+                    items: vec![Item {
+                        key: ctx.key(self, &format!("{}|{}", a.name, b.name), &state),
+                        question: Question::Choice {
+                            instructions: json!(format!(
+                                "{DUP_INSTRUCTIONS} A is `{}`, B is `{}`.",
+                                a.name, b.name
+                            )),
+                            criteria: criteria(&labels),
+                        },
+                        meta: json!({
+                            "file": file.to_string_lossy(),
+                            "a": a.name, "a_line": a.start_line,
+                            "b": b.name, "b_line": b.start_line,
+                        }),
+                    }],
+                    state: json!(state),
+                });
+            }
+        }
+        Ok(groups)
+    }
+    fn lower(&self, ctx: &TaskContext<'_>, answered: &[Answered<'_>]) -> Lowered {
+        let cutoff = ctx.cutoff(self, 0.6);
+        let mut lowered = Lowered::default();
+        for a in answered {
+            let Some(answer) = a.answer else { continue };
+            let Some((kind, p, _)) = chosen(answer) else {
+                continue;
+            };
+            if p < cutoff || kind == "different" {
+                continue;
+            }
+            let m = &a.item.meta;
+            let file = PathBuf::from(m["file"].as_str().unwrap_or(""));
+            let (ta, tb) = (m["a"].as_str().unwrap_or(""), m["b"].as_str().unwrap_or(""));
+            let line_b = u32::try_from(m["b_line"].as_u64().unwrap_or(0)).unwrap_or(0);
+            let (summary, hint) = if kind == "same_case" {
+                (
+                    format!(
+                        "`{tb}` checks the same behaviour with the same kind of input as `{ta}`"
+                    ),
+                    format!("keep one of `{ta}` / `{tb}`"),
+                )
+            } else {
+                (
+                    format!("`{ta}` and `{tb}` differ only in their inputs"),
+                    "merge them into one table-driven or parameterized test".to_owned(),
+                )
+            };
+            let mut f = finding(
+                "test_duplicate",
+                &file,
+                Some(line_b),
+                Some(tb),
+                summary,
+                &format!("test_duplicate:{ta}:{tb}"),
+                Severity::Medium,
+            )
+            .with_locations(vec![crate::core::finding::Location {
+                file: file.clone(),
+                line: u32::try_from(m["a_line"].as_u64().unwrap_or(0)).ok(),
+                symbol: Some(ta.to_owned()),
+            }]);
+            f.fix_hint = Some(hint);
+            f.semantic
+                .insert("test_duplicate".to_owned(), note(kind, answer, 0));
+            lowered.findings.push(f);
+        }
+        lowered
+    }
+}
+
 // ------------------------------------------------------------- V2
 
 pub struct VerifyTests;
@@ -766,6 +943,14 @@ mod tests {
             has_logic: Some(0.9),
         };
         assert_eq!(v.label(), None);
+    }
+
+    #[test]
+    fn jaccard_of_word_sets() {
+        let a = word_set("assert_eq!(add(1, 2), 3); parse input");
+        let b = word_set("assert_eq!(add(2, 2), 4); parse input");
+        assert!(jaccard(&a, &b) >= DUP_SIMILARITY);
+        assert!(jaccard(&a, &word_set("totally different words here")) < 0.2);
     }
 
     #[test]

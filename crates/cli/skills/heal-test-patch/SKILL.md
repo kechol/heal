@@ -349,6 +349,12 @@ also implementation details (private calls, call counts, internal
 layout). Rewrite its assertions against observable behaviour; never
 delete it.
 
+`test_duplicate` findings: `same_case` (the note label) — delete the
+later test of the pair, with the same guards as `test_value` except the
+coverage guard (the kept test covers the same lines). `parameterizable`
+— merge both into one table-driven or parameterized test in the
+project's existing style; the merged test must keep every input.
+
 `mock_scope` findings: a mock of a `pure_value` can be replaced by the
 real value mechanically. A mock of the `subject` or of an
 `internal_collaborator` needs a design decision — escalate.
