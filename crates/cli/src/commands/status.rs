@@ -151,6 +151,10 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     // `heal mark accept` takes effect without a rescan.
     let accepted_map = read_accepted(&paths.findings_accepted())?;
     record.apply_accepted(&accepted_map);
+    // Render-time like the accepted overlay: `--json` consumers (the patch
+    // skills) read the drain order from `drain_rank` instead of
+    // re-deriving it without the semantic axes.
+    crate::core::order::decorate(&mut record.findings, &cfg.policy.drain);
 
     if args.json {
         // Workspace narrowing rebuilds the record (paths flipped

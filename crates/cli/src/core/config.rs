@@ -1343,7 +1343,8 @@ impl DrainSpec {
 /// permitting tier; `Advisory` is everything else above `Severity::Ok`.
 /// Findings classified as `Severity::Ok` are not surfaced as drain
 /// candidates and never reach `Advisory` — see `tier_for`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DrainTier {
     Must,
     Should,

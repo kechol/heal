@@ -194,6 +194,12 @@ The list of detected manifests is fixed: `package.json` (with
 `go.work`, `nx.json`, `turbo.json`. Don't invent custom signals — extend
 the enum in `core::monorepo` instead.
 
+In `heal status --json` the Tier appears as `Finding.drain_tier`
+(`"must"` / `"should"` / `"advisory"`) next to `Finding.drain_rank`, the
+1-based position in the Finding's family queue (the rendered order,
+semantic axes included). Both are render-time, like `accepted`; never
+"priority", "score", or "position".
+
 ---
 
 ## Skills (agent targets)

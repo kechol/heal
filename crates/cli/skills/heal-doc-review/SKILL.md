@@ -124,10 +124,11 @@ Build a prioritized TODO list. The order matters — drain the
 high-value, low-effort items first so the cache empties faster
 under `/heal-doc-patch`:
 
-First preserve HEAL's Tier and Severity order, then sort by descending
-`hotspot_score` within the Docs family. Missing scores sort last; ties
-use metric, path, then finding id. This mirrors human `heal status`; do not mix
-raw scores across families or invent a combined score. The categories
+Keep HEAL's queue order: sort by `drain_rank`, which `heal status
+--json` counts within the Docs family and which already applies Tier,
+Severity, the `[features.semantic]` axes, and `hotspot_score` exactly as
+the human `heal status` prints them. Do not re-derive the order, mix raw
+scores across families, or invent a combined score. The categories
 below decide how an item is handled, not a different numeric ranking.
 
 1. **Mechanical wins (allow-list).** Findings whose fix is

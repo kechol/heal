@@ -24,6 +24,9 @@ pub struct Finding {
     pub fix_hint: Option<String>,
     pub accepted: bool,              // render-time decoration
     pub is_test_file: bool,          // test-family role decoration
+    pub semantic: BTreeMap<String, SemanticNote>, // [features.semantic] notes
+    pub drain_tier: Option<DrainTier>, // render-time (`heal status`), never persisted
+    pub drain_rank: Option<u32>,     // render-time: 1-based, per family
 }
 
 pub struct Location {
@@ -134,7 +137,13 @@ adds `coverage_observation`, which separates absent or partial
 measurement from measured 0% coverage. v7 → v8 adds the optional
 `Finding.hotspot_score`; it controls deterministic order within a
 family after Tier and Severity, but does not affect ids, Severity, or
-drain Tier.
+drain Tier. v8 → v9 adds the optional `Finding.semantic` note map and
+the `[features.semantic]` metric strings (`concept_*`, `term_drift`,
+`name_mismatch`, `test_value`, `mock_scope`, `test_duplicate`,
+`doc_structure.*`, `doc_placement`, `doc_drift.semantic`,
+`doc_concept.*`), plus the render-time `drain_tier` / `drain_rank`
+that `heal status` sets (`core::order::decorate`) after writing
+`latest.json`, so they are never persisted.
 
 `read_latest` peeks at the version field first and returns `Ok(None)`
 on **any mismatch** — the next run silently rewrites under the new

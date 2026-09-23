@@ -189,9 +189,12 @@ swallowed → exit 0.
 - `--top <N>` — cap each rendered Tier/Severity bucket.
 
 **Output (JSON):** the `FindingsRecord` schema used on disk, with the current
-accepted state and ephemeral `accepted_rereview` notices overlaid. Finding and
-workspace filters narrow this invocation's payload; it is therefore not a
-byte-for-byte dump of `latest.json`.
+accepted state and ephemeral `accepted_rereview` notices overlaid. Each
+drainable Finding also carries `drain_tier` and a family-local, 1-based
+`drain_rank` (`core::order::decorate`, run after `latest.json` is written),
+so skills read the rendered order — semantic axes included — instead of
+re-deriving it. Finding and workspace filters narrow this invocation's
+payload; it is therefore not a byte-for-byte dump of `latest.json`.
 
 **Exit:** 0 success (broken pipe included); error otherwise.
 

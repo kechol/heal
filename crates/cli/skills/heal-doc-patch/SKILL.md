@@ -6,8 +6,8 @@ description: Drain `[features.docs]` findings from the cache, applying mechanica
 # heal-doc-patch
 
 Drain the `doc_*` findings that `heal status` produced. One finding
-per commit, in effective Tier, Severity, then Docs-family
-`hotspot_score` order, until T0 in the docs slice of the cache is
+per commit, in HEAL's drain order (`drain_rank`), until T0 in the docs
+slice of the cache is
 empty (or the user stops). This is the **write** counterpart to
 `/heal-doc-review`.
 
@@ -74,7 +74,7 @@ different.
 
 ```
 while there are non-Ok doc_* findings in the cache:
-    pick the first item in HEAL's Tier → Severity → hotspot_score order
+    pick the T0 finding with the lowest `drain_rank`
         skip findings where `accepted == true`
     read the doc + paired srcs
     decide: allow-list (apply) / false-positive (propose accept) / escalate-list (stop)?
@@ -94,10 +94,14 @@ while there are non-Ok doc_* findings in the cache:
 Stop conditions: doc cache empty, user interrupts, or only
 escalate-list findings remain.
 
-Within a drain Tier, choose higher Severity first and then descending
-`hotspot_score` within the Docs family. Missing scores sort last; ties
-use metric, path, then finding id. This mirrors human `heal status`; do not mix
-Docs scores with Code/Test scores or construct a combined score.
+`heal status --json` gives every drainable finding a `drain_tier`
+(`must` = T0, `should` = T1, `advisory`) and a `drain_rank` (1 = next,
+counted within the Docs family). Take the lowest `drain_rank` whose
+`drain_tier` is `must`. The rank already applies Tier, Severity, the
+`[features.semantic]` axes, and `hotspot_score` exactly as the human
+`heal status` prints them; do not re-derive the order or mix Docs
+scores with Code/Test scores. Accepted and Ok findings carry neither
+field.
 
 ## Allow-list (apply mechanically)
 
@@ -298,8 +302,8 @@ finding sits inside one, escalate — the drift is load-bearing.
 When the project enables `[features.semantic]`, findings in
 `heal status --json` may carry a `semantic` map of notes (label, `p`,
 `confidence`). Everything here is additive: without a note, follow the
-rest of this skill unchanged. Keep following the order `heal status`
-prints; it already includes the semantic axes.
+rest of this skill unchanged. Keep following `drain_rank`; it already
+includes the semantic axes.
 
 `confidence ≥ 0.9` — act on the note. `0.5–0.9` — read the files and
 confirm first. `< 0.5` — ignore it.

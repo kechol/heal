@@ -105,7 +105,14 @@ lexicographically (never summed): `focus` (0–6, 0 without a note) →
 confidence < 0.5 are ignored. With no notes every axis is neutral, so
 the order equals the pre-semantic Tier → Severity → `hotspot_score`.
 
-H9 (the doc-patch "is this applicable?" judgments) is covered by the
+`heal status --json` exposes this order as `drain_tier` and a
+family-local, 1-based `drain_rank` on each drainable Finding
+(`core::order::decorate`, render-time, never in `latest.json`). The
+patch and review skills sort by `drain_rank`; before it existed they
+re-derived Tier → Severity → `hotspot_score` from the JSON and never saw
+the semantic axes.
+
+The doc-patch "is this applicable?" judgments are covered by the
 `triage` gate, which runs for docs findings too, plus `doc_placement`'s
 `placement` note for orphan registration.
 

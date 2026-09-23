@@ -7,8 +7,11 @@
 - **`FINDINGS_RECORD_VERSION` is now 9.** Findings gain an optional
   `semantic` decoration map, and the `[features.semantic]` family adds new
   metric strings. Projects that do not enable the family get records that
-  are otherwise byte-identical to v8. **Migration:** none by hand — older
-  `latest.json` files invalidate and rebuild on the next `heal status`.
+  are otherwise byte-identical to v8. `heal status --json` also adds two
+  render-time fields per drainable finding, `drain_tier` and
+  `drain_rank`, which are never written to `latest.json`. **Migration:**
+  none by hand — older `latest.json` files invalidate and rebuild on the
+  next `heal status`.
 
 ### Features — `[features.semantic]` (Jev, opt-in)
 
@@ -70,7 +73,11 @@
   them one after another inside each Tier + Severity bucket before
   `hotspot_score`. Tier and Severity never change, and without notes the
   order is unchanged. `heal status --focus <file>` ranks for described
-  upcoming work without writing `latest.json`.
+  upcoming work without writing `latest.json`. `heal status --json`
+  exposes the order as `drain_tier` and a family-local `drain_rank`, and
+  the patch and review skills now sort by `drain_rank` instead of
+  re-deriving Tier → Severity → `hotspot_score` without the semantic
+  axes.
 - Semantic tasks honour an explicit `[features.test].test_paths` alone.
   With the default globs they still add the naming heuristic, which also
   treats production modules under a `test/` directory as tests.

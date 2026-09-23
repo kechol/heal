@@ -168,6 +168,18 @@ pub struct Finding {
     /// JSON) whenever the family is disabled.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub semantic: BTreeMap<String, SemanticNote>,
+    /// Decorated at render time by [`crate::core::order::decorate`] (like
+    /// `accepted`), never persisted in `latest.json`: the drain Tier, for
+    /// non-accepted Findings above `Ok`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drain_tier: Option<crate::core::config::DrainTier>,
+    /// Render-time, next to `drain_tier`: 1-based position in the
+    /// Finding's family drain queue — the order `heal status` prints,
+    /// including the `[features.semantic]` axes. Patch skills take the
+    /// lowest rank of the tier they drain instead of re-deriving the
+    /// order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drain_rank: Option<u32>,
 }
 
 /// One semantic decoration on a Finding.
@@ -218,6 +230,8 @@ impl Finding {
             accepted: false,
             is_test_file: false,
             semantic: BTreeMap::new(),
+            drain_tier: None,
+            drain_rank: None,
         }
     }
 
@@ -486,6 +500,8 @@ mod tests {
             accepted: false,
             is_test_file: false,
             semantic: BTreeMap::new(),
+            drain_tier: None,
+            drain_rank: None,
         };
         let json = serde_json::to_string(&f).unwrap();
         assert!(!json.contains("semantic"));

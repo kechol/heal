@@ -1,13 +1,13 @@
 ---
 name: heal-code-patch
-description: Drain T0 from the cache produced by `heal status`, fixing one finding per commit in effective Tier, Severity, then family-local hotspot score order until T0 is empty or the user stops. Writes code, runs tests, and commits — does NOT push or open PRs. Refuses to start on a dirty worktree. Trigger on "fix the heal findings", "drain the cache", "work through the TODO list heal produced", "/heal-code-patch".
+description: Drain T0 from the cache produced by `heal status`, fixing one finding per commit in HEAL's drain order (`drain_rank`) until T0 is empty or the user stops. Writes code, runs tests, and commits — does NOT push or open PRs. Refuses to start on a dirty worktree. Trigger on "fix the heal findings", "drain the cache", "work through the TODO list heal produced", "/heal-code-patch".
 ---
 
 # heal-code-patch
 
 Drain the cache that `heal status` produced. One finding per commit,
-in effective Tier, Severity, then family-local `hotspot_score` order,
-until T0 is empty (or the user stops). This
+in HEAL's drain order (`drain_rank`: Tier, Severity, the semantic axes,
+then family-local `hotspot_score`), until T0 is empty (or the user stops). This
 is the **write** counterpart to `/heal-code-review` — that one proposes,
 this one applies.
 
@@ -98,7 +98,7 @@ patterns, end the session with a summary and recommend the user run
 
 ```
 while there are non-Ok findings in the cache:
-    pick the first item in HEAL's Tier → Severity → hotspot_score order
+    pick the T0 finding with the lowest `drain_rank`
         # skip findings where `accepted == true` — the team has already
         # decided these are intrinsic; refactoring them is out of scope
         # for this skill. They show up under `📌 Accepted` in
@@ -138,11 +138,14 @@ ask before applying.
    Treat as advisory; surface the trade-off and ask before draining.
 3. **Advisory** — anything else above Ok. Never drain in-loop.
 
-Within T0, iterate by Severity first (`Critical 🔥` first), then by
-descending `hotspot_score` among findings in that same family and
-Severity. Missing scores sort last; ties use metric, path, then finding id.
-This is the same order as the human `heal status` output. Do not mix
-raw scores across Code/Test/Docs or invent a combined score. Skip
+`heal status --json` gives every drainable finding a `drain_tier`
+(`must` = T0, `should` = T1, `advisory`) and a `drain_rank` (1 = next,
+counted within the Code family). Take the lowest `drain_rank` whose
+`drain_tier` is `must`. The rank already applies Tier, Severity, the
+`[features.semantic]` axes, and `hotspot_score` exactly as the human
+`heal status` prints them; do not re-derive the order or mix Code
+scores with Test/Docs scores. Accepted and Ok findings carry neither
+field. Skip
 findings already present in `.heal/findings/fixed.json` (match by
 `finding_id`).
 
@@ -266,9 +269,8 @@ level.
 
 ## With `[features.semantic]`
 
-The drain order in `heal status` already includes the semantic axes
-(consequence, friction, bug-fix ratio, effort); keep following the order
-it prints.
+`drain_rank` already includes the semantic axes (consequence, friction,
+bug-fix ratio, effort); keep following it.
 
 When the project enables `[features.semantic]`, findings in
 `heal status --json` may carry a `semantic` map of notes (label, `p`,

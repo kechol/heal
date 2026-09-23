@@ -10,6 +10,7 @@
 //! composite score) and §1.3 (Severity and Hotspot stay orthogonal) hold.
 
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
 use crate::core::config::PolicyDrainConfig;
 use crate::core::finding::Finding;
@@ -111,9 +112,33 @@ pub fn sort(findings: &mut [&Finding], drain: &PolicyDrainConfig) {
     findings.sort_by(|a, b| compare(a, b, drain));
 }
 
+/// Set `drain_tier` and a family-local, 1-based `drain_rank` on every
+/// non-accepted Finding that has a Tier, in exactly the order `heal
+/// status` renders each family's queue (Tier, Severity, then
+/// [`within_severity`]). Everything else gets `None`. Render-time only:
+/// run it after `latest.json` is written and after the accepted overlay,
+/// so neither field is persisted and acceptance takes effect at once.
+pub fn decorate(findings: &mut [Finding], drain: &PolicyDrainConfig) {
+    let mut by_family: BTreeMap<crate::feature::Family, Vec<usize>> = BTreeMap::new();
+    for (i, f) in findings.iter_mut().enumerate() {
+        f.drain_rank = None;
+        f.drain_tier = if f.accepted { None } else { drain.tier_for(f) };
+        if f.drain_tier.is_some() {
+            by_family.entry(f.family()).or_default().push(i);
+        }
+    }
+    for mut queue in by_family.into_values() {
+        queue.sort_by(|&a, &b| compare(&findings[a], &findings[b], drain));
+        for (rank, i) in queue.into_iter().enumerate() {
+            findings[i].drain_rank = u32::try_from(rank + 1).ok();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::config::DrainTier;
     use crate::core::finding::Location;
     use crate::core::severity::Severity;
     use std::path::PathBuf;
@@ -163,6 +188,59 @@ mod tests {
             },
         );
         f
+    }
+
+    #[test]
+    fn decorate_ranks_each_family_in_render_order() {
+        let drain = PolicyDrainConfig::default();
+        let mut doc = f("docs/a.md", Severity::Critical, true, Some(1.0));
+        doc.metric = "doc_drift".to_owned();
+        let mut accepted = f("acc.rs", Severity::Critical, true, Some(99.0));
+        accepted.accepted = true;
+        let mut findings = vec![
+            f("hot.rs", Severity::Critical, true, Some(50.0)),
+            with_note(
+                f("pay.rs", Severity::Critical, true, Some(1.0)),
+                "consequence",
+                "critical",
+                0.9,
+            ),
+            f("should.rs", Severity::High, true, None),
+            f("ok.rs", Severity::Ok, true, Some(99.0)),
+            accepted,
+            doc,
+        ];
+        decorate(&mut findings, &drain);
+        let got: Vec<(&str, Option<DrainTier>, Option<u32>)> = findings
+            .iter()
+            .map(|f| {
+                (
+                    f.location.file.to_str().unwrap(),
+                    f.drain_tier,
+                    f.drain_rank,
+                )
+            })
+            .collect();
+        assert_eq!(
+            got,
+            [
+                // The semantic `consequence` axis outranks a larger hotspot score.
+                ("hot.rs", Some(DrainTier::Must), Some(2)),
+                ("pay.rs", Some(DrainTier::Must), Some(1)),
+                ("should.rs", Some(DrainTier::Should), Some(3)),
+                ("ok.rs", None, None),
+                ("acc.rs", None, None),
+                // Docs is its own queue.
+                ("docs/a.md", Some(DrainTier::Must), Some(1)),
+            ]
+        );
+        let json = serde_json::to_value(&findings[1]).unwrap();
+        assert_eq!(json["drain_tier"], "must");
+        assert_eq!(json["drain_rank"], 1);
+        assert!(serde_json::to_value(&findings[3])
+            .unwrap()
+            .get("drain_tier")
+            .is_none());
     }
 
     #[test]

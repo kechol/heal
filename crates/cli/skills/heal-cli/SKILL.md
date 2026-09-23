@@ -135,6 +135,8 @@ Key fields:
       "id": "ccn:src/a.ts:foo:9f8e7d6c5b4a3210",  // deterministic; stable across runs
       "metric": "ccn",
       "severity": "critical",                      // or "high" / "medium" / "ok"
+      "drain_tier": "must",                        // "must" (T0) / "should" (T1) / "advisory"; absent for Ok or accepted
+      "drain_rank": 1,                             // 1 = next in this family's queue; the order `heal status` prints
       "hotspot": true,
       "hotspot_score": 140.0,                    // family-local ordering only; not part of id
       "location":  { "file": "…", "line": 120, "symbol": "…" },
