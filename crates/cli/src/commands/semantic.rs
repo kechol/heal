@@ -215,6 +215,9 @@ fn print_report(r: &AskReport) {
                 String::new()
             },
         );
+        if let Some(hint) = &t.hint {
+            println!("  {:<20} {hint}", "");
+        }
         if t.pruned > 0 {
             println!("  {:<20} pruned {} stale verdict(s)", "", t.pruned);
         }

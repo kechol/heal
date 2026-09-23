@@ -353,6 +353,25 @@ pub enum FindingMetric {
     /// `[features.docs]` — per-pair `paired_src_churn × debt`
     /// composite. Docs-family analogue of code Hotspot.
     DocHotspot,
+    /// `[features.semantic]` — concept map: `concept_mix`,
+    /// `concept_misplaced`, `concept_scatter`.
+    Concept,
+    /// `[features.semantic]` — `term_drift` and `name_mismatch`.
+    Naming,
+    /// `[features.semantic]` — low-value tests (`test_value`).
+    TestValue,
+    /// `[features.semantic]` — mocks of internal collaborators (`mock_scope`).
+    MockScope,
+    /// `[features.semantic]` — tests that duplicate each other (`test_duplicate`).
+    TestDuplicate,
+    /// `[features.semantic]` — pages to split, merge, or restructure
+    /// (`doc_structure.*`).
+    DocStructure,
+    /// `[features.semantic]` — pages filed under the wrong section (`doc_placement`).
+    DocPlacement,
+    /// `[features.semantic]` — duplicated, conflicting, or missing
+    /// explanations per concept (`doc_concept.*`).
+    DocConcept,
 }
 
 impl FindingMetric {
@@ -374,7 +393,7 @@ impl FindingMetric {
             Self::Hotspot => metric == "hotspot",
             Self::Lcom => metric == "lcom",
             Self::DocFreshness => metric == "doc_freshness",
-            Self::DocDrift => metric == "doc_drift",
+            Self::DocDrift => metric == "doc_drift" || metric.starts_with("doc_drift."),
             Self::DocCoverage => metric == "doc_coverage",
             Self::DocLinkHealth => metric == "doc_link_health",
             Self::OrphanPages => metric == "orphan_pages",
@@ -383,6 +402,14 @@ impl FindingMetric {
             Self::SkipRatio => metric == Finding::METRIC_SKIP_RATIO,
             Self::TestHotspot => metric == Finding::METRIC_TEST_HOTSPOT,
             Self::DocHotspot => metric == Finding::METRIC_DOC_HOTSPOT,
+            Self::Concept => metric.starts_with("concept_"),
+            Self::Naming => matches!(metric, "term_drift" | "name_mismatch"),
+            Self::TestValue => metric == "test_value",
+            Self::MockScope => metric == "mock_scope",
+            Self::TestDuplicate => metric == "test_duplicate",
+            Self::DocStructure => metric.split('.').next() == Some("doc_structure"),
+            Self::DocPlacement => metric == "doc_placement",
+            Self::DocConcept => metric.split('.').next() == Some("doc_concept"),
         }
     }
 }

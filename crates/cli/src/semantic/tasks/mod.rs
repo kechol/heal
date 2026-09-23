@@ -2,6 +2,8 @@
 //! [`crate::semantic::task::registry`] lists them in a stable order.
 
 pub mod commit_intent;
+pub mod common;
+pub mod concept;
 
 #[cfg(test)]
 #[allow(dead_code)] // shared by every task's tests; not all use every helper

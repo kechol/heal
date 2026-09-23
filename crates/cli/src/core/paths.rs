@@ -113,6 +113,13 @@ impl HealPaths {
         self.root.join("semantic")
     }
 
+    /// Concept vocabulary for the `concept` / `doc_concept` semantic
+    /// tasks. Tracked team contract, written by `/heal-concepts-setup`.
+    #[must_use]
+    pub fn concepts(&self) -> PathBuf {
+        self.root.join("concepts.toml")
+    }
+
     /// Verdict cache written by `heal semantic ask`, one JSONL file per task.
     #[must_use]
     pub fn semantic_verdicts(&self) -> PathBuf {

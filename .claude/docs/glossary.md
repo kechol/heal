@@ -23,6 +23,7 @@ FindingsRecord`, `heal check → heal status`, `heal status → heal metrics`,
 | **the loop** | "drain", "harness loop" | Observe → classify → drain (review/patch). The HEAL backronym's "Loop". |
 | **Jev** | "the LLM", "the AI", "GPT" | TypeSafe's classifier model behind `[features.semantic]`. Returns typed probabilities, never text. Write "Jev" in prose, `jev` in commands (`heal auth jev`). |
 | **semantic task** | "rule", "check", "prompt" | One kind of question HEAL asks Jev (`semantic::task::Task`). Has a stable id used as the verdict file name and the `[features.semantic.tasks.<id>]` key. |
+| **concept vocabulary** | "taxonomy", "tags", "categories" | `.heal/concepts.toml`: the team's list of concepts (id + one-line responsibility) that the `concept` / `term_drift` / `doc_concept` tasks classify into. Written by `/heal-concepts-setup`. |
 | **verdict** | "answer cache", "result", "judgment" | One cached Jev answer (`semantic::store::Verdict`), stored in `.heal/semantic/verdicts/<task>.jsonl`. |
 
 ---

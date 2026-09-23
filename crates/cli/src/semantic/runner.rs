@@ -37,6 +37,9 @@ pub struct TaskReport {
     /// Groups whose shared state alone exceeds the state ceiling.
     pub oversized_groups: usize,
     pub pruned: usize,
+    /// Why nothing was planned, when the user can fix it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -102,6 +105,9 @@ fn plan_task(
                 report.oversized_groups += 1;
             }
         }
+    }
+    if report.subjects == 0 {
+        report.hint = task.setup_hint(ctx);
     }
     report.requests = batches.len();
     report.est_input_tokens = batches.iter().map(|b| b.est_tokens).sum();

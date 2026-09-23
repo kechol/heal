@@ -97,9 +97,27 @@ Each kind of question is a _task_. You can turn one off with
 `[features.semantic.tasks.<id>] enabled = false`, or change the
 probability it needs with `cutoff = 0.7`.
 
-| Task            | What it asks                                                               | Where you see it                                                 |
-| --------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `commit_intent` | Whether each recent commit was a bug fix, a feature, a refactor, and so on | Files where bug fixes concentrate move up the `heal status` list |
+| Task            | What it asks                                                               | Where you see it                                                                                 |
+| --------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `commit_intent` | Whether each recent commit was a bug fix, a feature, a refactor, and so on | Files where bug fixes concentrate move up the `heal status` list                                 |
+| `concept`       | Which concept of your vocabulary each function implements                  | Files that mix concepts, functions that belong elsewhere, and concepts scattered over many files |
+
+### The concept vocabulary
+
+The `concept` task needs a list of the ideas your code is built from,
+in `.heal/concepts.toml`. Jev chooses among names you give it; it never
+invents one. Generate a first draft with the bundled skill, review it,
+and commit the file:
+
+```sh
+claude /heal-concepts-setup
+```
+
+```toml
+[[concept]]
+id = "calibration"
+description = "Derives thresholds from the project's own metric distribution."
+```
 
 ## Cost
 

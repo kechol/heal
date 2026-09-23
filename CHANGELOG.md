@@ -27,6 +27,16 @@
   the only commands that open a connection. Every other command reads the
   verdict cache offline; when the family is enabled, verdict files are part
   of `config_hash`, so a changed verdict re-renders `heal status`.
+- **`concept` task (C12)** classifies every function into the team's
+  concept vocabulary (`.heal/concepts.toml`, written by the new
+  `/heal-concepts-setup` skill) and reports `concept_mix`,
+  `concept_misplaced`, and `concept_scatter` findings. The approach
+  follows conceptual cohesion (Marcus & Poshyvanyk, ICSM 2005).
+- **`commit_intent` task (Q7)** classifies recent commits and decorates
+  Code findings with a per-file bug-fix ratio (`semantic.fix_ratio`).
+- `heal status --metric` accepts `concept`, `naming`, `test-value`,
+  `mock-scope`, `test-duplicate`, `doc-structure`, `doc-placement`, and
+  `doc-concept`; `doc-drift` now includes its submetrics.
 - TLS uses rustls with the OS trust store (`rustls-native-certs`), so a
   corporate CA installed on the machine keeps working. Client pacing,
   retry, and split-on-`max_tokens_exceeded` behaviour follow

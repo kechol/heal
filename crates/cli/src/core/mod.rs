@@ -3,6 +3,7 @@
 
 pub mod accepted;
 pub mod calibration;
+pub mod concepts;
 pub mod config;
 pub mod doc_pairs;
 pub mod error;

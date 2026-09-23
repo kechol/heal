@@ -38,6 +38,16 @@ heal semantic ask                     heal status / heal diff
 | id | Family | Question | Output |
 |---|---|---|---|
 | `commit_intent` (Q7) | core | `choice` fix / feature / refactor / test / docs / chore per commit in the churn window (≤1000 newest) | note `fix_ratio` on every Code Finding of a touched file: `p` = fix commits / answered commits |
+| `concept` (C12) | code | `choice` over `.heal/concepts.toml` (+ `other`) per outer function ≥3 lines; state = numbered file, or ±40-line windows when the file exceeds the state budget | `concept_mix` (≥2 concepts ≥25% of a file's classified LOC, file ≥60 LOC; High at ≥3), `concept_misplaced` (function's concept ≠ file home, another file's home = that concept; Medium, `fix_hint` = move target), `concept_scatter` (concept in ≥5 files, none ≥40%; Medium, `locations` = other files) |
+
+Semantic Findings never exceed `High` (`tasks::common::finding`): a
+classifier is wrong often enough that a verdict alone must not put a
+Finding in the Critical-driven T0 tier.
+
+`.heal/concepts.toml` (`core::concepts`) — `[[concept]] { id,
+description }`, ids lowercase `[a-z0-9_-]`, 1–254 entries, `other`
+appended automatically. Written by `/heal-concepts-setup`; an
+observation input of `config_hash` while the family is enabled.
 
 ## Q9 backtest (dev only)
 

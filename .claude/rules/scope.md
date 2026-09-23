@@ -91,6 +91,8 @@ Don't propose these without explicit roadmap discussion:
 In user repositories everything under `.heal/` is tracked:
 `.heal/*.toml` and `.heal/doc_pairs.json` are the team contract,
 `.heal/findings/*` is shared per-commit state (R4), and
+`.heal/concepts.toml` is the concept vocabulary the semantic tasks
+classify against (team contract, like `config.toml`), and
 `.heal/semantic/verdicts/*.jsonl` is the Jev verdict cache — tracked
 so teammates without an API key read the same verdicts and
 `latest.json` stays byte-identical across them. Secrets never go

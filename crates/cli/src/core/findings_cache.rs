@@ -428,7 +428,14 @@ pub fn observation_hash_from_paths(
         // or the worktree (the directory may be untracked), so every
         // verdict file is an observation input. Sorted by file name; the
         // logical path keeps host paths out of the digest.
-        let dir = crate::core::paths::HealPaths::new(observation_root).semantic_verdicts();
+        let heal = crate::core::paths::HealPaths::new(observation_root);
+        push_file(
+            &mut chunks,
+            "semantic_concepts",
+            ".heal/concepts.toml",
+            &heal.concepts(),
+        );
+        let dir = heal.semantic_verdicts();
         for path in crate::semantic::store::verdict_files(&dir) {
             let name = path
                 .file_name()
@@ -805,7 +812,17 @@ mod tests {
         std::fs::remove_file(verdicts.join("t.jsonl")).unwrap();
         let none = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
         assert_ne!(edited, none);
-        assert_eq!(off, none, "no verdict files contributes no chunks");
+        assert_eq!(
+            none,
+            observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap(),
+            "stable while nothing changes"
+        );
+        std::fs::write(tmp.path().join(".heal/concepts.toml"), b"[[concept]]\n").unwrap();
+        assert_ne!(
+            none,
+            observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap(),
+            "the concept vocabulary is an observation input"
+        );
     }
 
     #[test]

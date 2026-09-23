@@ -158,6 +158,12 @@ pub trait Task: Sync {
         false
     }
 
+    /// Why the task planned nothing, when the user can fix it (a missing
+    /// input file, a disabled prerequisite). Shown by `heal semantic ask`.
+    fn setup_hint(&self, _ctx: &TaskContext<'_>) -> Option<String> {
+        None
+    }
+
     /// Enumerate subjects locally and build their questions.
     fn plan(&self, ctx: &TaskContext<'_>) -> anyhow::Result<Vec<Group>>;
 
@@ -172,9 +178,11 @@ pub trait Task: Sync {
 /// [`crate::core::config::SEMANTIC_TASK_IDS`].
 #[must_use]
 pub fn registry() -> Vec<Box<dyn Task>> {
-    vec![Box::new(
-        crate::semantic::tasks::commit_intent::CommitIntent,
-    )]
+    use crate::semantic::tasks as t;
+    vec![
+        Box::new(t::commit_intent::CommitIntent),
+        Box::new(t::concept::ConceptTask),
+    ]
 }
 
 #[cfg(test)]
