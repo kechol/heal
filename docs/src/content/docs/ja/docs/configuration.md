@@ -5,7 +5,7 @@ description: '[features.docs] の有効化、standalone ドキュメントの選
 
 **Docs** ファミリはオプトインです。デフォルトでオフ。コードメトリクスと並べて古いドキュメントを表面化したくなったら有効化してください。外部 HTTP リンクのチェックやサンプルコードの実行はスコープ外です(heal はローカル限定で動きます。HTTP 側は CI で `lychee` などを使ってください)。
 
-各メトリクスが捕まえる内容は [Docs › メトリクス](/heal/ja/docs/metrics/)、同梱スキルは [Docs › スキル](/heal/ja/docs/skills/) を参照。
+各メトリクスが捕まえる内容は [Docs › メトリクス](/heal/ja/docs/metrics/)、スキルは [Docs › スキル](/heal/ja/docs/skills/) を参照。
 
 ## 有効化の手順
 
@@ -14,10 +14,10 @@ description: '[features.docs] の有効化、standalone ドキュメントの選
 enabled = true
 ```
 
-このあと、同梱のペア設定スキルを 1 度実行して `.heal/doc_pairs.json` を生成します。heal はこのファイルの読み取り専用消費者です(下記の [`.heal/doc_pairs.json`](#healdoc_pairsjson--ペアファイル) を参照)。
+このあと、セットアップ用スキルの docs の手順を 1 度実行して `.heal/doc_pairs.json` を生成します(ファミリの有効化もあわせて行えます)。heal はこのファイルの読み取り専用消費者です(下記の [`.heal/doc_pairs.json`](#healdoc_pairsjson--ペアファイル) を参照)。Claude Code で次を実行します。
 
-```sh
-claude /heal-doc-pair-setup
+```
+/heal:setup docs
 ```
 
 ## `[features.docs]`
@@ -26,12 +26,12 @@ claude /heal-doc-pair-setup
 [features.docs]
 enabled       = false                        # マスタースイッチ
 pairs_path    = ".heal/doc_pairs.json"       # ペアファイルの位置
-scaffold_root = ".heal/docs"                 # /heal-doc-scaffold の出力先
+scaffold_root = ".heal/docs"                 # /heal:docs scaffold の出力先
 ```
 
 - `enabled`(デフォルト `false`) — マスタースイッチ。false の間は全 docs オブザーバが no-op になり、`.heal/doc_pairs.json` も参照されません。
-- `pairs_path`(デフォルト `.heal/doc_pairs.json`) — ペアファイルへのプロジェクト相対パス。heal は読むだけで、生成は `/heal-doc-pair-setup` の役割です。
-- `scaffold_root`(デフォルト `.heal/docs`) — `/heal-doc-scaffold` が Markdown skeleton を書き出すプロジェクト相対のルート。heal 本体はこのツリーを読み書きしません — チームメンバーが scaffold を再生成しても同じ場所に揃うようにするための消費者向けメタデータです。デフォルトを `.heal/docs` にしているのは、プロジェクトが既に持つ `docs/`(Starlight / mdBook / mkdocs)と衝突させないため。skeleton を確認したら `git mv .heal/docs docs` で公開ロケーションに昇格させ、`scaffold_root = "docs"` に書き換えると次回以降は直接そこに生成されます。
+- `pairs_path`(デフォルト `.heal/doc_pairs.json`) — ペアファイルへのプロジェクト相対パス。heal は読むだけで、生成は `/heal:setup` の役割です。
+- `scaffold_root`(デフォルト `.heal/docs`) — `/heal:docs scaffold` が Markdown skeleton を書き出すプロジェクト相対のルート。heal 本体はこのツリーを読み書きしません — チームメンバーが scaffold を再生成しても同じ場所に揃うようにするための消費者向けメタデータです。デフォルトを `.heal/docs` にしているのは、プロジェクトが既に持つ `docs/`(Starlight / mdBook / mkdocs)と衝突させないため。skeleton を確認したら `git mv .heal/docs docs` で公開ロケーションに昇格させ、`scaffold_root = "docs"` に書き換えると次回以降は直接そこに生成されます。
 
 ## `[features.docs.standalone]`
 
@@ -153,7 +153,7 @@ exclude_link_prefixes = ["/heal/"]   # Starlight base: '/heal'
 | `pairs[].confidence` | `0.0` – `1.0`。手動エントリは通常 `1.0`、自動検出は heuristic の confidence。                                                                   |
 | `pairs[].source`     | `"mention"`(ドキュメントが src を参照)、`"mirror"`(ディレクトリ構造ミラー)、`"llm"`(LLM 推論)、`"manual"`(ユーザ作成、再生成で保持)のいずれか。 |
 
-**手動エントリは保持されます。** `/heal-doc-pair-setup` がファイルを再生成するとき、`source: "manual"` の行はそのまま残り、自動検出された行だけが再計算されます。
+**手動エントリは保持されます。** `/heal:setup` がファイルを再生成するとき、`source: "manual"` の行はそのまま残り、自動検出された行だけが再計算されます。
 
 完全性チェックはベストエフォートです:
 

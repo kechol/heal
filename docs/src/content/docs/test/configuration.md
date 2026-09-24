@@ -11,7 +11,7 @@ to actually run (flakiness, mutation score, runtime trends) stays
 out of scope.
 
 For what each metric flags, see [Test › Metrics](/heal/test/metrics/).
-For the bundled skills, see [Test › Skills](/heal/test/skills/).
+For the skills, see [Test › Skills](/heal/test/skills/).
 
 ## Quick enable
 
@@ -27,15 +27,15 @@ Defaults cover Rust / TypeScript / JavaScript / Python / Go / Scala
 test conventions and the four conventional `lcov.info` paths. Most
 projects don't need to override anything.
 
-If you don't have an `lcov.info` yet, run the bundled setup
-skill — it inspects your stack and proposes the reporter wiring.
+If you don't have an `lcov.info` yet, run the tests step of the setup
+skill — it inspects your stack and wires up a reporter, asking before
+each step. In Claude Code:
 
-```sh
-claude /heal-test-reporter-setup
+```
+/heal:setup tests
 ```
 
-For the full skill contract see
-[Test › Skills](/heal/test/skills/#heal-test-reporter-setup-—-wire-up-lcov).
+For details see [Test › Skills](/heal/test/skills/).
 
 ## `[features.test]`
 
@@ -76,8 +76,8 @@ directory named `test/` as tests.
 
 When `[features.test]` is enabled, every Finding gains an
 `is_test_file: bool` flag. Skills filter on this to read test- and
-production-side severities independently — `/heal-test-review`
-focuses on test findings; `/heal-code-review` focuses on
+production-side severities independently — `/heal:tests`
+focuses on test findings; `/heal:refactor` focuses on
 production findings.
 
 The flag is omitted from JSON output when false, so projects that
@@ -115,7 +115,7 @@ lcov_paths = [
   the post-commit hook spawns in the background to re-run your
   reporter after every commit. The process is detached and its
   output discarded so your commit flow doesn't wait. Pair it with
-  the same command `/heal-test-reporter-setup` proposes
+  the same command `/heal:setup tests` proposes
   (`cargo llvm-cov --workspace --lcov --output-path lcov.info
 --locked --ignore-run-fail`, `pytest --cov=...`, etc.) so the
   next `heal status` reads fresh `lcov.info`. Skipped silently

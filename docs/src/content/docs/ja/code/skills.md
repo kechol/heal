@@ -1,96 +1,74 @@
 ---
 title: Code · スキル
-description: 常時オン Code ファミリ向け同梱スキル 4 種 — /heal-cli、/heal-setup、/heal-code-review、/heal-code-patch。Claude Code と OpenAI Codex に対応。
+description: 常時オンの Code ファミリ向けの、heal Claude Code プラグインのスキル — /heal:setup と /heal:refactor。
 ---
 
-heal は AI エージェント向けの同梱スキルセットを持ち、収集したメトリクスがそのままセッションへ流れます。スキル本体のソースは agent-neutral で、対応エージェントごとに展開先だけが違います:
+heal のスキルは Claude Code プラグインとして配布していて、heal が集めた Finding がそのまま Claude のセッションに流れます。Claude Code で一度だけ入れておきます。
 
-| エージェント | プロジェクト配置先 | 仕様ドキュメント                             |
-| ------------ | ------------------ | -------------------------------------------- |
-| Claude Code  | `.claude/skills/`  | <https://code.claude.com/docs/en/skills>     |
-| OpenAI Codex | `.agents/skills/`  | <https://developers.openai.com/codex/skills> |
-
-`heal init` は `PATH` から検出した各エージェント向けに自動でインストールします(TTY 時はエージェントごとに 1 回 Y/N、`--yes` で全許諾、`--no-skills` で全スキップ)。明示的に再実行する場合:
-
-```sh
-heal init --force --yes              # 検出した全エージェントを一括リフレッシュ
-heal skills install                  # 既定は --target detected(PATH にある全エージェント)
-heal skills install --target codex   # Codex tree のみ
-heal skills install --target all     # 検出有無に関わらず全 target に展開
+```
+/plugin marketplace add kechol/heal
+/plugin install heal@heal
 ```
 
-このページは 4 つの Code ファミリスキルを扱います。doc 系は [Docs › スキル](/heal/ja/docs/skills/)、test 系は [Test › スキル](/heal/ja/test/skills/) を参照。
+プラグインはプロジェクトではなく Claude Code の設定側に入るので、git 管理下のファイルは増えません。プラグインは公開時の heal リリースに固定されています。`heal` CLI を上げたらプラグインも更新してください(`/plugin marketplace update heal` のあと `/plugin update heal@heal`)。heal を使っているプロジェクトでセッションを始めると、CLI とプラグインのリリースが違う場合にだけ 1 行の案内が出ます。
 
-スキルセットは `heal` バイナリに同梱されているので、インストールされるバージョンは常にバイナリと一致します。`heal` をアップグレードしたら `heal skills update` でリフレッシュ — 既定の `--target detected` で PATH にある全エージェントを更新します。
+プラグインのスキルは 4 つです。
 
-## `/heal-code-review` — 監査スキル
+| スキル           | 用途                                                                       |
+| ---------------- | -------------------------------------------------------------------------- |
+| `/heal:setup`    | heal のセットアップと、その確認。このページで説明します。                  |
+| `/heal:refactor` | コードの Finding を読んでリファクタを提案し、承認されたものを適用する。    |
+| `/heal:docs`     | 同じことをドキュメントに — [Docs › スキル](/heal/ja/docs/skills/) を参照。 |
+| `/heal:tests`    | 同じことをテストに — [Test › スキル](/heal/ja/test/skills/) を参照。       |
 
-読み取り専用。`heal status --all --json` を取り込み、フラグ付きコードを深く読み、次の 2 つを返します:
+どのスキルも、提案をあなたが承認するまではファイルを変更せず、push や pull request の作成もしません。
 
-1. **アーキテクチャ的読解** — findings を _システムとして_ 何を語っているか(支配的な軸: complexity、duplication、coupling、hub)。
-2. **優先順位付き TODO リスト** — デフォルトで T0 のみ。T1 は別の「帯域があれば」セクション、Advisory はカウントだけ表示。
+## `/heal:setup` — セットアップと確認
 
-ソースは編集しません。チームが「設計上のもので直さない」(意図的に複雑な税金エンジン、手続き的に凝集したパーサコンビネータなど)と判断した項目には `heal mark accept` も推奨できます。
+いつ実行しても安全です。まず `heal doctor` で何が済んでいるかを確かめ、足りないものや古くなったものだけを片付けます。
 
-レビューを読んで「これも直してほしい」と思ったら、その場でエージェント(Claude Code / Codex)に伝えれば対応に移れます(「最初の 3 件を直して」「Extract Function 系から片付けて」など)。機械的な修正は `/heal-code-patch` 経由に流れ、判断が要る項目は自動適用されず、あなたの指示を待ちます。
+- **初期化** — `.heal/` がなければ `heal init` を実行します。
+- **厳しさの調整** — Strict / Default / Lenient のどれにするかを聞き、コードベースを調べた結果(除外するパス、モノレポの workspace、シグナルの出ないメトリクス)をもとに `.heal/config.toml` を書きます。初回と、調整を頼んだときに提案します。
+- **再 calibrate** — calibration 後に 200 を超えるコミットが入った、ファイル数が 20% を超えて変わった、修正を 10 件以上記録して Critical / High が残っていない、のどれかのとき。必ず先に確認します。heal が自分で calibrate し直すことはありません。
+- **オプションのファミリを有効にする** — それぞれに必要なものを用意します。Docs には doc pairs、Test にはカバレッジのリポータ、[Semantic (Jev)](/heal/ja/semantic/) には API キーと concept の一覧です。
+- **古いスキルのフォルダを消す** — heal 0.6 以前がプロジェクトにコピーしたもの(`.claude/skills/heal-*`、`.agents/skills/heal-*`)。
 
-### review と patch を分けている理由
+セットアップ済みのプロジェクトなら、そろっていると報告して何も聞かずに終わります。手順を指定すると直接そこへ進みます: `/heal:setup docs`、`/heal:setup tests`、`/heal:setup semantic`、`/heal:setup config`。
 
-**Patch** が引き受けるのは機械的な修正です — 長い関数を Extract Function、重複したブロックを共有ヘルパへ、ドリフトしたテストをソースに合わせ直す。「どのファイルを触るか分かれば、手筋は明らか」というタイプ。
+トリガーフレーズ: 「set up heal」、「check my heal setup」、「make heal stricter」、「enable heal coverage」、「/heal:setup」。
 
-**Review** はそれに加えて、**人間の判断が必要な項目** も拾い上げます — このハブは分割すべきか? この重複は実は別概念が同じ形に育ったものでは? — チームの文脈なしでは正解が決まらない問いです。だからレビューは提案して止まる。両者を 1 つのオート実行に混ぜると、判断のいる項目を取りこぼすか、機械的な山を放置するか、どちらかになります。
+## `/heal:refactor` — リファクタの提案と適用
 
-トリガーフレーズ: 「review the codebase health」、「what does heal say?」、「where should we refactor?」、「/heal-code-review」。
+heal がコードに見つけたものを理解し、手を打つまでを 1 つのスキルで行います。5 つの手順で進みます。
 
-## `/heal-code-patch` — 書き込みスキル
+1. **診断** — `heal status --all --feature code --json` を読み、指摘されたファイルを開いて、システムとして読みます。複数の Finding を抱えるファイル、モジュールの境界をまたいで一緒に変わるファイルの組、ハブになっているファイル、コードベースの層の分け方を把握します。
+2. **提案** — 最初に短いアーキテクチャの読み(いちばん大きい問題が複雑さ・重複・結合・概念の混在のどれか)を示し、続けて番号付きの提案を出します。Hotspot ファイル上の Critical な Finding が先です。各提案には、変更の中身、取り除く摩擦、解消する Finding、触るファイル、リスクを付けます。
+3. **選択** — どの提案を適用するかをあなたが選びます。
+4. **適用** — 1 提案につき 1 コミット。コミットの前にビルドとテストを実行し、失敗したらその試みは捨てます。コミットのあとで解消した Finding を記録し(`heal mark fix`)、`heal status` で確かめます。
+5. **報告** — 適用したもの、見送ったものとその理由、キューに残っているものをまとめます。
 
-`.heal/findings/latest.json` を有効 Tier、Severity、同一ファミリの `hotspot_score` 降順(欠落は末尾、同点は metric/path/id)で 1 件ずつ消化し、修正ごとに 1 コミット。ループは **T0(`must`)のみ** 解消します。T1 / Advisory は表示するだけで自動解消はしません。
+**構造的な提案** — ファイルを概念ごとに分ける、関数を本来のモジュールに移す、クラスを抜き出す、層の境界にインターフェースを置く、といった変更も、独立した 2 つ以上のシグナルが同じ境界を指していれば通常の提案として出します。たとえば LCOM のクラスタが [Semantic (Jev)](/heal/ja/semantic/) の見つけた概念の分かれ目と一致する場合や、関数の概念が別のファイルにあって、しかもそのファイルと一緒に変更されている場合です。シグナルが 1 つだけなら、提案ではなく質問として挙げます。
 
-**事前チェック**(失敗すると起動拒否):
+**判断が要るもの** — 公開 API の改名(公開している項目、CLI フラグ、JSON のフィールド)、どちらも成り立つ 2 つのモジュール境界からの選択、ドメイン単位の組み替えは、適用の前に具体的な選択肢を付けて個別に確認します。
 
-- クリーンな worktree。
-- キャッシュ存在(欠けていれば `heal status --json` で埋める)。
-- Calibration の存在(無いとすべての Finding が `Severity::Ok` になり、対象がない)。
+**直さずに受け入れる** — Finding の中には意図したものを数えているだけのものがあります。生成されたパーサのテーブル、閉じた enum に対する網羅的な `match`、手順がひとまとまりのパイプラインなどです。こうしたものは短い理由を添えて受け入れ済みとして記録する(`heal mark accept`)よう提案し、キューから外します。あなたの承認なしに受け入れることはありません。
 
-**メトリクス別の手筋**(Fowler / Tornhill 語彙):
+**[Semantic (Jev)](/heal/ja/semantic/) を有効にしている場合**は、提案を見せる前に確かめ(`verify_proposal`)、コミットのあとにも確かめます(`verify_patch`)。複雑さが移っただけ、条件を早期 return に反転しただけ、コミットメッセージが変更と合わない、リファクタのつもりで振る舞いが変わった、と判定されたら、そのコミットを取り消して次へ進みます。機能が無効か API キーがなければ、これらの確認は飛ばします。
 
-| メトリクス                           | 主な手                                                        |
-| ------------------------------------ | ------------------------------------------------------------- |
-| `ccn` / `cognitive`                  | Extract Function、Guard Clauses、Decompose Conditional        |
-| `duplication`                        | Extract Function / Method、Pull Up Method、Rule of Three      |
-| `change_coupling`(`.symmetric` 含む) | アーキテクチャの継ぎ目を可視化(coupling の自動修正は行わない) |
-| `lcom`                               | クラスタ境界に沿って Extract Class                            |
-| `hotspot`                            | Hotspot はフラグであって問題ではない。基底のメトリクスに対処  |
+引数: パス(`/heal:refactor src/payments`)を渡すとその下の Finding に絞り、Finding の id を渡すとその Finding に絞り、`plan` を渡すと提案までで止まります。
 
-**制約**(スキルが強制): 1 finding = 1 commit、Conventional Commit subject + `Refs: F#<finding_id>` trailer、push / amend / `--no-verify` はしない。docs / test ファミリのメトリクスに属する findings はスキップ — そちらは `/heal-doc-patch` / `/heal-test-patch` の担当です。
+トリガーフレーズ: 「what does heal say?」、「where should we refactor?」、「fix the heal findings」、「/heal:refactor」。
 
-**[Semantic (Jev)](/heal/ja/semantic/) を有効にしている場合**は、各 finding に付いた semantic の note を判断の参考にし、commit のたびに `heal semantic ask --task verify_patch --diff HEAD~1..HEAD` を実行します。複雑さが移っただけ、条件を早期 return に反転しただけ、commit メッセージが変更と合わない、リファクタのつもりで振る舞いが変わった、と Jev が判定したら、その commit を取り消し、理由を記録して次の finding に進みます。機能が無効か API キーがなければ、動きは変わりません。
+## heal 0.6 以前からのアップグレード
 
-トリガーフレーズ: 「fix the heal findings」、「drain the cache」、「work through the TODO list」、「/heal-code-patch」。
+以前のバージョンは 12 個のスキルを CLI に同梱し、各プロジェクトにコピーしていました。プラグインでは次のように対応します。
 
-## `/heal-cli` — CLI リファレンス
+| 以前                                                                                       | 現在               |
+| ------------------------------------------------------------------------------------------ | ------------------ |
+| `/heal-setup`、`/heal-concepts-setup`、`/heal-doc-pair-setup`、`/heal-test-reporter-setup` | `/heal:setup`      |
+| `/heal-code-review`、`/heal-code-patch`                                                    | `/heal:refactor`   |
+| `/heal-doc-review`、`/heal-doc-patch`、`/heal-doc-scaffold`                                | `/heal:docs`       |
+| `/heal-test-review`、`/heal-test-patch`                                                    | `/heal:tests`      |
+| `/heal-cli`                                                                                | (プラグインに内蔵) |
 
-`heal` CLI の簡潔で完全なリファレンス。各サブコマンド、各 `--json` の形、各コマンドが読み書きする `.heal/` ファイルを網羅しています。他のスキルが `heal` をシェル実行する前にこれを読み込むので、CLI 表面は安定した契約として扱われます。
-
-## `/heal-setup` — セットアップウィザード
-
-ワンショットのセットアップウィザード。プロジェクトを calibrate し、コードベースを見渡し、strictness レベル(Strict / Default / Lenient)を選んでもらって `.heal/config.toml` を書く / 更新したあと、`[features.docs]` / `[features.test]` の有効化を順に確認し、有効化する場合は対応するセットアップスキル(`/heal-doc-pair-setup` / `/heal-test-reporter-setup`)に連携します。
-
-コードベースが大きく動いて基準を動かしたくなったとき、または Critical を持続的に解消し終えたときは再実行を — そういう局面では `heal calibrate --force` も推奨します。
-
-## `/heal-concepts-setup` — 概念の語彙
-
-opt-in の [Semantic (Jev)](/heal/ja/semantic/) でだけ使います。コード・用語集・docs を読んで、コードベースを形づくる概念の一覧（それぞれ 1 行の責務付き）を下書きし、一緒に見直してから `.heal/concepts.toml` に書きます。heal はこの一覧を使って、各関数と doc の節を概念に分類し、概念が混ざったファイル、置き場所の違う関数、同じものを指す別々の単語、どの doc も説明していない概念を見つけます。
-
-## メンテナンス
-
-```sh
-heal skills update                   # 検出した全エージェントの tree をリフレッシュ(ドリフト認識付き)
-heal skills update --target all      # 検出有無に関わらず全 target を更新
-heal skills status                   # ターゲット別の installed バージョンと drift
-heal skills status --target codex    # スコープを単一エージェントに絞る
-heal skills uninstall                # 検出したエージェントの同梱スキルを削除
-heal skills uninstall --target all   # 全 target tree から削除
-```
-
-`update` は手編集されたファイルをそのまま残します(警告付き)。`--force` で上書き可。`uninstall` は各 target tree 配下の `heal-*` ディレクトリだけを削除し、あなたが書いた兄弟スキルは残ります。`.heal/` 配下のプロジェクトデータも触りません。
+プラグインを入れたら、各プロジェクトで `heal skills uninstall` を実行して古いコピーを消し、削除をコミットしてください。消すのは heal が書いたフォルダだけで、自分で作ったスキルは残ります。

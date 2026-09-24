@@ -2,7 +2,7 @@
 
 > **h**ook-driven **e**valuation & **a**utonomous **l**oop — heal watches
 > your codebase decay between commits and hands the next refactor to
-> your AI coding agent, one fix per commit.
+> your AI coding agent, one commit per approved fix.
 
 AI coding agents are reactive: they wait for a human to file the next
 task. Meanwhile, codebases decay — complexity creeps, hotspots shift,
@@ -34,8 +34,9 @@ tree-sitter grammar it falls back to a churn-only signal.
 ## Feature families
 
 heal groups its observers into three families, plus an opt-in semantic layer. Each family carries
-its own metrics, configuration block, and pair of bundled skills
-(one to review, one to patch).
+its own metrics, configuration block, and a Claude Code skill that
+reads its findings, proposes changes, and applies the ones you
+approve.
 
 - **Code** (always on) — _"Where is the codebase hard to change?"_
   Eight metrics covering complexity, churn, duplication, cohesion,
@@ -81,6 +82,14 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/kechol/heal/releases/latest/download/heal-cli-installer.sh | sh
 ```
 
+The skills ship as a Claude Code plugin from this repository. In
+Claude Code:
+
+```
+/plugin marketplace add kechol/heal
+/plugin install heal@heal
+```
+
 Details: [Installation](https://kechol.github.io/heal/installation/).
 
 ## Quick Start
@@ -88,21 +97,24 @@ Details: [Installation](https://kechol.github.io/heal/installation/).
 Inside any git repository:
 
 ```sh
-heal init                      # set up .heal/, calibrate, install hook, offer skills for each detected agent
-claude /heal-setup             # tune strictness; optionally turn on Test / Docs
+heal init                      # set up .heal/, calibrate, install the post-commit hook
+heal doctor                    # what is set up, what is left
 heal status                    # render the Tier/Severity-ranked TODO list
-claude /heal-code-patch        # work through it, one fix per commit
 ```
 
-`heal init` extracts the bundled skills into every supported agent
-it detects on `PATH` — Claude Code (`.claude/skills/`) and OpenAI
-Codex (`.agents/skills/`). Substitute `codex` for `claude` above if
-that's your CLI.
+Then, in Claude Code:
 
-`/heal-setup` is the first-run wizard: it surveys the codebase,
-picks Strict / Default / Lenient, writes `.heal/config.toml`, and
-chains into `/heal-doc-pair-setup` or `/heal-test-reporter-setup`
-when you opt into either family.
+```
+/heal:setup                    # tune strictness; optionally turn on Test / Docs / Semantic
+/heal:refactor                 # propose refactors, apply the ones you approve — one commit each
+/heal:docs                     # the same for docs ([features.docs])
+/heal:tests                    # the same for tests ([features.test])
+```
+
+`/heal:setup` is safe to re-run: it starts from `heal doctor` and does
+only what is missing — picks Strict / Default / Lenient, writes
+`.heal/config.toml`, and builds what an opt-in family needs (doc pairs,
+a coverage reporter, a concept list) when you turn it on.
 
 When Test is enabled, HEAL distinguishes an explicit LCOV 0% result
 from a production file the report never measured; the latter prompts a
@@ -124,6 +136,10 @@ Topical pages on the docs site:
 - [CLI](https://kechol.github.io/heal/cli/) — every subcommand
 - [Code › Metrics](https://kechol.github.io/heal/code/metrics/), [Code › Configuration](https://kechol.github.io/heal/code/configuration/), [Code › Skills](https://kechol.github.io/heal/code/skills/) — the always-on family
 - [Test › Skills](https://kechol.github.io/heal/test/skills/), [Docs › Skills](https://kechol.github.io/heal/docs/skills/) — the opt-in families' skills
+
+Upgrading from heal 0.6 or earlier, which copied skills into each
+project: install the plugin, then run `heal skills uninstall` in each
+project and commit the deletion.
 - [Architecture](https://kechol.github.io/heal/architecture/) — internals
 
 ## Development

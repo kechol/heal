@@ -49,8 +49,8 @@ enabled = true
 ```
 
 Once enabled, `heal status` also uses the saved answers to order the
-TODO list, and the bundled patch skills ask Jev to double-check their
-own changes.
+TODO list, and the `/heal:refactor`, `/heal:docs`, and `/heal:tests`
+skills ask Jev to double-check their proposals and their own commits.
 
 ## Set up the API key
 
@@ -107,17 +107,17 @@ probability it needs with `cutoff = 0.7`.
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `commit_intent`      | Whether each recent commit was a bug fix, a feature, a refactor, and so on                                                    | Files where bug fixes concentrate move up the `heal status` list                                 |
 | `consequence`        | What a defect in each flagged file would cost, from dev tooling to data integrity                                             | Critical code moves up the `heal status` list                                                    |
-| `triage`             | Whether a drain-queue finding is a mechanical fix, a false positive, or needs a design decision, and how big the fix is       | Guides the patch skills; smaller fixes come first                                                |
+| `triage`             | Whether a drain-queue finding is a mechanical fix, a false positive, or needs a design decision, and how big the fix is       | Guides the work skills; smaller fixes come first                                                 |
 | `friction`           | Whether complex code is hard to change, to test, or to read, and whether the complexity is intrinsic                          | Code that really hurts moves up                                                                  |
 | `focus`              | How much a task you describe will touch each file (`--focus`)                                                                 | `heal status --focus` puts the files to prepare first on top                                     |
 | `concept`            | Which concept of your vocabulary each function implements (inline unit tests are skipped)                                     | Files that mix concepts, functions that belong elsewhere, and concepts scattered over many files |
 | `term_drift`         | Whether two words in function names mean the same thing (`user` / `account`)                                                  | One word per thing — rename suggestions                                                          |
 | `name_mismatch`      | Whether a function's name or doc comment matches what its body does                                                           | Names that promise something the code does not do                                                |
-| `split_points`       | Where a long, complex function divides into steps with one purpose each                                                       | Split lines on complexity findings, used by `/heal-code-patch`                                   |
-| `fix_pattern`        | Which standard refactoring fits a complexity or duplication finding                                                           | Guides `/heal-code-patch`                                                                        |
+| `split_points`       | Where a long, complex function divides into steps with one purpose each                                                       | Split lines on complexity findings, used by `/heal:refactor`                                     |
+| `fix_pattern`        | Which standard refactoring fits a complexity or duplication finding                                                           | Guides `/heal:refactor`                                                                          |
 | `test_value`         | Whether each test would catch the behaviour its name claims breaking, or only checks its own mocks, the framework, or nothing | Tests to delete or rewrite (needs `[features.test]`)                                             |
 | `mock_scope`         | What each mock replaces: an outside service, the code under test, or an internal part                                         | Mocks that tie tests to implementation details                                                   |
-| `test_triage`        | Whether uncovered code is plain logic, coordination, or I/O; why skipped tests are skipped                                    | Tells `/heal-test-review` where a unit test pays off                                             |
+| `test_triage`        | Whether uncovered code is plain logic, coordination, or I/O; why skipped tests are skipped                                    | Tells `/heal:tests` where a unit test pays off                                                   |
 | `test_duplicate`     | Whether two similar tests check the same thing, or differ only in inputs                                                      | Tests to delete or merge into one table-driven test                                              |
 | `doc_structure`      | What kind of document each section is (tutorial, how-to, reference, explanation, …) and where a new document starts           | Pages to split, merge, or keep to one mode (needs `[features.docs]`)                             |
 | `doc_placement`      | Which section of your docs a reader would look in for each page                                                               | Pages filed in the wrong place, and where to link orphan pages                                   |
@@ -132,7 +132,7 @@ severity exactly as before. Inside each group, it then prefers files
 where a defect costs more, code that is hard to work with, files where
 bug fixes keep landing, and cheaper fixes — before falling back to the
 usual hotspot score. Without saved answers the order is unchanged. The
-bundled patch skills, and your scripts, read the same order from
+skills, and your scripts, read the same order from
 `heal status --json`: every finding in a queue carries `drain_rank`
 (1 is next, counted per family) and `drain_tier`.
 
@@ -147,11 +147,11 @@ heal status --focus plan.md
 
 The `concept` task needs a list of the ideas your code is built from,
 in `.heal/concepts.toml`. Jev chooses among names you give it; it never
-invents one. Generate a first draft with the bundled skill, review it,
-and commit the file:
+invents one. Generate a first draft with the setup skill, review it,
+and commit the file. In Claude Code:
 
-```sh
-claude /heal-concepts-setup
+```
+/heal:setup semantic
 ```
 
 ```toml
@@ -160,7 +160,7 @@ id = "calibration"
 description = "Derives thresholds from the project's own metric distribution."
 ```
 
-The patch and review skills also run on-demand checks
+The `/heal:refactor`, `/heal:docs`, and `/heal:tests` skills also run on-demand checks
 (`verify_patch`, `verify_tests`, `verify_proposal`, `name_choice`) with
 `--task`. `verify_patch` and `verify_tests` judge the commits given with
 `--diff` (for example `--diff HEAD~1..HEAD`). These checks double-check

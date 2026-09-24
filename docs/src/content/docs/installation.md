@@ -1,11 +1,12 @@
 ---
 title: Installation
-description: Three ways to install the heal CLI — Homebrew, Cargo, or the shell installer.
+description: Three ways to install the heal CLI — Homebrew, Cargo, or the shell installer — plus the Claude Code plugin that carries the skills.
 ---
 
 heal is a single binary named `heal`. The three install methods
 below produce the same binary; choose whichever suits the
-environment.
+environment. The Claude skills come separately, as a Claude Code
+plugin (see [Claude Code plugin](#claude-code-plugin) below).
 
 ## Requirements
 
@@ -61,6 +62,28 @@ heal --help
 verify that `~/.cargo/bin` (or a custom `CARGO_HOME/bin`) is on the
 shell `PATH`.
 
+## Claude Code plugin
+
+The skills (`/heal:setup`, `/heal:refactor`, `/heal:docs`,
+`/heal:tests`) ship as a Claude Code plugin from the heal repository.
+In Claude Code, run:
+
+```
+/plugin marketplace add kechol/heal
+/plugin install heal@heal
+```
+
+The plugin lives in your Claude Code settings, not in your project, so
+nothing is added to your git tree. It is pinned to the heal release it
+was published with. At the start of each session in a project that uses
+heal, the plugin checks that the `heal` CLI comes from the same release
+and prints one line with the upgrade command when it does not.
+
+The skills are written for Claude Code. If you use Codex CLI, you can
+copy the folders under `plugins/heal/skills/` from the
+[heal repository](https://github.com/kechol/heal) into your project's
+`.agents/skills/` by hand; that setup is not supported.
+
 ## Updating
 
 | Install method | Update command                 |
@@ -69,8 +92,22 @@ shell `PATH`.
 | Cargo          | `cargo install heal-cli` again |
 | Shell          | re-run the installer command   |
 
-After upgrading, run `heal skills update` inside any project that has
-the Claude skills installed, so they stay in sync with the binary.
+After upgrading the CLI, update the plugin too so the skills match:
+in Claude Code, run `/plugin marketplace update heal`, then
+`/plugin update heal@heal`.
+
+### Upgrading from heal 0.6 or earlier
+
+Older versions copied the skills into each project
+(`.claude/skills/heal-*`, `.agents/skills/heal-*`). After installing the
+plugin, remove those copies from each project and commit the deletion:
+
+```sh
+heal skills uninstall
+```
+
+It removes only the folders heal itself wrote; your own skills stay.
+`heal doctor` lists any that are left.
 
 ## Uninstall
 
@@ -82,4 +119,5 @@ the Claude skills installed, so they stay in sync with the binary.
 
 `heal` writes only inside `.heal/` and the `.git/hooks/post-commit`
 hook of repositories where `heal init` was run. Remove these
-manually for a clean slate.
+manually for a clean slate. Remove the plugin with
+`/plugin uninstall heal@heal` in Claude Code.

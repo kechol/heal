@@ -11,7 +11,7 @@ from an externally generated `lcov.info` and fed back into Hotspot
 scoring so uncovered hot paths bubble to the top of the queue.
 
 For configuration knobs see [Test › Configuration](/heal/test/configuration/).
-For the bundled skills see [Test › Skills](/heal/test/skills/).
+For the skills see [Test › Skills](/heal/test/skills/).
 
 ## At a glance
 
@@ -115,10 +115,10 @@ when `[features.test.coverage]` is off or no High / Critical
 
 ## Drain pattern
 
-`/heal-test-review` frames the findings through the test-pyramid
-lens (unit / integration / e2e). `/heal-test-patch` works through
-them one commit at a time: write the missing unit test for
-`coverage_pct`, re-enable a justified skip for `skip_ratio`, align
-the drifted test for `change_coupling.drift`. The patch skill
-refuses to weaken assertions or paper over real flakes — see
+`/heal:tests` frames the findings through the test-pyramid lens
+(unit / integration / e2e) and applies the proposals you approve one
+commit at a time: write the missing unit test for `coverage_pct`,
+re-enable a justified skip for `skip_ratio`, align the drifted test
+for `change_coupling.drift`. It refuses to weaken assertions or paper
+over real flakes — see
 [Test › Skills](/heal/test/skills/) for the full contract.

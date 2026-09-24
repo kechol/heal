@@ -26,8 +26,9 @@ the codebase emit signals on its own.
   prints any Critical / High item right inside the commit output —
   the next problem stays visible without a daemon.
 - **On demand**, `heal status` lays out the same items in effective
-  Tier, Severity, then family-local score order, which the bundled `/heal-code-patch`
-  Claude skill works through one fix per commit.
+  Tier, Severity, then family-local score order, which the
+  `/heal:refactor` Claude skill works through — proposing changes and
+  committing the ones you approve, one at a time.
 
 The result is a loop where the codebase wakes the agent up, rather
 than waiting for the human to do so.
@@ -84,38 +85,40 @@ fix.
 The design splits the work in two. The `heal` CLI is the
 **measurement half** — it observes, calibrates, and surfaces the
 code-debt signals worth acting on, but never edits a single source
-file. The bundled Claude skills are the **repair half** — they read
-what `heal` produced and turn it into commits.
+file. The Claude skills in the heal plugin are the **repair half** —
+they read what `heal` produced and turn it into commits.
 
 A measurement tool that also "helpfully" applies fixes blurs the
 line between _what is wrong_ and _how this team chooses to address
 it_. heal keeps those two questions in separate programs so each
 side stays answerable on its own terms.
 
-Inside the repair half, two skills further split _thinking_ from
-_doing_:
+Inside the repair half, each skill separates _thinking_ from _doing_
+with one step in between — your approval:
 
-- **`/heal-code-review`** is the _thinking_ skill. Read-only. It
-  reads the TODO list as a system, deep-reads the flagged code, and
-  proposes architectural moves — the calls a human still has to make.
-  Use this when you want to _understand_ what HEAL is telling you
-  before changing anything.
-- **`/heal-code-patch`** is the _doing_ skill. Mechanical only — it
-  works through the TODO list one fix per commit using established
-  refactor patterns whose application doesn't require domain judgment.
-  Refuses to start on a dirty worktree, never pushes, never amends.
-  When the next item needs an architectural decision, it stops and
-  hands back to `/heal-code-review`.
+- **Think.** `/heal:refactor` reads the TODO list as a system,
+  deep-reads the flagged code, and proposes changes — from a renamed
+  variable to splitting a file along the concepts it mixes, when the
+  evidence for that split is strong. Each proposal says what friction
+  it removes and what it touches.
+- **Approve.** You pick which proposals to apply. Calls only you can
+  make — a public name, which module owns a responsibility — come as
+  questions with concrete options.
+- **Do.** The skill applies what you picked, one commit per proposal,
+  with your tests run before every commit. It refuses to start on a
+  dirty worktree and never pushes or amends.
 
-This split is the contract that lets you trust autonomy. The boring
-fixes happen on their own; the interesting calls stay with you.
+This checkpoint is the contract that lets you trust autonomy: nothing
+changes before you say so, and everything you approved lands as a
+reviewable commit. `/heal:refactor plan` stops after the proposals
+when you only want to understand what heal is telling you.
 
 ## Three feature families
 
 heal observes three orthogonal slices of code health. Each family
 follows the same loop — observe, surface what's worth fixing, hand
-the list to a dedicated review ↔ patch skill pair — but each
-answers a different question.
+the list to a dedicated skill — but each answers a different
+question.
 
 ### Code — where is this codebase hard to change?
 
@@ -126,10 +129,11 @@ hubs where every change ripples out. Then it ranks them by how
 often the team is actually editing them, so the queue points at
 today's friction, not yesterday's debt.
 
-`/heal-code-review` and `/heal-code-patch` walk that queue with
-classic refactoring moves — Extract Function, decompose
-conditionals, pull a duplicate up into a shared helper. Mechanical
-once you know which file to touch; tedious to chase down by hand.
+`/heal:refactor` walks that queue with classic refactoring moves —
+Extract Function, decompose conditionals, pull a duplicate up into a
+shared helper — and, when several signals agree, structural ones like
+splitting a file or moving a function to where it belongs. Obvious once
+you know which file to touch; tedious to chase down by hand.
 
 ### Test (opt-in) — where is production code dark to the test suite?
 
@@ -141,8 +145,8 @@ tracking the source they cover, and tests that are silently
 skipped — the kind nobody notices until the bug they were
 guarding ships.
 
-`/heal-test-review` and `/heal-test-patch` write the missing
-tests one commit at a time and re-align the drifted ones. heal
+`/heal:tests` writes the missing tests one commit at a time and
+re-aligns the drifted ones. heal
 never runs your tests itself; it just turns "we should have more
 coverage here" into a ranked, file-specific TODO.
 
@@ -155,9 +159,9 @@ fallen behind: paragraphs whose example identifiers no longer
 exist, internal links that don't resolve, pages reachable from
 nowhere, sections quietly accumulating TODO markers.
 
-`/heal-doc-review` and `/heal-doc-patch` fix the mechanical
-breakage automatically — broken links, dangling identifiers,
-orphans — and frame the rest through the **Diátaxis** lens, so a
+`/heal:docs` fixes the mechanical breakage — broken links, dangling
+identifiers, orphans — and frames the rest through the **Diátaxis**
+lens, so a
 confused first-time reader gets attention before a mostly-stable
 reference page.
 
@@ -174,5 +178,5 @@ For the full picture see [Features](/heal/features/).
   measures and how Severity is assigned
 - [Code › Configuration](/heal/code/configuration/) — `.heal/config.toml`
   reference for the always-on family
-- [Code › Skills](/heal/code/skills/) — `/heal-code-review`,
-  `/heal-code-patch`, `/heal-cli`, and `/heal-setup`
+- [Code › Skills](/heal/code/skills/) — the heal plugin,
+  `/heal:setup`, and `/heal:refactor`

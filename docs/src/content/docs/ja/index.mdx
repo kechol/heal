@@ -18,7 +18,7 @@ import { LinkButton } from '@astrojs/starlight/components';
 
 AI コーディングエージェントは、依頼された次の変更を作るのは得意です。ただ、コードベースは裏で変わり続けます。複雑度が積み重なり、同じファイルが何度も触られ、重複したコードが少しずつ増える。エージェントはそうした長期的な変化を見ていません。外部シグナルが無ければ、それを追えるのは人間だけです。
 
-`heal` がそのギャップを埋めます。git の post-commit フックが Critical / High の項目をコミット出力にそのまま表示し、`heal status` が同じ TODO リストを同梱の `/heal-code-patch` Claude スキルに渡して、1 コミット 1 修正で片付けていきます。
+`heal` がそのギャップを埋めます。git の post-commit フックが Critical / High の項目をコミット出力にそのまま表示し、`heal status` が同じ TODO リストを `/heal:refactor` Claude スキルに渡し、スキルは修正を提案して、承認されたものを 1 件ずつコミットしていきます。
 
 heal が観測するのは 3 つのファミリです:
 

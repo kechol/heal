@@ -22,7 +22,7 @@ git commit
                                   └──►  stdout: Severity nudge
                                          (Critical / High findings only)
 
-user: heal status (or `claude /heal-code-patch`)
+user: heal status (or `/heal:refactor` in Claude Code)
     │
     ▼
 heal status  ──►  classify Findings via calibration.toml
@@ -56,29 +56,14 @@ After `heal init`:
 │       ├── accepted.json          # "won't fix / intrinsic" lane
 │       └── regressed.jsonl        # append-only audit trail of re-detected fixes
 │
-├── .git/hooks/post-commit         # one-line shim: calls `heal hook commit`
-│
-└── <agent skills>                 # one tree per detected agent (after `heal init --yes`)
-    │                              #   .claude/skills/   (Claude Code)
-    │                              #   .agents/skills/   (OpenAI Codex)
-    ├── heal-cli/                  # Code family
-    ├── heal-code-patch/
-    ├── heal-code-review/
-    ├── heal-setup/
-    ├── heal-doc-pair-setup/       # Docs family
-    ├── heal-doc-scaffold/
-    ├── heal-doc-review/
-    ├── heal-doc-patch/
-    ├── heal-test-reporter-setup/  # Test family
-    ├── heal-test-review/
-    └── heal-test-patch/
+└── .git/hooks/post-commit         # one-line shim: calls `heal hook commit`
 ```
 
-All twelve bundled skills extract together — same source bytes for
-every supported agent target — regardless of which feature
-families are enabled. Turning `[features.docs]` or `[features.test]`
-on later makes the already-installed skill body relevant without a
-re-extract.
+The Claude skills are not stored in the repository. They come from the
+heal Claude Code plugin, which Claude Code keeps in its own settings
+directory, so installing or updating them never touches your git tree.
+heal 0.6 and earlier copied them into `.claude/skills/heal-*` and
+`.agents/skills/heal-*`; `heal skills uninstall` removes those copies.
 
 `config.toml`, `calibration.toml`, and the `findings/` directory
 are all tracked in git. Teammates on the same commit share the
@@ -86,20 +71,19 @@ same Severity ladder and the same drain queue.
 
 ## What gets written and when
 
-| File / dir                       | Written by                                                             | When                                                       |
-| -------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `.heal/config.toml`              | `heal init`                                                            | Once at setup; you can edit it freely.                     |
-| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                                         | At setup, then on explicit recalibration.                  |
-| `.heal/findings/latest.json`     | `heal status`                                                          | Each fresh `heal status` (cache-miss path).                |
-| `.heal/findings/fixed.json`      | `heal mark fix` (called by `/heal-code-patch`)                         | Each commit `/heal-code-patch` lands.                      |
-| `.heal/findings/accepted.json`   | `heal mark accept` (called by `/heal-code-review`)                     | When the team accepts an intrinsic finding.                |
-| `.heal/findings/regressed.jsonl` | `heal status` (reconcile pass)                                         | When a fixed finding is re-detected.                       |
-| `.heal/doc_pairs.json`           | `/heal-doc-pair-setup` skill (when `[features.docs]` is on)            | When the user runs the skill; HEAL is read-only.           |
-| `.heal/concepts.toml`            | `/heal-concepts-setup` skill (when `[features.semantic]` is on)        | When the user runs the skill or edits the vocabulary.      |
-| `.heal/semantic/verdicts/`       | `heal semantic ask`                                                    | Each run that asks something new; commit it with the code. |
-| `.heal/cache/source-v1.json`     | source observers                                                       | After source analysis changes; safe to delete.             |
-| `.heal/cache/semantic/verdicts/` | `heal semantic ask` (on-demand checks, `focus`)                        | Each such run; safe to delete.                             |
-| `<agent>/skills/heal-*/`         | `heal init` (per detected agent) / `heal skills install` (Claude only) | Once per agent; refresh with `heal init --force --yes`.    |
+| File / dir                       | Written by                                                                | When                                                       |
+| -------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `.heal/config.toml`              | `heal init`                                                               | Once at setup; you can edit it freely.                     |
+| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                                            | At setup, then on explicit recalibration.                  |
+| `.heal/findings/latest.json`     | `heal status`                                                             | Each fresh `heal status` (cache-miss path).                |
+| `.heal/findings/fixed.json`      | `heal mark fix` (called by `/heal:refactor`, `/heal:docs`, `/heal:tests`) | Each commit one of those skills lands.                     |
+| `.heal/findings/accepted.json`   | `heal mark accept` (called by the same skills, after you approve)         | When the team accepts an intrinsic finding.                |
+| `.heal/findings/regressed.jsonl` | `heal status` (reconcile pass)                                            | When a fixed finding is re-detected.                       |
+| `.heal/doc_pairs.json`           | `/heal:setup` skill (when `[features.docs]` is on)                        | When the user runs the skill; HEAL is read-only.           |
+| `.heal/concepts.toml`            | `/heal:setup` skill (when `[features.semantic]` is on)                    | When the user runs the skill or edits the vocabulary.      |
+| `.heal/semantic/verdicts/`       | `heal semantic ask`                                                       | Each run that asks something new; commit it with the code. |
+| `.heal/cache/source-v1.json`     | source observers                                                          | After source analysis changes; safe to delete.             |
+| `.heal/cache/semantic/verdicts/` | `heal semantic ask` (on-demand checks, `focus`)                           | Each such run; safe to delete.                             |
 
 There is no event log, no monthly rotation, no `.heal/snapshots/`,
 `.heal/logs/`, or `.heal/reports/` directory. heal keeps only the
@@ -112,7 +96,7 @@ work — and ignores itself in git. heal validates file contents before every
 reuse; deleting the directory, a corrupt entry, or a write failure simply
 causes normal source analysis.
 
-`.heal/docs/` is the one exception: when `/heal-doc-scaffold` runs,
+`.heal/docs/` is the one exception: when `/heal:docs scaffold` runs,
 it writes the generated documentation tree to the directory named by
 `[features.docs] scaffold_root` (default `.heal/docs/`). HEAL
 itself only ever **reads** that tree — the skill is the only writer.
@@ -187,9 +171,9 @@ event, used solely for the "fix was re-detected" warning surface.
 ### `accepted.json` — the "won't fix / intrinsic" lane
 
 A `BTreeMap<finding_id, AcceptedFinding>` serialized as a single JSON
-object, written by `heal mark accept` (called by the
-`/heal-code-review` skill when the team decides a finding is
-intrinsic and shouldn't be drained).
+object, written by `heal mark accept` (called by `/heal:refactor`,
+`/heal:docs`, or `/heal:tests` when the team approves recording a
+finding as intrinsic so it isn't drained).
 
 ```json
 {
@@ -281,11 +265,11 @@ for their bandwidth.
 `heal status` partitions every non-Ok finding into one of three
 buckets driven by `[policy.drain]`:
 
-| Tier                  | Default specs                           | Renderer behavior                             | Skill behavior                                    |
-| --------------------- | --------------------------------------- | --------------------------------------------- | ------------------------------------------------- |
-| **T0 / Drain queue**  | `must = ["critical:hotspot"]`           | Always shown in deterministic priority order. | `/heal-code-patch` drains one finding per commit. |
-| **T1 / Should drain** | `should = ["critical", "high:hotspot"]` | Shown by default, separate section.           | Surfaced for review; not auto-drained.            |
-| **Advisory**          | everything else above Ok                | Hidden unless `--all`.                        | Never drained; review when convenient.            |
+| Tier                  | Default specs                           | Renderer behavior                             | Skill behavior                                               |
+| --------------------- | --------------------------------------- | --------------------------------------------- | ------------------------------------------------------------ |
+| **T0 / Drain queue**  | `must = ["critical:hotspot"]`           | Always shown in deterministic priority order. | Proposed first; applied one proposal per commit on approval. |
+| **T1 / Should drain** | `should = ["critical", "high:hotspot"]` | Shown by default, separate section.           | Proposed after T0.                                           |
+| **Advisory**          | everything else above Ok                | Hidden unless `--all`.                        | Context only; never proposed on its own.                     |
 
 Findings classified as `Severity::Ok` are excluded from drain entirely.
 With `--all` they appear in the normal Ok section in score order; a

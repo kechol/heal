@@ -7,7 +7,8 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 **heal turns codebase decay into agent work.** Every commit, it
 re-measures complexity, hotspots, and duplication, then hands the
-resulting TODO list to Claude — which drains it one fix per commit.
+resulting TODO list to Claude — which proposes fixes and applies the
+ones you approve, one commit each.
 The human steps out of the polling loop. This walkthrough sets that
 loop up end-to-end in about five minutes.
 
@@ -17,9 +18,9 @@ Before you start.
 
 - macOS or Linux
 - A git repository to evaluate
-- (Optional) [Claude Code](https://claude.com/code) CLI for the
-  bundled `/heal-setup`, `/heal-code-review`, and `/heal-code-patch`
-  skills
+- (Optional) [Claude Code](https://claude.com/code) for the heal
+  plugin's `/heal:setup`, `/heal:refactor`, `/heal:docs`, and
+  `/heal:tests` skills
 
 ## 1. Install
 
@@ -64,30 +65,32 @@ One command sets up `.heal/` and installs the git hook.
 heal init
 ```
 
-Creates `.heal/` (config and calibration), installs the post-commit
-hook that flags the next Critical / High after every commit, and
-offers to extract the bundled skills for every AI agent it finds
-on your `PATH` (Claude Code → `.claude/skills/`, OpenAI Codex →
-`.agents/skills/`). Use `--yes` to install for all detected agents
-without prompting, or `--no-skills` to skip them entirely.
+Creates `.heal/` (config and calibration) and installs the post-commit
+hook that flags the next Critical / High after every commit. It is safe
+to re-run: an existing config and calibration are kept unless you pass
+`--force`. `heal doctor` shows what is set up and what is left.
 
-## 3. Tune strictness with `/heal-setup`
+## 3. Add the plugin and run `/heal:setup`
 
-Optional but recommended on the first run. The bundled setup
-wizard surveys your codebase, picks a sensible strictness level,
-and offers to turn on the opt-in Test / Docs families. Run it
-through whichever agent you installed:
+The skills ship as a Claude Code plugin. In Claude Code, run:
 
-```sh
-/heal-setup
+```
+/plugin marketplace add kechol/heal
+/plugin install heal@heal
 ```
 
-It asks Strict / Default / Lenient, updates `.heal/config.toml`,
-then chains into `/heal-doc-pair-setup` (writes
-`.heal/doc_pairs.json`) or `/heal-test-reporter-setup` (proposes
-the lcov reporter wiring) if you opt into either family. Re-run
-later when the codebase has shifted enough that the bar should
-move.
+Then run the setup skill. Optional but recommended on the first run:
+
+```
+/heal:setup
+```
+
+It starts from `heal doctor`, so it only does what is missing: it asks
+Strict / Default / Lenient and updates `.heal/config.toml`, offers to
+turn on the opt-in Test / Docs / Semantic families and builds what they
+need (doc pairs, a coverage reporter, a concept list), and recalibrates
+only when you agree. Re-run it any time — on a project that is already
+set up it just reports that everything is in place.
 
 ## 4. See the TODO list
 
@@ -101,37 +104,21 @@ heal status
 Prints the per-file TODO list in Tier, Severity, then score order. Filters and
 JSON output: [CLI › heal status](/heal/cli/#heal-status).
 
-## 5. Audit and drain with your agent
+## 5. Work through the findings with Claude
 
-Pick the bundled skill that matches what you want to do. Each
-feature family ships a read-only **review** skill (architectural
-audit, no writes) and a write **patch** skill (one commit per
-fix, refuses a dirty worktree). The examples below use `claude`;
-Codex users can substitute `codex` — the slash-command form is
-the same.
+Each skill reads what heal found, proposes changes, and applies only the
+ones you approve — one commit per proposal, with your tests run before
+each commit. None of them push or open a pull request.
 
-```sh
-# Always available — the always-on Code family:
-claude /heal-code-review     # what is HEAL really saying? Architectural read of the flagged code, prioritized refactor TODO list, no source writes.
-claude /heal-code-patch      # drain T0 mechanically: one fix per commit, in Tier / Severity / family-local score order; never pushes or amends.
-
-# When [features.docs] is on:
-claude /heal-doc-review      # audit your docs through the Diátaxis lens — find where readers get lost.
-claude /heal-doc-patch       # auto-fix broken internal links, dangling identifiers, and orphan pages.
-
-# When [features.test] is on:
-claude /heal-test-review     # test-pyramid view of coverage gaps and silently-skipped tests.
-claude /heal-test-patch      # write the missing tests the review flagged — one commit per uncovered hot path.
+```
+/heal:refactor          # read the code findings as a system and propose refactors, structural ones included
+/heal:refactor plan     # propose only; apply later
+/heal:docs              # [features.docs]: fix, rewrite, move, or split docs through the Diátaxis lens
+/heal:docs scaffold     # [features.docs]: stand up a doc tree from the codebase on a project with no docs yet
+/heal:tests             # [features.test]: write, align, re-enable, or remove tests through the test pyramid
 ```
 
-Two more, for less common situations:
-
-```sh
-claude /heal-doc-scaffold    # [features.docs]: stand up a fresh doc tree from codebase signals — useful on a project with no docs yet.
-claude /heal-cli             # ask the agent about the heal CLI itself — every flag and JSON shape, treated as a stable contract.
-```
-
-Skill contracts: [Code › Skills](/heal/code/skills/),
+Skill details: [Code › Skills](/heal/code/skills/),
 [Docs › Skills](/heal/docs/skills/),
 [Test › Skills](/heal/test/skills/).
 

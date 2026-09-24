@@ -26,7 +26,7 @@ regressions.
 | ------------------------------------------ | --------------------------------------------------------------------------------- |
 | [Configuration](/heal/code/configuration/) | You want to tune thresholds, add monorepo workspaces, or change the drain policy. |
 | [Metrics](/heal/code/metrics/)             | You want to know what each metric means and how Severity is decided.              |
-| [Skills](/heal/code/skills/)               | You want to drive heal from a Claude session — review, drain, configure.          |
+| [Skills](/heal/code/skills/)               | You want to drive heal from a Claude session — set up, review, refactor.          |
 
 There's no flag to enable Code; `heal init` writes a config with
 every observer turned on.
@@ -62,12 +62,12 @@ enabled = true
 enabled = true
 ```
 
-If you don't already have an `lcov.info` from your existing
-reporter, run the bundled setup skill. It inspects your stack and
-proposes the reporter wiring + CI integration.
+Or let the setup skill do it: it turns the family on, inspects your
+stack, and wires up a coverage reporter when you don't already have an
+`lcov.info` (CI changes stay a proposal). In Claude Code:
 
-```sh
-claude /heal-test-reporter-setup
+```
+/heal:setup tests
 ```
 
 ## Docs (opt-in: `[features.docs]`)
@@ -78,7 +78,7 @@ Adds seven doc-quality observers that compare paired documentation
 against its source: stale freshness, dangling identifiers, missing
 pairs, broken internal links, orphan pages, TODO marker density,
 plus a docs-family Hotspot composer. A small JSON file
-(`.heal/doc_pairs.json`, generated once by `/heal-doc-pair-setup`)
+(`.heal/doc_pairs.json`, generated once by `/heal:setup docs`)
 maps each doc to the source it describes. The Markdown / RST
 duplication pass turns on with this family too. Hotspot scoring
 gains a multiplier when a file's paired doc is stale.
@@ -96,14 +96,15 @@ Enable with:
 enabled = true
 ```
 
-Then run the bundled pair-setup skill once. It scans your source
-and doc trees, infers the doc ⇔ source pairings, and writes
-`.heal/doc_pairs.json`. Without that mapping the docs family has
-nothing to compare paired docs against, so this step is part of
-turning the family on, not an optional add-on.
+Then run the docs step of the setup skill once (it can also flip the
+switch above for you). It scans your source and doc trees, infers the
+doc ⇔ source pairings, and writes `.heal/doc_pairs.json`. Without that
+mapping the docs family has nothing to compare paired docs against, so
+this step is part of turning the family on, not an optional add-on. In
+Claude Code:
 
-```sh
-claude /heal-doc-pair-setup
+```
+/heal:setup docs
 ```
 
 ## Semantic (opt-in: `[features.semantic]`)
@@ -125,15 +126,15 @@ enabled = true
 
 A typical adoption order:
 
-1. **Start with Code.** Run `heal init`, audit with
-   `/heal-code-review`, drain with `/heal-code-patch`. Once
-   `Critical 🔥` is at zero, you have a baseline.
+1. **Start with Code.** Run `heal init`, then work through the
+   findings with `/heal:refactor`. Once `Critical 🔥` is at zero, you
+   have a baseline.
 2. **Add Test next** if you have (or can produce) an `lcov.info`.
    `coverage_pct` and `skip_ratio` reports turn "we should add
    tests" into a ranked queue.
 3. **Add Docs last** when documentation drift is a recurring
    surprise. Layer A pairing needs one upfront pass through
-   `/heal-doc-pair-setup`; after that, the doc family runs on
+   `/heal:setup docs`; after that, the doc family runs on
    every `heal status`.
 
 Either opt-in family can be turned off later — set `enabled =

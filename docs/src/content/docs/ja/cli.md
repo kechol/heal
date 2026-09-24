@@ -12,9 +12,11 @@ description: heal のサブコマンドを日々の重要度順に並べた一�
 | コマンド      | 用途                                                                                                           |
 | ------------- | -------------------------------------------------------------------------------------------------------------- |
 | `heal init`   | カレントリポジトリに `.heal/` をセットアップし、calibrate して post-commit フックを設置。                      |
-| `heal skills` | 同梱の Claude スキルセットのインストール／更新／状態確認／削除。                                               |
+| `heal doctor` | セットアップのどこまでが済んでいて、何が残っているかを確認する。                                               |
 | `heal status` | 現在の TODO リストを表示する（`--refresh` で再スキャン）。`.heal/findings/` を読みます。                       |
 | `heal diff`   | ライブ worktree と過去のコミットを比較する（デフォルトは calibration の基準 SHA）。findings の `git diff` 版。 |
+
+Claude のスキルは CLI には含まれず、Claude Code プラグインとして配布しています([インストール](/heal/ja/installation/#claude-code-プラグイン) を参照)。`heal skills uninstall` は、heal 0.6 以前がプロジェクトにコピーしたスキルのフォルダを消します。
 
 opt-in の [Semantic (Jev)](/heal/ja/semantic/) を有効にすると、コマンドが 2 つ増えます。heal のコマンドのうち、ネットワークにつながるのはこの 2 つだけです。
 
@@ -25,17 +27,17 @@ opt-in の [Semantic (Jev)](/heal/ja/semantic/) を有効にすると、コマ�
 
 ## 自動化向けコマンド
 
-git の post-commit フックや同梱の Claude スキル経由で、ユーザーの代わりに走るコマンドです。`--help` には表示されません。
+git の post-commit フックや Claude のスキル経由で、ユーザーの代わりに走るコマンドです。`heal hook` と `heal mark` は `--help` には表示されません。
 
-| コマンド           | 駆動元                     | 用途                                                                     |
-| ------------------ | -------------------------- | ------------------------------------------------------------------------ |
-| `heal hook`        | git post-commit            | コミットごとにオブザーバーを実行し Severity ナッジを表示。               |
-| `heal mark fix`    | `/heal-code-patch` スキル  | 1 コミット 1 finding の修正を記録して、次の `heal status` で整合させる。 |
-| `heal mark accept` | `/heal-code-review` スキル | チームが「設計上のもので直さない」と判断した項目を記録する。             |
-| `heal metrics`     | `/heal-code-review` スキル | 各メトリクスのサマリを毎回ワーキングツリーから再計算。                   |
-| `heal calibrate`   | `/heal-setup` スキル       | Severity しきい値を現在のコードベース分布にリセット。                    |
+| コマンド           | 駆動元                                        | 用途                                                                   |
+| ------------------ | --------------------------------------------- | ---------------------------------------------------------------------- |
+| `heal hook`        | git post-commit                               | コミットごとにオブザーバーを実行し Severity ナッジを表示。             |
+| `heal mark fix`    | `/heal:refactor`、`/heal:docs`、`/heal:tests` | コミットで直した Finding を記録して、次の `heal status` で整合させる。 |
+| `heal mark accept` | `/heal:refactor`、`/heal:docs`、`/heal:tests` | チームが「設計上のもので直さない」と判断した項目を記録する。           |
+| `heal metrics`     | `/heal:setup`                                 | 各メトリクスのサマリを毎回ワーキングツリーから再計算。                 |
+| `heal calibrate`   | `/heal:setup`                                 | Severity しきい値を現在のコードベース分布にリセット。                  |
 
-`heal metrics` と `heal calibrate` をここに置いているのは、_いつ_ 走らせるかを同梱スキルが判断するからです。`/heal-code-review` は監査の途中で各メトリクスのサマリを参照し、`/heal-setup` は calibration ドリフトを監視して必要なら recalibrate を提案します。手動で叩くのは、Claude を介さずに生の出力が欲しいときだけです。
+`heal metrics` と `heal calibrate` をここに置いているのは、_いつ_ 走らせるかをスキルが判断するからです。`/heal:setup` は設定を調整するときに各メトリクスのサマリを参照し、コードベースが十分に動いたと `heal doctor` が報告したら recalibrate を提案します。手動で叩くのは、Claude を介さずに生の出力が欲しいときだけです。
 
 ---
 
@@ -44,10 +46,8 @@ git の post-commit フックや同梱の Claude スキル経由で、ユーザ�
 git リポジトリ内で heal をブートストラップします。
 
 ```sh
-heal init                # 対話モード — 検出した各エージェントごとに Y/N 確認
-heal init --yes          # 検出した全エージェント分のスキルを抽出（プロンプトなし）
-heal init --no-skills    # スキルは入れない（CI / AI エージェント未導入）
-heal init --force        # 既存の config.toml / フックを上書き、スキルもリフレッシュ
+heal init                # .heal/ を作り、calibrate し、フックを入れる
+heal init --force        # 既存の config.toml・calibration・フックを上書き
 heal init --explicit     # 全デフォルト値を config.toml に書き出す
 ```
 
@@ -58,59 +58,44 @@ heal init --explicit     # 全デフォルト値を config.toml に書き出す
 1. `.heal/` を作成し、`config.toml`、`calibration.toml`、`findings/` を配置します。`config.toml`、`calibration.toml`、`findings/` の中身はすべて git に追跡されるので、同じコミット上のチームメイトは同じ Severity ラダーと解消キューを共有できます。
 2. 全オブザーバを一度走らせ、メトリクスごとにコードベースのパーセンタイル分布を計算 — これが `calibration.toml` になります。
 3. `.git/hooks/post-commit` をインストール(冪等 — 再インストールでも行が重複しません)。
-4. `PATH` にある AI エージェント CLI ごとに、同梱スキルセットを当該エージェントのプロジェクトスコープ配置先に展開します:
-   - `claude` → `.claude/skills/`
-   - `codex` → `.agents/skills/`
 
-   TTY 環境ではエージェントごとに 1 回ずつ Y/N プロンプト(デフォルト `Y`)。`--yes` で全許諾、`--no-skills` で全スキップ。CLI が `PATH` にないエージェントは黙ってスキップ(展開してもそのエージェントから呼べない)。
+完了時には "Installed:" サマリで、書いたもの・残したもの(config、calibration、post-commit フック)と、Claude Code プラグインの入れ方を表示します。スキルを入れることはしません。`--yes` と `--no-skills` は古いスクリプトが動き続けるように受け付けますが、何もしません。
 
-完了時には "Installed:" サマリで、生成したすべてのファイル(config、calibration、post-commit フック、エージェントごとのスキルパスまたはスキップ理由)を一覧表示します。
+再実行は安全です。`--force` を付けない限り、既存の `config.toml` と `calibration.toml` はそのまま残ります。post-commit フックは heal の目印を持つときだけ置き換えられます。heal 由来でない `post-commit` フックがすでに存在する場合は触りません(上書きするには `--force`)。heal 0.6 以前のスキルのフォルダが残っていれば、サマリでそう伝えます。
 
-再実行は安全です。`--force` を付けない限り `config.toml` はそのまま残ります。post-commit フックは heal の目印を持つときだけ置き換えられます。heal 由来でない `post-commit` フックがすでに存在する場合は触りません(上書きするには `--force`)。
-
-## `heal skills`
-
-検出した全エージェントの同梱スキルセットを管理します。各サブコマンドは `--target <detected|claude|codex|all>` を受け付けます(デフォルトは `detected` で `heal init` と同じ挙動):
+## `heal doctor`
 
 ```sh
-heal skills install                  # PATH にある全エージェント向けに展開
-heal skills install --target codex   # `.agents/skills/` だけ
-heal skills install --target all     # 検出有無に関わらず全 target に展開
-heal skills update                   # heal バイナリ更新後にリフレッシュ
-heal skills status                   # ターゲット別の installed バージョンと drift
-heal skills uninstall --target all   # 全 tree を削除
+heal doctor          # 項目ごとに 1 行。足りないものには次にやることを添える
+heal doctor --json   # 同じ内容を JSON で(/heal:setup はこれを読む)
 ```
 
-スキルセットは `heal` バイナリに同梱されているので、各サブコマンドは常にバイナリに対応するバージョンに対して動きます。`update` はドリフト認識付きで、手編集されたファイルはターゲット単位で残します(`--force` で上書き可)。Claude target の `install` / `update` は `.claude/settings.json` から legacy な `heal hook edit` / `heal hook stop` エントリも掃除します(Codex target には対応する settings ファイルがないため何もしません)。
+heal が必要とするものを確認し、項目ごとに `ok`・`todo`・`warn`・`off`(有効にしていない任意の機能)・`error` のどれかと、それを直すコマンドやスキルを報告します。
 
-同梱されるスキルは 12 個、機能ファミリ別:
+- `.heal/config.toml` があり、読み込めるか。
+- `.heal/calibration.toml` があり、今のコードベースに合っているか。calibration 後に 200 を超えるコミットが入った、ファイル数が 20% を超えて変わった、修正を 10 件以上記録して Critical / High が残っていない、のどれかに当てはまると知らせます。heal が自分で calibrate し直すことはありません。納得したら `heal calibrate --force` を実行してください。
+- post-commit フックが入っているか。
+- 有効にした任意の機能に必要なものがそろっているか。docs なら doc pairs、coverage なら lcov ファイル、semantic なら API キーと concept の一覧です。
+- 古い heal がプロジェクトにコピーしたスキルのフォルダが残っていないか。
 
-**Code(常時オン):**
+`heal doctor` は読むだけで、何も変更せず、ネットワークにもつなぎません。API に対してキーを確かめるときは `heal auth jev status` を使います。`/heal:setup` はこの報告から始めるので、再実行しても足りないことしかしません。
 
-- `/heal-code-review`(read-only) — `heal status --all --json` を取り込み、フラグ付きコードを深く読み、アーキテクチャ的な所見と優先順位付きリファクタ TODO リストを返します。
-- `/heal-code-patch`(write) — T0 を有効 Tier、Severity、ファミリ内スコア順に 1 コミット 1 finding ずつ解消。
-- `/heal-cli` — `heal` CLI の簡潔なリファレンス。
-- `/heal-setup` — セットアップウィザード。calibrate → strictness 選択 → `config.toml` 書き出し のあと、オプションの `[features.docs]` / `[features.test]` を有効化するかを順に確認し、有効化を選んだ場合は `/heal-doc-pair-setup` / `/heal-test-reporter-setup` まで連携します。calibration ドリフトを検知して `heal calibrate --force` も提案します。
-- `/heal-concepts-setup`(`.heal/concepts.toml` を書く) — opt-in の [Semantic (Jev)](/heal/ja/semantic/) のタスクが、コードと doc を分類するための概念の語彙を下書きします。
+## `heal skills uninstall`
 
-**`[features.docs]`**(オプトイン):
+スキルは Claude Code プラグインとして配布するようになったので、CLI がスキルを入れたり更新したりすることはもうありません。残っているサブコマンドは、スキルを各プロジェクトにコピーしていた heal 0.6 以前の後片付けだけです。
 
-- `/heal-doc-pair-setup`(`.heal/doc_pairs.json` を書く) — doc ⇔ src のペアを検出します。
-- `/heal-doc-scaffold`(`[features.docs] scaffold_root` 配下に書く) — コードベースのシグナルだけを根拠に、ドキュメントツリーを新規生成します。
-- `/heal-doc-review`(read-only) — Diátaxis レンズで docs スライスを監査します。
-- `/heal-doc-patch`(write) — 内部リンク切れ、参照切れの識別子、孤立ページ、解決可能な TODO を 解消します。
+```sh
+heal skills uninstall          # 古い heal のスキルのフォルダを消す
+heal skills uninstall --json   # 消したものを JSON で出す
+```
 
-**`[features.test]`**(オプトイン):
+`.claude/skills/heal-*` と `.agents/skills/heal-*` のうち、heal 自身が書いた決まった名前のフォルダだけを消し(自分で作ったスキルは残ります)、`.claude/settings.json` から古い heal のエントリを取り除きます。終わったら削除をコミットしてください。
 
-- `/heal-test-reporter-setup`(read-only) — lcov リポータと CI の設定を提案します。
-- `/heal-test-review`(read-only) — テストピラミッドのレンズで test スライスを監査します。
-- `/heal-test-patch`(write) — カバレッジ未達の hot path、ドリフトしたテスト、理由が成立しなくなった skip テストを 解消します。
-
-スキルの仕様詳細は [Code › スキル](/heal/ja/code/skills/)、[Test › スキル](/heal/ja/test/skills/)、[Docs › スキル](/heal/ja/docs/skills/) を参照。
+`heal skills install`・`update`・`status` は、古いスクリプトが分かりやすく失敗するように受け付けたうえで、プラグインの入れ方を表示して終了コード 1 で終わります。
 
 ## `heal status`
 
-各オブザーバを実行し、Finding を Severity 分類して、`/heal-code-review` が監査し `/heal-code-patch` が解消する TODO リストを書き出します。
+各オブザーバを実行し、Finding を Severity 分類して、`/heal:refactor`・`/heal:docs`・`/heal:tests` の各スキルが使う TODO リストを書き出します。
 
 ```sh
 heal status                              # キャッシュを再描画（デフォルト）
@@ -204,7 +189,7 @@ heal calibrate --force    # 常に再スキャンして calibration.toml を上�
 
 heal は **絶対に** 自動で recalibrate しません。コードベースを実際に改善するリファクタが、暗黙のうちにゴールポストを動かしてしまうのを避けるためです。`--force` を実行するのは次の場面です:
 
-- 大きな構造変更で分布が変わったとき(`/heal-setup` スキルが監視して提案します)。
+- 大きな構造変更で分布が変わったとき(`heal doctor` が知らせ、`/heal:setup` が提案します)。
 - `config.toml` の `floor_critical` / `floor_ok` を変えて、パーセンタイルラダーを合わせて作り直したいとき。
 
 生成された `calibration.toml` の先頭には、ファイルの来歴を示すコメントヘッダが付きます。ファイルを開いただけでドキュメントなしに来歴をたどれるようにするためです。`floor_critical` / `floor_ok` の上書きは `calibration.toml` ではなく `config.toml` 側に置いてください。さもないと `heal calibrate --force` で消えてしまいます。
@@ -249,7 +234,7 @@ heal auth jev clear                         # 保存したキーを消す
 | ファイル                         | 役割                                                                      |
 | -------------------------------- | ------------------------------------------------------------------------- |
 | `.heal/findings/latest.json`     | 現在の TODO — fresh なら再利用し、stale/欠落時または `--refresh` で置換。 |
-| `.heal/findings/fixed.json`      | `/heal-code-patch` が記録した修正の有界マップ。                           |
+| `.heal/findings/fixed.json`      | スキルが `heal mark fix` で記録した修正の有界マップ。                     |
 | `.heal/findings/regressed.jsonl` | 修正済みが再検出された監査トレイル。                                      |
 
 これらはすべて素のファイルなので `jq` で直接読めます。

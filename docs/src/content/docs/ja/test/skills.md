@@ -1,71 +1,49 @@
 ---
 title: Test · スキル
-description: '[features.test] 向け同梱スキル 3 種 — /heal-test-reporter-setup、/heal-test-review、/heal-test-patch。Claude Code / OpenAI Codex 対応。'
+description: '[features.test] 向けの heal プラグインのスキル — テストスイートを見直して改善する /heal:tests と、カバレッジを配線する /heal:setup の手順。'
 ---
 
-オプトインの **Test** ファミリはスキルを 3 種同梱しています。`heal init` 時に検出した各エージェントターゲットへ Code ファミリスキルと並んで展開されますが、test オブザーバが生む findings にしか作用しません。
+オプトインの **Test** ファミリは、heal の Claude Code プラグインにある 2 つのスキルで扱います。ファミリを有効にしてカバレッジのリポータを配線する `/heal:setup` の tests の手順と、テストそのものに手を入れる `/heal:tests` です。プラグインの入れ方は [Code › スキル](/heal/ja/code/skills/) を参照してください。
 
-インストール手順とドリフト認識付きの更新の仕組みは [Code › スキル](/heal/ja/code/skills/) を参照(共通の仕組みです)。
+## `/heal:setup tests` — ファミリを有効にして lcov を配線する
 
-## `/heal-test-reporter-setup` — lcov を配線
+`[features.test]` を有効にし、`test_paths` と `lcov_paths` をリポジトリに合わせて設定します。続けて言語スタックを検出し、heal が読む場所に `lcov.info` が出るようにカバレッジのリポータを用意します。
 
-ワンショットセットアップスキル。プロジェクトの言語スタックを判別し、`lcov.info` が heal のデフォルト `lcov_paths` のどこかに着地するよう、lcov リポータの設定と CI 統合を提案します。
-
-| スタック | 提案                                                                       |
+| スタック | リポータ                                                                   |
 | -------- | -------------------------------------------------------------------------- |
 | Rust     | `cargo llvm-cov --lcov --output-path lcov.info`                            |
 | Python   | `pytest --cov=src --cov-report=lcov`(`pytest-cov`)                         |
 | JS / TS  | `nyc --reporter=lcov mocha` / `vitest --coverage --coverage.reporter=lcov` |
 | Go       | `go test -coverprofile=coverage.out` + `gcov2lcov`                         |
 | Scala    | `scoverage` プラグイン + lcov リポータ                                     |
-| 混在     | スタック別の提案 + 単一の `lcov.info` を生成する CI ステップ               |
+| 混在     | スタックごとに 1 つずつ                                                    |
 
-コードベースに対しては読み取り専用で、コマンドや config 編集の **提案** にとどまります(実行はしません)。コマンドはユーザが実行し、heal が次の `heal status` で結果の `lcov.info` を読みます。
+リポータのインストール、`.heal/config.toml` の編集、リポータの実行は、どれも実行前に確認します。`[features.test.coverage].post_commit_refresh` を設定して、post-commit フックでコミットのたびに `lcov.info` を更新することもできます。CI の変更はコピーして使える提案として表示するだけで、適用はしません。カバレッジを有効にしているのに lcov ファイルが無いときは `heal doctor` が test を `todo` と報告するので、`/heal:setup` がこの手順をもう一度提案します。
 
-トリガーフレーズ: 「set up coverage reporting」、「configure lcov for heal」、「wire up coverage」、「/heal-test-reporter-setup」。
+## `/heal:tests` — テストを見直して直す
 
-## `/heal-test-review` — 監査スキル
+テスト版の `/heal:refactor` です。test の Finding を読み、変更を提案し、あなたが承認したものだけを 1 提案 1 コミットで適用します。コミットの前には必ずテストスイートが通ることを確かめます。push や pull request の作成はしません。
 
-読み取り専用。`heal status --json` を読み、`[features.test]` スライスにフィルタリングし、次の 2 つを返します:
+1. **診断** — `heal status --all --feature test --json` を読み、指摘されたソースファイルをそのテストと一緒に読みます。テストの無いコードは、**テストピラミッド**に沿って、どの層でテストすべきかで分けます。純粋なロジックには単体テスト、他のモジュールを組み合わせるだけのコードには小さな結合テスト、I/O の境界にあるコードには薄い契約テストです。skip は理由(環境、遅い、壊れている、保留中)で分けます。
+2. **提案** — スイートの形(逆ピラミッド、テストの無い Hotspot、たまっていく skip、ソースに追いついていないテスト)を短くまとめ、優先度の高い Finding から番号付きで提案します。テストを書く提案には、確かめるケースを添えます。
+3. **選択** — どの提案を適用するかをあなたが選びます。
+4. **適用** — 1 提案につき 1 コミット。スイートが通ることが条件で、カバレッジが変わるときはリポータを再実行します。
+5. **報告** — 変えたものと、残っているものをまとめます。
 
-1. テストスイートの **アーキテクチャ的読解** — 支配的な軸は「unit テストがない」「テストがソースについていけていない」「重要パスがカバーされていない」「skip された flake が永続的な skip として固化した」のどれか?
-2. **優先順位付きテスト修正 TODO リスト** — 有効 Tier、Severity、Test ファミリの `hotspot_score` 降順を正確に維持。coverage、drift、skip の分類は修正方法の説明に使い、順序を上書きしません。
+Finding ごとの主な提案:
 
-ソースは編集しません。レビューを読んで「これも直してほしい」と思ったら、その場でエージェント(Claude Code / Codex)に伝えれば対応に移れます(「上位 3 件のテストを書いて」「`auth/` 配下の skip を再有効化して」など)。機械的な修正は `/heal-test-patch` を経由し、判断が要る項目(「実は本物の flake で skip のままが正しいのでは?」「このカバーされていないファイルはそもそもテストすべきか、削除すべきか?」)は自動適用されず、あなたの指示を待ちます。
+| メトリクス              | よくある提案                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------------- |
+| `coverage_pct`          | 振る舞いが文書化された純粋なロジックに単体テスト。組み合わせや I/O のコードには結合テストか契約テスト。 |
+| `change_coupling.drift` | テストをソースの今の契約に合わせる。振る舞いが別の場所に移ったなら書き直す。                            |
+| `skip_ratio`            | skip の理由がもう成り立たないテストを戻す。機能が無くなったテストは消す。それ以外は確認する。           |
 
-### review と patch を分けている理由
+同じ問題が複数のファイルにまたがるときは、**スイート全体**の変更も提案します。逆ピラミッドの立て直し、スイートの分割、共通の fixture の切り出し、テストファイルの退役などです。期待する振る舞いがどこにも書かれていないコードは質問として挙げます — テストを書いても推測を固めるだけだからです。
 
-**Patch** が引き受けるのは機械的な修正です — 明らかに未カバーな分岐に unit テストを書く、ドリフトしたテストを対象関数に合わせ直す、解決済みの理由(「issue #123 待ち」)が残っている skip を再有効化する。**Review** はそれに加えて、**人間の判断が必要な項目** を拾い上げます — assertion が弱く見えるもの、本物の flake を隠している疑いがある skip、そもそもこのレイヤでテストすべきでないかもしれないファイル。両者を 1 つのオート実行に混ぜると、本物の flake を覆い隠すか、簡単に書けるテストを放置するか、どちらかになります。
+**やらないこと:** テストを通すためにアサーションを弱めない、`skip_ratio` を下げるために flaky なテストを skip しない、実行していないテストをコミットしない、Finding を消すためにカバレッジのしきい値を下げたりファミリを無効にしたりしない。
 
-トリガーフレーズ: 「review the test health」、「where should we add tests」、「which tests should we unskip」、「/heal-test-review」。
+**[Semantic (Jev)](/heal/ja/semantic/) を有効にしている場合**は、何も確かめていないテストも消せます。確信度の高い `delete` の付いた `test_value` の Finding を、1 コミットに 1 テストずつ、スイートが通りカバレッジが下がらない場合に限って消します(自分のモックしか確かめていないテストは例外)。重複したテスト(`test_duplicate`)はまとめるか消し、ただの値のモック(`mock_scope`)は本物の値に置き換えます。コミットのたびに `heal semantic ask --task verify_tests --diff HEAD~1..HEAD` を実行し、新しいテストが自分のモックしか確かめていなければそのコミットを取り消します。
 
-## `/heal-test-patch` — 書き込みスキル
+引数: パスを渡すとその下の Finding に絞り、Finding の id を渡すとその Finding に絞り、`plan` を渡すと提案までで止まります。
 
-`.heal/findings/latest.json` のテストスライスを有効 Tier、Severity、Test ファミリの `hotspot_score` 降順(欠落は末尾、同点は metric/path/id)で 1 件ずつ消化します。**1 修正 1 コミット**。
-
-**事前チェック**(失敗すると起動拒否):
-
-- クリーンな worktree。
-- キャッシュ存在(欠けていれば `heal status --json` で埋める)。
-- `[features.test]` 有効(`.heal/config.toml`)。
-- `coverage_pct` の finding がスコープ内なら、`lcov.info` が `lcov_paths` のどこかに存在すること(無ければ `/heal-test-reporter-setup` に誘導)。
-
-**メトリクス別の手筋**:
-
-| メトリクス              | デフォルトの手                                                                                                         |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `coverage_pct`          | 未カバーの hot path に unit テストを書く / 拡張する。コミットごとに coverage リポータを再実行して `lcov.info` を更新。 |
-| `skip_ratio`            | 理由が成立しなくなった skip を再有効化。skip マーカーを削除し、テストを実行、失敗があればその場で修正。                |
-| `change_coupling.drift` | ドリフトしたテストとソースを一緒に表面化し、テストをソースの現在の形に合わせる。                                       |
-
-**Refusal**(スキル本体に encoded、プロンプトしても上書きされません):
-
-- **assertion-weakening** — 古いテストを通すために `assert.equal(x, 5)` を `assert.ok(x)` に書き換えない。アサーションが間違っているなら、理由をコミットメッセージで明記してテストを削除する。
-- **skip-the-flake** — flaky なテストを消すために skip マーカーを追加しない。
-- **scaffold-without-running** — すべてのコミットでテストスイートを実行する。「正しそう」だが実行されていないテストはランディングしない。
-
-**制約**: 1 finding = 1 commit、Conventional Commit subject + `Refs: F#<finding_id>` trailer、push / amend / `--no-verify` はしない。Code または Docs ファミリのメトリクスに属する findings はスキップ。
-
-**[Semantic (Jev)](/heal/ja/semantic/) を有効にしている場合**は、何も確かめていないテストの削除もします。対象は `delete` と判定され、確信度が 0.9 以上の `test_value` の finding です。1 commit で 1 テストずつ、テストスイートが通り、カバレッジが下がらないときだけ消します。ただし、そのテストが自分の mock しか確かめていないか、何も確かめていないなら、カバレッジが下がっても消します（カバレッジのデータがなければ、レビュー用に一覧を出すだけです）。`test_duplicate` のペアは削除するか、1 つのパラメータ化テストにまとめ、ただの値を差し替えている mock は本物の値に置き換えます。commit のたびに `heal semantic ask --task verify_tests --diff HEAD~1..HEAD` を実行し、新しいテストが自分の mock しか確かめていなければ、その commit を取り消します。
-
-トリガーフレーズ: 「fix the test findings」、「drain the test cache」、「add tests heal flagged」、「/heal-test-patch」。
+トリガーフレーズ: 「review the test health」、「fix the test findings」、「add the tests heal flagged」、「remove useless tests」、「/heal:tests」。

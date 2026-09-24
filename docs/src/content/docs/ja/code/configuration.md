@@ -252,7 +252,7 @@ max_loc_threshold = 200_000
 
 ## `[policy.drain]`
 
-解消ポリシーが、`/heal-code-patch` が必ず解消する `(Severity, hotspot)` の組み合わせ(T0)と、帯域に余裕があれば解消する組み合わせ(T1)を決めます。両方のリストの外にあるものは Advisory に落ち、`--all` でしか表示されません。
+解消ポリシーが、必ず解消する `(Severity, hotspot)` の組み合わせ(T0)と、帯域に余裕があれば解消する組み合わせ(T1)を決めます。`/heal:refactor` は T0 から提案します。両方のリストの外にあるものは Advisory に落ち、`--all` でしか表示されません。
 
 ```toml
 [policy.drain]
@@ -293,7 +293,7 @@ p90 = 67.0          # 候補が5件以上あるときの Hotspot 🔥 percentile
 p95 = 145.0
 ```
 
-`heal calibrate`(フラグなし)はファイルがないときだけ作成します。既にあるときは存在を報告するだけで何も書き換えません。実際に再走査するには `--force` を渡してください。`/heal-setup` スキルがドリフトを監視し、必要に応じて `heal calibrate --force` を提案します。
+`heal calibrate`(フラグなし)はファイルがないときだけ作成します。既にあるときは存在を報告するだけで何も書き換えません。実際に再走査するには `--force` を渡してください。コードベースが十分に動いたら `heal doctor` が知らせ、`/heal:setup` が `heal calibrate --force` を提案します。
 
 ## 厳密設計
 
