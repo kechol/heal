@@ -25,6 +25,7 @@ use std::path::Path;
 
 use crate::claude_settings;
 use crate::commands::hook_install::{self, HookAction};
+use crate::core::calibration::Calibration;
 use crate::core::config::Config;
 use crate::core::monorepo::{self, MonorepoSignal};
 use crate::core::severity::SeverityCounts;
@@ -99,7 +100,8 @@ pub fn run(
         cfg,
         primary_language,
         severity_counts,
-    } = run_initial_scan(project, &paths)?;
+        calibration_action,
+    } = run_initial_scan(project, &paths, force)?;
     let skills_outcomes = handle_skills_install(project, &paths, force, yes, no_skills, as_json)?;
     // Surface workspace manifests only when no `[[project.workspaces]]`
     // block exists yet; once the user declares them, the hint becomes
@@ -118,6 +120,7 @@ pub fn run(
             &paths,
             primary_language.as_deref(),
             &config_action,
+            &calibration_action,
             &hook_action,
             hook_path.as_deref(),
             &skills_outcomes,
@@ -131,6 +134,7 @@ pub fn run(
         &paths,
         primary_language.as_deref(),
         config_action,
+        calibration_action,
         hook_action,
         hook_path.as_deref(),
         &skills_outcomes,
@@ -150,6 +154,9 @@ struct InitReport<'a> {
     primary_language: Option<&'a str>,
     config: PathAction<'a, ConfigAction>,
     calibration_path: String,
+    /// Same `{ path, action }` shape as `config`: an existing
+    /// `calibration.toml` is kept unless `--force`.
+    calibration: PathAction<'a, ConfigAction>,
     post_commit_hook: PathAction<'a, HookAction>,
     /// One report per agent target HEAL knows about (Claude, Codex,
     /// …), in [`SkillTarget::ALL`] order. Each entry self-describes
@@ -205,6 +212,7 @@ impl<'a> InitReport<'a> {
         paths: &HealPaths,
         primary_language: Option<&'a str>,
         config_action: &'a ConfigAction,
+        calibration_action: &'a ConfigAction,
         hook_action: &'a HookAction,
         hook_path: Option<&Path>,
         skills_outcomes: &'a [SkillsTargetOutcome],
@@ -228,6 +236,10 @@ impl<'a> InitReport<'a> {
                 action: config_action,
             },
             calibration_path: paths.calibration().display().to_string(),
+            calibration: PathAction {
+                path: Some(paths.calibration().display().to_string()),
+                action: calibration_action,
+            },
             post_commit_hook: PathAction {
                 path: hook_path.map(|p| p.display().to_string()),
                 action: hook_action,
@@ -244,6 +256,7 @@ fn print_summary(
     paths: &HealPaths,
     primary_language: Option<&str>,
     config_action: ConfigAction,
+    calibration_action: ConfigAction,
     hook_action: HookAction,
     hook_path: Option<&Path>,
     skills_outcomes: &[SkillsTargetOutcome],
@@ -262,7 +275,10 @@ fn print_summary(
         "  config            {}  ({config_action})",
         paths.config().display(),
     );
-    println!("  calibration       {}", paths.calibration().display());
+    println!(
+        "  calibration       {}  ({calibration_action})",
+        paths.calibration().display(),
+    );
     match hook_path {
         Some(p) => println!("  post-commit hook  {}  ({hook_action})", p.display()),
         None => println!("  post-commit hook  {hook_action}"),
@@ -398,9 +414,16 @@ struct InitialScan {
     cfg: Config,
     primary_language: Option<String>,
     severity_counts: Option<SeverityCounts>,
+    calibration_action: ConfigAction,
 }
 
-fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<InitialScan> {
+/// Scan once for the summary and classify against the calibration.
+///
+/// An existing `calibration.toml` that loads is kept unless `force`:
+/// re-running `heal init` (e.g. to reinstall the hook) must not move the
+/// Severity thresholds behind the user's back (`scope.md` R3). A missing
+/// or unreadable file is (re)built from this scan.
+fn run_initial_scan(project: &Path, paths: &HealPaths, force: bool) -> Result<InitialScan> {
     // Load the just-written (or pre-existing) config so observers honor
     // the project's enable flags. A config-missing error here would
     // indicate a write_config bug — propagate it rather than silently
@@ -413,8 +436,24 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<InitialScan> {
 
     let reports = run_all(project, &cfg, None, None, None);
     let primary_language = reports.loc.primary.clone();
-    let calibration = build_calibration(project, &reports, &cfg);
-    calibration.save(&paths.calibration())?;
+    let calibration_path = paths.calibration();
+    let existing = calibration_path
+        .exists()
+        .then(|| Calibration::load(&calibration_path).ok())
+        .flatten();
+    let (calibration, calibration_action) = match existing {
+        Some(kept) if !force => (kept, ConfigAction::KeptExisting),
+        _ => {
+            let action = if calibration_path.exists() {
+                ConfigAction::Overwrote
+            } else {
+                ConfigAction::Wrote
+            };
+            let built = build_calibration(project, &reports, &cfg);
+            built.save(&calibration_path)?;
+            (built, action)
+        }
+    };
 
     let cal_with_overrides = calibration.with_overrides(&cfg);
     let findings = classify(&reports, &cal_with_overrides, &cfg);
@@ -422,6 +461,7 @@ fn run_initial_scan(project: &Path, paths: &HealPaths) -> Result<InitialScan> {
         cfg,
         primary_language,
         severity_counts: Some(SeverityCounts::from_findings(&findings)),
+        calibration_action,
     })
 }
 
@@ -717,6 +757,31 @@ mod tests {
         assert!(
             calibration.meta.codebase_files >= 1,
             "calibration must record codebase_files",
+        );
+    }
+
+    #[test]
+    fn rerun_keeps_calibration_unless_forced() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        commit_default(dir.path(), "main.rs", "fn main() {}\n", "solo@example.com");
+        run_no_skills(dir.path(), false).unwrap();
+        let paths = HealPaths::new(dir.path());
+        let first = std::fs::read(paths.calibration()).unwrap();
+
+        commit_default(dir.path(), "lib.rs", "pub fn f() {}\n", "solo@example.com");
+        run_no_skills(dir.path(), false).unwrap();
+        assert_eq!(
+            std::fs::read(paths.calibration()).unwrap(),
+            first,
+            "a plain re-run must not recalibrate",
+        );
+
+        run_no_skills(dir.path(), true).unwrap();
+        assert_ne!(
+            std::fs::read(paths.calibration()).unwrap(),
+            first,
+            "--force rebuilds the calibration",
         );
     }
 
