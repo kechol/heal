@@ -50,6 +50,16 @@ pub enum Command {
         #[arg(long)]
         explicit: bool,
     },
+    /// Report which parts of HEAL's setup are in place: config,
+    /// calibration freshness, the post-commit hook, the optional feature
+    /// families, and skill directories left by older versions. Read-only
+    /// and offline; the `/heal:setup` skill reads `--json` to decide which
+    /// setup steps still need doing.
+    Doctor {
+        /// Emit the `DoctorReport` as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// Hook entrypoint invoked by git hooks and Claude Code's
     /// `settings.json` hook commands. No-ops silently when the project
     /// has no `.heal/` directory.
@@ -680,6 +690,7 @@ impl Cli {
                 json,
                 explicit,
             } => commands::init::run(&project, force, yes, no_skills, json, explicit),
+            Command::Doctor { json } => commands::doctor::run(&project, json),
             Command::Hook { event } => commands::hook::run(&project, event),
             Command::Metrics {
                 json,
@@ -1158,6 +1169,18 @@ mod tests {
         }
         Cli::try_parse_from(["heal", "skills", "uninstall", "--force"])
             .expect_err("--force not on uninstall");
+    }
+
+    #[test]
+    fn parses_doctor_with_and_without_json() {
+        assert!(matches!(
+            parse(&["heal", "doctor"]).command,
+            Command::Doctor { json: false }
+        ));
+        assert!(matches!(
+            parse(&["heal", "doctor", "--json"]).command,
+            Command::Doctor { json: true }
+        ));
     }
 
     #[test]

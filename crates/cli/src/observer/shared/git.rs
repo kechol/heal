@@ -128,6 +128,20 @@ pub fn resolve_ref(root: &Path, revspec: &str) -> Option<String> {
     Some(object.id().to_string())
 }
 
+/// Number of commits reachable from HEAD but not from `since_sha`
+/// (`git rev-list <since_sha>..HEAD --count`). `None` when `root` isn't a
+/// git repo, HEAD is unborn, or `since_sha` no longer resolves (e.g. the
+/// commit was rewritten away).
+#[must_use]
+pub fn commits_since(root: &Path, since_sha: &str) -> Option<usize> {
+    let repo = Repository::discover(root).ok()?;
+    let since = repo.revparse_single(since_sha).ok()?.id();
+    let mut walk = repo.revwalk().ok()?;
+    walk.push_head().ok()?;
+    walk.hide(since).ok()?;
+    Some(walk.flatten().count())
+}
+
 /// True iff the working tree has no uncommitted changes (no untracked,
 /// modified, staged, or conflicted entries). `None` when `root` isn't a
 /// git repo — callers (`heal status` cache layer) treat that as "can't

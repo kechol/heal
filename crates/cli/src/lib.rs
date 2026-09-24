@@ -21,6 +21,7 @@ pub mod cli;
 pub mod commands;
 pub mod core;
 pub mod feature;
+pub mod legacy_skills;
 pub mod observer;
 pub mod observers;
 pub mod semantic;
