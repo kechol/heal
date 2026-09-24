@@ -133,15 +133,16 @@ Why the split:
   command, cached, and folded into `config_hash` as an observation
   input.
 
-The Executor lives in user-invoked Claude skills:
-`/heal-code-review` (read, propose architecture) and
-`/heal-code-patch` (write, one commit per finding). Both are
-explicitly user-triggered. See `skills-and-hooks.md` R7 and
-`scope.md` R8.
+The Executor lives in user-invoked Claude skills from the heal
+plugin: `/heal:refactor`, `/heal:docs`, and `/heal:tests` diagnose,
+propose, and apply only the proposals the user approves, one commit
+each. They are explicitly user-triggered. See `skills-and-hooks.md`
+R7 and `scope.md` R8.
 
-This split is the reason the bundled skills are simple:
-`heal-code-patch` doesn't have to handle "is HEAL allowed to spend
-my quota?" — the user already answered yes by typing the command.
+This split is the reason the skills stay simple: they never have to
+decide "is HEAL allowed to spend my quota or touch my code?" — the
+user answered by invoking the skill and again by approving each
+proposal.
 
 ---
 
@@ -170,7 +171,7 @@ Reasoning:
 
 If you're tempted to add suppression "to reduce noise", first ask
 whether the noise is actually a calibration problem
-(`heal-setup` skill should warn about flood) or a
+(`/heal:setup` should warn about flood) or a
 classifier-demotion problem (`scope.md` R9 PairClass).
 
 ---
@@ -226,13 +227,13 @@ observer" for the full bar.
 
 ### 5.2 Context-rich proposals beat terse findings
 
-`heal-code-review` and `heal-code-patch` always include **why**
+`/heal:refactor` proposals always include **why**
 this finding matters in this file: the hotspot score, the
 change-coupling neighbourhood, the test-coverage shape. A finding
 that says only "CCN = 23" gets refactored into something that
 relocates the complexity instead of removing it (the
 "relocate-trap" — see
-`crates/cli/skills/heal-code-review/references/architecture.md`
+`plugins/heal/skills/refactor/references/architecture.md`
 §6).
 
 The cost is verbosity in skill output. The benefit is that the
@@ -241,8 +242,8 @@ finding to a neighboring file.
 
 ### 5.3 Refuse on dirty worktree
 
-`heal-code-patch` refuses to start if `git status` is dirty. The
-audit trail (one finding per commit, `regressed.jsonl` recording
+The work skills refuse to write if `git status` is dirty. The
+audit trail (one proposal per commit, `regressed.jsonl` recording
 every fix-then-regress) only works if HEAL is the only thing
 writing during a drain session. See `skills-and-hooks.md` R7.
 

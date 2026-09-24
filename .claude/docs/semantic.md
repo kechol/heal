@@ -131,7 +131,7 @@ Finding in the Critical-driven T0 tier.
 
 `.heal/concepts.toml` (`core::concepts`) — `[[concept]] { id,
 description }`, ids lowercase `[a-z0-9_-]`, 1–254 entries, `other`
-appended automatically. Written by `/heal-concepts-setup`; an
+appended automatically. Written by `/heal:setup`; an
 observation input of `config_hash` while the family is enabled.
 
 ## Drain-order backtest (dev only)

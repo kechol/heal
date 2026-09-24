@@ -13,7 +13,7 @@ The split:
 - §1 — runtime dependencies (we link the crate).
 - §2 — conceptual ancestors we re-implemented.
 - §3 — papers and books behind the metric definitions.
-- §4 — refactoring / architecture vocabulary used by `heal-code-review`.
+- §4 — refactoring / architecture vocabulary used by `/heal:refactor`.
 - §5 — tools we evaluated and chose **not** to adopt (the rejection
   is the load-bearing part — don't re-litigate without reason).
 - §6 — deliberately out of scope.
@@ -183,16 +183,16 @@ smell. Drives the `Symmetric` vs. `OneWay` direction split in
 the **internal companion** to change coupling — coupling reveals
 inter-file split candidates, LCOM reveals intra-file ones. That
 framing is reflected verbatim in
-`crates/cli/skills/heal-code-review/references/metrics.md`.
+`plugins/heal/skills/refactor/references/metrics.md`.
 
 ---
 
-## 4. Refactoring and architecture vocabulary (heal-code-review)
+## 4. Refactoring and architecture vocabulary (/heal:refactor)
 
-`heal-code-review` proposes refactorings using a named vocabulary so
+`/heal:refactor` proposes refactorings using a named vocabulary so
 findings translate into actions a developer recognizes. The
 references live in
-`crates/cli/skills/heal-code-review/references/architecture.md`
+`plugins/heal/skills/refactor/references/architecture.md`
 and `references/readability.md`. Sources:
 
 ### _Refactoring_ (2nd ed., 2018) — Martin Fowler
@@ -321,10 +321,17 @@ Don't propose them without explicit roadmap discussion (`scope.md` R5):
   The only network access is `git2` against the local repo.
 - **Multi-agent provider abstraction.** Skills target Claude Code in
   v0.x; non-Claude skill bodies are a v0.5+ discussion.
-- **Plugin marketplace / per-skill version pinning.** Skills are
-  bundled inside the binary (`include_dir!`). Users update skills by
-  upgrading `heal-cli`. No `heal skills add <url>`, no registry, no
-  pinning. (`scope.md` R7.)
+- **Third-party marketplaces / per-skill version pinning.** Skills ship
+  as one plugin from this repository's own marketplace, versioned with
+  the CLI and pinned to its release tag. No `heal skills add <url>`, no
+  other registry, no per-skill versions. (`scope.md` R7.) Bundling the
+  skills inside the binary was tried first and dropped: extracting them
+  into `.claude/skills/` left tracked noise in every user repository.
+- **Separate read-only review and write-only patch skills.** Tried in
+  v0.2–v0.6 and merged: review could not carry out structural moves
+  and patch could only apply a mechanical allow-list, so the changes
+  with the most leverage were never made. One skill per family now
+  proposes and, after approval, applies. (`scope.md` R8.)
 
 ---
 

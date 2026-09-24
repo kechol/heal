@@ -1,12 +1,12 @@
 # Doc-scaffold design rationale
 
-Internal background for the `/heal-doc-scaffold` skill. Captures
+Internal background for the scaffold mode of `/heal:docs`. Captures
 the literature lineage, the reader-question framework, the
 AI-generation tradeoffs, and the anti-pattern catalogue that
 shapes the page catalog. AI agents working on the skill (or on
 adjacent docs observers) consult this doc; the skill itself
 references only the operating subset under
-`crates/cli/skills/heal-doc-scaffold/references/`.
+`plugins/heal/skills/docs/references/` (`scaffold.md` and the page files).
 
 ## §1 Literature lineage
 
@@ -599,9 +599,9 @@ gated on prompt-engineered classifier rather than rule-based.
   `todo_density` findings on emitted skeletons.
 - `.claude/docs/data-model.md` — `DocsConfig` field reference
   (`scaffold_root`, `pairs_path`, etc.).
-- `crates/cli/skills/heal-doc-scaffold/references/page-catalog.md`
+- `plugins/heal/skills/docs/references/page-catalog.md`
   — operating subset the skill consults at runtime.
-- `crates/cli/skills/heal-doc-scaffold/references/page-templates.md`
+- `plugins/heal/skills/docs/references/page-templates.md`
   — body skeletons.
-- `crates/cli/skills/heal-doc-scaffold/references/wiki-organization.md`
+- `plugins/heal/skills/docs/references/wiki-organization.md`
   — filesystem layout and navigation rules.

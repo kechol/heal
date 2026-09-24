@@ -12,8 +12,10 @@ Churn, Change Coupling, Duplication, Hotspot, LCOM — plus the opt-in
 `[features.docs]` and `[features.test]` families, and the opt-in
 `[features.semantic]` family that asks TypeSafe's Jev classifier typed
 questions), classifies findings against per-codebase calibration, and
-surfaces them via `heal status` / `heal metrics` / `heal diff` plus
-twelve bundled skills (five code, four docs, three test).
+surfaces them via `heal status` / `heal metrics` / `heal diff` /
+`heal doctor` plus four skills shipped as the `heal` Claude Code plugin
+(`plugins/heal/`): `/heal:setup`, `/heal:refactor`, `/heal:docs`,
+`/heal:tests`.
 
 For the user-facing overview see [README.md](./README.md).
 

@@ -18,8 +18,10 @@ For per-area facts:
   worktree match, and the content hash covers config, calibration, and
   enabled non-git observation inputs (see `data-model.md`).
 - `heal hook commit` short-circuits silently if `.heal/` doesn't exist.
-- `heal skills install` skips existing files in `InstallSafe` mode;
-  `--force` overwrites.
+- `heal init` keeps an existing `config.toml` and `calibration.toml`
+  unless `--force`.
+- `heal skills uninstall` removes only directories on the closed
+  legacy name list; re-running it is a no-op.
 
 Dirty worktrees are never considered fresh.
 
@@ -86,8 +88,9 @@ When touching:
 | If you change… | Co-update… |
 |---|---|
 | user-visible CLI flag or output | `docs/cli.md`, `docs/quick-start.mdx`, `README.md` |
-| metric definition | `docs/metrics.md`, `crates/cli/skills/heal-code-review/references/metrics.md` |
-| `.heal/config.toml` schema | `docs/configuration.md`, `crates/cli/skills/heal-setup/references/config.md` |
+| metric definition | `docs/metrics.md`, `plugins/heal/skills/refactor/references/metrics.md` |
+| `.heal/config.toml` schema | `docs/configuration.md`, `plugins/heal/skills/setup/references/config.md` |
+| a CLI flag or JSON shape a skill uses | `plugins/heal/references/cli.md`, the skills that call it |
 | `FindingsRecord` JSON | bump `FINDINGS_RECORD_VERSION`, update `data-model.md`, add `CHANGELOG.md` "Unreleased" entry |
 | canonical term in `glossary.md` | sweep across source, tests, skill bodies, Starlight (en + ja), `README.md`, `CLAUDE.md` |
 

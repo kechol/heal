@@ -24,7 +24,6 @@ Files under this rule:
 - `.heal/semantic/verdicts/*.jsonl` and
   `.heal/cache/semantic/verdicts/*.jsonl` (`VerdictStore::save`)
 - `.claude/settings.json`
-- Extracted skill files
 
 `std::fs::write` and friends are forbidden for these — SIGINT
 mid-write would leave a half-written stub that the next run

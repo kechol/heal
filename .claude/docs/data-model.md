@@ -427,7 +427,7 @@ missing entries remain visible in observation provenance.
 | `[metrics.duplication]` | `docs_min_tokens` | `100` | Markdown / RST window — only used when `[features.docs]` is on. |
 | `[features.docs]` | `enabled` | `false` | Master switch for the docs family. |
 | `[features.docs]` | `pairs_path` | `".heal/doc_pairs.json"` | SSoT path consumed by Layer A observers. |
-| `[features.docs]` | `scaffold_root` | `".heal/docs"` | Where `/heal-doc-scaffold` writes page skeletons. HEAL itself never reads or writes this tree — consumer metadata only. |
+| `[features.docs]` | `scaffold_root` | `".heal/docs"` | Where `/heal:docs scaffold` writes page skeletons. HEAL itself never reads or writes this tree — consumer metadata only. |
 | `[features.docs.doc_freshness]` | `high_commits` | `5` | src commits past doc → High. |
 | `[features.docs.doc_freshness]` | `critical_commits` | `20` | src commits past doc → Critical. |
 | `[features.docs.standalone]` | `include` | `["**/*.md", "**/*.rst"]` | Layer B globs. |
@@ -534,7 +534,7 @@ pub struct MonorepoSignal { manifest: String, kind: String }
 
 `detect(project_root) → Vec<MonorepoSignal>`. Presence-only — no
 enumeration of workspace members. The list of detected manifests is
-fixed (see glossary). Used by `heal init` and by `heal-setup` skill.
+fixed (see glossary). Used by `heal init` and by the `/heal:setup` skill.
 
 ---
 

@@ -48,8 +48,8 @@ includes:
 - Test update.
 - Starlight English docs (`docs/src/content/docs/`).
 - Starlight Japanese mirror (`docs/src/content/docs/ja/`).
-- Affected skill body and references
-  (`crates/cli/skills/<skill>/`).
+- Affected plugin skill bodies and references
+  (`plugins/heal/skills/<skill>/`, `plugins/heal/references/`).
 - `CHANGELOG.md` "Unreleased" entry (`⚠ BREAKING` if applicable).
 - `.claude/docs/` and / or `.claude/rules/` if invariants changed.
 
@@ -93,13 +93,19 @@ when that's what the field accepts.
 
 ```sh
 cargo install --path crates/cli --force
-heal init --force --yes
+heal init --force
+heal doctor
 heal status
+claude plugin validate --strict plugins/heal/skills
+claude plugin validate --strict .
 ```
 
 This repo is HEAL's test corpus. Self-test surfaces regressions that
-unit tests miss (hook script edge cases, skill rendering, plugin
-extraction). Pure-internal Rust changes can rely on `cargo test`.
+unit tests miss (hook script edge cases, skill wording, the plugin
+manifests). To exercise the skills against this checkout rather than
+the released plugin, start Claude Code with
+`claude --plugin-dir plugins/heal`. Pure-internal Rust changes can rely
+on `cargo test`.
 
 ## R8. Release flow
 

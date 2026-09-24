@@ -2,6 +2,66 @@
 
 ## Unreleased
 
+### ⚠ BREAKING — skills ship as a Claude Code plugin
+
+- **Skills moved out of the CLI into the `heal` plugin.** The binary no
+  longer bundles skills or copies them into `.claude/skills/` /
+  `.agents/skills/`, so nothing is added to your git tree. Install once
+  in Claude Code: `/plugin marketplace add kechol/heal`, then
+  `/plugin install heal@heal`. The marketplace pins the plugin to the
+  release tag matching the CLI version, and a SessionStart hook prints
+  one line when the CLI and the plugin come from different releases
+  (silent in projects without `.heal/`).
+- **Twelve skills became four**, named in the plugin namespace:
+  `/heal:setup` (was `heal-setup`, `heal-concepts-setup`,
+  `heal-doc-pair-setup`, `heal-test-reporter-setup`),
+  `/heal:refactor` (was `heal-code-review` + `heal-code-patch`),
+  `/heal:docs` (was `heal-doc-review`, `heal-doc-patch`,
+  `heal-doc-scaffold`), and `/heal:tests` (was `heal-test-review` +
+  `heal-test-patch`). `heal-cli` is no longer a skill.
+- **Review and patch are one skill per family.** Each work skill
+  diagnoses, proposes, and applies only the proposals you approve, one
+  commit per proposal (a proposal may resolve several findings; each
+  gets `heal mark fix`). Structural changes — splitting a file along
+  its concepts, moving a function to its home, Extract Class,
+  Introduce Port — are now proposed and carried out when two
+  independent signals agree on the seam, instead of stopping at the old
+  mechanical allow-lists. Public renames and contested boundaries are
+  asked individually.
+- **`/heal:setup` is idempotent.** It starts from `heal doctor --json`
+  and only runs what is missing or stale.
+- **`heal skills` keeps only `uninstall`**, which removes the skill
+  folders older versions copied into the project and sweeps old heal
+  entries from `.claude/settings.json`. `install` / `update` / `status`
+  exit 1 with the plugin install commands. `heal init --yes` /
+  `--no-skills` are accepted and ignored; `heal init --json` replaces
+  `skills` with `legacy_skills`.
+- **Codex CLI installs are no longer produced.** The skills are written
+  for Claude Code; copying `plugins/heal/skills/*` into `.agents/skills/`
+  by hand is possible but unsupported.
+- **Migration:** install the plugin, run `heal skills uninstall`, and
+  commit the removed `.claude/skills/heal-*` folders.
+
+### Features
+
+- **`heal doctor [--json]`** reports which parts of the setup are in
+  place — config, calibration freshness, the post-commit hook, each
+  enabled family's inputs (doc pairs, lcov, Jev key, concept list), and
+  skill folders left by older versions — with the command or skill that
+  fixes each gap. Read-only and offline. The recalibration drift rules
+  (more than 200 commits, more than 20% file-count change, or no
+  Critical / High left after ten or more recorded fixes) now live here.
+
+### Fixes
+
+- **`heal init` keeps an existing calibration unless `--force`.**
+  Re-running init (for example to reinstall the hook) silently rebuilt
+  `.heal/calibration.toml` and moved the Severity thresholds. `--json`
+  gains a `calibration` entry shaped like `config`.
+- **`heal skills uninstall` keeps a `.claude-plugin/marketplace.json`
+  that isn't heal's old `heal-local` one**, so projects that are
+  themselves plugin marketplaces lose nothing.
+
 ### ⚠ BREAKING — findings schema v9
 
 - **`FINDINGS_RECORD_VERSION` is now 9.** Findings gain an optional

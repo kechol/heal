@@ -105,18 +105,23 @@ per-user `credentials.toml`. (`.heal/cache/` is the one untracked,
 machine-local directory.) New top-level files must state which side
 they fall on and why. When in doubt, open an issue first.
 
-## R7. No marketplace, no plugin distribution
+## R7. One plugin, one marketplace, pinned to releases
 
-Skills are bundled inside the binary (`include_dir!`). Users update
-skills by upgrading `heal-cli`. There is no `heal skills add <url>`,
-no separate registry, no per-skill version pinning.
+Skills ship only as the `heal` Claude Code plugin in this repository
+(`plugins/heal/`), listed by the repository's own marketplace
+(`.claude-plugin/marketplace.json`, a `git-subdir` source pinned to the
+release tag). The CLI does not bundle or copy skills into projects, so
+nothing lands in the user's git tree. No other marketplaces, no
+`heal skills add <url>`, no per-skill versions: the plugin version is
+the CLI version (`skills-and-hooks.md` R5).
 
-## R8. heal-code-review and heal-code-patch are distinct
+## R8. One work skill per family
 
-Review = read, propose, including architecture. Patch = mechanical
-write, one commit per finding. Don't merge them, don't add an
-architecture-decision step to patch, don't add a code-write step to
-review.
+`/heal:refactor`, `/heal:docs`, and `/heal:tests` each diagnose,
+propose, and — after the user approves — apply, one commit per
+proposal (`skills-and-hooks.md` R7). Don't split them back into
+read-only and write-only skills, and don't add a step that writes
+before approval. `/heal:setup` is the single setup entry point.
 
 ## R9. Coupling noise is filtered, not surfaced raw
 

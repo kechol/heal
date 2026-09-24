@@ -411,7 +411,7 @@ by `[features.docs.standalone]`.
 ### `observer/doc_pairs.rs` (loader)
 
 Read-only loader for the SSoT. The HEAL binary never writes this
-file — generation is the `/heal-doc-pair-setup` skill's
+file — generation is the `/heal:setup` skill's
 responsibility (R3 forbids auto-recalibration; same rule extends
 here). Schema versioned by `DOC_PAIRS_VERSION`. Older versions
 silently treat as absent (warning emitted, observers skip).
