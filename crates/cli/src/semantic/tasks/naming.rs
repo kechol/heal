@@ -67,6 +67,42 @@ const NON_TERMS: &[&str] = &[
     "impl", "init", "open", "close", "push", "pop", "emit", "collect", "map",
 ];
 
+/// The singular form of a plural English word, so `function` /
+/// `functions` or `count` / `counts` count as one term. Without it the
+/// two forms of one word look like two terms that never share a name —
+/// exactly what the pair question asks about — and Jev rightly answers
+/// that they name the same thing. Deliberately simple: only regular
+/// plurals, and words ending in `ss` / `us` / `is` / `as` (`class`,
+/// `status`, `analysis`, `alias`) are left alone.
+#[must_use]
+pub fn singular(word: &str) -> String {
+    let n = word.len();
+    if n > 4 && word.ends_with("ies") {
+        return format!("{}y", &word[..n - 3]);
+    }
+    for suffix in ["sses", "xes", "ches", "shes", "zes"] {
+        if n > suffix.len() + 1 && word.ends_with(suffix) {
+            return word[..n - 2].to_owned();
+        }
+    }
+    let keep = ["ss", "us", "is", "as"];
+    if n > 3 && word.ends_with('s') && !keep.iter().any(|k| word.ends_with(k)) {
+        return word[..n - 1].to_owned();
+    }
+    word.to_owned()
+}
+
+/// The terms of one identifier: its words in singular form, minus verbs
+/// and glue words and anything shorter than three letters.
+#[must_use]
+pub fn term_words(symbol: &str) -> BTreeSet<String> {
+    words(symbol)
+        .into_iter()
+        .map(|w| singular(&w))
+        .filter(|w| w.len() >= 3 && !NON_TERMS.contains(&w.as_str()))
+        .collect()
+}
+
 const MAX_TERMS_PER_CONCEPT: usize = 8;
 const MAX_PAIRS_PER_CONCEPT: usize = 10;
 const MAX_USAGES_LISTED: usize = 20;
@@ -127,10 +163,7 @@ impl Task for TermDrift {
                 }
                 let symbol = item.meta["symbol"].as_str().unwrap_or_default().to_owned();
                 let file = PathBuf::from(item.meta["file"].as_str().unwrap_or_default());
-                let ws: BTreeSet<String> = words(&symbol)
-                    .into_iter()
-                    .filter(|w| w.len() >= 3 && !NON_TERMS.contains(&w.as_str()))
-                    .collect();
+                let ws = term_words(&symbol);
                 for w in &ws {
                     terms
                         .entry(concept.to_owned())
@@ -572,6 +605,31 @@ mod tests {
             .filter_map(|f| f.location.symbol.as_deref())
             .collect();
         assert_eq!(symbols, ["hides_io"]);
+    }
+
+    #[test]
+    fn plural_forms_are_one_term() {
+        for (plural, one) in [
+            ("functions", "function"),
+            ("clusters", "cluster"),
+            ("counts", "count"),
+            ("models", "model"),
+            ("queries", "query"),
+            ("classes", "class"),
+            ("indexes", "index"),
+            ("matches", "match"),
+        ] {
+            assert_eq!(singular(plural), one, "{plural}");
+        }
+        for kept in ["class", "status", "analysis", "alias", "bus", "is"] {
+            assert_eq!(singular(kept), kept);
+        }
+        assert_eq!(
+            term_words("extract_functions"),
+            term_words("extract_function")
+        );
+        assert!(term_words("has_multiple_clusters").contains("cluster"));
+        assert!(!term_words("get_models").contains("get"));
     }
 
     #[test]

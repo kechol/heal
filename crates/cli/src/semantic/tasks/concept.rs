@@ -28,6 +28,7 @@ use crate::core::concepts::{Concepts, OTHER};
 use crate::core::finding::Finding;
 use crate::core::severity::Severity;
 use crate::observer::code::complexity::outer_functions;
+use crate::observer::test::cases::test_regions;
 use crate::semantic::task::{Answered, Group, Item, Lowered, Task, TaskContext};
 use crate::semantic::tasks::common::{
     chosen, code_files, criteria, file_states, finding, parse_file,
@@ -89,9 +90,18 @@ impl Task for ConceptTask {
             let Some(parsed) = parse_file(ctx, &rel) else {
                 continue;
             };
+            // Inline unit tests (and their helpers) are not production
+            // code: classifying them skews the concept map and suggests
+            // moving tests next to whatever concept their name mentions.
+            let tests = test_regions(&parsed);
             let functions: Vec<_> = outer_functions(&parsed)
                 .into_iter()
                 .filter(|f| f.end_row - f.start_row + 1 >= MIN_FUNCTION_LINES)
+                .filter(|f| {
+                    !tests
+                        .iter()
+                        .any(|r| r.start <= f.byte_range.start && f.byte_range.end <= r.end)
+                })
                 .collect();
             if functions.is_empty() {
                 continue;

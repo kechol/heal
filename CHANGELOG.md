@@ -35,7 +35,8 @@
   the only commands that open a connection. Every other command reads the
   verdict cache offline; when the family is enabled, verdict files are part
   of `config_hash`, so a changed verdict re-renders `heal status`.
-- **`concept` task** classifies every function into the team's
+- **`concept` task** classifies every production function (inline unit
+  tests and `#[cfg(test)]` modules are skipped) into the team's
   concept vocabulary (`.heal/concepts.toml`, written by the new
   `/heal-concepts-setup` skill) and reports `concept_mix`,
   `concept_misplaced`, and `concept_scatter` findings. The approach
@@ -82,11 +83,12 @@
   With the default globs they still add the naming heuristic, which also
   treats production modules under a `test/` directory as tests.
 - **Naming and refactoring tasks:** `term_drift` (two words for one
-  thing within a concept), `name_mismatch` (a name or doc comment that
-  does not match the body), `split_points` (step boundaries for High /
-  Critical complexity), and `fix_pattern` (which allow-listed refactoring
-  fits). On-demand checks `name_choice`, `verify_patch`, and
-  `verify_proposal` report through `heal semantic ask --task <id> --json`.
+  thing within a concept; singular and plural forms count as one word),
+  `name_mismatch` (a name or doc comment that does not match the body),
+  `split_points` (step boundaries for High / Critical complexity), and
+  `fix_pattern` (which allow-listed refactoring fits). On-demand checks
+  `name_choice`, `verify_patch`, and `verify_proposal` report through
+  `heal semantic ask --task <id> --json`.
 - New bundled skill **`/heal-concepts-setup`** (twelve skills in total).
 - `/heal-code-patch` and `/heal-code-review` read semantic notes when
   present and verify their own work with `verify_patch` /

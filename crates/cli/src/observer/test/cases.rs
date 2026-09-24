@@ -71,6 +71,59 @@ pub fn test_cases(parsed: &ParsedFile) -> Vec<TestCase> {
     out
 }
 
+/// Byte ranges of test-only code in `parsed`: every test case, plus (Rust)
+/// every module gated by `#[cfg(test)]`, so the fixtures and helpers of an
+/// inline test module count as test code too. Production files in Rust
+/// usually carry their unit tests inline, and tasks that judge production
+/// code (`concept`) must not classify those.
+#[must_use]
+pub fn test_regions(parsed: &ParsedFile) -> Vec<Range<usize>> {
+    let cases = test_cases(parsed).into_iter().map(|c| c.byte_range);
+    #[cfg(feature = "lang-rust")]
+    let modules = rust_cfg_test_modules(parsed);
+    #[cfg(not(feature = "lang-rust"))]
+    let modules = Vec::new();
+    cases.chain(modules).collect()
+}
+
+/// Whether a `#[cfg(...)]` attribute enables its item only under `test`
+/// (`cfg(test)`, `cfg(all(test, …))`), not `cfg(not(test))`.
+#[cfg(feature = "lang-rust")]
+fn is_cfg_test(attr: &str) -> bool {
+    let a: String = attr.chars().filter(|c| !c.is_whitespace()).collect();
+    a.starts_with("#[cfg(")
+        && !a.contains("not(test")
+        && ["(test)", "(test,", ",test)", ",test,"]
+            .iter()
+            .any(|t| a.contains(t))
+}
+
+#[cfg(feature = "lang-rust")]
+fn rust_cfg_test_modules(parsed: &ParsedFile) -> Vec<Range<usize>> {
+    if parsed.lang != Language::Rust {
+        return Vec::new();
+    }
+    let src = parsed.source.as_bytes();
+    let mut out = Vec::new();
+    walk(parsed.tree.root_node(), &mut |node| {
+        if node.kind() != "mod_item" {
+            return;
+        }
+        let mut prev = node.prev_named_sibling();
+        while let Some(p) = prev {
+            if p.kind() != "attribute_item" {
+                break;
+            }
+            if is_cfg_test(p.utf8_text(src).unwrap_or("")) {
+                out.push(node.byte_range());
+                return;
+            }
+            prev = p.prev_named_sibling();
+        }
+    });
+    out
+}
+
 #[cfg(feature = "lang-rust")]
 fn rust_cases(parsed: &ParsedFile) -> Vec<TestCase> {
     let src = parsed.source.as_bytes();
@@ -350,6 +403,27 @@ mod tests {
         let names: Vec<_> = cases.iter().map(|c| (c.name.as_str(), c.skipped)).collect();
         assert_eq!(names, [("a", false), ("b", true)]);
         assert_eq!((cases[0].start_line, cases[0].end_line), (2, 2));
+    }
+
+    #[cfg(feature = "lang-rust")]
+    #[test]
+    fn rust_test_regions_cover_cfg_test_modules() {
+        let src = "pub fn prod() -> u8 { 1 }\n\
+                   #[cfg(not(test))]\nmod real { pub fn also_prod() {} }\n\
+                   #[cfg(test)]\nmod tests {\n    fn fixture() -> u8 { 2 }\n    #[test]\n    fn works() { assert_eq!(super::prod(), 1); }\n}\n\
+                   #[test]\nfn loose() {}\n";
+        let parsed = parse(src.to_owned(), Language::Rust).unwrap();
+        let regions = test_regions(&parsed);
+        let inside = |needle: &str| {
+            let at = src.find(needle).unwrap();
+            regions.iter().any(|r| r.start <= at && at < r.end)
+        };
+        assert!(inside("fn fixture"), "helpers of a cfg(test) module");
+        assert!(inside("fn works"));
+        assert!(inside("fn loose"), "a #[test] outside any module");
+        assert!(!inside("fn prod"));
+        assert!(!inside("fn also_prod"), "cfg(not(test)) is production code");
+        assert!(is_cfg_test("#[cfg(all(test, feature = \"x\"))]"));
     }
 
     #[cfg(feature = "lang-python")]
