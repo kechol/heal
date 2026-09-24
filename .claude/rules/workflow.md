@@ -109,8 +109,11 @@ on `cargo test`.
 
 ## R8. Release flow
 
-`/release` opens the bump PR. After the PR merges, the maintainer
-manually tags the merge commit:
+`/release` opens the bump PR — `Cargo.toml`, `Cargo.lock`, the plugin
+manifest, and the marketplace entry's `version` / `ref` move together
+(`skills-and-hooks.md` R5). After the PR merges, the maintainer
+manually tags the merge commit, which is the tag the marketplace
+`ref` names:
 
 ```sh
 git switch main && git pull
