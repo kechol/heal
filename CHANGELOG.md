@@ -93,6 +93,10 @@
 - `/heal-code-patch` and `/heal-code-review` read semantic notes when
   present and verify their own work with `verify_patch` /
   `verify_proposal`; without `[features.semantic]` they behave as before.
+  The patch skills treat the `triage` gate as a second opinion, never as
+  the decision, and `/heal-code-patch` gains the accept reason
+  `stateless_delegation` for LCOM on field-less types that delegate to
+  free functions.
 - **`commit_intent` task** classifies recent commits and decorates
   Code findings with a per-file bug-fix ratio (`semantic.fix_ratio`).
 - `heal status --metric` accepts `concept`, `naming`, `test-value`,

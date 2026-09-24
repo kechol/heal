@@ -162,7 +162,7 @@ const EFFORT: [(&str, &str); 3] = [
         "Changes that span several files or a module boundary.",
     ),
 ];
-const REASONS_CODE: [(&str, &str); 6] = [
+const REASONS_CODE: [(&str, &str); 7] = [
     ("generated_code", "Generated code."),
     (
         "exhaustive_enum_dispatch",
@@ -176,6 +176,10 @@ const REASONS_CODE: [(&str, &str); 6] = [
     (
         "coherent_pipeline_relocate_trap",
         "A coherent pipeline whose steps would only be relocated by splitting.",
+    ),
+    (
+        "stateless_delegation",
+        "A type with no fields (for example one trait implementation) whose methods delegate to free functions, so LCOM sees no shared state.",
     ),
     ("none", "None of these; the finding is real."),
 ];
