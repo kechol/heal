@@ -10,7 +10,9 @@
 //! cache, and hands the answers to `lower`. Because both sides run the
 //! identical `plan`, the keys line up by construction.
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use serde_json::Value;
 
@@ -40,6 +42,24 @@ pub struct TaskContext<'a> {
     /// Cached answers of the tasks this task depends on
     /// ([`Task::depends_on`]), keyed by task id then verdict key.
     pub prior: Option<&'a Snapshot>,
+    /// Work several tasks derive from the same inputs, done once per run
+    /// and shared with every [`Self::with_prior`] copy.
+    pub(crate) cache: Arc<ContextCache>,
+}
+
+/// Per-run memo behind [`TaskContext`]. Everything here is a pure function
+/// of the context's inputs, so sharing it never changes a plan.
+#[derive(Default)]
+pub(crate) struct ContextCache {
+    /// `tasks::common::code_files`: (production, test) source files.
+    pub(crate) code_files: OnceLock<(Vec<PathBuf>, Vec<PathBuf>)>,
+    /// `tasks::common::file_facts`, by project-relative path. `None` when
+    /// the file may not be sent or does not parse.
+    pub(crate) file_facts:
+        Mutex<HashMap<PathBuf, Option<Arc<crate::semantic::tasks::common::FileFacts>>>>,
+    /// `Task::criteria_hash` by task id: constant for a task, and needed
+    /// for every key it builds.
+    criteria: Mutex<HashMap<&'static str, String>>,
 }
 
 /// Read-only view of cached answers: task id → verdict key → answer.
@@ -58,6 +78,7 @@ impl<'a> TaskContext<'a> {
             focus: None,
             diff_range: None,
             prior: None,
+            cache: Arc::default(),
         })
     }
 
@@ -73,6 +94,7 @@ impl<'a> TaskContext<'a> {
             focus: self.focus,
             diff_range: self.diff_range,
             prior: Some(prior),
+            cache: Arc::clone(&self.cache),
         }
     }
 
@@ -113,13 +135,15 @@ impl<'a> TaskContext<'a> {
     /// Cache key for one question of `task` about `subject` under `state`.
     #[must_use]
     pub fn key(&self, task: &dyn Task, subject: &str, state: &str) -> String {
-        verdict_key(
-            task.id(),
-            &task.criteria_hash(),
-            &self.semantic().model,
-            subject,
-            state,
-        )
+        let criteria = self
+            .cache
+            .criteria
+            .lock()
+            .expect("criteria cache lock")
+            .entry(task.id())
+            .or_insert_with(|| task.criteria_hash())
+            .clone();
+        verdict_key(task.id(), &criteria, &self.semantic().model, subject, state)
     }
 
     /// The task's cutoff: the per-task override, else `default`.

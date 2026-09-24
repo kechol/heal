@@ -25,7 +25,7 @@ fn hotspot_desc(a: &Finding, b: &Finding) -> Ordering {
 }
 
 /// Notes below this confidence do not move a Finding.
-const MIN_CONFIDENCE: f64 = 0.5;
+pub(crate) const MIN_CONFIDENCE: f64 = 0.5;
 
 fn noted<'a>(f: &'a Finding, name: &str) -> Option<&'a crate::core::finding::SemanticNote> {
     f.semantic

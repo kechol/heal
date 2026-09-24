@@ -11,6 +11,14 @@ use crate::core::error::{Error, Result};
 /// file fully written — never a half-written stub that breaks
 /// every subsequent reader on parse.
 pub fn atomic_write(path: &Path, body: &[u8]) -> Result<()> {
+    // Match std::fs::write's creation mode; tempfile still applies the umask.
+    atomic_write_mode(path, body, 0o666)
+}
+
+/// [`atomic_write`] with an explicit Unix creation mode (ignored elsewhere),
+/// for files that must never be readable by others, such as a stored key
+/// (`0o600`).
+pub fn atomic_write_mode(path: &Path, body: &[u8], mode: u32) -> Result<()> {
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -25,9 +33,10 @@ pub fn atomic_write(path: &Path, body: &[u8]) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        // Match std::fs::write's creation mode; tempfile still applies the umask.
-        builder.permissions(std::fs::Permissions::from_mode(0o666));
+        builder.permissions(std::fs::Permissions::from_mode(mode));
     }
+    #[cfg(not(unix))]
+    let _ = mode;
     let mut tmp = builder.tempfile_in(parent).map_err(|e| Error::Io {
         path: path.to_path_buf(),
         source: e,

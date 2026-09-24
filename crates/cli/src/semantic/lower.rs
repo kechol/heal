@@ -15,7 +15,7 @@ use crate::core::finding::Finding;
 use crate::feature::Family;
 use crate::observers::ObserverReports;
 use crate::semantic::store::VerdictStore;
-use crate::semantic::task::{registry, Answered, Task, TaskContext};
+use crate::semantic::task::{registry, Answered, Snapshot, Task, TaskContext};
 
 /// Apply every enabled task's lowering to `findings`. Tasks that fail to
 /// plan (unreadable file, broken cache line) are reported on stderr and
@@ -48,15 +48,25 @@ pub(crate) fn apply(
         ctx.focus = focus;
         let mut new_findings = Vec::new();
         let mut notes = Vec::new();
+        // Verdicts do not change while lowering, so tasks that depend on the
+        // same tasks (`term_drift` and `doc_concept` on `concept`) share
+        // one copy of their answers.
+        let mut snapshots: std::collections::HashMap<&'static [&'static str], Snapshot> =
+            std::collections::HashMap::new();
         for task in enabled {
-            let snapshot = match store.snapshot(task.depends_on()) {
-                Ok(s) => s,
-                Err(e) => {
-                    eprintln!("heal: semantic task `{}` skipped: {e}", task.id());
-                    continue;
+            let deps = task.depends_on();
+            if !snapshots.contains_key(deps) {
+                match store.snapshot(deps) {
+                    Ok(s) => {
+                        snapshots.insert(deps, s);
+                    }
+                    Err(e) => {
+                        eprintln!("heal: semantic task `{}` skipped: {e}", task.id());
+                        continue;
+                    }
                 }
-            };
-            let tctx = ctx.with_prior(&snapshot);
+            }
+            let tctx = ctx.with_prior(&snapshots[deps]);
             match lower_task(task, &tctx, &mut store) {
                 Ok(lowered) => {
                     new_findings.extend(lowered.findings);

@@ -58,10 +58,7 @@ const STATE: &str = "Commits from one software repository. Each question describ
 
 impl CommitIntent {
     fn criteria() -> BTreeMap<String, Value> {
-        LABELS
-            .iter()
-            .map(|(k, v)| ((*k).to_owned(), json!(v)))
-            .collect()
+        crate::semantic::tasks::common::criteria(&crate::semantic::tasks::common::labels(&LABELS))
     }
 }
 

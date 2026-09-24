@@ -32,8 +32,8 @@ use crate::observer::test::cases::{mock_sites, test_cases, TestCase};
 use crate::semantic::api::{Answer, NoulCriteria, Question};
 use crate::semantic::task::{Answered, Group, Item, Lowered, Task, TaskContext};
 use crate::semantic::tasks::common::{
-    chosen, code_files, criteria, file_states, finding, guess_src_for_test, note, noul_p, numbered,
-    parse_file, TestMatcher,
+    chosen, code_files, criteria, file_states, finding, guess_src_for_test, labels, note, noul_p,
+    numbered, parse_file, TestMatcher,
 };
 
 // ------------------------------------------------------------- test_value
@@ -89,7 +89,7 @@ fn value_questions(subject: &str) -> [(&'static str, Question); 4] {
             "checks",
             Question::Choice {
                 instructions: json!(format!("{VALUE_INSTRUCTIONS}\nTest: {subject}\nWhat does this test actually check?")),
-                criteria: criteria(&CHECKS.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect::<Vec<_>>()),
+                criteria: criteria(&labels(&CHECKS)),
             },
         ),
         (
@@ -254,8 +254,8 @@ impl Task for TestValue {
             return Ok(Vec::new());
         }
         let mut groups = Vec::new();
-        for file in code_files(ctx).1 {
-            let Some(parsed) = parse_file(ctx, &file) else {
+        for file in &code_files(ctx).1 {
+            let Some(parsed) = parse_file(ctx, file) else {
                 continue;
             };
             let cases: Vec<TestCase> = test_cases(&parsed)
@@ -265,7 +265,7 @@ impl Task for TestValue {
             if cases.is_empty() {
                 continue;
             }
-            groups.extend(value_groups(self, ctx, &file, &parsed.source, &cases));
+            groups.extend(value_groups(self, ctx, file, &parsed.source, &cases));
         }
         Ok(groups)
     }
@@ -333,10 +333,7 @@ fn mock_items(
     state: &str,
     lines: &[(u32, String)],
 ) -> Vec<Item> {
-    let labels: Vec<(String, String)> = MOCK_KINDS
-        .iter()
-        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-        .collect();
+    let labels = labels(&MOCK_KINDS);
     lines
         .iter()
         .map(|(line, text)| Item {
@@ -412,8 +409,8 @@ impl Task for MockScope {
             return Ok(Vec::new());
         }
         let mut groups = Vec::new();
-        for file in code_files(ctx).1 {
-            let Some(parsed) = parse_file(ctx, &file) else {
+        for file in &code_files(ctx).1 {
+            let Some(parsed) = parse_file(ctx, file) else {
                 continue;
             };
             let sites = mock_sites(&parsed.source, parsed.lang);
@@ -421,13 +418,13 @@ impl Task for MockScope {
                 continue;
             }
             let spans: Vec<(u32, u32)> = sites.iter().map(|s| (s.line, s.line)).collect();
-            for (state, covered) in test_states(ctx, &file, &parsed.source, &spans) {
+            for (state, covered) in test_states(ctx, file, &parsed.source, &spans) {
                 let lines: Vec<(u32, String)> = covered
                     .iter()
                     .map(|&i| (sites[i].line, sites[i].text.clone()))
                     .collect();
                 groups.push(Group {
-                    items: mock_items(self, ctx, &file, &state, &lines),
+                    items: mock_items(self, ctx, file, &state, &lines),
                     state: json!(state),
                 });
             }
@@ -517,11 +514,6 @@ impl Task for TestTriage {
         if !ctx.config.features.test.enabled {
             return Ok(Vec::new());
         }
-        let to_labels = |set: &[(&str, &str)]| -> Vec<(String, String)> {
-            set.iter()
-                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-                .collect()
-        };
         let mut groups = Vec::new();
         for f in ctx.findings {
             if f.accepted || f.severity == Severity::Ok {
@@ -542,7 +534,7 @@ impl Task for TestTriage {
                             key: ctx.key(self, "band", &state),
                             question: Question::Choice {
                                 instructions: json!("The state is a source file with too little test coverage. What kind of code is it mostly?"),
-                                criteria: criteria(&to_labels(&BANDS)),
+                                criteria: criteria(&labels(&BANDS)),
                             },
                             meta: json!({"id": f.id, "note": "coverage_band"}),
                         }],
@@ -572,7 +564,7 @@ impl Task for TestTriage {
                                     key: ctx.key(self, &subject, &state),
                                     question: Question::Choice {
                                         instructions: json!(format!("The state is a test file. Why is the skipped test {subject} skipped?")),
-                                        criteria: criteria(&to_labels(&SKIP_REASONS)),
+                                        criteria: criteria(&labels(&SKIP_REASONS)),
                                     },
                                     meta: json!({"id": f.id, "note": "skip_reason", "test": c.name}),
                                 }
@@ -692,13 +684,10 @@ impl Task for TestDuplicate {
         if !ctx.config.features.test.enabled {
             return Ok(Vec::new());
         }
-        let labels: Vec<(String, String)> = DUP_KINDS
-            .iter()
-            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-            .collect();
+        let labels = labels(&DUP_KINDS);
         let mut groups = Vec::new();
-        for file in code_files(ctx).1 {
-            let Some(parsed) = parse_file(ctx, &file) else {
+        for file in &code_files(ctx).1 {
+            let Some(parsed) = parse_file(ctx, file) else {
                 continue;
             };
             let cases: Vec<TestCase> = test_cases(&parsed)

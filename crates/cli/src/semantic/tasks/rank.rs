@@ -29,20 +29,32 @@ use crate::core::severity::Severity;
 use crate::feature::Family;
 use crate::semantic::api::{NoulCriteria, Question};
 use crate::semantic::task::{Answered, Group, Item, Lowered, Task, TaskContext};
-use crate::semantic::tasks::common::{criteria, finding_excerpt, note, numbered_range};
-
-fn labels(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
-    pairs
-        .iter()
-        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-        .collect()
-}
+use crate::semantic::tasks::common::{criteria, finding_excerpt, labels, note, numbered_range};
 
 fn score_label(levels: &[&str], answer: &crate::semantic::api::Answer) -> String {
     let (level, _) = crate::semantic::tasks::common::score_level(answer).unwrap_or((0.0, 0.0));
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let i = (level.round().max(0.0) as usize).min(levels.len() - 1);
     levels[i].to_owned()
+}
+
+/// One note per answer, named by the item's `meta.note` and attached to
+/// the Finding `meta.id`: the chosen label for a `choice`, else
+/// `fallback(note name, answer)` for the task's `noul` questions.
+fn lower_notes(
+    answered: &[Answered<'_>],
+    fallback: impl Fn(&str, &crate::semantic::api::Answer) -> String,
+) -> Lowered {
+    let mut lowered = Lowered::default();
+    for a in answered {
+        let Some(answer) = a.answer else { continue };
+        let name = a.item.meta["note"].as_str().unwrap_or("").to_owned();
+        let label = crate::semantic::tasks::common::chosen(answer)
+            .map_or_else(|| fallback(&name, answer), |(l, _, _)| l.to_owned());
+        let id = a.item.meta["id"].as_str().unwrap_or("").to_owned();
+        lowered.notes.push((id, name, note(label, answer, 0)));
+    }
+    lowered
 }
 
 /// Files with at least one non-`Ok`, non-accepted Finding, sendable.
@@ -293,24 +305,14 @@ impl Task for Triage {
         Ok(groups)
     }
     fn lower(&self, _ctx: &TaskContext<'_>, answered: &[Answered<'_>]) -> Lowered {
-        let mut lowered = Lowered::default();
-        for a in answered {
-            let Some(answer) = a.answer else { continue };
-            let name = a.item.meta["note"].as_str().unwrap_or("").to_owned();
-            let label = crate::semantic::tasks::common::chosen(answer).map_or_else(
-                || {
-                    if answer.strength(0) >= 0.5 {
-                        "true".to_owned()
-                    } else {
-                        "false".to_owned()
-                    }
-                },
-                |(l, _, _)| l.to_owned(),
-            );
-            let id = a.item.meta["id"].as_str().unwrap_or("").to_owned();
-            lowered.notes.push((id, name, note(label, answer, 0)));
-        }
-        lowered
+        lower_notes(answered, |_, answer| {
+            if answer.strength(0) >= 0.5 {
+                "true"
+            } else {
+                "false"
+            }
+            .to_owned()
+        })
     }
 }
 
@@ -391,18 +393,9 @@ impl Task for Friction {
         Ok(groups)
     }
     fn lower(&self, _ctx: &TaskContext<'_>, answered: &[Answered<'_>]) -> Lowered {
-        let mut lowered = Lowered::default();
-        for a in answered {
-            let Some(answer) = a.answer else { continue };
-            let name = a.item.meta["note"].as_str().unwrap_or("").to_owned();
-            let label = crate::semantic::tasks::common::chosen(answer).map_or_else(
-                || name.trim_start_matches("friction.").to_owned(),
-                |(l, _, _)| l.to_owned(),
-            );
-            let id = a.item.meta["id"].as_str().unwrap_or("").to_owned();
-            lowered.notes.push((id, name, note(label, answer, 0)));
-        }
-        lowered
+        lower_notes(answered, |name, _| {
+            name.trim_start_matches("friction.").to_owned()
+        })
     }
 }
 

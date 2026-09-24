@@ -369,7 +369,7 @@ impl Task for DocPairs {
             .and_then(|r| r.doc_pairs.as_ref())
             .map(|p| p.pairs.iter().map(|x| x.doc.clone()).collect())
             .unwrap_or_default();
-        let srcs = code_files(ctx).0;
+        let srcs = &code_files(ctx).0;
         let mut groups = Vec::new();
         for doc in doc_files(ctx) {
             if paired.contains(doc.to_string_lossy().as_ref()) {

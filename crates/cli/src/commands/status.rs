@@ -692,7 +692,7 @@ fn semantic_tags(fs: &[&Finding]) -> String {
         fs.iter().find_map(|f| {
             f.semantic
                 .get(name)
-                .filter(|n| n.confidence >= 0.5)
+                .filter(|n| n.confidence >= crate::core::order::MIN_CONFIDENCE)
                 .map(|n| n.label.replace('_', "-"))
         })
     };

@@ -27,11 +27,9 @@ use serde_json::{json, Value};
 use crate::core::concepts::{Concepts, OTHER};
 use crate::core::finding::Finding;
 use crate::core::severity::Severity;
-use crate::observer::code::complexity::outer_functions;
-use crate::observer::test::cases::test_regions;
 use crate::semantic::task::{Answered, Group, Item, Lowered, Task, TaskContext};
 use crate::semantic::tasks::common::{
-    chosen, code_files, criteria, file_states, finding, parse_file,
+    chosen, code_files, criteria, file_facts, file_states, finding,
 };
 
 pub struct ConceptTask;
@@ -86,29 +84,23 @@ impl Task for ConceptTask {
             acc
         });
         let mut groups = Vec::new();
-        for rel in code_files(ctx).0 {
-            let Some(parsed) = parse_file(ctx, &rel) else {
+        for rel in &code_files(ctx).0 {
+            let Some(facts) = file_facts(ctx, rel) else {
                 continue;
             };
             // Inline unit tests (and their helpers) are not production
             // code: classifying them skews the concept map and suggests
             // moving tests next to whatever concept their name mentions.
-            let tests = test_regions(&parsed);
-            let functions: Vec<_> = outer_functions(&parsed)
-                .into_iter()
+            let functions: Vec<_> = facts
+                .production_functions()
                 .filter(|f| f.end_row - f.start_row + 1 >= MIN_FUNCTION_LINES)
-                .filter(|f| {
-                    !tests
-                        .iter()
-                        .any(|r| r.start <= f.byte_range.start && f.byte_range.end <= r.end)
-                })
                 .collect();
             if functions.is_empty() {
                 continue;
             }
             let spans: Vec<(u32, u32)> =
                 functions.iter().map(|f| (f.start_row, f.end_row)).collect();
-            for (state, covered) in file_states(&rel, &parsed.source, &spans) {
+            for (state, covered) in file_states(rel, &facts.source, &spans) {
                 let state_key = format!("{state}\n--\n{vocab}");
                 let items = covered
                     .iter()

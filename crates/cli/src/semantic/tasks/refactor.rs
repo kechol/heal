@@ -24,7 +24,9 @@ use crate::feature::Family;
 use crate::observer::code::complexity::outer_functions;
 use crate::semantic::api::{NoulCriteria, Question};
 use crate::semantic::task::{Answered, Group, Item, Lowered, Task, TaskContext};
-use crate::semantic::tasks::common::{chosen, criteria, note, noul_p, numbered_range, parse_file};
+use crate::semantic::tasks::common::{
+    chosen, criteria, file_facts, labels, note, noul_p, numbered_range, parse_file,
+};
 
 /// A segment must span at least this many lines before a boundary is asked.
 const MIN_SEGMENT_LINES: u32 = 3;
@@ -242,10 +244,7 @@ impl Task for FixPattern {
     }
 
     fn plan(&self, ctx: &TaskContext<'_>) -> anyhow::Result<Vec<Group>> {
-        let labels: Vec<(String, String)> = PATTERNS
-            .iter()
-            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-            .collect();
+        let labels = labels(&PATTERNS);
         let drain = &ctx.config.policy.drain;
         let mut groups = Vec::new();
         for f in ctx.findings {
@@ -255,7 +254,7 @@ impl Task for FixPattern {
             {
                 continue;
             }
-            let Some(parsed) = parse_file(ctx, &f.location.file) else {
+            let Some(facts) = file_facts(ctx, &f.location.file) else {
                 continue;
             };
             let excerpt = if f.metric == "duplication" {
@@ -273,16 +272,13 @@ impl Task for FixPattern {
                 s
             } else {
                 let symbol = f.location.symbol.as_deref().unwrap_or("");
-                let Some(func) = outer_functions(&parsed)
-                    .into_iter()
-                    .find(|x| x.name == symbol)
-                else {
+                let Some(func) = facts.functions.iter().find(|x| x.name == symbol) else {
                     continue;
                 };
                 format!(
                     "Function `{symbol}` in {}\n{}",
                     f.location.file.display(),
-                    numbered_range(&parsed.source, func.start_row, func.end_row)
+                    numbered_range(&facts.source, func.start_row, func.end_row)
                 )
             };
             let state = format!("Finding: {} — {}\n\n{excerpt}", f.metric, f.summary);

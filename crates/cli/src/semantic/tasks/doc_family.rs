@@ -30,7 +30,7 @@ use crate::observer::docs::sections::{sections, Section};
 use crate::semantic::api::{NoulCriteria, Question};
 use crate::semantic::task::{Answered, Group, Item, Lowered, Task, TaskContext};
 use crate::semantic::tasks::common::{
-    applicable_share, chosen, criteria, finding, note, noul_p, numbered, numbered_range,
+    applicable_share, chosen, criteria, finding, labels, note, noul_p, numbered, numbered_range,
 };
 
 fn docs_hint(ctx: &TaskContext<'_>) -> Option<String> {
@@ -133,10 +133,7 @@ impl Task for DocStructure {
         docs_hint(ctx)
     }
     fn plan(&self, ctx: &TaskContext<'_>) -> anyhow::Result<Vec<Group>> {
-        let labels: Vec<(String, String)> = DOC_KINDS
-            .iter()
-            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-            .collect();
+        let labels = labels(&DOC_KINDS);
         let mut groups = Vec::new();
         let mut small_by_dir: BTreeMap<PathBuf, Vec<(PathBuf, String)>> = BTreeMap::new();
         for doc in doc_files(ctx) {

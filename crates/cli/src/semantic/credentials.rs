@@ -199,24 +199,7 @@ pub fn clear(path: &Path) -> Result<bool, String> {
 }
 
 fn write_private(path: &Path, body: &[u8]) -> Result<(), String> {
-    use std::io::Write;
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
-    let mut builder = tempfile::Builder::new();
-    builder.prefix(".heal-cred-");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        builder.permissions(std::fs::Permissions::from_mode(0o600));
-    }
-    let mut tmp = builder
-        .tempfile_in(parent)
-        .map_err(|e| format!("{}: {e}", parent.display()))?;
-    tmp.write_all(body)
-        .map_err(|e| format!("{}: {e}", path.display()))?;
-    tmp.persist(path)
-        .map_err(|e| format!("{}: {}", path.display(), e.error))?;
-    Ok(())
+    crate::core::fs::atomic_write_mode(path, body, 0o600).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

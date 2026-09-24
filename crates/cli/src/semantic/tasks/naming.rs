@@ -22,11 +22,10 @@ use serde_json::{json, Value};
 use crate::core::concepts::OTHER;
 use crate::core::severity::Severity;
 use crate::feature::Family;
-use crate::observer::code::complexity::outer_functions;
 use crate::semantic::api::{NoulCriteria, Question};
 use crate::semantic::task::{Answered, Group, Item, Lowered, Task, TaskContext};
 use crate::semantic::tasks::common::{
-    applicable_share, chosen, code_files, criteria, file_states, finding, noul_p, parse_file,
+    applicable_share, chosen, code_files, criteria, file_facts, file_states, finding, noul_p,
 };
 use crate::semantic::tasks::concept::{load_concepts, ConceptTask};
 
@@ -342,17 +341,18 @@ impl Task for NameMismatch {
             .copied()
             .chain(flagged.iter().map(|(f, _)| *f))
             .collect();
-        let prod: BTreeSet<PathBuf> = code_files(ctx).0.into_iter().collect();
+        let prod: BTreeSet<&PathBuf> = code_files(ctx).0.iter().collect();
         let mut groups = Vec::new();
         for rel in candidates {
-            if !prod.contains(rel) {
+            if !prod.contains(&rel.to_path_buf()) {
                 continue;
             }
-            let Some(parsed) = parse_file(ctx, rel) else {
+            let Some(facts) = file_facts(ctx, rel) else {
                 continue;
             };
-            let functions: Vec<_> = outer_functions(&parsed)
-                .into_iter()
+            let functions: Vec<_> = facts
+                .functions
+                .iter()
                 .filter(|f| !f.name.starts_with("<anonymous"))
                 .filter(|f| hot_files.contains(rel) || flagged.contains(&(rel, f.name.as_str())))
                 .take(MAX_NAME_SUBJECTS_PER_FILE)
@@ -362,7 +362,7 @@ impl Task for NameMismatch {
             }
             let spans: Vec<(u32, u32)> =
                 functions.iter().map(|f| (f.start_row, f.end_row)).collect();
-            for (state, covered) in file_states(rel, &parsed.source, &spans) {
+            for (state, covered) in file_states(rel, &facts.source, &spans) {
                 let items = covered
                     .iter()
                     .map(|&i| {
@@ -470,13 +470,10 @@ impl Task for NameChoice {
             .map_err(|e| anyhow::anyhow!("--focus for name_choice must be candidates JSON: {e}"))?;
         let mut groups = Vec::new();
         for c in parsed.candidates {
-            let Some(file) = parse_file(ctx, &c.file) else {
+            let Some(facts) = file_facts(ctx, &c.file) else {
                 continue;
             };
-            let Some(func) = outer_functions(&file)
-                .into_iter()
-                .find(|f| f.name == c.symbol)
-            else {
+            let Some(func) = facts.functions.iter().find(|f| f.name == c.symbol) else {
                 continue;
             };
             let mut options: BTreeMap<String, Value> = BTreeMap::new();
@@ -495,7 +492,7 @@ impl Task for NameChoice {
                 .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_owned()))
                 .collect();
             let spans = [(func.start_row, func.end_row)];
-            for (state, _) in file_states(&c.file, &file.source, &spans) {
+            for (state, _) in file_states(&c.file, &facts.source, &spans) {
                 let subject = format!(
                     "`{}` (lines {}–{})",
                     func.name, func.start_row, func.end_row

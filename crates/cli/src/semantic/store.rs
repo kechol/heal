@@ -70,17 +70,21 @@ struct LocalVerdicts {
     dir: PathBuf,
     /// Created (as `*`) when missing, so the directory stays untracked.
     gitignore: PathBuf,
-    tasks: BTreeSet<String>,
+    tasks: &'static BTreeSet<String>,
 }
 
-/// Ids of registered tasks whose verdicts are machine-local.
+/// Ids of registered tasks whose verdicts are machine-local. Built once:
+/// `config_hash` asks on every `heal status`, cache hits included.
 #[must_use]
-pub fn local_task_ids() -> BTreeSet<String> {
-    crate::semantic::task::registry()
-        .iter()
-        .filter(|t| !t.shared())
-        .map(|t| t.id().to_owned())
-        .collect()
+pub fn local_task_ids() -> &'static BTreeSet<String> {
+    static IDS: std::sync::LazyLock<BTreeSet<String>> = std::sync::LazyLock::new(|| {
+        crate::semantic::task::registry()
+            .iter()
+            .filter(|t| !t.shared())
+            .map(|t| t.id().to_owned())
+            .collect()
+    });
+    &IDS
 }
 
 impl VerdictStore {

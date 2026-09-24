@@ -2,15 +2,17 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde_json::{json, Value};
 
 use crate::core::finding::{Finding, Location, SemanticNote};
 use crate::core::severity::Severity;
-use crate::observer::code::complexity::{parse, ParsedFile};
+use crate::observer::code::complexity::{outer_functions, parse, FunctionScope, ParsedFile};
 use crate::observer::shared::file_role::is_test_path;
 use crate::observer::shared::lang::Language;
 use crate::observer::shared::walk::ExcludeMatcher;
+use crate::observer::test::cases::test_regions;
 use crate::semantic::api::Answer;
 use crate::semantic::task::TaskContext;
 
@@ -53,9 +55,13 @@ impl TestMatcher {
 }
 
 /// Source files the observers parsed, split into (production, tests),
-/// each sorted and filtered to what may be sent.
+/// each sorted and filtered to what may be sent. Computed once per run.
 #[must_use]
-pub fn code_files(ctx: &TaskContext<'_>) -> (Vec<PathBuf>, Vec<PathBuf>) {
+pub fn code_files<'c>(ctx: &'c TaskContext<'_>) -> &'c (Vec<PathBuf>, Vec<PathBuf>) {
+    ctx.cache.code_files.get_or_init(|| split_code_files(ctx))
+}
+
+fn split_code_files(ctx: &TaskContext<'_>) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let Some(reports) = ctx.reports else {
         return (Vec::new(), Vec::new());
     };
@@ -85,6 +91,58 @@ pub fn parse_file(ctx: &TaskContext<'_>, rel: &Path) -> Option<ParsedFile> {
     let lang = Language::from_path(rel)?;
     let source = ctx.read_sendable(rel)?;
     parse(source, lang).ok()
+}
+
+/// What most tasks need from a source file, without keeping its syntax
+/// tree alive: the text, the outer functions, and the test-only regions.
+pub struct FileFacts {
+    pub source: String,
+    pub functions: Vec<FunctionScope>,
+    pub test_regions: Vec<std::ops::Range<usize>>,
+}
+
+impl FileFacts {
+    /// Outer functions that are not test code (inline unit tests and the
+    /// helpers of a `#[cfg(test)]` module).
+    pub fn production_functions(&self) -> impl Iterator<Item = &FunctionScope> {
+        self.functions.iter().filter(|f| {
+            !self
+                .test_regions
+                .iter()
+                .any(|r| r.start <= f.byte_range.start && f.byte_range.end <= r.end)
+        })
+    }
+}
+
+/// [`FileFacts`] of a project-relative file, parsed at most once per run:
+/// `concept`, the tasks that re-plan it (`term_drift`, `doc_concept`),
+/// `name_mismatch`, and the finding excerpts all read the same files.
+#[must_use]
+pub fn file_facts(ctx: &TaskContext<'_>, rel: &Path) -> Option<Arc<FileFacts>> {
+    if let Some(hit) = ctx
+        .cache
+        .file_facts
+        .lock()
+        .expect("file facts lock")
+        .get(rel)
+    {
+        return hit.clone();
+    }
+    let facts = parse_file(ctx, rel).map(|parsed| {
+        let functions = outer_functions(&parsed);
+        let test_regions = test_regions(&parsed);
+        Arc::new(FileFacts {
+            source: parsed.source,
+            functions,
+            test_regions,
+        })
+    });
+    ctx.cache
+        .file_facts
+        .lock()
+        .expect("file facts lock")
+        .insert(rel.to_path_buf(), facts.clone());
+    facts
 }
 
 /// Source text with 1-based line numbers, so questions can point at
@@ -148,6 +206,16 @@ pub fn file_states(rel: &Path, source: &str, spans: &[(u32, u32)]) -> Vec<(Strin
                 vec![i],
             )
         })
+        .collect()
+}
+
+/// Owned `(label, description)` pairs from a constant table, the input
+/// [`criteria`] takes.
+#[must_use]
+pub fn labels(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+    pairs
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
         .collect()
 }
 
@@ -290,26 +358,27 @@ pub fn finding(
 /// lines. `None` when the file may not be sent or cannot be read.
 #[must_use]
 pub fn finding_excerpt(ctx: &TaskContext<'_>, f: &Finding) -> Option<String> {
-    let src = ctx.read_sendable(&f.location.file)?;
-    if let (Some(symbol), Some(lang)) = (&f.location.symbol, Language::from_path(&f.location.file))
-    {
-        if let Ok(parsed) = parse(src.clone(), lang) {
-            if let Some(func) = crate::observer::code::complexity::outer_functions(&parsed)
-                .into_iter()
-                .find(|x| &x.name == symbol)
-            {
-                return Some(numbered_range(&src, func.start_row, func.end_row));
-            }
+    let facts = file_facts(ctx, &f.location.file);
+    if let (Some(symbol), Some(facts)) = (&f.location.symbol, &facts) {
+        if let Some(func) = facts.functions.iter().find(|x| &x.name == symbol) {
+            return Some(numbered_range(&facts.source, func.start_row, func.end_row));
         }
     }
+    let read;
+    let src: &str = if let Some(facts) = &facts {
+        &facts.source
+    } else {
+        read = ctx.read_sendable(&f.location.file)?;
+        &read
+    };
     if let Some(line) = f.location.line {
         return Some(numbered_range(
-            &src,
+            src,
             line.saturating_sub(40).max(1),
             line.saturating_add(40),
         ));
     }
-    Some(numbered_range(&src, 1, 200))
+    Some(numbered_range(src, 1, 200))
 }
 
 /// The production file a test file most likely exercises, by naming
