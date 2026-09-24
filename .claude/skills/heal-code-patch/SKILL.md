@@ -237,8 +237,12 @@ heal mark accept \
 
 Use a stable, categorical reason string (`generated_code`,
 `exhaustive_enum_dispatch`, `intentional_parser_table`,
-`vendored_third_party`, `coherent_pipeline_relocate_trap`) so future
-audits can group accepts by category. Don't auto-accept — the user
+`vendored_third_party`, `coherent_pipeline_relocate_trap`,
+`stateless_delegation`) so future audits can group accepts by category.
+`stateless_delegation` is LCOM's known blind spot: a type with no fields
+(for example a unit struct implementing a trait) whose methods delegate
+to free functions shares no state LCOM can see, so every method looks
+like its own cluster. Don't auto-accept — the user
 must approve each. Don't propose accept on a finding that's just
 *hard* to fix; that's escalate territory.
 
@@ -287,9 +291,12 @@ on the note. `0.5–0.9` — read the code and confirm before acting.
 
 - **`semantic.gate`** — `mechanical` (apply from the allow-list),
   `false_positive` (propose `heal mark accept`; `semantic.accept_reason`
-  names the categorical reason), or `escalate` (stop and surface). A
-  confident gate replaces your own three-way decision; below 0.9, read
-  the code and decide, using the note as a second opinion.
+  names the categorical reason), or `escalate` (stop and surface). The
+  gate never replaces your own three-way decision: read the code and
+  decide, using the note as a second opinion at any confidence. On real
+  code its confidence rarely reaches 0.9, and a low-confidence gate can
+  point the wrong way; when it disagrees with your reading at confidence
+  ≥ 0.5, re-read the finding before acting.
 - **`semantic.effort`** — `local`, `contained`, or `cross_file`. The
   drain order already prefers cheaper fixes among equally important
   findings; a confident `cross_file` on a finding you are about to patch

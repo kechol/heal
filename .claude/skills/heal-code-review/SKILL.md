@@ -86,23 +86,39 @@ classified `Finding`:
   "head_sha": "...",
   "worktree_clean": true,
   "config_hash": "...",
-  "severity_counts": { "critical": 3, "high": 11, "medium": 22, "ok": 0 },
+  "severity_counts": { "critical": 3, "high": 11, "medium": 22, "ok": 0 },  // accepted findings excluded
   "findings": [
     {
       "id": "ccn:src/payments/engine.ts:processOrder:9f8e7d6c5b4a3210",
       "metric": "ccn",
       "severity": "critical",
+      "drain_tier": "must",    // "must" (T0) / "should" (T1) / "advisory"; absent for Ok or accepted
+      "drain_rank": 1,         // 1 = first in the Code queue, the order `heal status` prints
       "hotspot": true,
       "hotspot_score": 140.0,  // family-local ordering only; not part of id
       "location":  { "file": "src/payments/engine.ts", "line": 120, "symbol": "processOrder" },
-      "locations": [],         // multi-site findings (duplication / coupling) populate this
+      "locations": [],         // only on multi-site findings (duplication / coupling)
       "summary":   "CCN=28",
-      "fix_hint":  "Extract input validation"
+      "fix_hint":  "Extract input validation",  // present only when the observer has one
+      "semantic": {            // [features.semantic] notes; absent when there are none
+        "consequence": { "label": "user_facing", "p": 0.71, "confidence": 0.8 }
+      }
     },
     ...
+  ],
+  "accepted_rereview": [       // top level, omitted when empty (see Phase 1)
+    { "finding_id": "…", "file": "…", "was": "high", "now": "critical",
+      "was_hotspot": false, "now_hotspot": true,
+      "reasons": ["severity_increased", "became_hotspot"] }
   ]
 }
 ```
+
+Optional fields are left out of the JSON rather than set to empty:
+`locations`, `fix_hint`, `semantic`, `drain_tier` / `drain_rank`,
+`accepted` (only present as `true`), and `is_test_file` (only as
+`true`). `severity_counts` counts the findings that are not accepted,
+so it can be smaller than `findings.length`.
 
 Each `Finding.id` is decision-stable: the same problem keeps the
 same id across runs. The cache is therefore a TODO list — the
@@ -149,8 +165,10 @@ the design tree with the user.
 
 1. **Capture the cache.** Read the full `FindingsRecord` JSON. Exclude every
    finding with `accepted=true` before clustering or ranking. Keep
-   `accepted_rereview` notices informational; they do not requeue accepted
-   findings.
+   the top-level `accepted_rereview` notices (accepted findings whose
+   Severity or hotspot flag rose since they were accepted; the key is
+   absent when there are none) informational; they do not requeue
+   accepted findings.
 2. **Cluster the findings.**
    - **By file.** Multiple findings on one path → architectural
      target.

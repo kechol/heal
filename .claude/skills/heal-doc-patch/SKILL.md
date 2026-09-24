@@ -313,9 +313,12 @@ confirm first. `< 0.5` — ignore it.
 
 - **`semantic.gate`** — `mechanical` (apply from the allow-list),
   `false_positive` (propose `heal mark accept`; `semantic.accept_reason`
-  names the categorical reason), or `escalate` (stop and surface). A
-  confident gate replaces your own three-way decision; below 0.9, read
-  the code and decide, using the note as a second opinion.
+  names the categorical reason), or `escalate` (stop and surface). The
+  gate never replaces your own three-way decision: read the code and
+  decide, using the note as a second opinion at any confidence. On real
+  code its confidence rarely reaches 0.9, and a low-confidence gate can
+  point the wrong way; when it disagrees with your reading at confidence
+  ≥ 0.5, re-read the finding before acting.
 - **`semantic.effort`** — `local`, `contained`, or `cross_file`. The
   drain order already prefers cheaper fixes among equally important
   findings; a confident `cross_file` on a finding you are about to patch
