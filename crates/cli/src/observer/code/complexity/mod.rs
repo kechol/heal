@@ -88,6 +88,26 @@ pub fn extract_functions(parsed: &ParsedFile) -> Vec<FunctionScope> {
         .collect()
 }
 
+/// Function-shaped scopes that are not nested inside another function:
+/// free functions and methods (a method inside a class / `impl` is kept,
+/// a closure inside a function body is dropped). These are the subjects
+/// the semantic code tasks classify, so a closure never gets judged
+/// apart from the function that owns it.
+#[must_use]
+pub fn outer_functions(parsed: &ParsedFile) -> Vec<FunctionScope> {
+    let all = extract_functions(parsed);
+    all.iter()
+        .filter(|f| {
+            !all.iter().any(|g| {
+                g.byte_range != f.byte_range
+                    && g.byte_range.start <= f.byte_range.start
+                    && f.byte_range.end <= g.byte_range.end
+            })
+        })
+        .cloned()
+        .collect()
+}
+
 #[must_use]
 pub fn analyze(parsed: &ParsedFile) -> Vec<FunctionMetric> {
     let scope_nodes = collect_scopes(parsed);
@@ -195,4 +215,20 @@ pub(crate) fn is_inside_nested_function(
         cursor = parent.parent();
     }
     false
+}
+
+#[cfg(all(test, feature = "lang-rust"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outer_functions_keep_methods_and_drop_closures() {
+        let src = "struct S;\nimpl S {\n    fn m(&self) { let c = |x: u8| x + 1; c(1); }\n}\nfn free() { fn inner() {} }\n";
+        let parsed = parse(src.to_owned(), Language::Rust).unwrap();
+        let names: Vec<String> = outer_functions(&parsed)
+            .into_iter()
+            .map(|f| f.name)
+            .collect();
+        assert_eq!(names, ["m", "free"]);
+    }
 }

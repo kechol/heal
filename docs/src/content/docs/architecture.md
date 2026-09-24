@@ -74,7 +74,7 @@ After `heal init`:
     └── heal-test-patch/
 ```
 
-All eleven bundled skills extract together — same source bytes for
+All twelve bundled skills extract together — same source bytes for
 every supported agent target — regardless of which feature
 families are enabled. Turning `[features.docs]` or `[features.test]`
 on later makes the already-installed skill body relevant without a
@@ -86,25 +86,29 @@ same Severity ladder and the same drain queue.
 
 ## What gets written and when
 
-| File / dir                       | Written by                                                             | When                                                    |
-| -------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------- |
-| `.heal/config.toml`              | `heal init`                                                            | Once at setup; you can edit it freely.                  |
-| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                                         | At setup, then on explicit recalibration.               |
-| `.heal/findings/latest.json`     | `heal status`                                                          | Each fresh `heal status` (cache-miss path).             |
-| `.heal/findings/fixed.json`      | `heal mark fix` (called by `/heal-code-patch`)                         | Each commit `/heal-code-patch` lands.                   |
-| `.heal/findings/accepted.json`   | `heal mark accept` (called by `/heal-code-review`)                     | When the team accepts an intrinsic finding.             |
-| `.heal/findings/regressed.jsonl` | `heal status` (reconcile pass)                                         | When a fixed finding is re-detected.                    |
-| `.heal/doc_pairs.json`           | `/heal-doc-pair-setup` skill (when `[features.docs]` is on)            | When the user runs the skill; HEAL is read-only.        |
-| `.heal/cache/source-v1.json`     | source observers                                                       | After source analysis changes; safe to delete.          |
-| `<agent>/skills/heal-*/`         | `heal init` (per detected agent) / `heal skills install` (Claude only) | Once per agent; refresh with `heal init --force --yes`. |
+| File / dir                       | Written by                                                             | When                                                       |
+| -------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `.heal/config.toml`              | `heal init`                                                            | Once at setup; you can edit it freely.                     |
+| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                                         | At setup, then on explicit recalibration.                  |
+| `.heal/findings/latest.json`     | `heal status`                                                          | Each fresh `heal status` (cache-miss path).                |
+| `.heal/findings/fixed.json`      | `heal mark fix` (called by `/heal-code-patch`)                         | Each commit `/heal-code-patch` lands.                      |
+| `.heal/findings/accepted.json`   | `heal mark accept` (called by `/heal-code-review`)                     | When the team accepts an intrinsic finding.                |
+| `.heal/findings/regressed.jsonl` | `heal status` (reconcile pass)                                         | When a fixed finding is re-detected.                       |
+| `.heal/doc_pairs.json`           | `/heal-doc-pair-setup` skill (when `[features.docs]` is on)            | When the user runs the skill; HEAL is read-only.           |
+| `.heal/concepts.toml`            | `/heal-concepts-setup` skill (when `[features.semantic]` is on)        | When the user runs the skill or edits the vocabulary.      |
+| `.heal/semantic/verdicts/`       | `heal semantic ask`                                                    | Each run that asks something new; commit it with the code. |
+| `.heal/cache/source-v1.json`     | source observers                                                       | After source analysis changes; safe to delete.             |
+| `.heal/cache/semantic/verdicts/` | `heal semantic ask` (on-demand checks, `focus`)                        | Each such run; safe to delete.                             |
+| `<agent>/skills/heal-*/`         | `heal init` (per detected agent) / `heal skills install` (Claude only) | Once per agent; refresh with `heal init --force --yes`.    |
 
 There is no event log, no monthly rotation, no `.heal/snapshots/`,
 `.heal/logs/`, or `.heal/reports/` directory. heal keeps only the
 current state plus the small audit trail in `regressed.jsonl`.
 
 `.heal/cache/` is different from the tracked findings cache. It contains only
-disposable Complexity, LCOM, and Duplication token data for unchanged source
-files and ignores itself in git. heal validates file contents before every
+disposable data — Complexity, LCOM, and Duplication token data for unchanged
+source files, and the answers of the semantic checks that concern one person's
+work — and ignores itself in git. heal validates file contents before every
 reuse; deleting the directory, a corrupt entry, or a write failure simply
 causes normal source analysis.
 
@@ -124,7 +128,7 @@ writer of `accepted.json`.
 
 ```json
 {
-  "version": 8,
+  "version": 9,
   "id": "9f8e7d6c5b4a3210", // FNV-1a hex of (head_sha, config_hash, worktree_clean)
   "head_sha": "a0a6d1a…",
   "worktree_clean": true,

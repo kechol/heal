@@ -118,7 +118,7 @@ ANSI colors when stdout is a TTY.
 heal status [--metric <FindingMetric>] [--feature <FamilyFilter>]
             [--workspace <PATH>] [--path <PREFIX>]
             [--severity <SeverityFilter>] [--all] [--json]
-            [--refresh] [--top <N>] [--no-pager]
+            [--refresh] [--top <N>] [--no-pager] [--focus <FILE>]
 ```
 
 Pipeline (`commands/status.rs:44-112`):
@@ -189,9 +189,12 @@ swallowed → exit 0.
 - `--top <N>` — cap each rendered Tier/Severity bucket.
 
 **Output (JSON):** the `FindingsRecord` schema used on disk, with the current
-accepted state and ephemeral `accepted_rereview` notices overlaid. Finding and
-workspace filters narrow this invocation's payload; it is therefore not a
-byte-for-byte dump of `latest.json`.
+accepted state and ephemeral `accepted_rereview` notices overlaid. Each
+drainable Finding also carries `drain_tier` and a family-local, 1-based
+`drain_rank` (`core::order::decorate`, run after `latest.json` is written),
+so skills read the rendered order — semantic axes included — instead of
+re-deriving it. Finding and workspace filters narrow this invocation's
+payload; it is therefore not a byte-for-byte dump of `latest.json`.
 
 **Exit:** 0 success (broken pipe included); error otherwise.
 
@@ -439,6 +442,60 @@ Leaves non-bundled sibling skills intact.
 
 ---
 
+### `heal status --focus <file>`
+
+Reads the focus text (`-` = stdin), calls
+`observers::build_record_focused`, and renders that record without
+writing `latest.json` or reconciling `fixed.json` — a focused view is
+one person's upcoming work, not shared per-commit state. The `focus`
+notes come from verdicts `heal semantic ask --task focus --focus <file>`
+cached for the same text.
+
+## `heal semantic ask`
+
+`commands/semantic.rs` → `semantic::runner::run`. The **only** command
+that sends project content over the network (`scope.md` R5).
+
+1. Load config; exit 2 unless `[features.semantic] enabled`.
+2. Select tasks from `semantic::task::registry()` (`--task` repeatable;
+   default = every `task_enabled` task). Unknown ids error.
+3. Build the client unless `--dry-run`: key via
+   `semantic::credentials::resolve` (env `TYPESAFE_API_KEY` →
+   `TYPESAFEAI_API_KEY` → `<config dir>/heal/credentials.toml`, mode
+   0600 enforced), transport `UreqTransport` (rustls + OS roots).
+   `--check` stops after `GET /v1/models`. The listing names only the
+   moving aliases (`jev-latest`, `jev-preview`; measured 2026-09-23),
+   so a pinned model it omits is reported as unconfirmed, not as an
+   error (`client::model_listed`).
+4. For each task: `Task::plan` → groups of `(key, Question)` sharing
+   one `state`. Keys already in `VerdictStore` are skipped unless
+   `--refresh`. `plan::pack` splits a group into requests under the
+   state (32Ki) and request (64Ki) budgets with a 0.85 margin; a
+   state over budget is counted as `oversized_groups`, never
+   truncated.
+5. `dispatch` sends up to `concurrency` requests at once, reserving
+   each batch's estimated USD against `max_usd` first; a
+   `JevErrorKind::Setup` failure (401/402/403, or 400 `Unknown model`)
+   stops every worker and exits 2. Answers are inserted in sorted order.
+6. `--prune` drops verdicts no current subject references.
+7. `VerdictStore::save` writes only changed task files.
+
+`--json` emits `AskReport` (`model`, `dry_run`, `tasks[]` with
+`subjects/cached/to_ask/requests/est_input_tokens/est_usd/answered/
+failed/oversized_groups/pruned`, `requests_sent`, `input_tokens`,
+`usd`, `stopped_by_budget`, `fatal`, `errors`).
+
+## `heal auth jev <set|status|clear>`
+
+`commands/auth.rs`. `set` reads one line from stdin and writes the
+per-user credentials file (0600, via a private tempfile + rename).
+`status` prints the masked key and its source, then — unless
+`--offline` — calls `GET /v1/models` (the second and last network
+call site). `model_available` is `true` when the model is listed and
+`null` otherwise; never `false`, since the listing omits pinned
+versions. `clear` deletes the file. Nothing is ever written under
+`.heal/`.
+
 ## Exit codes (full table)
 
 | Code | Meaning | Triggered by |
@@ -446,6 +503,7 @@ Leaves non-bundled sibling skills intact.
 | 0 | success | normal happy path; broken pipe on `heal status` pager |
 | 1 | unspecified error | any anyhow `Err(_)` propagation |
 | 2 | LOC threshold exceeded | `heal diff` only, when project LOC > `[diff].max_loc_threshold` |
+| 2 | semantic setup required | `heal semantic ask` / `heal auth jev status`: `[features.semantic]` disabled, no API key, key rejected (401/402/403), or model unknown to the API (400 `Unknown model` on the first `heal semantic ask` request) (`SEMANTIC_SETUP_EXIT_CODE`) |
 
 No other documented exit codes. Don't invent new ones without updating
 this table and `docs/cli.md`.

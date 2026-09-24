@@ -1,15 +1,16 @@
 ---
 name: heal-test-patch
-description: Drain `[features.test]` findings from the cache, applying mechanical fixes (writing missing unit tests for uncovered hot paths, aligning drifted tests, re-enabling skipped tests whose reason no longer holds) one finding per commit. Refuses to start on a dirty worktree, runs the test suite for every commit, refuses to weaken assertions or skip flakes. Does NOT push or open PRs. Trigger on "fix the test findings", "drain the test cache", "add tests heal flagged", "/heal-test-patch".
+description: Drain `[features.test]` findings from the cache, applying mechanical fixes (writing missing unit tests for uncovered hot paths, aligning drifted tests, re-enabling skipped tests whose reason no longer holds, and — with `[features.semantic]` — removing tests that check nothing but their own mocks) one finding per commit. Refuses to start on a dirty worktree, runs the test suite for every commit, refuses to weaken assertions or skip flakes. Does NOT push or open PRs. Trigger on "fix the test findings", "drain the test cache", "add tests heal flagged", "remove useless tests", "/heal-test-patch".
 metadata:
-  heal-version: 0.4.0
+  heal-version: 0.6.0
   heal-source: bundled
 ---
 
 # heal-test-patch
 
 Drain the `[features.test]` findings that `heal status` produced.
-One finding per commit, in Severity order, until the test slice of
+One finding per commit, in HEAL's drain order (`drain_rank`), until T0
+in the test slice of
 the cache is empty (or the user stops). This is the **write**
 counterpart to `/heal-test-review`.
 
@@ -83,7 +84,7 @@ test fixes different.
 
 ```
 while there are non-Ok [features.test] findings in the cache:
-    pick the next one (Severity order: Critical🔥 → Critical → High🔥 → High → Medium)
+    pick the T0 finding with the lowest `drain_rank`
         skip findings where `accepted == true`
     read the source / test
     decide: allow-list (apply) / false-positive (propose accept) / escalate-list (stop)?
@@ -102,6 +103,15 @@ while there are non-Ok [features.test] findings in the cache:
 
 Stop conditions: test slice of cache empty, user interrupts, or
 only escalate-list findings remain.
+
+`heal status --json` gives every drainable finding a `drain_tier`
+(`must` = T0, `should` = T1, `advisory`) and a `drain_rank` (1 = next,
+counted within the Test family). Take the lowest `drain_rank` whose
+`drain_tier` is `must`. The rank already applies Tier, Severity, the
+`[features.semantic]` axes, and `hotspot_score` exactly as the human
+`heal status` prints them; do not re-derive the order or mix Test
+scores with Code/Docs scores. Accepted and Ok findings carry neither
+field.
 
 ## Allow-list (apply mechanically)
 
@@ -299,6 +309,78 @@ contract requires — locks in current behavior including its bugs.
 When you can't articulate *what should be true regardless of how
 the function is written*, the finding is undocumented behavior
 and belongs in escalate.
+
+## With `[features.semantic]`
+
+When the project enables `[features.semantic]`, findings in
+`heal status --json` may carry a `semantic` map of notes (label, `p`,
+`confidence`). Everything here is additive: without a note, follow the
+rest of this skill unchanged. Keep following `drain_rank`; it already
+includes the semantic axes.
+
+`confidence ≥ 0.9` — act on the note. `0.5–0.9` — read the files and
+confirm first. `< 0.5` — ignore it.
+
+- **`semantic.gate`** — `mechanical` (apply from the allow-list),
+  `false_positive` (propose `heal mark accept`; `semantic.accept_reason`
+  names the categorical reason), or `escalate` (stop and surface). The
+  gate never replaces your own three-way decision: read the code and
+  decide, using the note as a second opinion at any confidence. On real
+  code its confidence rarely reaches 0.9, and a low-confidence gate can
+  point the wrong way; when it disagrees with your reading at confidence
+  ≥ 0.5, re-read the finding before acting.
+- **`semantic.effort`** — `local`, `contained`, or `cross_file`. The
+  drain order already prefers cheaper fixes among equally important
+  findings; a confident `cross_file` on a finding you are about to patch
+  is a signal to escalate instead.
+
+### Removing tests that check nothing (`test_value`, `mock_scope`)
+
+`test_value` findings name tests that would not fail if the behaviour
+their name claims broke. Removing them is a new mechanical fix, allowed
+only under these guards (it is not "weakening assertions": the test
+never checked the behaviour in the first place):
+
+- The note `semantic.test_value` says `delete` **and** its confidence
+  is ≥ 0.9. Anything less is a proposal for `/heal-test-review`.
+- One test per commit. The suite passes before and after.
+- Never delete a failing test (that rule above still holds).
+- Coverage guard: when `[features.test.coverage]` is enabled, re-run
+  the coverage reporter and `heal status --refresh --feature test
+  --json`. If the source file's coverage dropped, keep the deletion only
+  when the note's detail says `checks=mock_values` or `checks=nothing`
+  (those lines were never really verified) and say so in the commit
+  message; otherwise undo the commit. When coverage is not configured,
+  do not delete: list the test for review instead.
+- Commit as `test(heal): remove <test> (checked <what>)`.
+
+`semantic.test_value` = `rewrite` means the test checks behaviour but
+also implementation details (private calls, call counts, internal
+layout). Rewrite its assertions against observable behaviour; never
+delete it.
+
+`test_duplicate` findings: `same_case` (the note label) — delete the
+later test of the pair, with the same guards as `test_value` except the
+coverage guard (the kept test covers the same lines). `parameterizable`
+— merge both into one table-driven or parameterized test in the
+project's existing style; the merged test must keep every input.
+
+`mock_scope` findings: a mock of a `pure_value` can be replaced by the
+real value mechanically. A mock of the `subject` or of an
+`internal_collaborator` needs a design decision — escalate.
+
+**Verify the tests you write.** After committing new or changed tests
+and before `heal mark fix`, run:
+
+```sh
+heal semantic ask --task verify_tests --diff HEAD~1..HEAD --json
+```
+
+When `tasks[0].result.pass` is `false`, a test you wrote checks only its
+mocks, checks nothing, or mocks an internal collaborator. Undo that one
+commit (`git reset --hard HEAD~1`), rewrite the test against real
+behaviour, and try again. Exit code 2 (no key / family off) means skip
+this check.
 
 ## Verification per commit
 

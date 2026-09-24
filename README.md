@@ -33,7 +33,7 @@ tree-sitter grammar it falls back to a churn-only signal.
 
 ## Feature families
 
-heal groups its observers into three families. Each family carries
+heal groups its observers into three families, plus an opt-in semantic layer. Each family carries
 its own metrics, configuration block, and pair of bundled skills
 (one to review, one to patch).
 
@@ -51,6 +51,15 @@ its own metrics, configuration block, and pair of bundled skills
   has drifted from the code it describes?"_ Compares paired docs
   against their source files, flags broken internal links / orphan
   pages / TODO density, and adds a `doc_hotspot` decoration.
+
+- **Semantic** (opt-in via `[features.semantic]`) — _"Does this code,
+  test, or doc mean what it says?"_ Asks TypeSafe's
+  [Jev](https://docs.typesafe.ai/) classifier typed questions — misnamed
+  functions, files that mix concepts, tests that check nothing, docs
+  that no longer match the code — and uses the answers to order the TODO
+  list. The only part of heal that sends content over the network, and
+  only when you run `heal semantic ask`. Details:
+  [Semantic (Jev)](https://kechol.github.io/heal/semantic/).
 
 Adoption order is usually Code first, then Test once you have (or
 can produce) an `lcov.info`, then Docs once drift becomes a

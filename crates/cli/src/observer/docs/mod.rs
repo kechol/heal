@@ -13,5 +13,6 @@ pub mod hotspot;
 pub mod link_health;
 pub(crate) mod markdown;
 pub mod orphan_pages;
+pub mod sections;
 pub mod todo_density;
 pub mod walk;

@@ -21,6 +21,8 @@ Files under this rule:
 - `.heal/calibration.toml`
 - `.heal/findings/latest.json`
 - `.heal/findings/fixed.json`
+- `.heal/semantic/verdicts/*.jsonl` and
+  `.heal/cache/semantic/verdicts/*.jsonl` (`VerdictStore::save`)
 - `.claude/settings.json`
 - Extracted skill files
 
@@ -33,7 +35,7 @@ deserialises as garbage. The one exception is `regressed.jsonl`
 ## R3. Schema-versioned shapes bump on any contract change
 
 `FindingsRecord` is versioned by `FINDINGS_RECORD_VERSION` (currently
-`8`). Bump on:
+`9`). Bump on:
 
 - A field rename.
 - A field semantic change (units, sentinel meaning).
@@ -101,12 +103,14 @@ derives `#[serde(deny_unknown_fields)]`. Typos surface as
 `ConfigInvalid` schema errors at load. Don't relax — the strict mode
 prevents "why is my setting being ignored" support burden.
 
-## R8. Per-metric Toggle pattern is symmetric
+## R8. Programmatic defaults equal serde defaults
 
-`Toggle::enabled()` and `Default::default()` must produce the **same**
-struct. The pin test
-`programmatic_default_matches_serde_default` enforces it. New
-`*Config` follows the same pattern.
+`Config::default()` (and every nested `*Config::default()`) must
+produce the **same** struct serde builds from an empty `config.toml`.
+The pin test `programmatic_default_matches_serde_default`
+(`crates/cli/tests/core_config.rs`) enforces it. A new `*Config`
+keeps its `#[serde(default = …)]` functions and its `Default` impl
+returning identical values.
 
 ## R9. `floor_*` overrides go in `config.toml`, not `calibration.toml`
 
@@ -130,6 +134,13 @@ classifies (severity assignment) and decorates (hotspot flag).
 
 Don't classify in the observer. Don't bypass `Feature::lower` from
 the orchestrator.
+
+The one other place that assigns Severity is `semantic::lower::apply`,
+which runs after the Feature pass and builds Findings from cached Jev
+verdicts (`Task::lower` via `tasks::common::finding`). It is capped at
+`High`: a classifier verdict is a candidate for a person to judge,
+never `Critical` on its own. It must stay offline and must not
+re-classify observer Findings — it only adds Findings and notes.
 
 ## R12. Per-file severity uses `cmp::max`
 

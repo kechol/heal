@@ -725,6 +725,20 @@ pub(crate) fn build_record(
     head_sha: Option<String>,
     worktree_clean: bool,
 ) -> Result<crate::core::findings_cache::FindingsRecord> {
+    build_record_focused(scan_root, paths, cfg, head_sha, worktree_clean, None)
+}
+
+/// [`build_record`] with a `--focus` description for the semantic `focus`
+/// task. A focused record reflects one person's upcoming work, so callers
+/// render it but never persist it as `latest.json`.
+pub(crate) fn build_record_focused(
+    scan_root: &Path,
+    paths: &crate::core::HealPaths,
+    cfg: &Config,
+    head_sha: Option<String>,
+    worktree_clean: bool,
+    focus: Option<&str>,
+) -> Result<crate::core::findings_cache::FindingsRecord> {
     let ((findings, coverage_observation), config_hash) = observe_with_stable_hash(
         || {
             Ok(crate::core::findings_cache::observation_hash_from_paths(
@@ -750,6 +764,8 @@ pub(crate) fn build_record(
                 .unwrap_or_default();
             let reports = run_all(scan_root, &observed_cfg, None, None, None);
             let findings = classify(&reports, &calibration, &observed_cfg);
+            let findings =
+                crate::semantic::lower::apply(scan_root, &observed_cfg, &reports, findings, focus);
             let coverage_observation = reports.coverage.as_ref().map(CoverageReport::observation);
             Ok((findings, coverage_observation))
         },
@@ -761,6 +777,38 @@ pub(crate) fn build_record(
         findings,
     )
     .with_coverage_observation(coverage_observation))
+}
+
+/// Observer reports plus the ordinary families' Findings for `scan_root`,
+/// without the semantic post-pass. `heal semantic ask` plans its questions
+/// from this, so it sees exactly what `semantic::lower::apply` sees during
+/// `heal status`.
+pub(crate) fn base_observation(
+    scan_root: &Path,
+    paths: &crate::core::HealPaths,
+    cfg: &Config,
+) -> (ObserverReports, Vec<Finding>) {
+    let calibration = Calibration::load(&paths.calibration())
+        .ok()
+        .map(|c| c.with_overrides(cfg))
+        .unwrap_or_default();
+    let reports = run_all(scan_root, cfg, None, None, None);
+    let findings = classify(&reports, &calibration, cfg);
+    (reports, findings)
+}
+
+/// Observe `scan_root` with a calibration computed from `scan_root`
+/// itself, then run the semantic post-pass. Used by the dev-only drain-order
+/// backtest (`examples/backtest.rs`): a past checkout must be ranked with
+/// the distribution it had then, or today's thresholds leak future
+/// information into the ranking.
+#[must_use]
+pub fn observe_self_calibrated(scan_root: &Path, cfg: &Config) -> (ObserverReports, Vec<Finding>) {
+    let reports = run_all(scan_root, cfg, None, None, None);
+    let calibration = build_calibration(scan_root, &reports, cfg).with_overrides(cfg);
+    let findings = classify(&reports, &calibration, cfg);
+    let findings = crate::semantic::lower::apply(scan_root, cfg, &reports, findings, None);
+    (reports, findings)
 }
 
 const MAX_STABLE_OBSERVATION_ATTEMPTS: usize = 3;

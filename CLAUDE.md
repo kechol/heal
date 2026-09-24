@@ -9,10 +9,11 @@ HEAL is a Rust CLI (binary: `heal`, single crate `heal-cli`) that
 turns code-health signals into work for AI coding agents. It runs an
 observer pipeline (the always-on Code family — LOC, CCN/Cognitive,
 Churn, Change Coupling, Duplication, Hotspot, LCOM — plus the opt-in
-`[features.docs]` and `[features.test]` families), classifies findings
-against per-codebase calibration, and surfaces them via `heal status` /
-`heal metrics` / `heal diff` plus eleven bundled Claude skills (four
-code, four docs, three test).
+`[features.docs]` and `[features.test]` families, and the opt-in
+`[features.semantic]` family that asks TypeSafe's Jev classifier typed
+questions), classifies findings against per-codebase calibration, and
+surfaces them via `heal status` / `heal metrics` / `heal diff` plus
+twelve bundled skills (five code, four docs, three test).
 
 For the user-facing overview see [README.md](./README.md).
 
@@ -35,8 +36,11 @@ issue comment, and CHANGELOG line is public** the moment it lands on
   to a stranger who lands here from a Google search. Avoid in-jokes,
   internal shorthand, or aggressive language.
 - **No telemetry, no network calls.** HEAL is a local tool. The only
-  network access is `git2` against the local repo. Don't add
-  HTTP clients, version-check pings, or analytics.
+  network access is `git2` against the local repo, plus the opt-in
+  `[features.semantic]` family: `heal semantic ask` and
+  `heal auth jev status` talk to the TypeSafe Jev API, and nothing
+  else does (the HTTP client lives in `crates/cli/src/semantic/client.rs`).
+  Don't add other HTTP clients, version-check pings, or analytics.
 - **Attribution.** When borrowing an algorithm or pattern from a
   paper / blog post / other OSS project, cite it in code comments
   and / or `CHANGELOG.md`. Don't paste code from incompatible
@@ -57,6 +61,7 @@ issue comment, and CHANGELOG line is public** the moment it lands on
 | Workspace-wide conventions (lints, tests, docs co-update)                | [.claude/docs/conventions.md](./.claude/docs/conventions.md)           |
 | **Canonical names** (the term contract)                                  | [.claude/docs/glossary.md](./.claude/docs/glossary.md)                 |
 | Prior art — tools, papers, books, and what was rejected and why          | [.claude/docs/prior-art.md](./.claude/docs/prior-art.md)               |
+| `[features.semantic]` (Jev) tasks, lowering, drain-order backtest        | [.claude/docs/semantic.md](./.claude/docs/semantic.md)                 |
 | Design philosophy — *why* HEAL is shaped this way; what's ruled out      | [.claude/docs/design-philosophy.md](./.claude/docs/design-philosophy.md) |
 
 Prescriptive rules are auto-loaded from `.claude/rules/` per the

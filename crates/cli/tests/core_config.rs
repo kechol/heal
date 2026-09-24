@@ -1018,3 +1018,41 @@ fn assign_workspace_segment_wise_match_not_substring() {
         None,
     );
 }
+
+#[test]
+fn semantic_is_disabled_by_default_and_minimal_toml_omits_it() {
+    let cfg = Config::from_toml_str("").unwrap();
+    assert!(!cfg.features.semantic.enabled);
+    assert_eq!(cfg.features.semantic.model, "jev-1.13.0");
+    assert!(!cfg.features.semantic.task_enabled("anything"));
+    let minimal = Config::default().to_minimal_toml().unwrap();
+    assert!(!minimal.contains("semantic"), "{minimal}");
+}
+
+#[test]
+fn semantic_rejects_moving_aliases_and_bad_limits() {
+    for body in [
+        "[features.semantic]\nmodel = \"jev-latest\"\n",
+        "[features.semantic]\nmodel = \"jev-preview\"\n",
+        "[features.semantic]\nmax_usd = 0.0\n",
+        "[features.semantic]\nconcurrency = 0\n",
+        "[features.semantic.tasks.not_a_task]\nenabled = true\n",
+    ] {
+        let cfg = Config::from_toml_str(body).unwrap();
+        assert!(
+            cfg.validate(Path::new("/heal/config.toml")).is_err(),
+            "expected rejection for {body}"
+        );
+    }
+    assert!(Config::from_toml_str("[features.semantic]\napi_key = \"x\"\n").is_err());
+}
+
+#[test]
+fn semantic_enabled_config_round_trips() {
+    let body = "[features.semantic]\nenabled = true\nmax_usd = 2.5\nexclude = [\"secrets/\"]\n";
+    let cfg = Config::from_toml_str(body).unwrap();
+    cfg.validate(Path::new("/heal/config.toml")).unwrap();
+    assert!(cfg.features.semantic.enabled);
+    let again = Config::from_toml_str(&cfg.to_minimal_toml().unwrap()).unwrap();
+    assert_eq!(cfg, again);
+}

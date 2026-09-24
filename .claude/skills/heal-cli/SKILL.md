@@ -2,7 +2,7 @@
 name: heal-cli
 description: Concise, complete reference for the `heal` CLI — every subcommand, flag, and JSON contract an AI coding agent needs to drive HEAL programmatically. Load this when you're about to shell out to `heal` and want the exact command shape, the JSON schema it returns, and the `.heal/` files it reads or writes. Trigger on "how do I run heal …?", "what does `heal metrics --json` return?", "is there a heal command for …?", "/heal-cli".
 metadata:
-  heal-version: 0.3.2
+  heal-version: 0.6.0
   heal-source: bundled
 ---
 
@@ -59,12 +59,13 @@ Behind the scenes:
 - A post-commit git hook re-runs every observer, classifies the result
   against `.heal/calibration.toml`, and prints a one-line nudge.
   Failures are swallowed so HEAL never blocks a commit. No event log
-  is written — `latest.json` (refreshed on `heal status --refresh`) is
+  is written — `latest.json` (maintained by `heal status`) is
   the live state.
 - `heal status` writes its result to `.heal/findings/latest.json`. The
   cache is single-record by design — there is no historical stream.
-  Re-running on the same `(head_sha, config_hash, worktree_clean=true)`
-  is a free cache hit.
+  Re-running with the same HEAD, clean worktree, config, calibration,
+  and enabled observation inputs is a free cache hit. Missing or stale
+  state is rescanned and replaced automatically.
 - `.heal/findings/fixed.json` (a `BTreeMap<finding_id, FixedFinding>`)
   and `.heal/findings/regressed.jsonl` track the per-finding fix
   history.
@@ -94,8 +95,9 @@ overwrite the file. JSON shape:
 
 ### `heal status [args] [--json]`
 
-The single source of truth for the current TODO list. Renders cached
-findings; pass `--refresh` to rescan first. Useful args:
+The single source of truth for the current TODO list. Reuses fresh
+cached findings, automatically rescans missing/stale state, and accepts
+`--refresh` to force a rescan. Useful args:
 
 - `--refresh` — rescan and overwrite `.heal/findings/latest.json`.
 - `--all` — surface Medium and Ok tiers (default hides them).
@@ -106,7 +108,11 @@ findings; pass `--refresh` to rescan first. Useful args:
   `lcom`. `[features.docs]` values: `doc-freshness`, `doc-drift`,
   `doc-coverage`, `doc-link-health`, `orphan-pages`, `todo-density`,
   `doc-hotspot`. `[features.test]` values: `coverage-pct`,
-  `skip-ratio`, `test-hotspot`.
+  `skip-ratio`, `test-hotspot`. `[features.semantic]` values:
+  `concept` (every `concept_*`), `naming` (`term_drift` +
+  `name_mismatch`), `test-value`, `mock-scope`, `test-duplicate`,
+  `doc-structure` (`doc_structure.*`), `doc-placement`, `doc-concept`
+  (`doc_concept.*`); `doc-drift` also selects `doc_drift.semantic`.
 - `--feature {code|test|docs}` — restrict to one metric family.
   `code` covers always-on observers; `test` covers `[features.test]`
   metrics; `docs` covers `[features.docs]` metrics. **Early-exit
@@ -117,67 +123,93 @@ findings; pass `--refresh` to rescan first. Useful args:
   before parsing stdout.
 - `--path <PATH-PREFIX>` — restrict to findings under a path
   (renamed from `--feature` in v0.4 — that flag now selects family).
-- `--top <N>` — cap each Severity bucket.
+- `--top <N>` — cap each rendered Tier/Severity bucket.
+- `--focus <FILE>` (`-` for stdin) — `[features.semantic]` only: order
+  each bucket by how much the work described in FILE touches each file,
+  using the `focus` verdicts cached by `heal semantic ask --focus FILE`.
+  Always rescans and never writes `.heal/findings/latest.json`.
 
-JSON shape: `FindingsRecord` — same shape as `.heal/findings/latest.json`.
-Key fields:
+JSON shape: `FindingsRecord` — same shape as `.heal/findings/latest.json`,
+plus three render-time fields per finding that are never persisted:
+`accepted`, `drain_tier`, and `drain_rank`. Key fields:
 
 ```jsonc
 {
-  "version": 4,
+  "version": 9,
   "id": "9f8e7d6c5b4a3210",                  // FNV-1a hex of (head_sha, config_hash, worktree_clean)
   "head_sha": "deadbeef…",
   "worktree_clean": true,
   "config_hash": "…",
+  "coverage_observation": { "state": "complete", "configured_sources": ["lcov.info"], "sources": ["lcov.info"], "unreadable_sources": [], "unmeasured_files": [] },
   "severity_counts": { "critical": 3, "high": 11, "medium": 22, "ok": 0 },
   "findings": [
     {
       "id": "ccn:src/a.ts:foo:9f8e7d6c5b4a3210",  // deterministic; stable across runs
       "metric": "ccn",
       "severity": "critical",                      // or "high" / "medium" / "ok"
+      "drain_tier": "must",                        // "must" (T0) / "should" (T1) / "advisory"; absent for Ok or accepted
+      "drain_rank": 1,                             // 1 = next in this family's queue; the order `heal status` prints
       "hotspot": true,
+      "hotspot_score": 140.0,                    // family-local ordering only; not part of id
       "location":  { "file": "…", "line": 120, "symbol": "…" },
       "locations": [],                             // populated for duplication / coupling
       "summary":   "CCN=28",
-      "fix_hint":  "Extract input validation"
+      "fix_hint":  "Extract input validation",
+      "semantic": {                                // [features.semantic] only; omitted when empty; never part of id
+        "consequence": { "label": "user_facing", "p": 0.71, "confidence": 0.8 }
+      }
     }
   ]
 }
 ```
 
-### `heal diff [<git-ref>] [--all] [--json]`
+`semantic` holds notes from cached Jev verdicts (`consequence`,
+`fix_ratio`, `gate`, `effort`, `friction.*`, `split_points`,
+`fix_pattern`, `focus`, …). Treat every note as optional: a teammate
+without verdicts gets the same Findings with no `semantic` map.
+
+### `heal diff [<git-ref>] [--all] [--hide-accepted] [--json]`
 
 Diff the current findings against a `FindingsRecord` for the resolved
-git ref. Default ref is `HEAD`: "how does my live worktree compare to
-the last commit?"
+git ref. Default ref is the calibration baseline SHA (recorded by
+`heal init` / `heal calibrate --force`), falling back to `HEAD` when
+no baseline is recorded: "how much have we drained since
+calibration?"
 
 `<git-ref>` accepts anything `git rev-parse` understands —
 `HEAD`, `main`, `v0.2.1`, `HEAD~3`, or a (partial / full) SHA. If
-`.heal/findings/latest.json` already corresponds to the resolved ref
-(matching `head_sha`), `heal diff` reads it directly. On a miss it
-materialises the source at the ref via `git worktree add --detach`,
-runs the observer pipeline there using the *current* `config.toml` /
-`calibration.toml` (apples-to-apples), and tears the worktree down on
-exit. Gated by `[diff].max_loc_threshold` (default `200_000` LOC) —
-over the threshold the command exits with code 2 and prints a manual
-two-branch recipe. The right-hand side is always a fresh in-memory
-scan of the current worktree (never persisted).
+the resolved ref is the checked-out HEAD and `.heal/findings/latest.json`
+matches its full `(head_sha, observation-input config_hash,
+worktree_clean)` triple, `heal diff` reads it directly. Older refs and
+other misses materialise the source via `git worktree
+add --detach`, runs the observer pipeline there using the *current*
+`config.toml` / `calibration.toml` (apples-to-apples), and tears the
+worktree down on exit. Gated by `[diff].max_loc_threshold` (default
+`200_000` LOC) — over the threshold the command exits with code 2
+and prints a manual two-branch recipe. The right-hand side is always
+a fresh in-memory scan of the current worktree (never persisted).
 
 Buckets: Resolved / Regressed / Improved / New / Unchanged, plus a
 progress percentage. Pass `--all` to also surface Improved +
-Unchanged. JSON shape:
+Unchanged. Entries whose current finding is accepted (via
+`heal mark accept`) render with a `📌 accepted` marker;
+`--hide-accepted` drops them from the human output entirely (JSON is
+never filtered). JSON shape:
 
 ```jsonc
 {
   "from_ref":     "HEAD",
   "from_sha":     "deadbeef…",
   "to_head_sha":  "deadbeef…",
+  "from_coverage_observation": { "state": "missing", "configured_sources": ["lcov.info"], "sources": [], "unreadable_sources": [], "unmeasured_files": ["src/a.ts"] },
+  "to_coverage_observation":   { "state": "complete", "configured_sources": ["lcov.info"], "sources": ["lcov.info"], "unreadable_sources": [], "unmeasured_files": [] },
   "resolved":     [{ "finding_id": "ccn:…", "metric": "ccn", "file": "src/a.ts",
                      "from_severity": "high", "to_severity": null,
                      "from_hotspot": false, "hotspot": false }],
   "regressed":    [],
   "improved":     [],
-  "new_findings": [],
+  "new_findings": [],            // entries carry "accepted": true when the
+                                 // current finding is accepted (omitted when false)
   "unchanged":    [],
   "progress_pct":     0.25,    // population-side: resolved.len() / from.findings.len()
   "t0_total":         4,       // T0 (Critical AND hotspot) baseline count
@@ -299,6 +331,39 @@ shape with one entry per metric, optionally restricted via
 `duplication`, `hotspot`, `lcom`). No historical delta — there is no
 event log to compare against.
 
+### `heal semantic ask [--task <ID>]… [--dry-run] [--refresh] [--prune] [--check] [--focus <FILE>] [--diff <RANGE>] [--json]`
+
+`[features.semantic]` only, and the only command that sends project
+content over the network (to the TypeSafe Jev API). Plans questions,
+skips anything already cached, and writes answers to
+`.heal/semantic/verdicts/<task>.jsonl` (tracked). On-demand tasks
+(`verify_patch`, `verify_proposal`, `verify_tests`, `name_choice`,
+`doc_pairs`) and `focus` write to the untracked
+`.heal/cache/semantic/verdicts/` instead and return their result as
+`tasks[].result` in `--json`.
+
+- `--dry-run` — plan and price; sends nothing, needs no key.
+- `--task <ID>` — one task (repeatable); required for on-demand tasks.
+- `--check` — confirm the key against the API and stop.
+- `--focus <FILE>` / `--diff <RANGE>` — the input focus-aware and
+  verify tasks judge.
+
+`--json` shape: `{ model, dry_run, tasks: [{ task, subjects, cached,
+to_ask, requests, est_input_tokens, est_usd, answered, failed,
+oversized_groups, pruned, hint?, result? }], requests_sent,
+input_tokens, usd, stopped_by_budget, fatal, errors }`. Exit code 2
+when the family is disabled, no key is configured, the key is
+rejected, or the API does not know the configured model.
+
+### `heal auth jev set | status [--offline] | clear [--json]`
+
+Manage the Jev API key outside `.heal/`. `set` reads one line from
+stdin into the per-user `credentials.toml` (mode 600);
+`TYPESAFE_API_KEY` takes precedence. `status` shows the masked key and
+its source, then checks it against the API unless `--offline` (exit 2
+when no key is configured or the check fails). `clear` deletes the
+stored key.
+
 ### `heal skills install [--force] [--target <filter>] [--json]` / `update [--force] [--target <filter>] [--json]` / `status [--target <filter>] [--json]` / `uninstall [--target <filter>] [--json]`
 
 Manage the bundled skill set across every agent target. Each
@@ -416,10 +481,14 @@ the tier you're gating on is unambiguous.
 
 ## Exit codes
 
-`heal` exits non-zero only on **internal failure** (config parse error,
-disk write failure, missing git repo where one is required). It does
-**not** exit non-zero when findings exist — gating on Severity is the
-caller's job (parse `--json`).
+`heal` exits 1 on **internal failure** (config parse error, disk write
+failure, missing git repo where one is required). It does **not** exit
+non-zero when findings exist — gating on Severity is the caller's job
+(parse `--json`). Exit 2 means something only the user can fix:
+`heal diff` over `[diff].max_loc_threshold`, or, for
+`heal semantic ask` / `heal auth jev status`, the semantic setup (family
+disabled, no key, key rejected, unknown model). Skills treat exit 2 from
+a semantic command as "skip the semantic step", never as a failure.
 
 ## Where to look next
 

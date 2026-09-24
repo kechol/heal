@@ -24,6 +24,9 @@ pub struct Finding {
     pub fix_hint: Option<String>,
     pub accepted: bool,              // render-time decoration
     pub is_test_file: bool,          // test-family role decoration
+    pub semantic: BTreeMap<String, SemanticNote>, // [features.semantic] notes
+    pub drain_tier: Option<DrainTier>, // render-time (`heal status`), never persisted
+    pub drain_rank: Option<u32>,     // render-time: 1-based, per family
 }
 
 pub struct Location {
@@ -78,10 +81,10 @@ The full result of one `heal status` run. Written to
 see identical drain queues without re-scanning.
 
 ```rust
-pub const FINDINGS_RECORD_VERSION: u32 = 8;
+pub const FINDINGS_RECORD_VERSION: u32 = 9;
 
 pub struct FindingsRecord {
-    pub version: u32,                // currently 8
+    pub version: u32,                // currently 9
     pub id: String,                  // FNV-1a hex of (head_sha, config_hash, worktree_clean)
     pub head_sha: Option<String>,    // None outside git or HEAD unborn
     pub worktree_clean: bool,
@@ -107,7 +110,7 @@ byte-identical content, keeping `git status` clean.
 
 ### Schema versioning
 
-`FINDINGS_RECORD_VERSION` is currently **8**. v1 → v2 renamed
+`FINDINGS_RECORD_VERSION` is currently **9**. v1 → v2 renamed
 `check_id → id` and `regressed_check_id → regressed_in_record_id`.
 v2 → v3 (Unreleased v0.4 cycle) bundles every new addition since
 v0.3.2: the `[features.docs]` family of metric strings
@@ -134,7 +137,13 @@ adds `coverage_observation`, which separates absent or partial
 measurement from measured 0% coverage. v7 → v8 adds the optional
 `Finding.hotspot_score`; it controls deterministic order within a
 family after Tier and Severity, but does not affect ids, Severity, or
-drain Tier.
+drain Tier. v8 → v9 adds the optional `Finding.semantic` note map and
+the `[features.semantic]` metric strings (`concept_*`, `term_drift`,
+`name_mismatch`, `test_value`, `mock_scope`, `test_duplicate`,
+`doc_structure.*`, `doc_placement`, `doc_drift.semantic`,
+`doc_concept.*`), plus the render-time `drain_tier` / `drain_rank`
+that `heal status` sets (`core::order::decorate`) after writing
+`latest.json`, so they are never persisted.
 
 `read_latest` peeks at the version field first and returns `Ok(None)`
 on **any mismatch** — the next run silently rewrites under the new
@@ -319,10 +328,46 @@ Config { project, git, metrics, policy, diff, features }
         │     ├── StandaloneDocsConfig { include, exclude }
         │     └── DocFreshnessConfig { high_commits = 5,
         │                               critical_commits = 20 }
-        └── TestConfig { enabled = false, test_paths, coverage }
-              └── TestCoverageConfig { enabled = false, lcov_paths,
-                                       post_commit_refresh = None }
+        ├── TestConfig { enabled = false, test_paths, coverage }
+        │     └── TestCoverageConfig { enabled = false, lcov_paths,
+        │                              post_commit_refresh = None }
+        └── SemanticConfig { enabled = false, model = "jev-1.13.0",
+                             max_usd = 1.0, concurrency = 8, exclude,
+                             tasks: BTreeMap<id, SemanticTaskConfig> }
+              └── SemanticTaskConfig { enabled = true, cutoff = None }
 ```
+
+`SemanticConfig.model` rejects the moving aliases `jev-latest` /
+`jev-preview`; `tasks` keys must be in `core::config::SEMANTIC_TASK_IDS`
+(pinned equal to `semantic::task::registry()` by a test). The API key
+is **not** a config field — `deny_unknown_fields` rejects `api_key`.
+
+`Finding.semantic: BTreeMap<String, SemanticNote { label, p,
+confidence, lines, detail }>` — decorations from cached verdicts, never
+part of the id. Note names in use: `fix_ratio`, `consequence`, `gate`,
+`effort`, `accept_reason`, `duplication_real`, `friction.change`,
+`friction.test`, `friction.read`, `triage_class`, `focus`,
+`split_points`, `fix_pattern`. Skipped from JSON when empty.
+
+## Verdict cache (`semantic::store`)
+
+`.heal/semantic/verdicts/<task>.jsonl` — one `Verdict { key, model,
+answer }` per line, sorted by key. `key = verdict_key(task,
+criteria_hash, model, subject, state)` via `fnv1a_64_chunked`
+(`invariants.md` R5). On read, duplicate keys (e.g. after a
+`merge=union`) resolve to the lexicographically smallest line.
+`Answer` is the wire answer (`noul` / `choice` / `score`) verbatim.
+When `[features.semantic]` is enabled every verdict file of a shared
+task is an observation input of `config_hash` (label
+`semantic_verdicts`, logical path `.heal/semantic/verdicts/<file>`),
+so `latest.json` invalidates when verdicts change without HEAD moving.
+
+Tasks whose `Task::shared()` is false — every on-demand task and
+`focus` — are routed by `VerdictStore::for_project` to
+`.heal/cache/semantic/verdicts/<task>.jsonl` instead: untracked
+(`save` writes `.heal/cache/.gitignore` = `*` when missing) and never
+hashed (`store::local_task_ids`). A shared task must not depend on a
+local one (pinned by a test).
 
 `DuplicationConfig` adds a `docs_min_tokens = 100` field that the
 Markdown duplication pass uses when `[features.docs]` is on. The

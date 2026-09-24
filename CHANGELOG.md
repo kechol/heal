@@ -2,6 +2,118 @@
 
 ## Unreleased
 
+### ⚠ BREAKING — findings schema v9
+
+- **`FINDINGS_RECORD_VERSION` is now 9.** Findings gain an optional
+  `semantic` decoration map, and the `[features.semantic]` family adds new
+  metric strings. Projects that do not enable the family get records that
+  are otherwise byte-identical to v8. `heal status --json` also adds two
+  render-time fields per drainable finding, `drain_tier` and
+  `drain_rank`, which are never written to `latest.json`. **Migration:**
+  none by hand — older `latest.json` files invalidate and rebuild on the
+  next `heal status`.
+
+### Features — `[features.semantic]` (Jev, opt-in)
+
+- **New opt-in family `[features.semantic]`** that asks TypeSafe's
+  [Jev](https://docs.typesafe.ai/) classifier questions metrics cannot
+  answer. Disabled by default; with it off, HEAL behaves exactly as before.
+- **`heal semantic ask`** — plans questions locally, skips anything already
+  cached, packs requests under Jev's 32Ki-state / 64Ki-request ceilings,
+  prices the run (`--dry-run`), enforces `max_usd`, stops with exit 2 as
+  soon as the key is rejected or the API does not know the configured
+  model, and writes typed answers to `.heal/semantic/verdicts/<task>.jsonl`
+  (tracked). On-demand checks and `focus` write to the untracked
+  `.heal/cache/semantic/verdicts/` instead, so a patch session never
+  dirties the worktree.
+  Flags: `--task`, `--dry-run`,
+  `--refresh`, `--prune`, `--check`, `--focus`, `--diff`, `--json`.
+- **`heal auth jev set | status | clear`** — per-user key storage (mode 600,
+  outside `.heal/`); `TYPESAFE_API_KEY` / `TYPESAFEAI_API_KEY` take
+  precedence. `status` confirms the key against the API.
+- **Network boundary.** `heal semantic ask` and `heal auth jev status` are
+  the only commands that open a connection. Every other command reads the
+  verdict cache offline; when the family is enabled, verdict files are part
+  of `config_hash`, so a changed verdict re-renders `heal status`.
+- **`concept` task** classifies every production function (inline unit
+  tests and `#[cfg(test)]` modules are skipped) into the team's
+  concept vocabulary (`.heal/concepts.toml`, written by the new
+  `/heal-concepts-setup` skill) and reports `concept_mix`,
+  `concept_misplaced`, and `concept_scatter` findings. The approach
+  follows conceptual cohesion (Marcus & Poshyvanyk, ICSM 2005).
+- **Test tasks:** `test_value` flags tests that would not catch the
+  behaviour their name claims breaking (delete) or that are tied to
+  implementation details (rewrite), after Khorikov's four pillars of a
+  good unit test; `mock_scope` flags mocks of the code under test or of
+  internal collaborators; `test_triage` classifies uncovered code and
+  skip reasons; `test_duplicate` finds tests to delete or merge into a
+  table-driven test; on-demand `verify_tests` checks tests added in a diff.
+  `/heal-test-patch` can now remove tests that check nothing, under a
+  confidence and coverage guard.
+- **Doc tasks:** `doc_structure` classifies every doc section by kind
+  (Diátaxis plus changelog / ADR / runbook / glossary) and asks where a
+  new document starts, reporting pages to split, merge, or keep to one
+  mode — docjev's classify-and-split applied to Markdown
+  ([jerryjliu/docjev](https://github.com/jerryjliu/docjev), Apache-2.0);
+  `doc_placement` finds pages filed under the wrong section and the link
+  slot for orphan pages; `doc_concept` / `doc_overlap` read the docs
+  through the concept vocabulary (concepts no doc explains, sections
+  that repeat or contradict each other); on-demand `doc_pairs` gives
+  `/heal-doc-pair-setup` pair suggestions, asking about each candidate
+  source separately so one page can pair with several files (written as
+  `source: "llm"` with the lowest probability as `confidence`, so
+  `doc_pairs.json` stays readable by older versions); `doc_drift_semantic`
+  adds `doc_drift` Type 3
+  (`doc_drift.semantic`): paired sections that are partly outdated or
+  state what the code no longer does. It and `name_mismatch` read the
+  answer's level probabilities, so an answer split between "not
+  applicable" and "wrong" is not averaged into "accurate".
+- **Drain order uses semantic axes.** `consequence`, `triage` (gate,
+  effort, accept reason), `friction` (hard to change / test / read, and
+  triage class), and `focus` decorate findings; `core::order` compares
+  them one after another inside each Tier + Severity bucket before
+  `hotspot_score`. Tier and Severity never change, and without notes the
+  order is unchanged. `heal status --focus <file>` ranks for described
+  upcoming work without writing `latest.json`. `heal status --json`
+  exposes the order as `drain_tier` and a family-local `drain_rank`, and
+  the patch and review skills now sort by `drain_rank` instead of
+  re-deriving Tier → Severity → `hotspot_score` without the semantic
+  axes.
+- Semantic tasks honour an explicit `[features.test].test_paths` alone.
+  With the default globs they still add the naming heuristic, which also
+  treats production modules under a `test/` directory as tests.
+- **Naming and refactoring tasks:** `term_drift` (two words for one
+  thing within a concept; singular and plural forms count as one word),
+  `name_mismatch` (a name or doc comment that does not match the body),
+  `split_points` (step boundaries for High / Critical complexity), and
+  `fix_pattern` (which allow-listed refactoring fits). On-demand checks
+  `name_choice`, `verify_patch`, and `verify_proposal` report through
+  `heal semantic ask --task <id> --json`.
+- New bundled skill **`/heal-concepts-setup`** (twelve skills in total).
+- `/heal-code-patch` and `/heal-code-review` read semantic notes when
+  present and verify their own work with `verify_patch` /
+  `verify_proposal`; without `[features.semantic]` they behave as before.
+  The patch skills treat the `triage` gate as a second opinion, never as
+  the decision, and `/heal-code-patch` gains the accept reason
+  `stateless_delegation` for LCOM on field-less types that delegate to
+  free functions.
+- **`commit_intent` task** classifies recent commits and decorates
+  Code findings with a per-file bug-fix ratio (`semantic.fix_ratio`).
+- `heal status --metric` accepts `concept`, `naming`, `test-value`,
+  `mock-scope`, `test-duplicate`, `doc-structure`, `doc-placement`, and
+  `doc-concept`; `doc-drift` now includes its submetrics.
+- TLS uses rustls with the OS trust store (`rustls-native-certs`), so a
+  corporate CA installed on the machine keeps working. Client pacing,
+  retry, and split-on-`max_tokens_exceeded` behaviour follow
+  [mizchi/jev-lint](https://github.com/mizchi/jev-lint) (MIT).
+
+### Fixes
+
+- `heal diff --json` no longer prints git's `HEAD is now at …` line on
+  stdout ahead of the JSON document, which made the output unparseable.
+  An integration test now checks that `heal status --json` and
+  `heal diff --json` write nothing but JSON to stdout.
+
 ## v0.6.0 — 2026-09-13
 
 The large-codebase and practical-ordering release. Scans reuse unchanged

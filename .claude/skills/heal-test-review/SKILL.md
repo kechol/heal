@@ -2,7 +2,7 @@
 name: heal-test-review
 description: Read every finding from the `[features.test]` observer family produced by `heal status --feature test --json`, deeply investigate the user's tests and codebase through the test-pyramid lens, and return one architectural reading plus a prioritized test-fix TODO list. Read-only — proposes only. The write counterpart is `/heal-test-patch`. Trigger on "review the test health", "what does heal say about my tests", "where should we add tests", "which tests should we unskip", "/heal-test-review".
 metadata:
-  heal-version: 0.4.0
+  heal-version: 0.6.0
   heal-source: bundled
 ---
 
@@ -125,7 +125,9 @@ The shapes a `[features.test]` cache typically reveals:
 
 ### Phase 1 — Read
 
-For each `[features.test]` finding:
+Exclude every finding with `accepted=true` before ranking. Keep any
+`accepted_rereview` notice informational; it does not requeue the accepted
+finding. For each remaining `[features.test]` finding:
 
 1. Note `metric`, `severity`, `hotspot`, `is_test_file`, primary
    location, and secondary locations. The `is_test_file` flag
@@ -183,6 +185,13 @@ Build a prioritized TODO list. Order matters — drain the
 high-value, low-effort items first so the cache empties faster
 under `/heal-test-patch`:
 
+Keep HEAL's queue order: sort by `drain_rank`, which `heal status
+--json` counts within the Test family and which already applies Tier,
+Severity, the `[features.semantic]` axes, and `hotspot_score` exactly as
+the human `heal status` prints them. Do not re-derive the order, mix raw
+scores across families, or invent a combined score. The categories
+below decide how an item is handled, not a different numeric ranking.
+
 1. **Mechanical wins (allow-list).** Findings whose fix is
    obviously deterministic — adding a unit test for an uncovered
    hot path with documented behavior, aligning a drifted test
@@ -232,6 +241,27 @@ weakest safety net".
   explicitly; don't propose this as a workaround.
 - **Re-enabling by weakening assertions.** "Unskip and swap
   `assert_eq!` for `assert!`" trades real signal for green CI.
+
+## With `[features.semantic]`
+
+When the family is enabled, three more signals feed the pyramid
+reading. Without them, the review works as before.
+
+- **`test_value`** — a test that would pass with the behaviour its name
+  claims broken (`delete`) or that is tied to implementation details
+  (`rewrite`). The note's detail lists all four answers. Recommend
+  deleting tests that only restate their mocks, the framework, or
+  constants; they cost run time and maintenance and protect nothing.
+  Agent-written suites accumulate these fastest.
+- **`mock_scope`** — a mock of the code under test (`subject`, High) or
+  of an internal collaborator. Mocks belong at process boundaries.
+- **`semantic.coverage_band`** on `coverage_pct` — `pure_logic`
+  (unit-test it), `coordination` (a thin integration test), or
+  `io_boundary` (test at a higher layer; do not chase unit coverage).
+- **`semantic.skip_reason`** on `skip_ratio` — `environment`, `slow`,
+  `broken`, or `pending`; the detail lists each skipped test.
+- **`test_duplicate`** (when present) — near-identical tests to merge
+  into one table-driven test.
 
 ## Output format
 

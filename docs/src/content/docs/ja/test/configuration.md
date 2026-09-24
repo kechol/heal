@@ -49,6 +49,8 @@ test_paths = [
 
 `test_paths` が空のときは、同じ言語規約をハードコードしたフォールバックヒューリスティックが適用されます。
 
+グロブは `.gitignore` と同じ規則で固定されるため、デフォルトの `tests/**` はプロジェクト直下の `tests/` にしかマッチしません。`crates/<name>/tests/` のようにテストのディレクトリが深い位置にある workspace では、`**/tests/**` を指定してください。`test_paths` を自分で設定すると、[Semantic (Jev)](/heal/ja/semantic/) のタスクもその指定だけで判定します。デフォルトのままなら組み込みのヒューリスティックも併用し、`test/` という名前のディレクトリはすべてテストとみなします。
+
 ### `is_test_file` フラグ
 
 `[features.test]` を有効にすると、各 Finding に `is_test_file: bool` フラグが追加されます。スキルはこのフラグでフィルタリングして、テスト側と本番側の severity を独立に読みます。`/heal-test-review` はテスト findings に集中し、`/heal-code-review` は本番 findings に集中します。

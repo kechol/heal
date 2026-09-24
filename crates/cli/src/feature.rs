@@ -140,10 +140,16 @@ impl Family {
     /// silently disappearing under a flag.
     #[must_use]
     pub fn for_metric(metric: &str) -> Self {
-        match metric {
+        // Submetrics (`doc_drift.semantic`, `doc_structure.split`) belong to
+        // their parent's family, so every `change_coupling.*` (including
+        // `.drift`, a coupling finding about a test pair) stays in Code.
+        let parent = metric.split('.').next().unwrap_or(metric);
+        match parent {
             "doc_freshness" | "doc_drift" | "doc_coverage" | "doc_link_health" | "orphan_pages"
-            | "todo_density" | "doc_hotspot" => Self::Docs,
-            "coverage_pct" | "skip_ratio" | "test_hotspot" => Self::Test,
+            | "todo_density" | "doc_hotspot" | "doc_structure" | "doc_placement"
+            | "doc_concept" => Self::Docs,
+            "coverage_pct" | "skip_ratio" | "test_hotspot" | "test_value" | "mock_scope"
+            | "test_duplicate" => Self::Test,
             _ => Self::Code,
         }
     }

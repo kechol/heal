@@ -124,10 +124,11 @@ Build a prioritized TODO list. The order matters — drain the
 high-value, low-effort items first so the cache empties faster
 under `/heal-doc-patch`:
 
-First preserve HEAL's Tier and Severity order, then sort by descending
-`hotspot_score` within the Docs family. Missing scores sort last; ties
-use metric, path, then finding id. This mirrors human `heal status`; do not mix
-raw scores across families or invent a combined score. The categories
+Keep HEAL's queue order: sort by `drain_rank`, which `heal status
+--json` counts within the Docs family and which already applies Tier,
+Severity, the `[features.semantic]` axes, and `hotspot_score` exactly as
+the human `heal status` prints them. Do not re-derive the order, mix raw
+scores across families, or invent a combined score. The categories
 below decide how an item is handled, not a different numeric ranking.
 
 1. **Mechanical wins (allow-list).** Findings whose fix is
@@ -161,6 +162,28 @@ Avoid the four traps (`references/architecture.md` §4):
 - **Doc bloat.** Always pair "write more" recommendations with
   "delete some" — the deletion-side metrics (`orphan_pages`,
   `duplication`) exist for this.
+
+## With `[features.semantic]`
+
+When the family is enabled, these findings sharpen the Diátaxis
+reading. Without them, the review works as before.
+
+- **`semantic.doc_kind`** on docs findings — the page's dominant kind
+  (tutorial, how_to, reference, explanation, changelog, adr, runbook,
+  glossary). Use it instead of classifying each page yourself; check the
+  pages where it surprises you.
+- **`doc_structure.split`** — several documents share one page; the
+  summary lists the line ranges and kind of each. Propose one page per
+  document. **`doc_structure.mixed_mode`** — one document drifts between
+  modes; propose moving the minority mode out. **`doc_structure.merge`**
+  — short neighbouring pages that continue one document.
+- **`doc_placement`** — a page filed under the wrong section of the tree.
+- **`doc_drift.semantic`** — a paired section states something the code
+  no longer does (identifier-level drift is `doc_drift`). Propose the
+  corrected statement; this is Interpretive, never mechanical.
+- **`doc_concept.*`** (when present) — duplicated or conflicting
+  explanations of one concept, and concepts the code relies on that no
+  doc explains.
 
 ## Output format
 

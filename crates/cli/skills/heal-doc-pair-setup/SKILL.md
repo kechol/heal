@@ -44,7 +44,7 @@ report in the user's language. Resolution order:
 4. English (fallback).
 
 Identifiers stay verbatim — file paths, `source` values (`"manual"`,
-`"mention"`, `"directory_mirror"`, `"llm"`), JSON field names, and
+`"mention"`, `"mirror"`, `"llm"`), JSON field names, and
 config keys (`[features.docs]`) are part of the contract. The written
 file (`.heal/doc_pairs.json`) is machine-consumed JSON and never
 translated; only the conversation around it follows the user's
@@ -187,9 +187,28 @@ without parsing either file. Implementation:
 This pass is medium-precision (false positives on coincidentally-
 named files) and medium-recall.
 
+#### Step 3a — Jev inference (`source: "llm"`, real confidence)
+
+When `[features.semantic]` is enabled, ask Jev first — it scores every
+unpaired doc against candidate sources in one run, with no cap:
+
+```sh
+heal semantic ask --task doc_pairs --json
+```
+
+`tasks[0].result.pairs` lists one entry per doc, already shaped like a
+pair: `{doc, srcs, confidence, scores, source: "llm"}`. `srcs` holds every
+candidate Jev judged the page to document (probability at or above
+`tasks[0].result.cutoff`), most likely first; `confidence` is the lowest
+of their probabilities; `scores` has each one. Write `doc`, `srcs`,
+`confidence`, and `source` as they are (there is no separate Jev value,
+so older heal versions can still read the file). Docs missing from the
+list had no candidate above the cutoff — leave them to Step 3. Exit
+code 2 (no key, family off) means skip this step.
+
 #### Step 3 — LLM inference (`source: "llm"`, confidence 0.5)
 
-Reserved for docs the first two passes missed. The user is *you*
+Reserved for docs the earlier passes missed. The user is *you*
 (the agent). For each unpaired doc:
 
 1. Read the doc's title, the first paragraph, and any major
@@ -206,7 +225,8 @@ either delete entries the heuristic got wrong or promote them to
 
 #### Stopping rule
 
-For large codebases (>50k LOC, >500 docs), cap LLM inference at
+Step 3a has no cap. For large codebases (>50k LOC, >500 docs), cap
+the agent's own Step 3 inference at
 the **20 unpaired docs** with shortest paths first, ties broken by
 recent commit churn (`heal metrics --metric churn --json`). Surface
 the truncated count in the output ("N more docs unpaired; rerun

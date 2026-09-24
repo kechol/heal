@@ -88,7 +88,21 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     // see the previous owner's state until they remembered to refresh.
     let head_sha = git::head_sha(project);
     let worktree_clean = git::worktree_clean(project).unwrap_or(false);
-    let cached = if args.refresh {
+
+    let focus = match args.focus.as_deref() {
+        Some("-") => {
+            Some(std::io::read_to_string(std::io::stdin()).context("reading --focus from stdin")?)
+        }
+        Some(path) => Some(
+            std::fs::read_to_string(path)
+                .with_context(|| format!("reading --focus file {path}"))?,
+        ),
+        None => None,
+    };
+    // `--focus` always rescans and never reads or writes `latest.json`
+    // (see `build_record_focused` below), so skip the freshness check's
+    // cache read and `config_hash` recomputation entirely when it is set.
+    let cached = if args.refresh || focus.is_some() {
         None
     } else {
         read_latest_if_fresh(
@@ -103,7 +117,17 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     };
     let must_scan = cached.is_none();
 
-    let (mut record, regressed) = if must_scan {
+    let (mut record, regressed) = if let Some(focus) = focus.as_deref() {
+        let record = crate::observers::build_record_focused(
+            project,
+            &paths,
+            &cfg,
+            head_sha,
+            worktree_clean,
+            Some(focus),
+        )?;
+        (record, Vec::new())
+    } else if must_scan {
         let record = build_record(project, &paths, &cfg, head_sha, worktree_clean)?;
         write_record(&paths.findings_latest(), &record)?;
         let regs = reconcile_fixed(
@@ -127,6 +151,10 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     // `heal mark accept` takes effect without a rescan.
     let accepted_map = read_accepted(&paths.findings_accepted())?;
     record.apply_accepted(&accepted_map);
+    // Render-time like the accepted overlay: `--json` consumers (the patch
+    // skills) read the drain order from `drain_rank` instead of
+    // re-deriving it without the semantic axes.
+    crate::core::order::decorate(&mut record.findings, &cfg.policy.drain);
 
     if args.json {
         // Workspace narrowing rebuilds the record (paths flipped
@@ -615,16 +643,7 @@ fn render_tier_section(
         } else {
             b.severity.cmp(&a.severity)
         };
-        prefix
-            .then_with(|| match (b.hotspot_score, a.hotspot_score) {
-                (Some(b), Some(a)) => b.total_cmp(&a),
-                (Some(_), None) => std::cmp::Ordering::Greater,
-                (None, Some(_)) => std::cmp::Ordering::Less,
-                (None, None) => std::cmp::Ordering::Equal,
-            })
-            .then_with(|| a.metric.cmp(&b.metric))
-            .then_with(|| a.location.file.cmp(&b.location.file))
-            .then_with(|| a.id.cmp(&b.id))
+        prefix.then_with(|| crate::core::order::within_severity(a, b))
     });
     let total = sorted.len();
     writeln!(out, "{} ({})", ansi_wrap(color, label, colorize), total)?;
@@ -655,9 +674,43 @@ fn render_tier_section(
         } else {
             ""
         };
-        writeln!(out, "  {}{hotspot}  {summary}", file.display())?;
+        writeln!(
+            out,
+            "  {}{hotspot}  {summary}{}",
+            file.display(),
+            semantic_tags(&fs)
+        )?;
     }
     Ok(())
+}
+
+/// Short `[focus · consequence · effort]` suffix from the first confident
+/// `[features.semantic]` note of each kind among a file row's findings.
+/// Empty when the family is off or nothing has been asked yet.
+fn semantic_tags(fs: &[&Finding]) -> String {
+    let pick = |name: &str| {
+        fs.iter().find_map(|f| {
+            f.semantic
+                .get(name)
+                .filter(|n| n.confidence >= crate::core::order::MIN_CONFIDENCE)
+                .map(|n| n.label.replace('_', "-"))
+        })
+    };
+    let mut tags = Vec::new();
+    if let Some(focus) = pick("focus").filter(|l| l != "none") {
+        tags.push(format!("focus: {focus}"));
+    }
+    if let Some(c) = pick("consequence") {
+        tags.push(c);
+    }
+    if let Some(e) = pick("effort") {
+        tags.push(e);
+    }
+    if tags.is_empty() {
+        String::new()
+    } else {
+        format!("  [{}]", tags.join(" · "))
+    }
 }
 
 /// Run-length-encode adjacent identical labels into `label(N)` form so

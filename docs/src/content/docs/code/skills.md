@@ -103,6 +103,15 @@ trailer, never push / amend / `--no-verify`. Findings whose
 metric belongs to the docs or test families are skipped — those
 go through `/heal-doc-patch` / `/heal-test-patch`.
 
+**With [Semantic (Jev)](/heal/semantic/) enabled**, the skill reads
+the semantic notes on each finding as a second opinion, and after each
+commit runs `heal semantic ask --task verify_patch --diff HEAD~1..HEAD`.
+When Jev reports that complexity only moved, a condition was flipped
+into early returns, the commit message does not match the change, or
+a refactor changed behaviour, the skill undoes that commit, notes why,
+and moves on to the next finding. Without the family or a key, nothing
+changes.
+
 Trigger phrases: "fix the heal findings", "drain the cache",
 "work through the TODO list", "/heal-code-patch".
 
@@ -125,6 +134,16 @@ matching setup skill (`/heal-doc-pair-setup` /
 Re-run when the codebase shifts enough that the bar should move,
 or when every Critical has been drained for a sustained run —
 the skill recommends `heal calibrate --force` in those cases.
+
+## `/heal-concepts-setup` — concept vocabulary
+
+Only for the opt-in [Semantic (Jev)](/heal/semantic/) family. Reads
+your code, glossary, and docs, drafts a list of the concepts the
+codebase is built from — each with a one-line responsibility — reviews
+it with you, and writes `.heal/concepts.toml`. HEAL then maps every
+function and doc section to one of those concepts to find files that
+mix concepts, functions that belong elsewhere, words that mean the same
+thing, and concepts no doc explains.
 
 ## Maintenance
 

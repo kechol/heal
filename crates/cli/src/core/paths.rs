@@ -105,6 +105,42 @@ impl HealPaths {
         self.findings_dir().join("accepted.json")
     }
 
+    /// `[features.semantic]` state: `<root>/semantic/`. Tracked by git in
+    /// user repositories (like `config.toml`) so every teammate reads the
+    /// same verdicts without holding an API key.
+    #[must_use]
+    pub fn semantic_dir(&self) -> PathBuf {
+        self.root.join("semantic")
+    }
+
+    /// Concept vocabulary for the `concept` / `doc_concept` semantic
+    /// tasks. Tracked team contract, written by `/heal-concepts-setup`.
+    #[must_use]
+    pub fn concepts(&self) -> PathBuf {
+        self.root.join("concepts.toml")
+    }
+
+    /// Verdict cache written by `heal semantic ask`, one JSONL file per task.
+    #[must_use]
+    pub fn semantic_verdicts(&self) -> PathBuf {
+        self.semantic_dir().join("verdicts")
+    }
+
+    /// Verdicts of tasks that are not [`crate::semantic::task::Task::shared`]
+    /// (on-demand checks, `focus`): machine-local, under the untracked
+    /// `cache/` directory.
+    #[must_use]
+    pub fn local_semantic_verdicts(&self) -> PathBuf {
+        self.root.join("cache/semantic/verdicts")
+    }
+
+    /// `cache/.gitignore`, which keeps the whole `cache/` directory
+    /// untracked.
+    #[must_use]
+    pub fn cache_gitignore(&self) -> PathBuf {
+        self.root.join("cache/.gitignore")
+    }
+
     #[must_use]
     pub(crate) fn source_cache(&self) -> PathBuf {
         self.root.join("cache/source-v1.json")

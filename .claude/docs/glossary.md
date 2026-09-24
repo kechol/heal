@@ -21,6 +21,13 @@ FindingsRecord`, `heal check → heal status`, `heal status → heal metrics`,
 | **Feature** | "lowering", "classifier" | The post-observer pass that turns reports into `Vec<Finding>`. Trait `Feature` in `crates/cli/src/feature.rs`. Distinct from "metric"; one Feature can lower multiple metrics (e.g. Complexity → CCN + Cognitive). |
 | **Finding** | "issue", "violation", "alert", "result" | One row in the cache. See `data-model.md`. |
 | **the loop** | "drain", "harness loop" | Observe → classify → drain (review/patch). The HEAL backronym's "Loop". |
+| **Jev** | "the LLM", "the AI", "GPT" | TypeSafe's classifier model behind `[features.semantic]`. Returns typed probabilities, never text. Write "Jev" in prose, `jev` in commands (`heal auth jev`). |
+| **semantic task** | "rule", "check", "prompt" | One kind of question HEAL asks Jev (`semantic::task::Task`). Has a stable id used as the verdict file name and the `[features.semantic.tasks.<id>]` key. |
+| **concept vocabulary** | "taxonomy", "tags", "categories" | `.heal/concepts.toml`: the team's list of concepts (id + one-line responsibility) that the `concept` / `term_drift` / `doc_concept` tasks classify into. Written by `/heal-concepts-setup`. |
+| **verdict** | "answer cache", "result", "judgment" | One cached Jev answer (`semantic::store::Verdict`), stored in `.heal/semantic/verdicts/<task>.jsonl` (shared tasks) or `.heal/cache/semantic/verdicts/<task>.jsonl` (the rest). |
+| **on-demand task** | "manual task", "ad-hoc check" | A semantic task that runs only with `heal semantic ask --task <id>` (`Task::on_demand`): the `verify_*` checks, `name_choice`, `doc_pairs`. Its answer is `tasks[].result` in `--json`, not a Finding. |
+| **shared task** | "tracked task", "team task" | A semantic task whose verdicts are team state (`Task::shared`): tracked and hashed into `config_hash`. Every task except the on-demand ones and `focus`. |
+| **semantic note** | "annotation", "tag", "label" | `Finding.semantic[<name>]`, a `SemanticNote { label, p, confidence, lines, detail }` decorating an existing Finding from a cached verdict (e.g. `consequence`, `fix_ratio`). Never part of `Finding.id`. |
 
 ---
 
@@ -41,6 +48,8 @@ reappear in code or text.
 | `heal mark-fixed --finding-id … --commit-sha …` | **deprecated alias** for `heal mark fix` | Hidden. Prints a stderr deprecation warning and delegates. Kept so v0.2 skill bundles keep working until `heal skills update`. |
 | `heal skills install\|update\|status\|uninstall` | live | — |
 | `heal calibrate` | live | `--reason`, `--check` were removed; do not add back. |
+| `heal semantic ask` | live, opt-in (`[features.semantic]`) | The only command that sends project content over the network. |
+| `heal auth jev set\|status\|clear` | live | `status` is the only other network call (key check). Keys never go under `.heal/`. |
 | ~~`heal checks`~~ | **removed** | Old persistent-snapshots view. |
 | ~~`heal compact`~~ | **removed** | Compaction job for retired snapshots. |
 | ~~`heal logs`~~ | **removed** | Log-rotation viewer. |
@@ -84,6 +93,28 @@ key form matches `MetricsConfig` field names.
 | `skip_ratio` | `SkipRatio` (`SkipRatioFeature` / `FeatureKind::Observer`) | `skip-ratio` | `[features.test]` only. Per-test-file ratio of skipped tests to total tests, expressed as a percentage. Detected via tree-sitter walks of language-specific markers (Rust `#[ignore]`, Python `@pytest.mark.skip` / `@unittest.skipIf`, JS/TS `it.skip` / `xit`, Go `t.Skip()` deduped per enclosing `Test*` function, ScalaTest `ignore` / `pending`). Calibrated against `[calibration.skip_ratio]`; literature anchors > 1 % Medium / > 5 % High / > 20 % Critical via the fallback cascade. Findings emitted only for files with at least one skipped test. |
 | `test_hotspot` | `TestHotspot` (`TestHotspotFeature` / `Family::Test`) | `test-hotspot` | `[features.test.coverage]` only. Per-measured-production-src-file `commits × uncov_pct` composite. LCOV-absent files are unmeasured and excluded; explicit measured 0% is a 100% gap. Severity always `Ok`; the score's job is to flip `hotspot=true` on **other** Test-family Findings (`coverage_pct`). Calibration: `HotspotCalibration` with `floor_ok = FLOOR_OK_TEST_HOTSPOT = 25.0`, configurable via `[features.test.hotspot] floor_ok`. |
 | `doc_hotspot` | `DocHotspot` (`DocHotspotFeature` / `Family::Docs`) | `doc-hotspot` | `[features.docs]` only. Per-pair `paired_src_churn × debt` where `debt = src_commits_since_doc + weight_drift × dangling_idents`. Domain = paired pairs from `doc_pairs.json` (standalone docs stay covered by `orphan_pages` / `todo_density`). Severity always `Ok`; decorates Docs-family Findings via `hotspot=true` on the doc and every paired src. `weight_drift` default `1.0`; `floor_ok = FLOOR_OK_DOC_HOTSPOT = 5.0`; both configurable under `[features.docs.hotspot]`. |
+| `concept_mix` | (under `Concept`) | (under `concept`) | `[features.semantic]` only. A file whose classified code spans several concepts of `.heal/concepts.toml`. |
+| `concept_misplaced` | (under `Concept`) | (under `concept`) | `[features.semantic]` only. A function whose concept is another file's home concept; `fix_hint` names the move target. |
+| `concept_scatter` | (under `Concept`) | (under `concept`) | `[features.semantic]` only. A concept spread over many files with no home. |
+| `concept` | `Concept` | `concept` | Umbrella in CLI; selects every `concept_*` Finding. **No** Finding has `metric = "concept"`. |
+| `term_drift` | (under `Naming`) | (under `naming`) | `[features.semantic]` only. Two words that name one domain thing inside a concept. |
+| `name_mismatch` | (under `Naming`) | (under `naming`) | `[features.semantic]` only. A function name that contradicts or hides what the body does. |
+| `naming` | `Naming` | `naming` | Umbrella in CLI; selects `term_drift` and `name_mismatch`. **No** Finding has `metric = "naming"`. |
+| `test_value` | `TestValue` | `test-value` | `[features.semantic]` + `[features.test]`. A test case to delete (checks nothing real) or rewrite (brittle). |
+| `mock_scope` | `MockScope` | `mock-scope` | `[features.semantic]` + `[features.test]`. A mock that replaces the subject, an internal collaborator, or a pure value. |
+| `test_duplicate` | `TestDuplicate` | `test-duplicate` | `[features.semantic]` + `[features.test]`. Two cases in one file that test the same thing or could be one parameterized test. |
+| `doc_structure.split` | (under `DocStructure`) | (under `doc-structure`) | `[features.semantic]` + `[features.docs]`. A page that holds more than one document. |
+| `doc_structure.mixed_mode` | (under `DocStructure`) | (under `doc-structure`) | Same gate. A page that mixes documentation kinds (tutorial, how-to, reference, explanation, …). |
+| `doc_structure.merge` | (under `DocStructure`) | (under `doc-structure`) | Same gate. Neighbouring short pages that read as one document. |
+| `doc_placement` | `DocPlacement` | `doc-placement` | Same gate. A page that belongs in another section of the doc tree. |
+| `doc_drift.semantic` | (under `DocDrift`) | (under `doc-drift`) | Same gate. Type 3 drift: a paired doc section that states what the code no longer does. |
+| `doc_concept.gap` | (under `DocConcept`) | (under `doc-concept`) | Same gate plus `.heal/concepts.toml`. A sizeable concept no doc section explains. |
+| `doc_concept.duplicate` | (under `DocConcept`) | (under `doc-concept`) | Same gate. Sections of two pages that repeat each other. |
+| `doc_concept.conflict` | (under `DocConcept`) | (under `doc-concept`) | Same gate. Sections of two pages that contradict each other. |
+
+Semantic Findings (every row above marked `[features.semantic]`) are
+built from cached Jev verdicts by `semantic::lower::apply`, capped at
+`High`.
 
 Don't invent new submetric strings without bumping `FINDINGS_RECORD_VERSION`
 (see `.claude/rules/data-model.md`).
@@ -129,6 +160,9 @@ below). Constants live in `core::calibration` (`FLOOR_CCN`,
 | `.heal/findings/fixed.json` | `heal mark fix` writes; `heal status` reconciles | **yes** | `BTreeMap<finding_id, FixedFinding>`. Bounded by outstanding claims. |
 | `.heal/findings/regressed.jsonl` | `heal status` appends | **yes** | Append-only audit trail of re-detected fixes. |
 | `.heal/findings/accepted.json` | `heal mark accept` writes; renderers read | **yes** | `BTreeMap<finding_id, AcceptedFinding>`. Team contract for "won't fix / intrinsic" findings. Decorates `Finding.accepted: bool` at render time. |
+| `.heal/concepts.toml` | `/heal-concepts-setup` writes; semantic tasks read | **yes** | Concept vocabulary (`[[concept]] { id, description }`). Team contract; an observation input of `config_hash` while `[features.semantic]` is on. |
+| `.heal/semantic/verdicts/<task>.jsonl` | `heal semantic ask` writes; `heal status` reads | **yes** | Jev verdicts of shared tasks, one per line, sorted by key. Tracked so teammates without an API key see the same Findings. |
+| `.heal/cache/semantic/verdicts/<task>.jsonl` | `heal semantic ask` writes | no | Verdicts of on-demand tasks and `focus`: one person's input, never hashed. |
 | `.heal/doc_pairs.json` | `/heal-doc-pair-setup` writes; HEAL binary reads | **yes** | `[features.docs]` SSoT. `DocPairsFile` (schema-versioned by `DOC_PAIRS_VERSION`). Maps Layer A doc paths to one or more srcs. HEAL never auto-generates it — `R3` (no auto-recalibration) extends to this file. |
 
 | Term | Canonical | Wrong / drift |
@@ -162,6 +196,12 @@ Drain tiers (from `[policy.drain]` in config and `core::config::DrainTier`):
 `DrainSpec` syntax: `severity` or `severity:hotspot` (e.g.
 `critical:hotspot`). The `:hotspot` suffix means "Required" — match only
 when the Finding has `hotspot=true`.
+
+In `heal status --json` the Tier appears as `Finding.drain_tier`
+(`"must"` / `"should"` / `"advisory"`) next to `Finding.drain_rank`, the
+1-based position in the Finding's family queue (the rendered order,
+semantic axes included). Both are render-time, like `accepted`; never
+"priority", "score", or "position".
 
 ---
 
@@ -197,9 +237,14 @@ targets* below.
 | `heal-setup` | `/heal-setup` | Calibrate + write `.heal/config.toml`; gate `[features.docs]` / `[features.test]` (chains to `/heal-doc-pair-setup` / `/heal-test-reporter-setup`). **Was** `heal-config`. |
 | `heal-code-review` | `/heal-code-review` | Read-only architectural analysis. **Was** `heal-code-check`. |
 | `heal-code-patch` | `/heal-code-patch` | Drain cache, one finding per commit. **Was** `heal-code-fix`. |
+| `heal-concepts-setup` | `/heal-concepts-setup` | `[features.semantic]`. Draft the concept vocabulary with the user and write `.heal/concepts.toml`. |
 | `heal-doc-pair-setup` | `/heal-doc-pair-setup` | `[features.docs]` only. Detect doc ⇔ src pairs and write `.heal/doc_pairs.json`. SSoT writer. |
+| `heal-doc-scaffold` | `/heal-doc-scaffold` | `[features.docs]` only. Stand up the doc tree from codebase signals under `scaffold_root`. |
 | `heal-doc-review` | `/heal-doc-review` | `[features.docs]` only. Read-only Diátaxis-grounded review of doc findings. |
 | `heal-doc-patch` | `/heal-doc-patch` | `[features.docs]` only. Mechanical drain of doc findings (broken links, dangling identifiers, resolvable TODOs). |
+| `heal-test-reporter-setup` | `/heal-test-reporter-setup` | `[features.test]` only. Install and wire an lcov reporter with per-step approval. |
+| `heal-test-review` | `/heal-test-review` | `[features.test]` only. Read-only test-pyramid review of test findings. |
+| `heal-test-patch` | `/heal-test-patch` | `[features.test]` only. Mechanical drain of test findings. |
 
 The pair `heal-code-review` ↔ `heal-code-patch` and the parallel
 `heal-doc-review` ↔ `heal-doc-patch` are intentional: review =

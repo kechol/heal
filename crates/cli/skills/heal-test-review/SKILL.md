@@ -182,10 +182,11 @@ Build a prioritized TODO list. Order matters — drain the
 high-value, low-effort items first so the cache empties faster
 under `/heal-test-patch`:
 
-First preserve HEAL's Tier and Severity order, then sort by descending
-`hotspot_score` within the Test family. Missing scores sort last; ties
-use metric, path, then finding id. This mirrors human `heal status`; do not mix
-raw scores across families or invent a combined score. The categories
+Keep HEAL's queue order: sort by `drain_rank`, which `heal status
+--json` counts within the Test family and which already applies Tier,
+Severity, the `[features.semantic]` axes, and `hotspot_score` exactly as
+the human `heal status` prints them. Do not re-derive the order, mix raw
+scores across families, or invent a combined score. The categories
 below decide how an item is handled, not a different numeric ranking.
 
 1. **Mechanical wins (allow-list).** Findings whose fix is
@@ -237,6 +238,27 @@ weakest safety net".
   explicitly; don't propose this as a workaround.
 - **Re-enabling by weakening assertions.** "Unskip and swap
   `assert_eq!` for `assert!`" trades real signal for green CI.
+
+## With `[features.semantic]`
+
+When the family is enabled, three more signals feed the pyramid
+reading. Without them, the review works as before.
+
+- **`test_value`** — a test that would pass with the behaviour its name
+  claims broken (`delete`) or that is tied to implementation details
+  (`rewrite`). The note's detail lists all four answers. Recommend
+  deleting tests that only restate their mocks, the framework, or
+  constants; they cost run time and maintenance and protect nothing.
+  Agent-written suites accumulate these fastest.
+- **`mock_scope`** — a mock of the code under test (`subject`, High) or
+  of an internal collaborator. Mocks belong at process boundaries.
+- **`semantic.coverage_band`** on `coverage_pct` — `pure_logic`
+  (unit-test it), `coordination` (a thin integration test), or
+  `io_boundary` (test at a higher layer; do not chase unit coverage).
+- **`semantic.skip_reason`** on `skip_ratio` — `environment`, `slow`,
+  `broken`, or `pending`; the detail lists each skipped test.
+- **`test_duplicate`** (when present) — near-identical tests to merge
+  into one table-driven test.
 
 ## Output format
 

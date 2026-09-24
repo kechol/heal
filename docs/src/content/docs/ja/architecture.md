@@ -68,7 +68,7 @@ heal status  ──►  calibration.toml で Finding を分類
     └── heal-test-patch/
 ```
 
-同梱の 11 スキルは検出した各エージェントへ同一バイト列で展開されます。`[features.docs]` や `[features.test]` を後から有効化したときに、すでにインストール済みのスキル本体がそのまま意味を持つようになる仕組みです(再展開は不要)。
+同梱の 12 スキルは検出した各エージェントへ同一バイト列で展開されます。`[features.docs]` や `[features.test]` を後から有効化したときに、すでにインストール済みのスキル本体がそのまま意味を持つようになる仕組みです(再展開は不要)。
 
 `config.toml`、`calibration.toml`、`findings/` の中身はすべて git で追跡されるので、同じコミット上のチームメイトは同じ Severity ラダーと解消キューを共有できます。
 
@@ -83,12 +83,15 @@ heal status  ──►  calibration.toml で Finding を分類
 | `.heal/findings/accepted.json`   | `heal mark accept`（`/heal-code-review` から呼出）                      | チームが「設計上のもので直さない」と判断した項目を記録時。         |
 | `.heal/findings/regressed.jsonl` | `heal status`（整合パス）                                               | 修正済み Finding が再検出されたとき。                              |
 | `.heal/doc_pairs.json`           | `/heal-doc-pair-setup` スキル（`[features.docs]` 有効時）               | ユーザがスキルを実行したとき。HEAL は読み取り専用。                |
+| `.heal/concepts.toml`            | `/heal-concepts-setup` スキル（`[features.semantic]` 有効時）           | ユーザがスキルを実行したとき、または語彙を編集したとき。           |
+| `.heal/semantic/verdicts/`       | `heal semantic ask`                                                     | 新しく問い合わせたとき。コードと一緒に commit する。               |
 | `.heal/cache/source-v1.json`     | source observer                                                         | source解析結果が変わったとき。削除しても問題ありません。           |
+| `.heal/cache/semantic/verdicts/` | `heal semantic ask`（確認用タスク、`focus`）                            | そうしたタスクを実行したとき。削除しても問題ありません。           |
 | `<agent>/skills/heal-*/`         | `heal init`(検出した各エージェント)/ `heal skills install`(Claude のみ) | エージェントごとに一度。`heal init --force --yes` でリフレッシュ。 |
 
 イベントログも、月次ローテーションも、`.heal/snapshots/` / `.heal/logs/` / `.heal/reports/` も存在しません。heal は現在の状態と `regressed.jsonl` の小さな監査トレイルだけを保持します。
 
-`.heal/cache/` はgit追跡対象のFindings cacheとは別物です。変更のないsourceファイルについて、Complexity、LCOM、Duplication tokenの再生成可能なデータだけを保持し、自身をgitの対象外にします。再利用前には必ずファイル内容を検証します。ディレクトリを削除した場合や、cacheが壊れている、書き込めない場合は通常のsource解析へ戻ります。
+`.heal/cache/` はgit追跡対象のFindings cacheとは別物です。変更のないsourceファイルについてのComplexity、LCOM、Duplication tokenの再生成可能なデータと、一人ひとりの作業についてのsemanticの確認結果だけを保持し、自身をgitの対象外にします。再利用前には必ずファイル内容を検証します。ディレクトリを削除した場合や、cacheが壊れている、書き込めない場合は通常のsource解析へ戻ります。
 
 `.heal/docs/` だけは例外で、`/heal-doc-scaffold` を実行すると `[features.docs] scaffold_root`(デフォルトは `.heal/docs/`)に生成済みドキュメントツリーが書き出されます。HEAL 自身はこのツリーを **読む** だけで、書くのはスキル側だけです。
 
@@ -100,7 +103,7 @@ heal status  ──►  calibration.toml で Finding を分類
 
 ```json
 {
-  "version": 8,
+  "version": 9,
   "id": "9f8e7d6c5b4a3210", // (head_sha, config_hash, worktree_clean) の FNV-1a hex
   "head_sha": "a0a6d1a…",
   "worktree_clean": true,

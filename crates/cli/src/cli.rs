@@ -156,6 +156,91 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Opt-in judgments from `TypeSafe`'s Jev classifier
+    /// (`[features.semantic]`). `ask` is the only HEAL command that sends
+    /// project content over the network; every other command reads the
+    /// verdicts it caches under `.heal/semantic/verdicts/`.
+    Semantic {
+        #[command(subcommand)]
+        action: SemanticAction,
+    },
+    /// Manage API keys for optional integrations. Keys are stored per
+    /// user, never under `.heal/`.
+    Auth {
+        #[command(subcommand)]
+        provider: AuthProvider,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SemanticAction {
+    /// Ask Jev about the subjects each enabled task selects, skipping
+    /// anything already cached, and write the answers to
+    /// `.heal/semantic/verdicts/`.
+    Ask(SemanticAskArgs),
+}
+
+#[allow(clippy::struct_excessive_bools)] // every flag is independent CLI surface
+#[derive(Debug, Clone, clap::Args)]
+pub struct SemanticAskArgs {
+    /// Run only this task (repeatable). Default: every enabled task.
+    #[arg(long = "task", value_name = "ID")]
+    pub tasks: Vec<String>,
+    /// Plan and price the run without sending anything.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Re-ask subjects that already have a cached verdict.
+    #[arg(long)]
+    pub refresh: bool,
+    /// Remove cached verdicts that no current subject refers to.
+    #[arg(long)]
+    pub prune: bool,
+    /// Only confirm the key against the API (and the configured model,
+    /// when the API's model list names it; pinned versions are unlisted).
+    #[arg(long, conflicts_with_all = ["dry_run", "refresh", "prune"])]
+    pub check: bool,
+    /// Describe upcoming work (a file path, or `-` for stdin) so focus-aware
+    /// tasks can rank what that work will touch.
+    #[arg(long, value_name = "FILE")]
+    pub focus: Option<String>,
+    /// Git revision range whose change verify tasks judge (e.g. `HEAD~1..HEAD`).
+    #[arg(long, value_name = "RANGE")]
+    pub diff: Option<String>,
+    /// Emit the run report as JSON.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AuthProvider {
+    /// `TypeSafe` Jev (`[features.semantic]`).
+    Jev {
+        #[command(subcommand)]
+        action: JevAuthAction,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Subcommand)]
+pub enum JevAuthAction {
+    /// Read a key from stdin and store it in the per-user credentials
+    /// file (mode 600). `TYPESAFE_API_KEY` still takes precedence.
+    Set {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show where the key comes from and confirm it against the API.
+    Status {
+        #[arg(long)]
+        json: bool,
+        /// Skip the network check; report only the local configuration.
+        #[arg(long)]
+        offline: bool,
+    },
+    /// Delete the stored key.
+    Clear {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Metric filter for `heal metrics --metric`. clap renders these in
@@ -269,6 +354,25 @@ pub enum FindingMetric {
     /// `[features.docs]` — per-pair `paired_src_churn × debt`
     /// composite. Docs-family analogue of code Hotspot.
     DocHotspot,
+    /// `[features.semantic]` — concept map: `concept_mix`,
+    /// `concept_misplaced`, `concept_scatter`.
+    Concept,
+    /// `[features.semantic]` — `term_drift` and `name_mismatch`.
+    Naming,
+    /// `[features.semantic]` — low-value tests (`test_value`).
+    TestValue,
+    /// `[features.semantic]` — mocks of internal collaborators (`mock_scope`).
+    MockScope,
+    /// `[features.semantic]` — tests that duplicate each other (`test_duplicate`).
+    TestDuplicate,
+    /// `[features.semantic]` — pages to split, merge, or restructure
+    /// (`doc_structure.*`).
+    DocStructure,
+    /// `[features.semantic]` — pages filed under the wrong section (`doc_placement`).
+    DocPlacement,
+    /// `[features.semantic]` — duplicated, conflicting, or missing
+    /// explanations per concept (`doc_concept.*`).
+    DocConcept,
 }
 
 impl FindingMetric {
@@ -290,7 +394,7 @@ impl FindingMetric {
             Self::Hotspot => metric == "hotspot",
             Self::Lcom => metric == "lcom",
             Self::DocFreshness => metric == "doc_freshness",
-            Self::DocDrift => metric == "doc_drift",
+            Self::DocDrift => metric == "doc_drift" || metric.starts_with("doc_drift."),
             Self::DocCoverage => metric == "doc_coverage",
             Self::DocLinkHealth => metric == "doc_link_health",
             Self::OrphanPages => metric == "orphan_pages",
@@ -299,6 +403,14 @@ impl FindingMetric {
             Self::SkipRatio => metric == Finding::METRIC_SKIP_RATIO,
             Self::TestHotspot => metric == Finding::METRIC_TEST_HOTSPOT,
             Self::DocHotspot => metric == Finding::METRIC_DOC_HOTSPOT,
+            Self::Concept => metric.starts_with("concept_"),
+            Self::Naming => matches!(metric, "term_drift" | "name_mismatch"),
+            Self::TestValue => metric == "test_value",
+            Self::MockScope => metric == "mock_scope",
+            Self::TestDuplicate => metric == "test_duplicate",
+            Self::DocStructure => metric.split('.').next() == Some("doc_structure"),
+            Self::DocPlacement => metric == "doc_placement",
+            Self::DocConcept => metric.split('.').next() == Some("doc_concept"),
         }
     }
 }
@@ -410,6 +522,12 @@ pub struct StatusArgs {
     /// Cap each Tier/Severity bucket at N rendered file rows.
     #[arg(long, value_name = "N")]
     pub top: Option<usize>,
+    /// Rank for upcoming work described in FILE (`-` for stdin), using the
+    /// cached `[features.semantic]` `focus` verdicts from
+    /// `heal semantic ask --focus FILE`. Always rescans and never writes
+    /// `.heal/findings/latest.json`.
+    #[arg(long, value_name = "FILE")]
+    pub focus: Option<String>,
     /// Skip the pager and write directly to stdout. By default
     /// `heal status` pipes through `$PAGER` (or `less`) when stdout
     /// is a terminal — same convention as `git diff` / `git log`.
@@ -598,6 +716,30 @@ impl Cli {
             } => commands::mark::run_fix_legacy(&project, &finding_id, &commit_sha, json),
             Command::Skills { action } => commands::skills::run(&project, action),
             Command::Calibrate { force, json } => commands::calibrate::run(&project, force, json),
+            Command::Semantic {
+                action: SemanticAction::Ask(args),
+            } => commands::semantic::run_ask(
+                &project,
+                &commands::semantic::AskArgs {
+                    tasks: args.tasks,
+                    dry_run: args.dry_run,
+                    refresh: args.refresh,
+                    prune: args.prune,
+                    check: args.check,
+                    json: args.json,
+                    focus: args.focus,
+                    diff: args.diff,
+                },
+            ),
+            Command::Auth {
+                provider: AuthProvider::Jev { action },
+            } => match action {
+                JevAuthAction::Set { json } => commands::auth::run_set(json),
+                JevAuthAction::Status { json, offline } => {
+                    commands::auth::run_status(&project, json, offline)
+                }
+                JevAuthAction::Clear { json } => commands::auth::run_clear(json),
+            },
         }
     }
 }
@@ -609,6 +751,40 @@ mod tests {
 
     fn parse(args: &[&str]) -> Cli {
         Cli::try_parse_from(args).unwrap_or_else(|e| panic!("parse failed for {args:?}: {e}"))
+    }
+
+    #[test]
+    fn parses_semantic_ask_and_auth() {
+        let cli = parse(&[
+            "heal",
+            "semantic",
+            "ask",
+            "--task",
+            "a",
+            "--task",
+            "b",
+            "--dry-run",
+            "--json",
+        ]);
+        match cli.command {
+            Command::Semantic {
+                action: SemanticAction::Ask(a),
+            } => {
+                assert_eq!(a.tasks, ["a", "b"]);
+                assert!(a.dry_run && a.json && !a.check);
+            }
+            other => panic!("expected Semantic, got {other:?}"),
+        }
+        assert!(Cli::try_parse_from(["heal", "semantic", "ask", "--check", "--dry-run"]).is_err());
+        let cli = parse(&["heal", "auth", "jev", "status", "--offline"]);
+        assert!(matches!(
+            cli.command,
+            Command::Auth {
+                provider: AuthProvider::Jev {
+                    action: JevAuthAction::Status { offline: true, .. }
+                }
+            }
+        ));
     }
 
     #[test]

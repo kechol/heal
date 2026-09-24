@@ -3,6 +3,7 @@
 
 pub mod accepted;
 pub mod calibration;
+pub mod concepts;
 pub mod config;
 pub mod doc_pairs;
 pub mod error;
@@ -11,6 +12,7 @@ pub mod findings_cache;
 pub mod fs;
 pub mod hash;
 pub mod monorepo;
+pub mod order;
 pub mod paths;
 pub mod severity;
 pub(crate) mod source_cache;

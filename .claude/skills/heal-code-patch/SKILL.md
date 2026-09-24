@@ -1,15 +1,16 @@
 ---
 name: heal-code-patch
-description: Drain the cache produced by `heal status`, fixing one finding per commit in Severity order, until the cache is empty or the user stops. Writes code, runs tests, and commits — does NOT push or open PRs. Refuses to start on a dirty worktree. Trigger on "fix the heal findings", "drain the cache", "work through the TODO list heal produced", "/heal-code-patch".
+description: Drain T0 from the cache produced by `heal status`, fixing one finding per commit in HEAL's drain order (`drain_rank`) until T0 is empty or the user stops. Writes code, runs tests, and commits — does NOT push or open PRs. Refuses to start on a dirty worktree. Trigger on "fix the heal findings", "drain the cache", "work through the TODO list heal produced", "/heal-code-patch".
 metadata:
-  heal-version: 0.4.0
+  heal-version: 0.6.0
   heal-source: bundled
 ---
 
 # heal-code-patch
 
 Drain the cache that `heal status` produced. One finding per commit,
-in Severity order, until the cache is empty (or the user stops). This
+in HEAL's drain order (`drain_rank`: Tier, Severity, the semantic axes,
+then family-local `hotspot_score`), until T0 is empty (or the user stops). This
 is the **write** counterpart to `/heal-code-review` — that one proposes,
 this one applies.
 
@@ -100,7 +101,7 @@ patterns, end the session with a summary and recommend the user run
 
 ```
 while there are non-Ok findings in the cache:
-    pick the next one (Severity order: Critical🔥 → Critical → High🔥 → High → Medium)
+    pick the T0 finding with the lowest `drain_rank`
         # skip findings where `accepted == true` — the team has already
         # decided these are intrinsic; refactoring them is out of scope
         # for this skill. They show up under `📌 Accepted` in
@@ -140,9 +141,16 @@ ask before applying.
    Treat as advisory; surface the trade-off and ask before draining.
 3. **Advisory** — anything else above Ok. Never drain in-loop.
 
-Within T0, iterate in `Severity 🔥` order: `Critical 🔥` first, then
-any other entries the user's `must` policy admits. Skip findings
-already present in `.heal/findings/fixed.json` (match by `finding_id`).
+`heal status --json` gives every drainable finding a `drain_tier`
+(`must` = T0, `should` = T1, `advisory`) and a `drain_rank` (1 = next,
+counted within the Code family). Take the lowest `drain_rank` whose
+`drain_tier` is `must`. The rank already applies Tier, Severity, the
+`[features.semantic]` axes, and `hotspot_score` exactly as the human
+`heal status` prints them; do not re-derive the order or mix Code
+scores with Test/Docs scores. Accepted and Ok findings carry neither
+field. Skip
+findings already present in `.heal/findings/fixed.json` (match by
+`finding_id`).
 
 When T0 is empty, end the session — do **not** silently extend into T1
 or Advisory. Surface the remaining tiers in the summary, recommend the
@@ -229,8 +237,12 @@ heal mark accept \
 
 Use a stable, categorical reason string (`generated_code`,
 `exhaustive_enum_dispatch`, `intentional_parser_table`,
-`vendored_third_party`, `coherent_pipeline_relocate_trap`) so future
-audits can group accepts by category. Don't auto-accept — the user
+`vendored_third_party`, `coherent_pipeline_relocate_trap`,
+`stateless_delegation`) so future audits can group accepts by category.
+`stateless_delegation` is LCOM's known blind spot: a type with no fields
+(for example a unit struct implementing a trait) whose methods delegate
+to free functions shares no state LCOM can see, so every method looks
+like its own cluster. Don't auto-accept — the user
 must approve each. Don't propose accept on a finding that's just
 *hard* to fix; that's escalate territory.
 
@@ -261,6 +273,75 @@ If the only remaining findings require Escalate-list patterns, end the
 session with the summary format below and recommend the user run
 `/heal-code-review` to discuss the architectural moves at the proposal
 level.
+
+## With `[features.semantic]`
+
+`drain_rank` already includes the semantic axes (consequence, friction,
+bug-fix ratio, effort); keep following it.
+
+When the project enables `[features.semantic]`, findings in
+`heal status --json` may carry a `semantic` map of notes (label, `p`,
+`confidence`, optional `lines` / `detail`) and the cache may hold
+semantic findings. Everything below is additive: when a note or finding
+is absent, follow the rest of this skill unchanged.
+
+**Read confidence the same way everywhere.** `confidence ≥ 0.9` — act
+on the note. `0.5–0.9` — read the code and confirm before acting.
+`< 0.5` — ignore the note and decide as you would without it.
+
+- **`semantic.gate`** — `mechanical` (apply from the allow-list),
+  `false_positive` (propose `heal mark accept`; `semantic.accept_reason`
+  names the categorical reason), or `escalate` (stop and surface). The
+  gate never replaces your own three-way decision: read the code and
+  decide, using the note as a second opinion at any confidence. On real
+  code its confidence rarely reaches 0.9, and a low-confidence gate can
+  point the wrong way; when it disagrees with your reading at confidence
+  ≥ 0.5, re-read the finding before acting.
+- **`semantic.effort`** — `local`, `contained`, or `cross_file`. The
+  drain order already prefers cheaper fixes among equally important
+  findings; a confident `cross_file` on a finding you are about to patch
+  is a signal to escalate instead.
+- **`semantic.duplication_real`** — `false` (with confidence) means the
+  copies only look alike and would change for different reasons: do not
+  merge them; propose accept instead.
+- **`semantic.fix_pattern`** (CCN / Cognitive / duplication) names the
+  allow-list pattern that fits (`form_template_method`, `lookup_table`,
+  `consolidate_fragments`, `decompose_conditional`, `extract_variable`,
+  `named_constant`) or `none`. A confident `none` means the finding is
+  not mechanical: treat it as escalate-list.
+- **`semantic.split_points`** (CCN / Cognitive) gives the lines where the
+  function's steps begin (`lines`) and the resulting ranges (`detail`).
+  Extract along those boundaries — one step per function, each named
+  for its purpose — instead of pulling out branches.
+- **Semantic findings you may drain mechanically**, one per commit, with
+  the usual verification:
+  - `concept_misplaced` — move the function to the file in `fix_hint`,
+    update imports and callers, change nothing else.
+  - `name_mismatch` / `term_drift` for symbols that are **not** part of a
+    public API: write two to four candidate names, compare them with
+    `heal semantic ask --task name_choice --focus <file> --json` (see the
+    `fix_hint`), and rename only when the result says `"rename": true`.
+    The build and the tests must pass after the rename.
+- **Escalate instead:** `concept_mix`, `concept_scatter`, and any rename
+  of a public API (exported items, CLI flags, JSON fields). Those are
+  design decisions for `/heal-code-review`.
+
+**Verify each commit before marking it.** After committing and before
+`heal mark fix`, run:
+
+```sh
+heal semantic ask --task verify_patch --diff HEAD~1..HEAD --json
+```
+
+Read `tasks[0].result`. When `pass` is `false` — `flags` contains
+`relocate` (complexity moved, not removed), `guard_clause` (a flat
+condition flipped into negated early returns), or `message_mismatch` —
+or when `checks.behaviour_change ≥ 0.7` for a change meant to keep
+behaviour, undo that one commit (`git reset --hard HEAD~1`; the
+pre-flight guaranteed a clean tree, so this discards only your own
+commit), note why, and move to the next finding. If the command exits
+with code 2 (no key, or the family is off), skip this check and carry
+on as before.
 
 ## Anti-patterns to stop on mid-loop
 

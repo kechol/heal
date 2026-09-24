@@ -107,6 +107,17 @@ threaded into the matching family's Features by
 either of them (e.g. `test_hotspot.uncov`) is also a
 `FINDINGS_RECORD_VERSION` bump.
 
+The `[features.semantic]` family (v9 schema) added `concept_mix`,
+`concept_misplaced`, `concept_scatter`, `term_drift`,
+`name_mismatch`, `test_value`, `mock_scope`, `test_duplicate`,
+`doc_placement`, and the submetrics `doc_structure.split`,
+`doc_structure.mixed_mode`, `doc_structure.merge`,
+`doc_drift.semantic`, `doc_concept.gap`, `doc_concept.duplicate`,
+`doc_concept.conflict`. CLI umbrellas `--metric concept` and
+`--metric naming` select groups of them and match no Finding
+directly, like `complexity`. Renaming any of them is a
+`FINDINGS_RECORD_VERSION` bump.
+
 ## R6. Hotspot is a decoration, not a target
 
 The drain target is **Critical AND `hotspot=true`** (T0 Must). The

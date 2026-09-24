@@ -18,6 +18,15 @@ The day-to-day surface — these are the four you'll actually type.
 | `heal status` | Render the current TODO list (or refresh it). Reads `.heal/findings/`.                                                 |
 | `heal diff`   | Compare the live worktree against an earlier commit (default: the calibration baseline). Like `git diff` for findings. |
 
+With the opt-in [Semantic (Jev)](/heal/semantic/) family enabled, two
+more commands join them. They are the only heal commands that connect
+to the network:
+
+| Command             | Purpose                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------- |
+| `heal semantic ask` | Ask Jev about the code, tests, and docs heal selected, and save the answers under `.heal/`. |
+| `heal auth jev`     | Store, check, or remove your Jev API key (`set` / `status` / `clear`).                      |
+
 ## Automation commands
 
 These run on your behalf — from the git post-commit hook, from a
@@ -111,7 +120,7 @@ The Claude target's `install` / `update` also sweep legacy
 `heal hook edit` / `heal hook stop` entries from
 `.claude/settings.json`; Codex has no sibling settings file.
 
-The bundled set ships eleven skills, grouped by feature family:
+The bundled set ships twelve skills, grouped by feature family:
 
 **Code (always on):**
 
@@ -128,6 +137,9 @@ The bundled set ships eleven skills, grouped by feature family:
   and `/heal-test-reporter-setup` when you opt in. Also detects
   calibration drift and recommends `heal calibrate --force` when
   warranted.
+- `/heal-concepts-setup` (write `.heal/concepts.toml`) drafts the
+  concept vocabulary the opt-in [Semantic (Jev)](/heal/semantic/)
+  tasks classify code and docs into.
 
 **`[features.docs]`** (opt-in):
 
@@ -326,6 +338,44 @@ provenance, so anyone opening the file can find their way back to
 this command. Put `floor_critical` / `floor_ok` overrides in
 `config.toml`, not `calibration.toml` — that way `heal calibrate
 --force` doesn't clobber them.
+
+With `[features.semantic]` enabled, `heal status --focus <file>`
+ranks for the work described in the file (see
+[Semantic (Jev)](/heal/semantic/)). It always rescans and does not
+update the saved TODO list.
+
+## `heal semantic ask`
+
+Only available when `[features.semantic] enabled = true`. See
+[Semantic (Jev)](/heal/semantic/) for what gets sent.
+
+```sh
+heal semantic ask --dry-run          # plan and price; nothing is sent
+heal semantic ask                    # ask every enabled task
+heal semantic ask --task <id>        # one task (repeatable)
+heal semantic ask --refresh          # re-ask even where an answer is saved
+heal semantic ask --prune            # drop saved answers nothing refers to
+heal semantic ask --check            # only check the key against the API
+heal semantic ask --task focus --focus plan.md    # rank for the work in plan.md
+heal semantic ask --task verify_patch --diff HEAD~1..HEAD   # judge a commit range
+heal semantic ask --json             # machine-readable run report
+```
+
+Exit code `2` means something only you can fix: the feature is
+disabled, no API key is configured, the key was rejected, or the API
+does not know the configured `model`.
+
+## `heal auth jev`
+
+```sh
+printf '%s\n' "$KEY" | heal auth jev set   # store in your user config (mode 600)
+heal auth jev status                        # where the key comes from + a live check
+heal auth jev status --offline              # skip the live check
+heal auth jev clear                         # remove the stored key
+```
+
+`TYPESAFE_API_KEY` (or `TYPESAFEAI_API_KEY`) takes precedence over the
+stored key. The key is never written under `.heal/`.
 
 ## Inspecting the cache
 

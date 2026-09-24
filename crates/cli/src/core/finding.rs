@@ -18,6 +18,8 @@
 
 use std::path::PathBuf;
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::core::hash::{fnv1a_64_chunked, fnv1a_hex};
@@ -159,6 +161,44 @@ pub struct Finding {
     /// projects' caches stay byte-identical to v3.
     #[serde(default, skip_serializing_if = "is_false")]
     pub is_test_file: bool,
+    /// Decorations from `[features.semantic]` verdicts, keyed by note name
+    /// (`consequence`, `effort`, `friction.change`, `split_points`, …).
+    /// Filled by `semantic::lower::apply` from cached verdicts only, never
+    /// from a network call. Not part of the id. Empty (and absent from
+    /// JSON) whenever the family is disabled.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub semantic: BTreeMap<String, SemanticNote>,
+    /// Decorated at render time by [`crate::core::order::decorate`] (like
+    /// `accepted`), never persisted in `latest.json`: the drain Tier, for
+    /// non-accepted Findings above `Ok`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drain_tier: Option<crate::core::config::DrainTier>,
+    /// Render-time, next to `drain_tier`: 1-based position in the
+    /// Finding's family drain queue — the order `heal status` prints,
+    /// including the `[features.semantic]` axes. Patch skills take the
+    /// lowest rank of the tier they drain instead of re-deriving the
+    /// order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drain_rank: Option<u32>,
+}
+
+/// One semantic decoration on a Finding.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SemanticNote {
+    /// The selected label (`choice` / `score` level) or `"true"` /
+    /// `"false"` for a `noul` read against its cutoff.
+    pub label: String,
+    /// Strength of the label: the probability of the selected option, or
+    /// the `noul` probability, or the normalised score.
+    pub p: f64,
+    /// Provider confidence (for `noul`, distance from 0.5 scaled to 0..=1).
+    pub confidence: f64,
+    /// Line numbers the note points at (split points, mock sites, …).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lines: Vec<u32>,
+    /// Extra free-form context for skills (e.g. the suggested target module).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 #[inline]
@@ -189,6 +229,9 @@ impl Finding {
             fix_hint: None,
             accepted: false,
             is_test_file: false,
+            semantic: BTreeMap::new(),
+            drain_tier: None,
+            drain_rank: None,
         }
     }
 
@@ -456,8 +499,12 @@ mod tests {
             fix_hint: None,
             accepted: false,
             is_test_file: false,
+            semantic: BTreeMap::new(),
+            drain_tier: None,
+            drain_rank: None,
         };
         let json = serde_json::to_string(&f).unwrap();
+        assert!(!json.contains("semantic"));
         assert!(!json.contains("locations"));
         assert!(!json.contains("fix_hint"));
         assert!(!json.contains("workspace"));

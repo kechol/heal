@@ -16,6 +16,13 @@ description: heal のサブコマンドを日々の重要度順に並べた一�
 | `heal status` | 現在の TODO リストを表示する（`--refresh` で再スキャン）。`.heal/findings/` を読みます。                       |
 | `heal diff`   | ライブ worktree と過去のコミットを比較する（デフォルトは calibration の基準 SHA）。findings の `git diff` 版。 |
 
+opt-in の [Semantic (Jev)](/heal/ja/semantic/) を有効にすると、コマンドが 2 つ増えます。heal のコマンドのうち、ネットワークにつながるのはこの 2 つだけです。
+
+| コマンド            | 用途                                                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| `heal semantic ask` | heal が選んだコード・テスト・ドキュメントについて Jev に問い合わせ、答えを `.heal/` に保存する。 |
+| `heal auth jev`     | Jev の API キーを保存・確認・削除する（`set` / `status` / `clear`）。                            |
+
 ## 自動化向けコマンド
 
 git の post-commit フックや同梱の Claude スキル経由で、ユーザーの代わりに走るコマンドです。`--help` には表示されません。
@@ -76,7 +83,7 @@ heal skills uninstall --target all   # 全 tree を削除
 
 スキルセットは `heal` バイナリに同梱されているので、各サブコマンドは常にバイナリに対応するバージョンに対して動きます。`update` はドリフト認識付きで、手編集されたファイルはターゲット単位で残します(`--force` で上書き可)。Claude target の `install` / `update` は `.claude/settings.json` から legacy な `heal hook edit` / `heal hook stop` エントリも掃除します(Codex target には対応する settings ファイルがないため何もしません)。
 
-同梱されるスキルは 11 個、機能ファミリ別:
+同梱されるスキルは 12 個、機能ファミリ別:
 
 **Code(常時オン):**
 
@@ -84,6 +91,7 @@ heal skills uninstall --target all   # 全 tree を削除
 - `/heal-code-patch`(write) — T0 を有効 Tier、Severity、ファミリ内スコア順に 1 コミット 1 finding ずつ解消。
 - `/heal-cli` — `heal` CLI の簡潔なリファレンス。
 - `/heal-setup` — セットアップウィザード。calibrate → strictness 選択 → `config.toml` 書き出し のあと、オプションの `[features.docs]` / `[features.test]` を有効化するかを順に確認し、有効化を選んだ場合は `/heal-doc-pair-setup` / `/heal-test-reporter-setup` まで連携します。calibration ドリフトを検知して `heal calibrate --force` も提案します。
+- `/heal-concepts-setup`(`.heal/concepts.toml` を書く) — opt-in の [Semantic (Jev)](/heal/ja/semantic/) のタスクが、コードと doc を分類するための概念の語彙を下書きします。
 
 **`[features.docs]`**(オプトイン):
 
@@ -200,6 +208,37 @@ heal は **絶対に** 自動で recalibrate しません。コードベース�
 - `config.toml` の `floor_critical` / `floor_ok` を変えて、パーセンタイルラダーを合わせて作り直したいとき。
 
 生成された `calibration.toml` の先頭には、ファイルの来歴を示すコメントヘッダが付きます。ファイルを開いただけでドキュメントなしに来歴をたどれるようにするためです。`floor_critical` / `floor_ok` の上書きは `calibration.toml` ではなく `config.toml` 側に置いてください。さもないと `heal calibrate --force` で消えてしまいます。
+
+`[features.semantic]` が有効なら、`heal status --focus <file>` で、ファイルに書いた作業に合わせて並べられます（[Semantic (Jev)](/heal/ja/semantic/) を参照）。この場合は必ず再スキャンし、保存済みの TODO リストは更新しません。
+
+## `heal semantic ask`
+
+`[features.semantic] enabled = true` のときだけ使えます。何が送られるかは [Semantic (Jev)](/heal/ja/semantic/) を参照してください。
+
+```sh
+heal semantic ask --dry-run          # 計画と見積もりだけ。何も送らない
+heal semantic ask                    # 有効なタスクをすべて問い合わせる
+heal semantic ask --task <id>        # 1 つのタスクだけ（複数指定可）
+heal semantic ask --refresh          # 答えが保存済みでも問い合わせ直す
+heal semantic ask --prune            # どこからも参照されない答えを消す
+heal semantic ask --check            # キーが使えるかの確認だけ
+heal semantic ask --task focus --focus plan.md    # plan.md の作業に合わせて並べる
+heal semantic ask --task verify_patch --diff HEAD~1..HEAD   # commit の範囲を判定する
+heal semantic ask --json             # 実行結果を JSON で出す
+```
+
+終了コード `2` は、利用者にしか直せない問題を表します。機能が無効、API キーが未設定、キーが拒否された、設定した `model` を API が知らない、のいずれかです。
+
+## `heal auth jev`
+
+```sh
+printf '%s\n' "$KEY" | heal auth jev set   # ユーザーの設定ファイルに保存（mode 600）
+heal auth jev status                        # キーの出どころと、実際に使えるかの確認
+heal auth jev status --offline              # 通信での確認を省く
+heal auth jev clear                         # 保存したキーを消す
+```
+
+`TYPESAFE_API_KEY`（または `TYPESAFEAI_API_KEY`）が、保存したキーより優先されます。キーが `.heal/` の下に書かれることはありません。
 
 ## キャッシュを覗く
 

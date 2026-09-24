@@ -64,6 +64,14 @@ test_paths = [
 When `test_paths` is empty, heal falls back to a built-in
 heuristic covering the same conventions.
 
+The globs are anchored like `.gitignore`: the default `tests/**` matches
+only a `tests/` directory at the project root. In a workspace with
+nested test directories such as `crates/<name>/tests/`, use
+`**/tests/**`. Once you set `test_paths` yourself, the
+[Semantic (Jev)](/heal/semantic/) tasks also rely on your globs alone;
+with the defaults they add the built-in heuristic, which treats any
+directory named `test/` as tests.
+
 ### `is_test_file` flag
 
 When `[features.test]` is enabled, every Finding gains an

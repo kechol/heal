@@ -75,7 +75,13 @@ them:
 
 Mixing the axes (e.g. "promote High to Critical because it's a
 hotspot") would collapse the table back into one number, which
-defeats the point. See `terminology.md` R6 and
+defeats the point.
+
+`[features.semantic]` adds more axes the same way: consequence,
+friction, bug-fix ratio, effort, and focus are Finding decorations,
+compared one after another inside a Tier and Severity bucket before
+`hotspot_score` (`core::order`). None of them changes Tier or
+Severity, and they are never summed into a score. See `terminology.md` R6 and
 `crates/cli/src/observer/hotspot.rs`.
 
 ---
@@ -92,9 +98,23 @@ A hook-driven code-health system has four conceptual layers:
 | Executor    | Act on the findings (refactor, commit, open PR)    |
 
 **HEAL CLI implements Observer, Aggregator, and Trigger. It does
-not implement Executor.** The CLI never calls an LLM, never opens
-network connections (other than `git2` against the local repo),
-never spawns `claude` / `codex` / `gh`.
+not implement Executor.** The CLI never calls a generative LLM,
+never spawns `claude` / `codex` / `gh`, and opens no network
+connection other than `git2` against the local repo — with one
+opt-in exception, below.
+
+**The `[features.semantic]` exception.** When a team sets
+`[features.semantic] enabled = true`, exactly two commands may reach
+the network: `heal semantic ask` (sends selected code / prose to
+TypeSafe's Jev classifier and caches the typed answers under
+`.heal/semantic/verdicts/`) and `heal auth jev status` (confirms the
+key). Jev is a classifier, not a generator: it returns a probability
+per question, never text or code. Everything else — `heal status`,
+`heal metrics`, `heal diff`, the post-commit hook — only *reads* the
+verdict cache, so the pipeline stays offline and deterministic. The
+patch skills may run `heal semantic ask --task verify` as an explicit
+step of a user-invoked drain session; that is the skill invoking the
+command, not the CLI calling out on its own.
 
 Why the split:
 
@@ -103,11 +123,15 @@ Why the split:
   The user must be the one who decides "yes, spend tokens on this".
 - **Local-only by default.** No telemetry, no version pings, no
   background uploads (`CLAUDE.md` "No telemetry, no network calls"
-  + `scope.md` R5). HEAL works offline.
+  + `scope.md` R5). HEAL works offline; `[features.semantic]` is off
+  unless the team turns it on, and even then only the two commands
+  above connect.
 - **Determinism.** Same commit + config + calibration → byte-
   identical `latest.json` across teammates (`scope.md` R2,
-  `invariants.md` R6, `R4`). LLM calls inside the pipeline would
-  destroy this.
+  `invariants.md` R6, `R4`). Model calls inside the pipeline would
+  destroy this, which is why verdicts are fetched by an explicit
+  command, cached, and folded into `config_hash` as an observation
+  input.
 
 The Executor lives in user-invoked Claude skills:
 `/heal-code-review` (read, propose architecture) and
@@ -236,11 +260,13 @@ overturn the relevant section above before being accepted:
 
 - **Single composite "code health" score.** §1.2.
 - **Auto-recalibration.** §1.1, `scope.md` R3.
-- **LLM calls inside `heal` CLI.** §2.
+- **Generative LLM calls inside `heal` CLI**, or model calls from
+  any command other than `heal semantic ask` / `heal auth jev
+  status`. §2.
 - **Cool-down / suppression state.** §3.
 - **Persistent metrics history (`snapshots/`, rolling deltas).** §4.
-- **Network access beyond `git2` on the local repo.** §2,
-  `scope.md` R5.
+- **Network access beyond `git2` on the local repo**, except the
+  opt-in `[features.semantic]` pair above. §2, `scope.md` R5.
 - **Mixing Severity and Hotspot into one score.** §1.3,
   `terminology.md` R6.
 - **Skills that act without explicit user invocation.** §2.

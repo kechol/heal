@@ -82,8 +82,11 @@ use crate::core::severity::SeverityCounts;
 /// v7 adds `coverage_observation`, separating missing/partial reporter
 /// provenance from measured `coverage_pct` findings. v8 adds the optional
 /// per-finding `hotspot_score` used for deterministic within-family work
-/// order; the score does not affect IDs, Severity, or drain Tier.
-pub const FINDINGS_RECORD_VERSION: u32 = 8;
+/// order; the score does not affect IDs, Severity, or drain Tier. v9 adds
+/// the `[features.semantic]` family: the optional per-finding `semantic`
+/// decoration map and the semantic metric strings. Records from projects
+/// without the family enabled are otherwise byte-identical to v8.
+pub const FINDINGS_RECORD_VERSION: u32 = 9;
 
 /// One execution of `heal status`. The unit of read in the cache:
 /// `latest.json` holds the single most-recent record. `heal diff` reads
@@ -420,6 +423,39 @@ pub fn observation_hash_from_paths(
             push_observation_file(&mut chunks, "lcov", rel, file);
         }
     }
+    if cfg.features.semantic.enabled {
+        // Verdicts change what `heal status` renders without touching HEAD
+        // or the worktree (the directory may be untracked), so every team
+        // verdict file is an observation input. Files of tasks that are not
+        // `Task::shared` (left behind here by older runs) are skipped: they
+        // never change a Finding. Sorted by file name; the logical path
+        // keeps host paths out of the digest.
+        let heal = crate::core::paths::HealPaths::new(observation_root);
+        push_file(
+            &mut chunks,
+            "semantic_concepts",
+            ".heal/concepts.toml",
+            &heal.concepts(),
+        );
+        let dir = heal.semantic_verdicts();
+        let local = crate::semantic::store::local_task_ids();
+        for path in crate::semantic::store::verdict_files(&dir) {
+            let stem = path
+                .file_stem()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if local.contains(&stem) {
+                continue;
+            }
+            let name = format!("{stem}.jsonl");
+            push_file(
+                &mut chunks,
+                "semantic_verdicts",
+                &format!(".heal/semantic/verdicts/{name}"),
+                &path,
+            );
+        }
+    }
     let refs: Vec<&[u8]> = chunks.iter().map(Vec::as_slice).collect();
     Ok(fnv1a_hex(fnv1a_64_chunked(&refs)))
 }
@@ -753,6 +789,55 @@ mod tests {
         std::fs::remove_file(tmp.path().join("ignored/lcov.info")).unwrap();
         let deleted = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
         assert_eq!(missing, deleted);
+    }
+
+    #[test]
+    fn observation_hash_tracks_semantic_verdicts_only_when_enabled() {
+        let tmp = TempDir::new().unwrap();
+        let config = tmp.path().join("config.toml");
+        let calibration = tmp.path().join("calibration.toml");
+        std::fs::write(&config, b"cfg").unwrap();
+        std::fs::write(&calibration, b"cal").unwrap();
+        let verdicts = tmp.path().join(".heal/semantic/verdicts");
+        std::fs::create_dir_all(&verdicts).unwrap();
+
+        let mut cfg = Config::default();
+        let off = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
+        std::fs::write(verdicts.join("t.jsonl"), b"{}\n").unwrap();
+        assert_eq!(
+            off,
+            observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap(),
+            "verdicts must not matter while the family is disabled"
+        );
+
+        cfg.features.semantic.enabled = true;
+        let with_one =
+            observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
+        std::fs::write(verdicts.join("t.jsonl"), b"{\"x\":1}\n").unwrap();
+        let edited = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
+        assert_ne!(with_one, edited);
+        std::fs::remove_file(verdicts.join("t.jsonl")).unwrap();
+        let none = observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap();
+        assert_ne!(edited, none);
+        assert_eq!(
+            none,
+            observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap(),
+            "stable while nothing changes"
+        );
+        for local in ["verify_patch", "focus"] {
+            std::fs::write(verdicts.join(format!("{local}.jsonl")), b"{}\n").unwrap();
+        }
+        assert_eq!(
+            none,
+            observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap(),
+            "one person's verdicts (on-demand checks, focus) are not team state"
+        );
+        std::fs::write(tmp.path().join(".heal/concepts.toml"), b"[[concept]]\n").unwrap();
+        assert_ne!(
+            none,
+            observation_hash_from_paths(tmp.path(), &cfg, &config, &calibration).unwrap(),
+            "the concept vocabulary is an observation input"
+        );
     }
 
     #[test]

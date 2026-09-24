@@ -173,5 +173,12 @@ subject + `Refs: F#<finding_id>` trailer, never push / amend /
 `--no-verify`. Findings whose metric belongs to the Code or Test
 families are skipped.
 
+**With [Semantic (Jev)](/heal/semantic/) enabled**, the skill also
+moves a page that `doc_placement` says belongs in another section (at
+confidence 0.9 or higher), fixing every inbound link and the site
+navigation in the same commit. Splitting, merging, or rewriting pages
+(`doc_structure`, `doc_drift.semantic`) is an editorial decision, so
+it hands those to `/heal-doc-review`.
+
 Trigger phrases: "fix the doc findings", "drain the doc cache",
 "patch stale docs", "/heal-doc-patch".

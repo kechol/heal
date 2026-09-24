@@ -64,6 +64,8 @@ heal skills install --target all     # 検出有無に関わらず全 target に
 
 **制約**(スキルが強制): 1 finding = 1 commit、Conventional Commit subject + `Refs: F#<finding_id>` trailer、push / amend / `--no-verify` はしない。docs / test ファミリのメトリクスに属する findings はスキップ — そちらは `/heal-doc-patch` / `/heal-test-patch` の担当です。
 
+**[Semantic (Jev)](/heal/ja/semantic/) を有効にしている場合**は、各 finding に付いた semantic の note を判断の参考にし、commit のたびに `heal semantic ask --task verify_patch --diff HEAD~1..HEAD` を実行します。複雑さが移っただけ、条件を早期 return に反転しただけ、commit メッセージが変更と合わない、リファクタのつもりで振る舞いが変わった、と Jev が判定したら、その commit を取り消し、理由を記録して次の finding に進みます。機能が無効か API キーがなければ、動きは変わりません。
+
 トリガーフレーズ: 「fix the heal findings」、「drain the cache」、「work through the TODO list」、「/heal-code-patch」。
 
 ## `/heal-cli` — CLI リファレンス
@@ -75,6 +77,10 @@ heal skills install --target all     # 検出有無に関わらず全 target に
 ワンショットのセットアップウィザード。プロジェクトを calibrate し、コードベースを見渡し、strictness レベル(Strict / Default / Lenient)を選んでもらって `.heal/config.toml` を書く / 更新したあと、`[features.docs]` / `[features.test]` の有効化を順に確認し、有効化する場合は対応するセットアップスキル(`/heal-doc-pair-setup` / `/heal-test-reporter-setup`)に連携します。
 
 コードベースが大きく動いて基準を動かしたくなったとき、または Critical を持続的に解消し終えたときは再実行を — そういう局面では `heal calibrate --force` も推奨します。
+
+## `/heal-concepts-setup` — 概念の語彙
+
+opt-in の [Semantic (Jev)](/heal/ja/semantic/) でだけ使います。コード・用語集・docs を読んで、コードベースを形づくる概念の一覧（それぞれ 1 行の責務付き）を下書きし、一緒に見直してから `.heal/concepts.toml` に書きます。heal はこの一覧を使って、各関数と doc の節を概念に分類し、概念が混ざったファイル、置き場所の違う関数、同じものを指す別々の単語、どの doc も説明していない概念を見つけます。
 
 ## メンテナンス
 

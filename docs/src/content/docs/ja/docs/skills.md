@@ -99,4 +99,6 @@ description: '[features.docs] 向け同梱スキル 4 種 — /heal-doc-pair-set
 
 **制約**: 1 finding = 1 commit、Conventional Commit subject + `Refs: F#<finding_id>` trailer、push / amend / `--no-verify` はしない。Code または Test ファミリのメトリクスに属する findings はスキップ。
 
+**[Semantic (Jev)](/heal/ja/semantic/) を有効にしている場合**は、`doc_placement` が別の節に置くべきだと判定したページ（確信度 0.9 以上）の移動もします。入ってくるリンクとサイトのナビゲーションも同じ commit で直します。ページの分割・統合・書き直し（`doc_structure`、`doc_drift.semantic`）は編集上の判断なので、`/heal-doc-review` に回します。
+
 トリガーフレーズ: 「fix the doc findings」、「drain the doc cache」、「patch stale docs」、「/heal-doc-patch」。

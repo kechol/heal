@@ -86,8 +86,13 @@ Don't merge them. (See `scope.md` R8 for the role boundary.)
 
 `heal-code-patch` rules — encoded in the skill body, don't relax:
 
-- One finding per commit, in effective Tier, Severity, then descending
-  family-local `hotspot_score` order (missing score last; metric/path/id ties).
+- One finding per commit, in the `core::order` drain order: effective
+  Tier, Severity, then — when `[features.semantic]` notes are present —
+  the semantic axes (focus, consequence, friction, bug-fix ratio, effort,
+  compared one after another), then descending family-local
+  `hotspot_score` (missing score last; metric/path/id ties). Without
+  notes the axes are neutral and the order is Tier → Severity →
+  `hotspot_score`.
 - Refuses dirty worktree.
 - Calls `heal mark fix` after each commit.
 - Does not push, does not open a PR.

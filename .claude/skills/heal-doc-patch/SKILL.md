@@ -2,14 +2,15 @@
 name: heal-doc-patch
 description: Drain `[features.docs]` findings from the cache, applying mechanical fixes (broken internal links, dangling identifier deletions, orphan-page registration, resolvable TODO markers) one finding per commit. Refuses to start on a dirty worktree. Does NOT push or open PRs. Trigger on "fix the doc findings", "drain the doc cache", "patch stale docs", "/heal-doc-patch".
 metadata:
-  heal-version: 0.4.0
+  heal-version: 0.6.0
   heal-source: bundled
 ---
 
 # heal-doc-patch
 
 Drain the `doc_*` findings that `heal status` produced. One finding
-per commit, in Severity order, until the docs slice of the cache is
+per commit, in HEAL's drain order (`drain_rank`), until T0 in the docs
+slice of the cache is
 empty (or the user stops). This is the **write** counterpart to
 `/heal-doc-review`.
 
@@ -42,7 +43,9 @@ Commits).
 `orphan_pages`, `todo_density`, plus the per-family decoration
 carrier `doc_hotspot` (always `Severity::Ok`; flips
 `hotspot=true` on the other six when the pair's churn × debt
-sits in the project's top decile). Finding ids are deterministic
+sits above p90 and the Docs floor 5 with 5+ finite candidates, or
+above floor 5 alone with 1–4; non-finite scores never flag).
+Finding ids are deterministic
 — same broken link keeps the same id, so disappearance from the
 cache after a commit means it's genuinely fixed.
 
@@ -74,7 +77,7 @@ different.
 
 ```
 while there are non-Ok doc_* findings in the cache:
-    pick the next one (Severity order: Critical → High → Medium)
+    pick the T0 finding with the lowest `drain_rank`
         skip findings where `accepted == true`
     read the doc + paired srcs
     decide: allow-list (apply) / false-positive (propose accept) / escalate-list (stop)?
@@ -93,6 +96,15 @@ while there are non-Ok doc_* findings in the cache:
 
 Stop conditions: doc cache empty, user interrupts, or only
 escalate-list findings remain.
+
+`heal status --json` gives every drainable finding a `drain_tier`
+(`must` = T0, `should` = T1, `advisory`) and a `drain_rank` (1 = next,
+counted within the Docs family). Take the lowest `drain_rank` whose
+`drain_tier` is `must`. The rank already applies Tier, Severity, the
+`[features.semantic]` axes, and `hotspot_score` exactly as the human
+`heal status` prints them; do not re-derive the order or mix Docs
+scores with Code/Test scores. Accepted and Ok findings carry neither
+field.
 
 ## Allow-list (apply mechanically)
 
@@ -287,6 +299,44 @@ that's left, end the loop; the write is interpretive.
 Quotations, migration guides, deprecation notes, and CHANGELOG
 entries deliberately reference old names. When a `doc_drift`
 finding sits inside one, escalate — the drift is load-bearing.
+
+## With `[features.semantic]`
+
+When the project enables `[features.semantic]`, findings in
+`heal status --json` may carry a `semantic` map of notes (label, `p`,
+`confidence`). Everything here is additive: without a note, follow the
+rest of this skill unchanged. Keep following `drain_rank`; it already
+includes the semantic axes.
+
+`confidence ≥ 0.9` — act on the note. `0.5–0.9` — read the files and
+confirm first. `< 0.5` — ignore it.
+
+- **`semantic.gate`** — `mechanical` (apply from the allow-list),
+  `false_positive` (propose `heal mark accept`; `semantic.accept_reason`
+  names the categorical reason), or `escalate` (stop and surface). The
+  gate never replaces your own three-way decision: read the code and
+  decide, using the note as a second opinion at any confidence. On real
+  code its confidence rarely reaches 0.9, and a low-confidence gate can
+  point the wrong way; when it disagrees with your reading at confidence
+  ≥ 0.5, re-read the finding before acting.
+- **`semantic.effort`** — `local`, `contained`, or `cross_file`. The
+  drain order already prefers cheaper fixes among equally important
+  findings; a confident `cross_file` on a finding you are about to patch
+  is a signal to escalate instead.
+
+### Semantic doc findings
+
+- **`orphan_pages` with `semantic.placement`** — the note names the
+  section (`dir/`) a reader would look in. Link the page from that
+  section's index or navigation; this replaces guessing the "obvious
+  slot".
+- **`doc_placement`** — the page belongs under another section. With
+  confidence ≥ 0.9, move it (`git mv`), fix every inbound link, and
+  update the site navigation in one commit. Below that, escalate.
+- **`doc_structure.split` / `.merge` / `.mixed_mode`** and
+  **`doc_drift.semantic`** are editorial decisions: escalate them to
+  `/heal-doc-review`. A split whose note detail mentions a boundary
+  "close to the threshold" needs a person to choose the cut.
 
 ## Verification per commit
 

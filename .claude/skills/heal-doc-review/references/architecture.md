@@ -162,11 +162,10 @@ candidate.
 
 ## §5 Prioritization heuristic
 
-1. **Hotspot decoration overrides metric.** `doc_freshness` on a
-   hotspot file outranks `doc_drift` on a sleepy one — readers
-   spend their time on hot files.
-2. **Within the same severity:** Reference > Tutorial > How-to >
-   Explanation. Reference is consulted under time pressure.
-3. **Within the same purpose:** Mechanical > Interpretive >
-   Architectural. Mechanical fixes drain fast and unblock the
-   harder questions.
+Preserve the machine queue order exactly: ascending `drain_rank` from
+`heal status --json` (effective Drain Tier, then Severity, then the
+`[features.semantic]` axes, then descending family-local `hotspot_score`;
+missing scores sort last, and ties use metric, path, then finding id). Hotspot is a
+decoration and re-review signal, not an extra ordering key. Document
+purpose and remedy type can inform the proposed fix, but they must not
+reorder the queue.
