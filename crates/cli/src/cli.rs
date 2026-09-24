@@ -5,7 +5,6 @@ use clap::{Parser, Subcommand};
 
 use crate::commands;
 use crate::core::finding::Finding;
-use crate::skill_assets::TargetFilter;
 
 #[derive(Debug, Parser)]
 #[command(name = "heal", version, about = "Code health hook-driven harness", long_about = None)]
@@ -28,17 +27,16 @@ pub enum Command {
         /// Overwrite an existing config.toml.
         #[arg(long)]
         force: bool,
-        /// Assume "yes" for the Claude-skills install prompt
-        /// (extracts the bundled plugin without asking).
-        #[arg(long, short = 'y', conflicts_with = "no_skills")]
+        /// Accepted for old scripts; ignored. Skills ship as the heal
+        /// Claude Code plugin, so init has no install prompt.
+        #[arg(long, short = 'y', hide = true)]
         yes: bool,
-        /// Skip the Claude-skills install prompt entirely. Use when you
-        /// don't have Claude Code installed, or for CI invocations.
-        #[arg(long)]
+        /// Accepted for old scripts; ignored.
+        #[arg(long, hide = true)]
         no_skills: bool,
         /// Emit a machine-readable JSON summary of the init outcome
         /// instead of the human-readable text. Stable contract for
-        /// scripts and the `heal-setup` skill.
+        /// scripts and the `/heal:setup` skill.
         #[arg(long)]
         json: bool,
         /// Write every config key — including the defaults the
@@ -73,13 +71,13 @@ pub enum Command {
         #[arg(long)]
         json: bool,
         /// Restrict output to a single metric. Used by the
-        /// `/heal-code-review` skill under `.claude/skills/` when
+        /// `/heal:refactor` skill under `.claude/skills/` when
         /// narrowing focus.
         #[arg(long, value_enum)]
         metric: Option<MetricKind>,
         /// Restrict output to one metric family (`code` / `test` /
-        /// `docs`). Used by `/heal-code-review`,
-        /// `/heal-test-review`, and `/heal-doc-review` to scope each
+        /// `docs`). Used by `/heal:refactor`,
+        /// `/heal:tests`, and `/heal:docs` to scope each
         /// review to its own family without enumerating every metric
         /// inside it. Combine with `--metric` to narrow further.
         #[arg(long, value_enum)]
@@ -107,7 +105,7 @@ pub enum Command {
     /// otherwise it rescans and replaces the cache automatically.
     /// Pass `--refresh` to force that rescan even while fresh. The source
     /// of truth that
-    /// `/heal-code-patch` (Claude side) and `heal diff` consume.
+    /// `/heal:refactor` (Claude side) and `heal diff` consume.
     Status(StatusArgs),
     /// Diff the current findings against a cached `FindingsRecord` whose
     /// `head_sha` matches the resolved git ref. Default ref is the
@@ -117,8 +115,8 @@ pub enum Command {
     /// the TODO list.
     Diff(DiffArgs),
     /// Skill-driven per-finding state recorder. `mark fix` is called
-    /// by `/heal-code-patch` after each fix commit; `mark accept` is
-    /// called by `/heal-code-review` to record an intrinsic finding
+    /// by `/heal:refactor` after each fix commit; `mark accept` is
+    /// called by `/heal:refactor` to record an intrinsic finding
     /// the team has decided not to refactor. Hidden from `--help`
     /// because no human invokes these directly — surfacing them
     /// invites running them outside the surrounding workflow that
@@ -129,10 +127,10 @@ pub enum Command {
         #[command(subcommand)]
         action: MarkAction,
     },
-    /// Deprecated alias for `heal mark fix`. Kept hidden so
-    /// `/heal-code-patch` skill bundles from earlier HEAL versions
-    /// keep working; emits a one-line stderr deprecation warning
-    /// pointing users to `heal skills update`.
+    /// Deprecated alias for `heal mark fix`. Kept hidden so patch
+    /// skills copied by earlier HEAL versions keep working; emits a
+    /// stderr deprecation warning pointing users to the plugin and
+    /// `heal skills uninstall`.
     #[command(hide = true, name = "mark-fixed")]
     MarkFixed {
         #[arg(long, value_name = "ID")]
@@ -142,9 +140,9 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Manage the bundled skill set across every agent target
-    /// (Claude → `.claude/skills/`, Codex → `.agents/skills/`). Each
-    /// subcommand takes `--target <detected|claude|codex|all>`.
+    /// Clean up skill folders from older heal versions. Skills now ship
+    /// as the heal Claude Code plugin (`/plugin marketplace add
+    /// kechol/heal`).
     Skills {
         #[command(subcommand)]
         action: SkillsAction,
@@ -153,16 +151,16 @@ pub enum Command {
     /// behavior:
     ///   * `calibration.toml` missing → run a fresh scan and write it.
     ///   * `calibration.toml` present → print the freshness summary and
-    ///     surface `--force` as the way to refresh. The `heal-setup`
-    ///     skill is responsible for deciding when to suggest a
-    ///     recalibration; HEAL itself never auto-fires.
+    ///     surface `--force` as the way to refresh. `heal doctor`
+    ///     reports when a recalibration may be due; the user decides,
+    ///     and HEAL itself never auto-fires.
     Calibrate {
         /// Force a fresh scan and overwrite `.heal/calibration.toml`
         /// even when one already exists.
         #[arg(long)]
         force: bool,
         /// Emit a JSON summary instead of the human-readable text.
-        /// Stable contract for the `heal-setup` skill and CI scripts.
+        /// Stable contract for the `/heal:setup` skill and CI scripts.
         #[arg(long)]
         json: bool,
     },
@@ -592,7 +590,7 @@ pub struct DiffArgs {
 #[derive(Debug, Clone, Subcommand)]
 pub enum MarkAction {
     /// Record a finding as resolved by a commit — used by
-    /// `/heal-code-patch` after each fix commit so the next
+    /// `/heal:refactor` after each fix commit so the next
     /// `heal status --refresh` either retires the entry (genuinely
     /// fixed) or moves it to `regressed.jsonl` (re-detected).
     Fix {
@@ -607,7 +605,7 @@ pub enum MarkAction {
         json: bool,
     },
     /// Record a finding as accepted (won't fix / acknowledged
-    /// intrinsic) — used by `/heal-code-review` once the triage
+    /// intrinsic) — used by `/heal:refactor` once the triage
     /// concludes the finding is intrinsic complexity / a cohesive
     /// procedural block / a load-bearing boundary. Snapshots the
     /// finding's severity, hotspot, `metric_value`, and summary at
@@ -626,53 +624,48 @@ pub enum MarkAction {
     },
 }
 
-#[derive(Debug, Clone, Copy, Subcommand)]
+#[derive(Debug, Clone, Subcommand)]
 pub enum SkillsAction {
-    /// Extract the bundled skills into each target's discovery path
-    /// (Claude → `.claude/skills/`, Codex → `.agents/skills/`) and
-    /// sweep legacy hook entries from `.claude/settings.json` if the
-    /// Claude target is in scope.
-    Install {
-        /// Overwrite existing skill files even if they were edited locally.
-        #[arg(long)]
-        force: bool,
-        /// Emit a JSON summary of the install outcome.
-        #[arg(long)]
-        json: bool,
-        /// Which agent target(s) to operate on. Default `detected`
-        /// matches `heal init` (every CLI on `PATH`); `all` operates
-        /// on every known target regardless of detection.
-        #[arg(long, value_enum, default_value_t = TargetFilter::Detected)]
-        target: TargetFilter,
-    },
-    /// Refresh skill files after a binary upgrade. Skips files the user
-    /// has edited locally; pass `--force` to overwrite them too.
-    Update {
-        #[arg(long)]
-        force: bool,
-        /// Emit a JSON summary of the update outcome.
-        #[arg(long)]
-        json: bool,
-        #[arg(long, value_enum, default_value_t = TargetFilter::Detected)]
-        target: TargetFilter,
-    },
-    /// Show installed skill version, bundled version, and any drift —
-    /// per agent target.
-    Status {
-        /// Emit a JSON view of the install status (versions, drift list).
-        #[arg(long)]
-        json: bool,
-        #[arg(long, value_enum, default_value_t = TargetFilter::Detected)]
-        target: TargetFilter,
-    },
-    /// Remove HEAL's skills from each target's tree (and Claude
-    /// settings when the Claude target is in scope).
+    /// Remove the skill folders older heal versions copied into this
+    /// project (`.claude/skills/heal-*`, `.agents/skills/heal-*`) and
+    /// sweep legacy heal entries from `.claude/settings.json`.
     Uninstall {
         /// Emit a JSON summary of what was removed.
         #[arg(long)]
         json: bool,
-        #[arg(long, value_enum, default_value_t = TargetFilter::Detected)]
-        target: TargetFilter,
+        /// Accepted for old scripts; ignored.
+        #[arg(long, hide = true)]
+        target: Option<String>,
+    },
+    /// Retired: skills ship as the heal Claude Code plugin. Prints how to
+    /// install it and exits 1.
+    #[command(hide = true)]
+    Install {
+        #[arg(long)]
+        force: bool,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        target: Option<String>,
+    },
+    /// Retired: update the heal plugin instead. Prints how and exits 1.
+    #[command(hide = true)]
+    Update {
+        #[arg(long)]
+        force: bool,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        target: Option<String>,
+    },
+    /// Retired: `heal doctor` reports leftover skill folders. Prints the
+    /// plugin pointer and exits 1.
+    #[command(hide = true)]
+    Status {
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        target: Option<String>,
     },
 }
 
@@ -685,11 +678,10 @@ impl Cli {
         match self.command {
             Command::Init {
                 force,
-                yes,
-                no_skills,
                 json,
                 explicit,
-            } => commands::init::run(&project, force, yes, no_skills, json, explicit),
+                ..
+            } => commands::init::run(&project, force, json, explicit),
             Command::Doctor { json } => commands::doctor::run(&project, json),
             Command::Hook { event } => commands::hook::run(&project, event),
             Command::Metrics {
@@ -725,7 +717,7 @@ impl Cli {
                 commit_sha,
                 json,
             } => commands::mark::run_fix_legacy(&project, &finding_id, &commit_sha, json),
-            Command::Skills { action } => commands::skills::run(&project, action),
+            Command::Skills { action } => commands::skills::run(&project, &action),
             Command::Calibrate { force, json } => commands::calibrate::run(&project, force, json),
             Command::Semantic {
                 action: SemanticAction::Ask(args),
@@ -829,13 +821,10 @@ mod tests {
     }
 
     #[test]
-    fn init_yes_and_no_skills_conflict() {
-        let err =
-            Cli::try_parse_from(["heal", "init", "--yes", "--no-skills"]).expect_err("conflict");
-        assert!(
-            err.to_string().contains("cannot be used with"),
-            "expected conflict error, got: {err}",
-        );
+    fn init_still_accepts_retired_skill_flags() {
+        // Old CI scripts pass these; they parse and do nothing.
+        let cli = parse(&["heal", "init", "--yes", "--no-skills"]);
+        assert!(matches!(cli.command, Command::Init { .. }));
     }
 
     #[test]
@@ -1135,38 +1124,29 @@ mod tests {
             let cli = parse(&["heal", "skills", action]);
             assert!(matches!(cli.command, Command::Skills { .. }));
         }
-        // `--force` only valid on install / update; default `--target`
-        // resolves to `Detected`; explicit `--target` overrides.
-        let cli = parse(&["heal", "skills", "install", "--force", "--json"]);
-        match cli.command {
+        // Old scripts keep parsing: the retired subcommands and the
+        // `--target` flag are accepted, then `install` / `update` /
+        // `status` exit 1 with the plugin pointer.
+        let cli = parse(&[
+            "heal", "skills", "install", "--force", "--json", "--target", "all",
+        ]);
+        assert!(matches!(
+            cli.command,
             Command::Skills {
-                action:
-                    SkillsAction::Install {
-                        force,
-                        json,
-                        target,
-                    },
-            } => {
-                assert!(force);
-                assert!(json);
-                assert_eq!(target, TargetFilter::Detected);
+                action: SkillsAction::Install {
+                    force: true,
+                    json: true,
+                    ..
+                }
             }
-            other => panic!("expected Skills::Install, got {other:?}"),
-        }
-        let cli = parse(&["heal", "skills", "install", "--target", "all"]);
-        match cli.command {
+        ));
+        let cli = parse(&["heal", "skills", "uninstall", "--json", "--target", "codex"]);
+        assert!(matches!(
+            cli.command,
             Command::Skills {
-                action: SkillsAction::Install { target, .. },
-            } => assert_eq!(target, TargetFilter::All),
-            other => panic!("expected Skills::Install, got {other:?}"),
-        }
-        let cli = parse(&["heal", "skills", "uninstall", "--target", "codex"]);
-        match cli.command {
-            Command::Skills {
-                action: SkillsAction::Uninstall { target, .. },
-            } => assert_eq!(target, TargetFilter::Codex),
-            other => panic!("expected Skills::Uninstall, got {other:?}"),
-        }
+                action: SkillsAction::Uninstall { json: true, .. }
+            }
+        ));
         Cli::try_parse_from(["heal", "skills", "uninstall", "--force"])
             .expect_err("--force not on uninstall");
     }

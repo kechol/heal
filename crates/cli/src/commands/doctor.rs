@@ -436,7 +436,11 @@ fn check_docs(project: &Path, cfg: &Config) -> DocsCheck {
             } else {
                 Check::new(
                     Status::Todo,
-                    format!("{missing} paths in {pairs_path} no longer exist"),
+                    format!(
+                        "{missing} {} in {pairs_path} no longer exist{}",
+                        if missing == 1 { "path" } else { "paths" },
+                        if missing == 1 { "s" } else { "" },
+                    ),
                     Some("/heal:setup"),
                 )
             };

@@ -4,7 +4,7 @@
 //! one-line definition. The `concept` and `doc_concept`
 //! semantic tasks classify every function and doc section into one of
 //! them; Jev cannot invent names, so the vocabulary is written by the
-//! agent (`/heal-concepts-setup`) and reviewed by the team. Tracked in git
+//! agent (`/heal:setup`) and reviewed by the team. Tracked in git
 //! like `config.toml`: it is part of the team contract (`scope.md` R6).
 //!
 //! ```toml

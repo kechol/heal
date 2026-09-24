@@ -3,13 +3,13 @@
 //! Behavior:
 //!   - `calibration.toml` missing, or `--force`: rescan every observer
 //!     and rewrite `.heal/calibration.toml`. The new file carries
-//!     `meta.calibrated_at_sha` and `meta.codebase_files` so the
-//!     `heal-setup` skill can later judge drift without consulting any
+//!     `meta.calibrated_at_sha` and `meta.codebase_files` so
+//!     `heal doctor` can later judge drift without consulting any
 //!     event log.
 //!   - `calibration.toml` present (no `--force`): print the freshness
 //!     summary and point at `heal calibrate --force` as the way to
-//!     refresh. The `heal-setup` skill is responsible for deciding
-//!     whether to suggest a recalibration; HEAL itself never auto-fires.
+//!     refresh. `heal doctor` reports when a recalibration may be due;
+//!     the user decides, and HEAL itself never auto-fires.
 //!
 //! HEAL never recalibrates automatically. Auto-rebuilding the
 //! Severity ladder behind the user's back would shift findings on

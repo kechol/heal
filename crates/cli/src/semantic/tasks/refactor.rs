@@ -210,7 +210,7 @@ impl Task for SplitPoints {
 
 pub struct FixPattern;
 
-/// The patch skill's allow-list (`heal-code-patch` SKILL.md), plus `none`.
+/// The low-risk refactor patterns `/heal:refactor` applies directly, plus `none`.
 pub const PATTERNS: [(&str, &str); 7] = [
     ("form_template_method", "Form Template Method: several call sites are identical except for one varying part (a predicate, transform, or message), which becomes a parameter."),
     ("lookup_table", "Replace Conditional with Lookup Table: the conditional is a pure equality cascade with no side effects or early returns."),

@@ -398,7 +398,7 @@ pub(crate) fn run_all(
 /// resolves to) and surface any integrity issues to stderr.
 ///
 /// `Ok(None)` from the reader means the file is absent — emit a one-line
-/// hint pointing the user at `/heal-doc-pair-setup` (R3 forbids
+/// hint pointing the user at `/heal:setup` (R3 forbids
 /// auto-generation). A hard parse error is also folded into a warning
 /// rather than aborting `heal status`; the user still sees the rest of
 /// the findings.
@@ -416,9 +416,7 @@ fn load_doc_pairs(project: &Path, cfg: &Config) -> Option<DocPairsFile> {
             Some(file)
         }
         Ok(None) => {
-            eprintln!(
-                "warn: {pairs_path} not found — run `claude /heal-doc-pair-setup` to generate it"
-            );
+            eprintln!("warn: {pairs_path} not found — run `/heal:setup` to generate it");
             None
         }
         Err(err) => {

@@ -1,23 +1,23 @@
-//! Manage HEAL's `<project>/.claude/settings.json` registration.
+//! Clean up what older HEAL versions wrote into `.claude/`.
 //!
-//! Skills are extracted directly under `.claude/skills/` (handled by
-//! [`crate::skill_assets`]); Claude Code discovers them natively without
-//! a marketplace. This module owns the *other* half of the wiring.
+//! Skills now ship as a Claude Code plugin, and HEAL registers no
+//! Claude Code hooks, so nothing here writes new configuration. `heal
+//! skills uninstall` calls [`unregister`] to sweep:
 //!
-//! HEAL does not register any Claude Code hooks. `wire` / `register`
-//! exist so `heal init` / `heal skills install` can:
+//!   - legacy `heal hook edit` / `heal hook stop` entries from
+//!     `.claude/settings.json`, and
+//!   - the pre-v0.2 local marketplace layout (`.claude/plugins/heal/`,
+//!     a `heal-local` `.claude-plugin/marketplace.json`, and its
+//!     `extraKnownMarketplaces` / `enabledPlugins` keys).
 //!
-//!   - sweep legacy `heal hook edit` / `heal hook stop` entries left
-//!     over from earlier installs, and
-//!   - clean up the pre-v0.2 marketplace plugin tree if present.
-//!
-//! Settings outside the swept entries are preserved byte-for-byte via a
-//! `serde_json::Value` round-trip.
+//! Settings outside the swept entries are preserved via a
+//! `serde_json::Value` round-trip. A `.claude-plugin/marketplace.json`
+//! that is not HEAL's `heal-local` one — a project that is itself a
+//! plugin marketplace — is never touched.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use serde::Serialize;
 use serde_json::Value;
 
 const SETTINGS_FILE: &str = ".claude/settings.json";
@@ -39,61 +39,13 @@ const LEGACY_ENABLED_PLUGIN_KEY: &str = "heal@heal-local";
 /// so upgrades from versions that did install them stay clean.
 const LEGACY_HEAL_COMMANDS: &[&str] = &["heal hook edit", "heal hook stop"];
 
-/// Outcome reported by [`register`]. Drives the CLI status line and
-/// lets callers report no-op vs. mutation distinctly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WriteAction {
-    Created,
-    Updated,
-    Unchanged,
-}
-
-/// Aggregate report for a single `install` / `update` pass over the
-/// Claude registration files. Kept as a struct (rather than a single
-/// `WriteAction`) so the CLI can attribute each writeable file
-/// separately when more land in the future.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct WireReport {
-    pub settings: WriteAction,
-}
-
-/// Merge HEAL's hook entries into the project's `settings.json`. The
-/// merge is additive — existing user hooks are preserved.
-pub fn wire(project: &Path) -> Result<WireReport> {
-    let settings = register(project)?;
-    Ok(WireReport { settings })
-}
-
-/// Idempotent settings.json reconciliation. Modern HEAL doesn't add
-/// any Claude Code hooks, so this only sweeps legacy command entries
-/// (`heal hook edit`, `heal hook stop`) left over from earlier
-/// installs. A nonexistent settings file stays nonexistent.
-pub fn register(project: &Path) -> Result<WriteAction> {
-    let path = project.join(SETTINGS_FILE);
-    let Ok(prior) = std::fs::read_to_string(&path) else {
-        return Ok(WriteAction::Unchanged);
-    };
-    let mut value: Value =
-        serde_json::from_str(&prior).with_context(|| format!("parsing {}", path.display()))?;
-    remove_heal_hooks(&mut value);
-    let body = format!(
-        "{}\n",
-        serde_json::to_string_pretty(&value).expect("settings serialization is infallible")
-    );
-    if body == prior {
-        return Ok(WriteAction::Unchanged);
-    }
-    write_if_changed(&path, &body)
-}
-
-/// Outcome of [`unregister`]. `legacy_swept` is true when at least one
-/// pre-skills artifact (plugin tree, marketplace.json, or settings-key)
-/// was actually removed during this call — distinct from "would be
-/// removed" so callers can surface honest UX text.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+/// Outcome of [`unregister`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UnregisterReport {
-    pub legacy_swept: bool,
+    /// Legacy plugin / marketplace paths removed from disk.
+    pub removed: Vec<PathBuf>,
+    /// `.claude/settings.json` was rewritten or deleted.
+    pub settings_changed: bool,
 }
 
 /// Remove HEAL's hook entries from `settings.json`, plus any legacy
@@ -102,46 +54,68 @@ pub struct UnregisterReport {
 /// a HEAL hook) survive untouched. The file itself is removed when
 /// nothing else remains.
 pub fn unregister(project: &Path) -> Result<UnregisterReport> {
-    let mut legacy_swept = remove_legacy_artifacts(project)?;
+    let removed = remove_legacy_artifacts(project)?;
     let settings_path = project.join(SETTINGS_FILE);
     let Ok(prior) = std::fs::read_to_string(&settings_path) else {
-        return Ok(UnregisterReport { legacy_swept });
+        return Ok(UnregisterReport {
+            removed,
+            settings_changed: false,
+        });
     };
     let mut value: Value = serde_json::from_str(&prior)
         .with_context(|| format!("parsing {}", settings_path.display()))?;
     remove_heal_hooks(&mut value);
-    legacy_swept |= remove_legacy_settings_keys(&mut value);
+    remove_legacy_settings_keys(&mut value);
     if value.as_object().is_some_and(serde_json::Map::is_empty) {
         std::fs::remove_file(&settings_path)
             .with_context(|| format!("removing {}", settings_path.display()))?;
-        return Ok(UnregisterReport { legacy_swept });
+        return Ok(UnregisterReport {
+            removed,
+            settings_changed: true,
+        });
     }
     let cleaned = format!(
         "{}\n",
         serde_json::to_string_pretty(&value).expect("settings serialization is infallible")
     );
-    if cleaned != prior {
+    let settings_changed = cleaned != prior;
+    if settings_changed {
         crate::core::fs::atomic_write(&settings_path, cleaned.as_bytes())
             .with_context(|| format!("writing {}", settings_path.display()))?;
     }
-    Ok(UnregisterReport { legacy_swept })
+    Ok(UnregisterReport {
+        removed,
+        settings_changed,
+    })
 }
 
-/// Sweep on-disk artifacts left over from the old plugin/marketplace
-/// install layout. Returns `true` when at least one path was removed.
-/// Idempotent: missing paths are silently treated as no-ops via
-/// `ErrorKind::NotFound` suppression rather than a pre-`exists()` check
-/// (which would race in the unlikely case of a concurrent writer).
-fn remove_legacy_artifacts(project: &Path) -> Result<bool> {
-    let mut swept = false;
-    swept |= remove_dir_all_if_present(&project.join(LEGACY_PLUGIN_DEST_REL))?;
-    swept |= remove_file_if_present(&project.join(LEGACY_MARKETPLACE_FILE))?;
-    let market_dir = project.join(LEGACY_MARKETPLACE_DIR);
-    if market_dir.is_dir() {
-        // Best-effort: leave the dir if a sibling marketplace is in there.
-        let _ = crate::core::fs::remove_dir_if_empty(&market_dir);
+/// Sweep on-disk artifacts left over from the old local-marketplace
+/// install layout and return the paths removed. Missing paths are
+/// no-ops via `ErrorKind::NotFound` rather than a racy `exists()` check.
+/// The marketplace file goes only when it is HEAL's `heal-local` one.
+fn remove_legacy_artifacts(project: &Path) -> Result<Vec<PathBuf>> {
+    let mut removed = Vec::new();
+    let plugin_tree = project.join(LEGACY_PLUGIN_DEST_REL);
+    if remove_dir_all_if_present(&plugin_tree)? {
+        removed.push(plugin_tree);
     }
-    Ok(swept)
+    let market = project.join(LEGACY_MARKETPLACE_FILE);
+    if is_legacy_marketplace(&market) && remove_file_if_present(&market)? {
+        removed.push(market);
+        // Best-effort: leave the dir if anything else lives in it.
+        let _ = crate::core::fs::remove_dir_if_empty(&project.join(LEGACY_MARKETPLACE_DIR));
+    }
+    Ok(removed)
+}
+
+/// True when `path` parses as a marketplace named `heal-local` — the
+/// only marketplace file HEAL ever wrote. Anything else (missing,
+/// unparseable, another name) is not ours.
+fn is_legacy_marketplace(path: &Path) -> bool {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .is_some_and(|v| v.get("name").and_then(Value::as_str) == Some(LEGACY_MARKETPLACE_NAME))
 }
 
 fn remove_dir_all_if_present(path: &Path) -> Result<bool> {
@@ -162,51 +136,26 @@ fn remove_file_if_present(path: &Path) -> Result<bool> {
 
 /// Strip the legacy `extraKnownMarketplaces["heal-local"]` and
 /// `enabledPlugins["heal@heal-local"]` entries from a settings.json
-/// value. Empty parent objects are dropped after removal. Returns
-/// `true` when at least one key was present (i.e. legacy state
-/// existed and was just removed).
-fn remove_legacy_settings_keys(value: &mut Value) -> bool {
+/// value. Empty parent objects are dropped after removal.
+fn remove_legacy_settings_keys(value: &mut Value) {
     let Some(obj) = value.as_object_mut() else {
-        return false;
+        return;
     };
-    let mut found = false;
     if let Some(market) = obj
         .get_mut("extraKnownMarketplaces")
         .and_then(Value::as_object_mut)
     {
-        if market.remove(LEGACY_MARKETPLACE_NAME).is_some() {
-            found = true;
-        }
+        market.remove(LEGACY_MARKETPLACE_NAME);
         if market.is_empty() {
             obj.remove("extraKnownMarketplaces");
         }
     }
     if let Some(enabled) = obj.get_mut("enabledPlugins").and_then(Value::as_object_mut) {
-        if enabled.remove(LEGACY_ENABLED_PLUGIN_KEY).is_some() {
-            found = true;
-        }
+        enabled.remove(LEGACY_ENABLED_PLUGIN_KEY);
         if enabled.is_empty() {
             obj.remove("enabledPlugins");
         }
     }
-    found
-}
-
-/// Idempotent atomic write: skip when on-disk bytes already match
-/// `body`, otherwise route through `core::fs::atomic_write` so a SIGINT
-/// mid-write can't leave `settings.json` half-written.
-fn write_if_changed(path: &Path, body: &str) -> Result<WriteAction> {
-    let prior = std::fs::read_to_string(path).ok();
-    if prior.as_deref() == Some(body) {
-        return Ok(WriteAction::Unchanged);
-    }
-    crate::core::fs::atomic_write(path, body.as_bytes())
-        .with_context(|| format!("writing {}", path.display()))?;
-    Ok(if prior.is_some() {
-        WriteAction::Updated
-    } else {
-        WriteAction::Created
-    })
 }
 
 /// Walk every block under every event and drop inner-hook entries whose
@@ -254,15 +203,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn register_is_noop_when_settings_absent() {
-        let dir = TempDir::new().unwrap();
-        let action = register(dir.path()).unwrap();
-        assert_eq!(action, WriteAction::Unchanged);
-        assert!(!dir.path().join(SETTINGS_FILE).exists());
-    }
-
-    #[test]
-    fn register_sweeps_legacy_heal_hook_commands() {
+    fn unregister_sweeps_legacy_heal_hook_commands() {
         let dir = TempDir::new().unwrap();
         let settings_path = dir.path().join(SETTINGS_FILE);
         std::fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
@@ -287,10 +228,10 @@ mod tests {
             }"#,
         )
         .unwrap();
-        register(dir.path()).unwrap();
+        let report = unregister(dir.path()).unwrap();
+        assert!(report.settings_changed);
         let v: Value =
             serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
-        // User entries survive.
         assert_eq!(v["theme"], "dark");
         let post = v["hooks"]["PostToolUse"][0]["hooks"].as_array().unwrap();
         let cmds: Vec<&str> = post
@@ -303,12 +244,10 @@ mod tests {
     }
 
     #[test]
-    fn register_is_idempotent() {
+    fn unregister_is_idempotent() {
         let dir = TempDir::new().unwrap();
-        let first = register(dir.path()).unwrap();
-        let second = register(dir.path()).unwrap();
-        assert_eq!(first, WriteAction::Unchanged);
-        assert_eq!(second, WriteAction::Unchanged);
+        assert_eq!(unregister(dir.path()).unwrap(), UnregisterReport::default());
+        assert_eq!(unregister(dir.path()).unwrap(), UnregisterReport::default());
     }
 
     #[test]
@@ -361,9 +300,10 @@ mod tests {
         std::fs::write(plugin_tree.join("plugin.json"), "{}").unwrap();
         let market = dir.path().join(LEGACY_MARKETPLACE_FILE);
         std::fs::create_dir_all(market.parent().unwrap()).unwrap();
-        std::fs::write(&market, "{}").unwrap();
+        std::fs::write(&market, r#"{"name":"heal-local","plugins":[]}"#).unwrap();
 
-        unregister(dir.path()).unwrap();
+        let report = unregister(dir.path()).unwrap();
+        assert_eq!(report.removed, vec![plugin_tree.clone(), market.clone()]);
         assert!(!plugin_tree.exists(), "legacy plugin tree must be removed");
         assert!(!market.exists(), "legacy marketplace.json must be removed");
         assert!(
@@ -419,5 +359,18 @@ mod tests {
         .unwrap();
         unregister(dir.path()).unwrap();
         assert!(!settings_path.exists());
+    }
+
+    #[test]
+    fn unregister_keeps_a_marketplace_that_is_not_heal_local() {
+        // A project that is itself a plugin marketplace (this repository
+        // is one) must keep its manifest.
+        let dir = TempDir::new().unwrap();
+        let market = dir.path().join(LEGACY_MARKETPLACE_FILE);
+        std::fs::create_dir_all(market.parent().unwrap()).unwrap();
+        std::fs::write(&market, r#"{"name":"heal","plugins":[]}"#).unwrap();
+        let report = unregister(dir.path()).unwrap();
+        assert!(report.removed.is_empty());
+        assert!(market.exists());
     }
 }

@@ -13,7 +13,7 @@
 //! ## Initial scope
 //!
 //! This pass only handles **explicitly mapped** src⇔doc pairs that the
-//! `/heal-doc-pair-setup` skill has captured in
+//! `/heal:setup` skill has captured in
 //! `.heal/doc_pairs.json`. A future iteration walks every public API
 //! and looks for matching doc anchors; that requires a per-language
 //! "what is public" rule and is deferred.

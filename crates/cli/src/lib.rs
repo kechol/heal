@@ -25,6 +25,5 @@ pub mod legacy_skills;
 pub mod observer;
 pub mod observers;
 pub mod semantic;
-pub mod skill_assets;
 #[cfg(test)]
 mod test_support;

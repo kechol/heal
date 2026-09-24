@@ -260,11 +260,11 @@ pub struct DocsConfig {
     pub enabled: bool,
     /// Project-relative path to the doc-pairs `SSoT`. The file is the
     /// single source of truth for Layer A (paired) src ⇔ doc mappings;
-    /// HEAL only reads it. Generation is the `/heal-doc-pair-setup`
+    /// HEAL only reads it. Generation is the `/heal:setup`
     /// skill's responsibility. Defaults to `.heal/doc_pairs.json`.
     #[serde(default = "DocsConfig::default_pairs_path")]
     pub pairs_path: String,
-    /// Project-relative root the `/heal-doc-scaffold` skill writes
+    /// Project-relative root the `/heal:docs` skill writes
     /// page skeletons into. The HEAL binary never reads or writes
     /// this tree itself; it is consumer metadata for the skill so
     /// teammates re-running the scaffold land in the same place.
@@ -1229,7 +1229,7 @@ pub struct PolicyConfig {
 }
 
 /// `[policy.drain]` — which `(severity, hotspot)` combinations the
-/// `/heal-code-patch` skill must drain (`must`, T0) vs may drain when
+/// `/heal:refactor` skill must drain (`must`, T0) vs may drain when
 /// bandwidth allows (`should`, T1). Anything not matched falls into
 /// the Advisory tier (rendered separately, never auto-drained).
 ///
@@ -1610,7 +1610,7 @@ impl Config {
 
     /// Persist every field — defaults included — atomically. Drives
     /// `heal init --explicit` so a freshly-initialized project can
-    /// show every knob `heal-setup` might want to tune.
+    /// show every knob `/heal:setup` might want to tune.
     pub fn save_explicit(&self, path: &Path) -> Result<()> {
         let body = self
             .to_explicit_toml()
@@ -1934,10 +1934,10 @@ fn validate_workspaces(workspaces: &[WorkspaceOverlay]) -> std::result::Result<(
 
 /// Header prepended to every `.heal/config.toml` heal writes. Two
 /// short lines: identify the file (so an empty body isn't a mystery)
-/// and point at the `/heal-setup` skill that knows how to fill it in.
+/// and point at the `/heal:setup` skill that knows how to fill it in.
 const CONFIG_HEADER: &str = "\
 # .heal/config.toml — heal's per-project config. Omitted keys fall back to defaults; run `heal init --explicit` to write the full default body.
-# Run `claude /heal-setup` to calibrate the codebase and tune thresholds.
+# Run `/heal:setup` to calibrate the codebase and tune thresholds.
 ";
 
 /// Prepend [`CONFIG_HEADER`] to `body`, separating with a blank line

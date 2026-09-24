@@ -14,11 +14,11 @@
 //! `hotspot_score`, with missing scores last and metric/path/id ties.
 //! Each section header carries a `[T0 Must drain]` / `[T1 Should drain]`
 //! / `[Advisory]` suffix derived from `[policy.drain]` so the link to
-//! `/heal-code-patch` stays explicit. Default policy:
+//! `/heal:refactor` stays explicit. Default policy:
 //! `must = ["critical:hotspot"]`, `should = ["critical", "high:hotspot"]`.
 //! Advisory and unclassified lower-priority sections are hidden unless
 //! `--all` is passed; the footer surfaces a "next steps" line pointing
-//! at `claude /heal-code-patch` for the Must-drain queue.
+//! at `/heal:refactor` for the Must-drain queue.
 //!
 //! `--json` emits the `FindingsRecord` schema used by `latest.json`, after
 //! overlaying the current accepted state and accepted re-review notices.
@@ -50,7 +50,7 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     let paths = HealPaths::new(project);
     paths.ensure().with_context(|| {
         format!(
-            "creating {} (heal-cli needs a writable .heal/ directory)",
+            "creating {} (heal needs a writable .heal/ directory)",
             paths.root().display(),
         )
     })?;
@@ -64,7 +64,7 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
     })?;
 
     // Early-exit when `--feature <disabled>` would otherwise produce
-    // empty output. Skills (`/heal-test-patch`, `/heal-doc-patch`,
+    // empty output. Skills (`/heal:tests`, `/heal:docs`,
     // …) shell out with `--feature <family>` and read the exit code:
     // a non-zero exit here is the contract for "this family is off
     // in `.heal/config.toml`, stop now".
@@ -72,7 +72,7 @@ pub fn run(project: &Path, args: &StatusArgs) -> Result<()> {
         if !family.is_enabled(&cfg) {
             eprintln!(
                 "heal status: --feature {0} requested but `[features.{0}].enabled = false`. \
-                 Edit `.heal/config.toml` (or run `/heal-setup`) to enable the family before re-running.",
+                 Edit `.heal/config.toml` (or run `/heal:setup`) to enable the family before re-running.",
                 family.name(),
             );
             std::process::exit(1);
@@ -1445,7 +1445,7 @@ mod tests {
         let rec = record(Vec::new());
         let out = render_to_string(&rec, &default_filters());
         assert!(out.contains("Next:"));
-        assert!(out.contains("/heal-code-patch"));
+        assert!(out.contains("/heal:refactor"));
         assert!(
             !out.contains("── HEAL status"),
             "leading divider should be removed:\n{out}",

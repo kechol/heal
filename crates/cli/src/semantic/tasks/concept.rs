@@ -69,8 +69,7 @@ impl Task for ConceptTask {
 
     fn setup_hint(&self, ctx: &TaskContext<'_>) -> Option<String> {
         (!crate::core::HealPaths::new(ctx.project).concepts().exists()).then(|| {
-            "no .heal/concepts.toml yet; run /heal-concepts-setup to write the vocabulary"
-                .to_owned()
+            "no .heal/concepts.toml yet; run /heal:setup to write the vocabulary".to_owned()
         })
     }
 
