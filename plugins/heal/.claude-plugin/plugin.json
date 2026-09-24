@@ -1,0 +1,13 @@
+{
+  "name": "heal",
+  "version": "0.6.0",
+  "description": "Set up heal, then refactor code, docs, and tests from what heal finds.",
+  "author": {
+    "name": "Kazuyuki SUZUKI",
+    "url": "https://github.com/kechol"
+  },
+  "homepage": "https://kechol.github.io/heal/",
+  "repository": "https://github.com/kechol/heal",
+  "license": "MIT OR Apache-2.0",
+  "keywords": ["code-health", "refactoring", "metrics", "documentation", "testing"]
+}
