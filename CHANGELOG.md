@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## v0.7.1 — 2026-09-25
+
+A documentation release: the docs, the slides, and one help text now
+match v0.7.
+
+### Fixes
+
+- `heal hook --help` no longer says Claude Code's `settings.json` hook
+  commands invoke it. Only the git post-commit hook calls
+  `heal hook commit`; `edit` and `stop` stay as no-ops for entries that
+  older versions registered, and `heal skills uninstall` removes them.
+
+### Documentation
+
+- The Japanese docs are rewritten from the English pages so they read
+  as native Japanese, with one term per concept across pages.
+- The docs match v0.7: the findings cache lists `accepted.json`, the
+  on-disk layout no longer shows `.heal/.gitignore`, each family has
+  one skill instead of a review/patch pair, the landing page mentions
+  the opt-in semantic layer, and `doc_drift` Type 3 ships as
+  `doc_drift.semantic`.
+- The v0.7.0 entry below no longer names retired skills
+  (`/heal-concepts-setup`, `/heal-code-patch`, …) as current ones.
+- Broken links fixed: the drain-policy link in Architecture and the
+  calibration link in Test › Metrics. The `heal status --focus` note
+  moved from `heal calibrate` to `heal status` in the CLI reference.
+- The Japanese introduction slides in `docs/marp/` cover v0.7.
+
 ## v0.7.0 — 2026-09-25
 
 ### ⚠ BREAKING — skills ship as a Claude Code plugin

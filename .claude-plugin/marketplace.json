@@ -9,12 +9,12 @@
     {
       "name": "heal",
       "description": "Set up heal, then refactor code, docs, and tests from what heal finds.",
-      "version": "0.7.0",
+      "version": "0.7.1",
       "source": {
         "source": "git-subdir",
         "url": "https://github.com/kechol/heal.git",
         "path": "plugins/heal",
-        "ref": "v0.7.0"
+        "ref": "v0.7.1"
       },
       "homepage": "https://kechol.github.io/heal/",
       "repository": "https://github.com/kechol/heal",
