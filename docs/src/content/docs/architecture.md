@@ -47,7 +47,6 @@ After `heal init`:
 ```
 <your-repo>/
 ├── .heal/
-│   ├── .gitignore                 # auto — empty by design (reserved)
 │   ├── config.toml                # you edit this (tracked in git)
 │   ├── calibration.toml           # auto — heal init / heal calibrate (tracked in git)
 │   └── findings/                  # tracked in git — team shares the TODO

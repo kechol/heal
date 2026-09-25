@@ -113,11 +113,11 @@ Where each claim category lives:
 | Claim | Source |
 |---|---|
 | CLI subcommands, flags, exit codes | `cargo run -q -- --help` (and per-subcommand `--help`); `crates/cli/src/cli.rs` and `crates/cli/src/commands/` |
-| JSON output shapes | Type definitions in `crates/cli/src/{config,findings,observer,…}.rs` + `crates/cli/tests/core_*.rs` |
-| Schema versions | `FINDINGS_RECORD_VERSION`, `CONFIG_VERSION`, `CALIBRATION_VERSION` constants |
+| JSON output shapes | Type definitions in `crates/cli/src/core/{finding,findings_cache,config,calibration,accepted}.rs`, report structs in `crates/cli/src/commands/*.rs` + `crates/cli/tests/core_*.rs` |
+| Schema versions | `FINDINGS_RECORD_VERSION` (`core/findings_cache.rs`), `DOC_PAIRS_VERSION` (`core/doc_pairs.rs`) |
 | Observers, metric strings | `crates/cli/src/observer/`; emitted `Finding.metric` values |
 | Plugin skills | `plugins/heal/skills/*/SKILL.md` frontmatter; `plugins/heal/references/cli.md` for the CLI contract they rely on |
-| Config keys | `crates/cli/src/config.rs` and `feature_*` modules |
+| Config keys | `crates/cli/src/core/config.rs` and `crates/cli/src/feature.rs` |
 | Canonical names | `.claude/docs/glossary.md` |
 | Retired names (must NOT appear) | `.claude/rules/terminology.md` R3 |
 

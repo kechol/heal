@@ -41,7 +41,6 @@ heal status  ──►  calibration.toml で Finding を分類
 ```
 <your-repo>/
 ├── .heal/
-│   ├── .gitignore                # 自動 — 将来用の予約(現状は空)
 │   ├── config.toml               # 自分で編集する(git 追跡対象)
 │   ├── calibration.toml          # 自動 — heal init / heal calibrate(git 追跡対象)
 │   └── findings/                 # git 追跡対象 — チームで TODO を共有

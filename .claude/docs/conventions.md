@@ -66,7 +66,7 @@ contract:
 
 ```rust
 let parsed: serde_json::Value = serde_json::from_str(&out)?;
-assert_eq!(parsed["version"], 8);
+assert_eq!(parsed["version"], 9);
 assert!(parsed["findings"][0]["id"].is_string());
 ```
 

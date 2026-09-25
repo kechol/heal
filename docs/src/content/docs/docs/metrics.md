@@ -50,8 +50,9 @@ identifier wastes time looking for code that no longer exists.
 The fix is mechanical: remove the reference, or restore the
 identifier under its new name.
 
-Type 2 (signature mismatch) and Type 3 (semantic drift) are
-deferred to v0.5+.
+Type 2 (signature mismatch) is not implemented yet. Type 3
+(semantic drift) ships as `doc_drift.semantic` when
+[Semantic (Jev)](/heal/semantic/) is enabled.
 
 ## `doc_coverage`
 

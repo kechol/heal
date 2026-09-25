@@ -7,9 +7,9 @@ when they apply to the task.
 
 HEAL is a local Rust CLI (`heal`, crate `heal-cli`) that turns code-health
 signals into work for coding agents. Code observers are always enabled;
-Docs and Test are opt-in. Findings appear through `heal status`, `heal metrics`,
-and `heal diff`; `heal doctor` reports setup state. Skills ship as a Claude
-Code plugin in `plugins/heal/`.
+Docs, Test, and Semantic (TypeSafe Jev) are opt-in. Findings appear through
+`heal status`, `heal metrics`, and `heal diff`; `heal doctor` reports setup
+state. Skills ship as a Claude Code plugin in `plugins/heal/`.
 See [README.md](./README.md) for the user overview.
 
 ## Working agreement
@@ -32,8 +32,10 @@ See [README.md](./README.md) for the user overview.
 - Keep tracked content and public communication free of secrets and private
   context. This is public OSS under MIT OR Apache-2.0; cite borrowed algorithms
   and respect the dependency license policy in `deny.toml`.
-- Keep HEAL local-only: no telemetry, HTTP clients, update pings, or cloud sync.
-  `git2` accesses local repositories.
+- Keep HEAL local-only: no telemetry, update pings, or cloud sync.
+  `git2` accesses local repositories. The only HTTP client is the opt-in
+  `[features.semantic]` one (`crates/cli/src/semantic/client.rs`), used by
+  `heal semantic ask` and `heal auth jev status` alone; don't add others.
 - Preserve CLI and JSON contracts, schema semantics, stable finding IDs, and
   deterministic observations unless the request includes changing them.
 - Metrics indicate change friction; they are not optimization targets. The

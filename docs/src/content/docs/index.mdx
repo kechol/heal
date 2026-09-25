@@ -31,13 +31,20 @@ Critical / High problem right inside the commit output, and
 Claude skill — which proposes fixes and commits the ones you approve,
 one at a time.
 
-Three feature families shape what heal observes:
+Three feature families, plus an opt-in semantic layer, shape what heal
+observes:
 
 - **Code** is always on — complexity, churn, duplication, hotspots,
-  cohesion. The seven metrics every project gets after `heal init`.
+  cohesion. Seven metrics plus the Hotspot decoration, on every
+  project after `heal init`.
 - **Test** (opt-in) reads `lcov.info` from your existing reporter
   and surfaces uncovered hot paths plus drifting tests.
 - **Docs** (opt-in) compares paired documentation against the source
   it describes and flags drift, broken links, and orphan pages.
+- **Semantic** (opt-in) asks TypeSafe's Jev classifier what metrics
+  cannot answer — misnamed functions, tests that check nothing, docs
+  that no longer match the code. It is the only part of heal that
+  sends content over the network, and only when you run
+  `heal semantic ask`. See [Semantic (Jev)](/heal/semantic/).
 
 See [Features](/heal/features/) for the full picture.

@@ -37,12 +37,14 @@ Files under `.heal/findings/`:
 
 - `latest.json` — one `FindingsRecord`.
 - `fixed.json` — `BTreeMap<finding_id, FixedFinding>`.
+- `accepted.json` — `BTreeMap<finding_id, AcceptedFinding>`, written
+  by `heal mark accept` (the "won't fix / intrinsic" lane).
 - `regressed.jsonl` — append-only audit trail.
 
 That's the full layout. No history rotation, no `YYYY-MM.jsonl`,
 no archive directory.
 
-All three are **git-tracked** (`heal init` no longer writes a
+All four are **git-tracked** (`heal init` no longer writes a
 `.heal/.gitignore` — the template was empty so the file was just
 noise). Two consequences agents must keep load-bearing:
 

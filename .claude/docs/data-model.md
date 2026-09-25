@@ -573,8 +573,11 @@ Files written this way:
 - `.heal/calibration.toml`
 - `.heal/findings/latest.json`
 - `.heal/findings/fixed.json`
-- `.claude/settings.json` (when modified)
-- All extracted skill files
+- `.heal/findings/accepted.json`
+- `.heal/semantic/verdicts/*.jsonl` and
+  `.heal/cache/semantic/verdicts/*.jsonl`
+- `.claude/settings.json` (when `heal skills uninstall` sweeps old
+  heal entries)
 
 `regressed.jsonl` is append-only; treated separately.
 

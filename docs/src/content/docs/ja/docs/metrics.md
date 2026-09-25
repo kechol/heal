@@ -33,7 +33,7 @@ description: '[features.docs] ファミリが追加するドキュメント品�
 
 各 Layer A ドキュメントを走査し、識別子形のバックティック span(`` `Foo::bar` ``、`` `processOrder` ``)を抽出して、ペアソースのどの識別子にも解決しないものごとに Finding を出します。**Severity: Critical** — 存在しない識別子に従って動く読者は、もう存在しないコードを探す時間を失うため。修正は機械的(参照を消すか、新しい名前で識別子を復活させる)です。
 
-Type 2(シグネチャミスマッチ)と Type 3(意味的ドリフト)は v0.5+ に延期しています。
+Type 2(シグネチャミスマッチ)はまだ実装していません。Type 3(意味的ドリフト)は、[Semantic (Jev)](/heal/ja/semantic/) を有効にすると `doc_drift.semantic` として出ます。
 
 ## `doc_coverage`
 

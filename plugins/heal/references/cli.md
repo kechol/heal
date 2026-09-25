@@ -138,7 +138,7 @@ disabled). `todo` lists the sections whose status is `todo` or `error`.
 
 ```jsonc
 {
-  "heal_version": "0.6.0",
+  "heal_version": "0.7.0",
   "project": "/path/to/repo",
   "initialized": true,                       // .heal/config.toml exists
   "config": { "status": "ok", "detail": "…", "response_language": "Japanese" },
