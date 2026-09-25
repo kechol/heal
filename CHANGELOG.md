@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.7.0 — 2026-09-25
+
 ### ⚠ BREAKING — skills ship as a Claude Code plugin
 
 - **Skills moved out of the CLI into the `heal` plugin.** The binary no
@@ -42,26 +44,6 @@
 - **Migration:** install the plugin, run `heal skills uninstall`, and
   commit the removed `.claude/skills/heal-*` folders.
 
-### Features
-
-- **`heal doctor [--json]`** reports which parts of the setup are in
-  place — config, calibration freshness, the post-commit hook, each
-  enabled family's inputs (doc pairs, lcov, Jev key, concept list), and
-  skill folders left by older versions — with the command or skill that
-  fixes each gap. Read-only and offline. The recalibration drift rules
-  (more than 200 commits, more than 20% file-count change, or no
-  Critical / High left after ten or more recorded fixes) now live here.
-
-### Fixes
-
-- **`heal init` keeps an existing calibration unless `--force`.**
-  Re-running init (for example to reinstall the hook) silently rebuilt
-  `.heal/calibration.toml` and moved the Severity thresholds. `--json`
-  gains a `calibration` entry shaped like `config`.
-- **`heal skills uninstall` keeps a `.claude-plugin/marketplace.json`
-  that isn't heal's old `heal-local` one**, so projects that are
-  themselves plugin marketplaces lose nothing.
-
 ### ⚠ BREAKING — findings schema v9
 
 - **`FINDINGS_RECORD_VERSION` is now 9.** Findings gain an optional
@@ -72,6 +54,16 @@
   `drain_rank`, which are never written to `latest.json`. **Migration:**
   none by hand — older `latest.json` files invalidate and rebuild on the
   next `heal status`.
+
+### Features
+
+- **`heal doctor [--json]`** reports which parts of the setup are in
+  place — config, calibration freshness, the post-commit hook, each
+  enabled family's inputs (doc pairs, lcov, Jev key, concept list), and
+  skill folders left by older versions — with the command or skill that
+  fixes each gap. Read-only and offline. The recalibration drift rules
+  (more than 200 commits, more than 20% file-count change, or no
+  Critical / High left after ten or more recorded fixes) now live here.
 
 ### Features — `[features.semantic]` (Jev, opt-in)
 
@@ -168,6 +160,14 @@
   [mizchi/jev-lint](https://github.com/mizchi/jev-lint) (MIT).
 
 ### Fixes
+
+- **`heal init` keeps an existing calibration unless `--force`.**
+  Re-running init (for example to reinstall the hook) silently rebuilt
+  `.heal/calibration.toml` and moved the Severity thresholds. `--json`
+  gains a `calibration` entry shaped like `config`.
+- **`heal skills uninstall` keeps a `.claude-plugin/marketplace.json`
+  that isn't heal's old `heal-local` one**, so projects that are
+  themselves plugin marketplaces lose nothing.
 
 - `heal diff --json` no longer prints git's `HEAD is now at …` line on
   stdout ahead of the JSON document, which made the output unparseable.
