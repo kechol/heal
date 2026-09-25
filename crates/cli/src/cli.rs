@@ -58,9 +58,10 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Hook entrypoint invoked by git hooks and Claude Code's
-    /// `settings.json` hook commands. No-ops silently when the project
-    /// has no `.heal/` directory.
+    /// Hook entrypoint for the git post-commit hook (`heal hook commit`).
+    /// `edit` and `stop` are no-ops kept for Claude Code `settings.json`
+    /// entries that older heal versions registered. No-ops silently when
+    /// the project has no `.heal/` directory.
     Hook {
         #[command(subcommand)]
         event: HookEvent,

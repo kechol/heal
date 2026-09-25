@@ -39,9 +39,9 @@ reads its findings, proposes changes, and applies the ones you
 approve.
 
 - **Code** (always on) — _"Where is the codebase hard to change?"_
-  Eight metrics covering complexity, churn, duplication, cohesion,
-  and a Hotspot decoration that highlights files that are both
-  complex and frequently touched. Enabled by default after
+  Seven metrics covering complexity, churn, duplication, and
+  cohesion, plus a Hotspot decoration that highlights files that
+  are both complex and frequently touched. Enabled by default after
   `heal init`.
 - **Test** (opt-in via `[features.test]`) — _"Which production code
   is dark to the test suite, and which tests have drifted or are
@@ -136,11 +136,11 @@ Topical pages on the docs site:
 - [CLI](https://kechol.github.io/heal/cli/) — every subcommand
 - [Code › Metrics](https://kechol.github.io/heal/code/metrics/), [Code › Configuration](https://kechol.github.io/heal/code/configuration/), [Code › Skills](https://kechol.github.io/heal/code/skills/) — the always-on family
 - [Test › Skills](https://kechol.github.io/heal/test/skills/), [Docs › Skills](https://kechol.github.io/heal/docs/skills/) — the opt-in families' skills
+- [Architecture](https://kechol.github.io/heal/architecture/) — internals
 
 Upgrading from heal 0.6 or earlier, which copied skills into each
 project: install the plugin, then run `heal skills uninstall` in each
 project and commit the deletion.
-- [Architecture](https://kechol.github.io/heal/architecture/) — internals
 
 ## Development
 

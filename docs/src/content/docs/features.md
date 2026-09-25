@@ -8,15 +8,15 @@ always on — that's what `heal init` enables for every project.
 **Test** and **Docs** are opt-in: turn them on in `.heal/config.toml`
 when you're ready to surface those signals alongside the code
 metrics. Each family has its own metrics, its own configuration
-section, and a dedicated pair of Claude skills (one to review, one
-to apply fixes).
+section, and a dedicated Claude skill that proposes fixes and
+applies the ones you approve.
 
 ## Code (always on)
 
 > _"Where is the codebase hard to change?"_
 
-The default observer family. Eight metrics — LOC, CCN, Cognitive
-Complexity, Churn, Change Coupling, Duplication, Hotspot, LCOM —
+The default observer family. Seven metrics — LOC, CCN, Cognitive
+Complexity, Churn, Change Coupling, Duplication, LCOM —
 calibrated to the codebase's own distribution and surfaced through
 `heal status`. The `🔥` Hotspot decoration highlights files that are
 both complex and frequently touched: the historical concentration of

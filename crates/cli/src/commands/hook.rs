@@ -1,13 +1,13 @@
-//! `heal hook <commit|edit|stop>` — single entrypoint invoked by git
-//! hooks and Claude Code's `settings.json` hook commands.
+//! `heal hook <commit|edit|stop>` — entrypoint for the git post-commit
+//! hook (`heal hook commit`).
 //!
 //! - `commit` runs every observer, classifies the result against the
 //!   project's calibration, and emits a one-line nudge. No event-log
 //!   write — `latest.json` (maintained by `heal status`) is the
 //!   live state of record.
-//! - `edit` / `stop` are no-ops kept for back-compat with any
-//!   `settings.json` registrations that survived an upgrade.
-//!   `heal skills install` actively sweeps such entries.
+//! - `edit` / `stop` are no-ops kept for back-compat with Claude Code
+//!   `settings.json` entries that older heal versions registered.
+//!   `heal skills uninstall` sweeps such entries.
 //!
 //! ## Post-commit nudge
 //!

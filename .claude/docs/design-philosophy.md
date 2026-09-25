@@ -183,6 +183,8 @@ R4):
 
 - `latest.json` — one `FindingsRecord`.
 - `fixed.json` — `BTreeMap<finding_id, FixedFinding>`.
+- `accepted.json` — `BTreeMap<finding_id, AcceptedFinding>` from
+  `heal mark accept`.
 - `regressed.jsonl` — append-only audit trail.
 
 That's the whole layout. No `snapshots/`, no `YYYY-MM.jsonl`, no

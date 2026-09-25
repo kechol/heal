@@ -11,19 +11,27 @@ For severity classification see `architecture.md` (the rule lives in
 
 ## Pipeline contract (`observers::run_all`)
 
-Sequential, single-threaded, fixed order:
+Fixed order. Churn and ChangeCoupling share one history walk;
+Complexity, Duplication, and LCOM share one source-tree walk whose
+per-file parsing runs in a bounded worker pool
+(`observer::code::scan_source_tree`):
 
 ```
-LOC → Complexity (CCN + Cognitive) → Churn → ChangeCoupling
-    → DocPairsFile (load) → Duplication (+ Markdown pass) → Hotspot
-    → LCOM → DocFreshness → DocDrift → DocCoverage
+LOC → Churn + ChangeCoupling (one history walk)
+    → DocPairsFile (load) + doc corpus
+    → Complexity (CCN + Cognitive) + Duplication (+ Markdown pass) + LCOM
+    → CoveragePct → SkipRatio → Hotspot
+    → DocFreshness → DocDrift → DocCoverage
     → DocLinkHealth → OrphanPages → TodoDensity
+    → TestHotspot → DocHotspot
 ```
 
-`run_all(project, cfg, only, workspace)`:
+`run_all(project, cfg, only, family, workspace)`:
 
 - `only: Option<MetricKind>` — when set, runs only the relevant observers.
   `Hotspot` triggers Churn + Complexity as dependencies.
+- `family: Option<Family>` — `--feature` filter; skips observers of
+  other families.
 - `workspace: Option<&Path>` — applied **early in the walk** (and as a
   `commits_considered` recompute for git-based observers). Walk-based
   observers drop out-of-workspace files; LOC walks only the subtree.
@@ -32,7 +40,8 @@ LOC always runs (no per-config gate). Every other observer is
 `enabled`-gated via its `*Config`. The docs family (everything from
 `DocPairsFile` down) is gated on `cfg.features.docs.enabled`; when
 off, `.heal/doc_pairs.json` is not consulted and the docs reports
-are all `None`.
+are all `None`. The test family (`CoveragePct`, `SkipRatio`,
+`TestHotspot`) is gated the same way on `cfg.features.test.enabled`.
 
 ---
 

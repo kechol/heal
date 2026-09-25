@@ -89,8 +89,8 @@
   of `config_hash`, so a changed verdict re-renders `heal status`.
 - **`concept` task** classifies every production function (inline unit
   tests and `#[cfg(test)]` modules are skipped) into the team's
-  concept vocabulary (`.heal/concepts.toml`, written by the new
-  `/heal-concepts-setup` skill) and reports `concept_mix`,
+  concept vocabulary (`.heal/concepts.toml`, written by
+  `/heal:setup semantic`) and reports `concept_mix`,
   `concept_misplaced`, and `concept_scatter` findings. The approach
   follows conceptual cohesion (Marcus & Poshyvanyk, ICSM 2005).
 - **Test tasks:** `test_value` flags tests that would not catch the
@@ -100,7 +100,7 @@
   internal collaborators; `test_triage` classifies uncovered code and
   skip reasons; `test_duplicate` finds tests to delete or merge into a
   table-driven test; on-demand `verify_tests` checks tests added in a diff.
-  `/heal-test-patch` can now remove tests that check nothing, under a
+  `/heal:tests` can now remove tests that check nothing, under a
   confidence and coverage guard.
 - **Doc tasks:** `doc_structure` classifies every doc section by kind
   (Diátaxis plus changelog / ADR / runbook / glossary) and asks where a
@@ -111,7 +111,7 @@
   slot for orphan pages; `doc_concept` / `doc_overlap` read the docs
   through the concept vocabulary (concepts no doc explains, sections
   that repeat or contradict each other); on-demand `doc_pairs` gives
-  `/heal-doc-pair-setup` pair suggestions, asking about each candidate
+  `/heal:setup docs` pair suggestions, asking about each candidate
   source separately so one page can pair with several files (written as
   `source: "llm"` with the lowest probability as `confidence`, so
   `doc_pairs.json` stays readable by older versions); `doc_drift_semantic`
@@ -141,12 +141,11 @@
   `fix_pattern` (which allow-listed refactoring fits). On-demand checks
   `name_choice`, `verify_patch`, and `verify_proposal` report through
   `heal semantic ask --task <id> --json`.
-- New bundled skill **`/heal-concepts-setup`** (twelve skills in total).
-- `/heal-code-patch` and `/heal-code-review` read semantic notes when
-  present and verify their own work with `verify_patch` /
-  `verify_proposal`; without `[features.semantic]` they behave as before.
-  The patch skills treat the `triage` gate as a second opinion, never as
-  the decision, and `/heal-code-patch` gains the accept reason
+- `/heal:refactor` reads semantic notes when present and verifies its
+  own work with `verify_patch` / `verify_proposal`; without
+  `[features.semantic]` it behaves as before. The work skills treat the
+  `triage` gate as a second opinion, never as the decision, and
+  `/heal:refactor` gains the accept reason
   `stateless_delegation` for LCOM on field-less types that delegate to
   free functions.
 - **`commit_intent` task** classifies recent commits and decorates

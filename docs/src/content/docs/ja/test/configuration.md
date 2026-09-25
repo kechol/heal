@@ -1,13 +1,13 @@
 ---
 title: Test · 設定
-description: '[features.test] の有効化、lcov.info の配線、テストとして扱うファイルの指定方法。'
+description: '[features.test] の有効にしかた、lcov.info の読ませかた、どのファイルをテストとして扱うかの調整。'
 ---
 
-**Test** ファミリはオプトインです。デフォルトでオフ。`cargo llvm-cov`、`pytest --cov`、`nyc`、`scoverage` などのリポータが生成した `lcov.info` がある(または用意できる)ときに有効化してください。heal はテストを実行しません。テストスイートを実際に走らせて初めて分かること(flakiness、mutation score、ランタイム傾向など)はスコープ外です。
+**Test** ファミリはオプトインで、既定では無効です。`cargo llvm-cov`、`pytest --cov`、`nyc`、`scoverage` のどれかが出力した `lcov.info` がある（または用意するつもりがある）なら、有効にしてください。heal 自身がテストを実行することはありません。テストスイートを実際に動かさないと分からないもの（不安定なテスト、ミューテーションスコア、実行時間の推移）は扱いません。
 
-各メトリクスが捕まえる内容は [Test › メトリクス](/heal/ja/test/metrics/)、スキルは [Test › スキル](/heal/ja/test/skills/) を参照。
+各メトリクスが何を見つけるかは [Test › メトリクス](/heal/ja/test/metrics/) を、スキルについては [Test › スキル](/heal/ja/test/skills/) を参照してください。
 
-## 有効化の手順
+## すぐに有効にする
 
 ```toml
 [features.test]
@@ -17,21 +17,21 @@ enabled = true
 enabled = true
 ```
 
-デフォルトが Rust / TypeScript / JavaScript / Python / Go / Scala のテスト規約と 4 つの慣習的な `lcov.info` パスをカバーするので、ほとんどのプロジェクトは何も上書きする必要はありません。
+既定値は、Rust / TypeScript / JavaScript / Python / Go / Scala のテストの慣習に合わせてあります。`lcov.info` も、よく使われる 4 か所を探します。ほとんどのプロジェクトでは、何も上書きする必要はありません。
 
-`lcov.info` がまだない場合は、セットアップ用スキルの tests の手順を実行してください。スタックを判別し、手順ごとに確認しながらリポータを配線します。Claude Code で次を実行します。
+`lcov.info` がまだないなら、セットアップ用スキルの tests の手順を実行してください。使っている技術スタックを調べてカバレッジのリポータを設定します。各手順の前には確認を求めます。Claude Code で次を実行します。
 
 ```
 /heal:setup tests
 ```
 
-詳しくは [Test › スキル](/heal/ja/test/skills/) を参照。
+詳しくは [Test › スキル](/heal/ja/test/skills/) を参照してください。
 
 ## `[features.test]`
 
 ```toml
 [features.test]
-enabled    = false                # マスタースイッチ
+enabled    = false                # ファミリ全体のスイッチ
 test_paths = [
   "tests/**",
   "**/*_test.rs",
@@ -44,18 +44,18 @@ test_paths = [
 ]
 ```
 
-- `enabled`(デフォルト `false`) — マスタースイッチ。false の間は全テストオブザーバが no-op になります。
-- `test_paths`(デフォルト: 上記の言語規約) — どのソースファイルがテストかを示す gitignore 構文のグロブ。`skip_ratio` がこのリストに沿ってファイルを歩き、各 Finding のプライマリファイルがマッチすれば `is_test_file = true` のタグも付きます。
+- `enabled`（既定 `false`）— ファミリ全体のスイッチ。false のあいだ、テストのオブザーバはどれも何もしません。
+- `test_paths`（既定は上の言語ごとの慣習）— どのソースファイルがテストかを示す、gitignore 形式のグロブ。`skip_ratio` のオブザーバはこのファイルをたどります。主なファイルがこれに一致する Finding には、`is_test_file = true` も付きます。
 
-`test_paths` が空のときは、同じ言語規約をハードコードしたフォールバックヒューリスティックが適用されます。
+`test_paths` が空のときは、同じ慣習をカバーする組み込みの判定を使います。
 
-グロブは `.gitignore` と同じ規則で固定されるため、デフォルトの `tests/**` はプロジェクト直下の `tests/` にしかマッチしません。`crates/<name>/tests/` のようにテストのディレクトリが深い位置にある workspace では、`**/tests/**` を指定してください。`test_paths` を自分で設定すると、[Semantic (Jev)](/heal/ja/semantic/) のタスクもその指定だけで判定します。デフォルトのままなら組み込みのヒューリスティックも併用し、`test/` という名前のディレクトリはすべてテストとみなします。
+グロブは `.gitignore` と同じように、置き場所が固定されます。既定の `tests/**` は、プロジェクトのルートにある `tests/` ディレクトリにしか一致しません。`crates/<name>/tests/` のようにテストのディレクトリが入れ子になった workspace では、`**/tests/**` を使ってください。`test_paths` を自分で設定すると、[Semantic (Jev)](/heal/ja/semantic/) のタスクもそのグロブだけを使います。既定のままなら、組み込みの判定も加わり、`test/` という名前のディレクトリはすべてテストとして扱われます。
 
 ### `is_test_file` フラグ
 
-`[features.test]` を有効にすると、各 Finding に `is_test_file: bool` フラグが追加されます。スキルはこのフラグでフィルタリングして、テスト側と本番側の severity を独立に読みます。`/heal:tests` はテスト findings に集中し、`/heal:refactor` は本番 findings に集中します。
+`[features.test]` を有効にすると、すべての Finding に `is_test_file: bool` のフラグが付きます。スキルはこのフラグで絞り込み、テスト側と本番側の Severity を分けて読みます。`/heal:tests` はテストの Finding に、`/heal:refactor` は本番コードの Finding に集中します。
 
-フラグは false のとき JSON 出力から省略されるので、test ファミリを有効化していないプロジェクトは従来とバイト同等の `latest.json` を保てます。
+フラグが false のときは JSON の出力から省くので、test ファミリを有効にしていないプロジェクトの `latest.json` は、以前とバイト単位で同じです。
 
 ## `[features.test.coverage]`
 
@@ -70,75 +70,75 @@ lcov_paths = [
 ]
 ```
 
-- `enabled`(デフォルト `false`) — サブ機能スイッチ。`[features.test]` はオン、`[features.test.coverage]` はオフのまま、というのも有効です(`is_test_file` タグ付けと `skip_ratio` だけ使い、リポータ配線は後で行う、というケース)。
-- `lcov_paths` — プロジェクト相対のパスを順に探索します。**存在するファイルはすべて読み込んでマージ**するので、多言語モノレポならパッケージごとの `lcov.info` を列挙すればどれも集計に入ります。複数のファイルが同じソースファイルを記述している場合、カウンタは max を取ります(1ファイル内の重複レコードのマージと同じルール)。欠けているファイルは silent で警告は出ません。存在するのに読めないファイルは stderr に警告を出します。リポータがパッケージルート相対で書いた `SF:` パス(vitest、jest、scoverage など)は lcov ファイル自身のディレクトリ階層に対して解決されるので、パッケージごとのファイルはマージスクリプトなしでそのまま動きます。
-- `post_commit_refresh`(デフォルト未設定) — post-commit フックがバックグラウンドで実行するシェルコマンド。プロセスは detach され、出力は破棄されるので、コミットフローは待たされません。`/heal:setup tests` が提案するリポータコマンド(`cargo llvm-cov --workspace --lcov --output-path lcov.info --locked --ignore-run-fail`、`pytest --cov=...` など)をそのまま入れておくと、次の `heal status` が常に最新の `lcov.info` を読みます。`[features.test]` または `[features.test.coverage]` がオフのときは silent でスキップされます。
+- `enabled`（既定 `false`）— カバレッジの部分だけのスイッチ。リポータの設定はまだだが、`is_test_file` のタグ付けと `skip_ratio` は使いたいときは、`[features.test]` をオンにして `[features.test.coverage]` をオフにしておきます。
+- `lcov_paths` — 順に探す、プロジェクトからの相対パス。**存在するファイルはすべて読んでマージする**ので、多言語のモノレポでもパッケージごとの `lcov.info` を並べれば、どれも集計に入ります。2 つのファイルが同じソースファイルを扱っているときは、カウンタの大きいほうを取ります（1 つの lcov ファイルの中で記録が重複したときと同じ扱いです）。見つからないファイルは黙って飛ばし、起動時の警告も出しません。存在するのに読めないファイルは、標準エラーに警告を出します。リポータがパッケージのルートからの相対パスで書いた `SF:` のパス（vitest、jest、scoverage）は、その lcov ファイルが置かれたディレクトリを基準に解決します。そのため、マージ用のスクリプトがなくてもパッケージごとのファイルがそのまま使えます。
+- `post_commit_refresh`（既定は未設定）— post-commit フックが、コミットのたびにリポータを実行し直すためにバックグラウンドで起動するシェルコマンド（任意）。プロセスは切り離され、出力も捨てるので、コミットの流れを待たせません。`/heal:setup tests` が提案するのと同じコマンド（`cargo llvm-cov --workspace --lcov --output-path lcov.info --locked --ignore-run-fail`、`pytest --cov=...` など）を設定すれば、次の `heal status` が新しい `lcov.info` を読めます。`[features.test]` か `[features.test.coverage]` がオフのときは、黙って実行しません。
 
-heal は CI / ローカルリポータが書き出したものを読みます。デフォルトの探索順がカバーするのは:
+heal が読むのは、CI や手元のリポータが出力したものです。既定で探す場所は、次のリポータに対応しています。
 
-| リポータ                         | 書き出すパス                                              |
-| -------------------------------- | --------------------------------------------------------- |
-| `cargo llvm-cov --lcov`          | `target/llvm-cov/lcov.info`                               |
-| `pytest --cov --cov-report=lcov` | `coverage/lcov.info`                                      |
-| `nyc --reporter=lcov`            | `coverage/lcov-report/lcov.info`                          |
-| `scoverage`(Scala)               | プラグイン依存。必要なら `lcov.info` にシンボリックリンク |
+| リポータ                         | 書き出すパス                                                  |
+| -------------------------------- | ------------------------------------------------------------- |
+| `cargo llvm-cov --lcov`          | `target/llvm-cov/lcov.info`                                   |
+| `pytest --cov --cov-report=lcov` | `coverage/lcov.info`                                          |
+| `nyc --reporter=lcov`            | `coverage/lcov-report/lcov.info`                              |
+| `scoverage`（Scala）             | 設定による。必要なら `lcov.info` へのシンボリックリンクを置く |
 
-lcov リーダーは寛容で、未知のレコードタイプを許容したり、リポータが summary を省略したときに per-line レコードから合計を復元したりします。多くのリポータ方言がそのまま動きます。
+lcov の読み込みは寛容に作っています。知らない種類の記録があっても止まらず、リポータが集計のフィールドを省いた場合も行ごとの記録から合計を求めるので、たいていのリポータの方言はそのまま使えます。
 
-## Calibration(Severity 基準の調整)
+## Calibration
 
-`heal calibrate --force` を test ファミリ有効状態で走らせると、`.heal/calibration.toml` に新しい 2 セクションが書かれます:
+test ファミリを有効にした状態で `heal calibrate --force` を実行すると、`.heal/calibration.toml` に 2 つの節が加わります。
 
 ```toml
 [calibration.coverage_pct]
-# heal は **反転値**(100 - coverage_pct)を保存するので、他のメトリクスと
-# 同じ「value が p95 に達したら Critical」のカスケードがそのまま使え、
-# 「最悪が Critical」を意味し続けます。
+# heal は値を反転して（100 - coverage_pct）保存する。ほかのメトリクスと
+# 同じ「value >= p95 なら Critical」の段階をそのまま使えるようにするため。
+# 最も悪いものが Critical になる点は変わらない。
 p50 = 30.0     # カバレッジ 70%
 p75 = 50.0     # カバレッジ 50%
 p90 = 70.0     # カバレッジ 30%
 p95 = 85.0     # カバレッジ 15%
-floor_critical = 95.0   # ≤ 5% カバレッジ → percentile に関係なく Critical
-floor_ok       = 25.0   # > 75% カバレッジ → percentile に関係なく Ok
+floor_critical = 95.0   # カバレッジ 5% 以下 → パーセンタイルにかかわらず Critical
+floor_ok       = 25.0   # カバレッジ 75% 超 → パーセンタイルにかかわらず Ok
 
 [calibration.skip_ratio]
 p50 = 0.0
 p75 = 1.0
 p90 = 5.0
 p95 = 10.0
-floor_critical = 20.0   # > 20% skip → Critical
-floor_ok       = 0.5    # < 0.5% skip → Ok
+floor_critical = 20.0   # skip が 20% 超 → Critical
+floor_ok       = 0.5    # skip が 0.5% 未満 → Ok
 ```
 
-ここに書いた値は、`heal calibrate --force` を実行するまでに使われる文献由来のフォールバックです。フロアは `config.toml` 側に置いてください(再 calibration を生き延びるように):
+これは、`heal calibrate --force` を実行するまで heal が使う、文献に基づく代わりの値です。フロアは calibration をやり直しても消えないように、ここではなく `config.toml` に書きます。
 
 ```toml
 [metrics.coverage_pct]
-floor_critical = 90.0   # 「≤ 10% カバレッジ → Critical」へ締める
+floor_critical = 90.0   # 「カバレッジ 10% 以下なら Critical」に厳しくする
 
 [metrics.skip_ratio]
-floor_ok = 0.0          # skip されたテストはすべて表示
+floor_ok = 0.0          # skip されたテストが 1 つでもあれば表示する
 ```
 
-(`coverage_pct` の上書きは反転形式に対して適用されます。`floor_critical = 90.0` は「≤ 10% 行カバレッジ」の意味で、「≤ 90%」ではありません。)
+（`coverage_pct` の上書きは、反転した値に対して効きます。`floor_critical = 90.0` は「行カバレッジが 10% 以下」という意味で、「90% 以下」ではありません。）
 
-## post-commit ナッジ
+## post-commit の通知
 
-`[features.test.coverage]` を有効にすると、post-commit フックがナッジにインデント付き 2 行目を追加します:
+`[features.test.coverage]` がオンのとき、post-commit フックの通知には、字下げした 2 行目が加わります。
 
 ```
 heal: recorded · 3 critical, 7 high · heal status
          · 2 uncovered hotspot
 ```
 
-カウントは `coverage_pct` finding のうち Severity が High または Critical で、かつ `hotspot=true` のものです。カバレッジ機能がオフのときはこの行は出ません。
+この数は、High か Critical の `coverage_pct` の Finding のうち、`hotspot=true` も付いているものの件数です。カバレッジの機能がオフのときは、この行は出ません。
 
-## 厳密設計
+## 厳密な設計
 
-`[features.test]` と `[features.test.coverage]` も、他のセクションと同じく未知のキーを拒否します:
+ほかの節と同じく、`[features.test]` と `[features.test.coverage]` も、定義されていないキーがあるとエラーにします。
 
 ```toml
 [features.test]
-test_path = ["tests/**"]   # ✘ unknown — heal はここでエラー
-                            #   (正しくは複数形 `test_paths`)
+test_path = ["tests/**"]   # ✘ 知らない項目 — heal はここでエラーを出す
+                            #   （正しくは複数形の `test_paths`）
 ```

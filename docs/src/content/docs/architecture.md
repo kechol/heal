@@ -47,7 +47,6 @@ After `heal init`:
 ```
 <your-repo>/
 ├── .heal/
-│   ├── .gitignore                 # auto — empty by design (reserved)
 │   ├── config.toml                # you edit this (tracked in git)
 │   ├── calibration.toml           # auto — heal init / heal calibrate (tracked in git)
 │   └── findings/                  # tracked in git — team shares the TODO
@@ -288,4 +287,4 @@ auditable in CI logs and PR diffs.
 The `[policy.drain]` DSL is `<severity>` (any hotspot) or
 `<severity>:hotspot` (hotspot=true required). Severity tokens are
 lowercase: `critical / high / medium / ok`. See
-[Configuration › Drain policy](/heal/configuration/#drain-policy).
+[Code › Configuration › `[policy.drain]`](/heal/code/configuration/#policydrain).

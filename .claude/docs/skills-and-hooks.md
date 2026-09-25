@@ -46,7 +46,7 @@ The marketplace entry uses a `git-subdir` source:
 
 ```json
 { "source": "git-subdir", "url": "https://github.com/kechol/heal.git",
-  "path": "plugins/heal", "ref": "v0.6.0" }
+  "path": "plugins/heal", "ref": "v0.7.0" }
 ```
 
 `plugin.json` `version`, the marketplace entry's `version`, the source

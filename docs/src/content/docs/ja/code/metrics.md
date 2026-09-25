@@ -1,92 +1,92 @@
 ---
 title: Code · メトリクス
-description: Code ファミリの 7 メトリクス、Severity ラダー、Hotspot が示すレバレッジ。
+description: Code ファミリの 7 つのメトリクス、Severity の段階、そして Hotspot が効きどころを見つけるしくみ。
 ---
 
-Code ファミリは 7 つのメトリクスを同梱しています。どれも AI 専用ではなく、長年の文献に裏打ちされたコードヘルス指標です。heal の貢献は **コードベース自身の分布に合わせて calibrate すること**。200 行のスクリプトと 200kloc のサービスは、同じ生の値でも違う扱いを受けます。
+Code ファミリには 7 つのメトリクスがあります。どれも AI 向けに作ったものではなく、何十年もの文献に裏付けられた、昔からあるコードの健全性のシグナルです。heal が加えるのは、**それぞれを、対象のコードベース自身の分布に合わせて calibration すること**です。200 行のスクリプトと 20 万行のサービスでは、同じ値でも判定が変わります。
 
 ## Severity ラダー
 
-各 Finding には `Critical` / `High` / `Medium` / `Ok` のいずれかが付きます。判定は 2 段階です。
+すべての Finding は `Critical`、`High`、`Medium`、`Ok` のどれかになります。判定は次の 2 段階で、この順に行います。
 
-1. **絶対フロア**(文献由来): `value ≥ floor_critical` → Critical、`value < floor_ok` → Ok。全体的に劣化したコードベースでもワーストケースが Critical のまま、きれいなコードベースではパーセンタイルのループに縛られず卒業できる、というガード。
-2. **コードベース自身のパーセンタイル**(2 つのフロアの間): `≥ p95` Critical、`≥ p90` High、`≥ p75` Medium、それ未満は Ok。
+1. **絶対値のフロア**（文献に基づく）: `value ≥ floor_critical` なら Critical、`value < floor_ok` なら Ok。全体が荒れたコードベースでも最悪の箇所は赤のまま残り、きれいなコードベースはパーセンタイルの段階から卒業できます。
+2. **コードベースのパーセンタイル**（2 つのフロアのあいだ）: `≥ p95` なら Critical、`≥ p90` なら High、`≥ p75` なら Medium、それ以外は Ok。
 
-パーセンタイルは `.heal/calibration.toml` に保存され、`heal calibrate` で再計算されます。フロアは `[metrics.<m>]` で上書きできます — [設定](/heal/ja/code/configuration/)を参照。
+パーセンタイルの区切りは `.heal/calibration.toml` に入っています（`heal calibrate` で作り直します）。フロアは、メトリクスごとに設定で上書きできます。[設定](/heal/ja/code/configuration/) を参照してください。
 
-## 解消ティア
+## 解消 Tier
 
-`heal status` は Ok 以外の Finding を `[policy.drain]` 駆動で 3 つのティアにグループ化します:
+`heal status` は、Ok 以外のすべての Finding を、`[policy.drain]` に従って 3 つの Tier に分けます。
 
-- **T0 — 解消キュー**(デフォルト `["critical:hotspot"]`) — `/heal:refactor` が最初に提案する must-fix リスト。
-- **T1 — 余裕があれば解消**(デフォルト `["critical", "high:hotspot"]`) — 別セクションで表示し、自動解消はしない。
-- **Advisory** — それ以外の非 Ok。`--all` を付けない限り表示されない。
+- **T0 — 解消キュー**（既定 `["critical:hotspot"]`）— 必ず直す一覧。`/heal:refactor` はここから先に提案します。
+- **T1 — 解消すべきもの**（既定 `["critical", "high:hotspot"]`）— 別に表示しますが、自動では解消の対象にしません。
+- **Advisory** — それ以外の、Ok より上のもの。`--all` を付けたときだけ表示します。
 
-T0 はゴール、T1 は衛生、Advisory は余裕があれば確認、という形です。
+T0 は目標、T1 は日ごろの手入れ、Advisory は手が空いたときに見るもの、という位置づけです。
 
 ## 各メトリクス
 
 ### LOC — Lines of Code
 
-> _「コードベースは何でできているか?」_
+> _「このコードベースは何でできているか?」_
 
-[`tokei`](https://github.com/XAMPPRocky/tokei) で言語別に code / comment / blank 行をカウントします。他のメトリクスは LOC の言語検出に依存します。Markdown / Org は主言語の検出から除外されるので、ドキュメントの多いリポジトリも実装言語に解決されます。常時オン、Severity なし。
+言語ごとのコード行、コメント行、空行の数を [`tokei`](https://github.com/XAMPPRocky/tokei) で数えます。ほかのメトリクスは、ここでの言語の判定に頼っています。Markdown と Org は主な言語の判定から外すので、ドキュメントの多いリポジトリでも、実装に使っている言語が主な言語になります。常に有効で、Severity はありません。
 
 ### Complexity — CCN と Cognitive
 
-> _「読みにくい関数はどれか?」_
+> _「どの関数が追いにくいか?」_
 
-関数単位で同時に計算する 2 メトリクスです:
+関数ごとの 2 つのメトリクスを、1 回の走査で計算します。
 
-- **CCN**(Cyclomatic Complexity) — McCabe の分岐カウント。
-- **Cognitive Complexity** — Sonar の可読性メトリクス。ネストの深さにペナルティを課す。
+- **CCN**（循環的複雑度）— McCabe の、分岐の数。
+- **Cognitive Complexity** — Sonar の、読みやすさのメトリクス。ネストが深いほど重く数えます。
 
-両者は独立に calibrate され、文献由来のフロア(CCN は McCabe、Cognitive は SonarQube)を使います。両方とも **プロキシメトリクス** です。`floor_ok` がきれいなコードベースをラダーから卒業させます。
+どちらも、文献に基づくフロア（CCN は McCabe、Cognitive は SonarQube）を使って別々に calibration します。この 2 つは**代理指標**です。`floor_ok` のフロアによって、きれいなコードベースは段階から卒業できます。
 
-**言語**: TypeScript / JavaScript / Python / Go / Scala / Rust。
+**対応言語**: TypeScript / JavaScript / Python / Go / Scala / Rust。
 
-### Churn — 変更頻度
+### Churn — 変更の頻度
 
-> _「動いているのはどこか?」_
+> _「何が動いているか?」_
 
-`since_days` ウィンドウ(デフォルト 90 日)でのファイル単位コミット数。first-parent のみ集計します。Churn 自体には Severity がなく、Hotspot と post-commit ナッジに供給されます。
+直近 `since_days`（既定 90 日）の期間に、各ファイルに入ったコミットの数です。first-parent の履歴だけを数えます。Churn そのものには Severity がなく、Hotspot と post-commit の通知の材料になります。
 
 ### Change Coupling — 一緒に動くファイル
 
-> _「コード上は無関係だが、いつも一緒に変わるファイルは?」_
+> _「どのファイルどうしが、暗黙のうちに頼り合っているか?」_
 
-各コミットが触ったファイル群を co-occurrence イベントとして数え、ペア単位のカウンタでインポートグラフに現れない依存を可視化します。各ペアは **Symmetric**(両方が一緒に変わる、最も強いシグナル)か **OneWay** のいずれかに分類されます。
+各コミットで触られたファイルの組を「一緒に現れた」ものとして数え、ペアごとの回数から、import の関係には表れない依存を見つけます。ペアは **Symmetric**（互いに一緒に変わる。最も強いシグナル）と **OneWay** に分類します。
 
-「coupling のように見えるが実はそうでない」ペア — ロックファイルの更新、生成コード、`mod.rs ↔ 兄弟ファイル` — は自動で除外。テスト ↔ ソースおよびドキュメント ↔ ソースのペアはデフォルトで Advisory に降格しますが、`[features.test]` が ON のときはドリフトしたテストペアが `change_coupling.drift` として再昇格します([Test › メトリクス](/heal/ja/test/metrics/)を参照)。
+結合のように見えて実はそうではないペアは、自動で取り除きます。lockfile の更新、生成されたコード、`mod.rs` とその隣のファイルなどです。テストとソース、ドキュメントとソースのペアは、既定では Advisory に下げます。`[features.test]` が有効なら、ずれていくテストのペアを `change_coupling.drift` として格上げし直します（[Test › メトリクス](/heal/ja/test/metrics/) を参照）。
 
 ### Duplication — コピーされたブロック
 
-> _「重複しているのはどこか?」_
+> _「重複はどこにあるか?」_
 
-`min_tokens`(デフォルト 50)のスライディングウィンドウで構文木を歩き、同一トークン列の連なり(Type-1 clone)を検出します。フォーマット変更ではコピーは隠せませんが、変数名の変更には弱いです。
+同じトークンが長く続く箇所（Type-1 のクローン）を、`min_tokens`（既定 50）の幅の窓で構文木をたどって見つけます。整形し直してもクローンは隠れませんが、変数名を変えると別物として扱われます。
 
-`[features.docs]` が ON のときは Markdown / RST に対する並列パスも走ります([Docs › メトリクス](/heal/ja/docs/metrics/)を参照)。
+`[features.docs]` が有効なら、Markdown / RST のファイルにも同じ検出を並行して行います。[Docs › メトリクス](/heal/ja/docs/metrics/) を参照してください。
 
-**言語**: Complexity と同じ。
+**対応言語**: Complexity と同じです。
 
 ### LCOM — Lack of Cohesion of Methods
 
-> _「機械的に分割できるクラスはどれか?」_
+> _「どのクラスが機械的に分けられるか?」_
 
-クラスごとに、フィールド参照を共有するメソッドや互いを呼ぶメソッドをグラフのエッジとしてつなげます。連結成分の数が LCOM 値で、`cluster_count ≥ 2` ならそのクラスは責務がほどけて分かれそうな状態 — Extract Class の候補です。
+heal はクラスごとにグラフを作ります。同じフィールドを参照するメソッドどうし、呼び合うメソッドどうしを線でつなぎ、つながったまとまりの数を LCOM の値とします。`cluster_count ≥ 2` なら、そのクラスは分けられる関心事を抱えていて、クラスの抽出（Extract Class）の候補です。
 
-現在の構文ベースのバックエンドには既知の盲点があります(継承、動的プロパティアクセスなど)。表面化したクラスは「自動で分割」ではなく「人間がレビューする候補」として扱ってください。
+今の構文ベースの解析には、見えない部分があることが分かっています（継承、動的なプロパティアクセスなど）。表示されたクラスは、自動で決めてよいものではなく、人が見直す候補として扱ってください。
 
-**言語**: TypeScript / JavaScript / Python / Rust のクラススコープ。(Go にはクラススコープがなく、Scala は LSP バックエンド待ちです。)
+**対応言語**: TypeScript / JavaScript / Python / Rust のクラスの範囲。（Go にはクラスの範囲がなく、Scala は LSP を使う解析を待っています。）
 
 ## Hotspot
 
-Hotspot は churn × complexity を掛け合わせて、読みにくく頻繁に編集されるファイルを浮かび上がらせます。有限候補が 5 件以上なら p90 と Code フロア (22) の両方、1〜4 件なら絶対フロアのみでフラグします。非有限スコアはフラグしません。ファイル単位の `🔥` はそのファイルの他の Finding を修飾するため、`Critical 🔥` / `High 🔥` / `Medium 🔥` / `Ok 🔥` のどれにもなりえます。
+Hotspot は churn と複雑度を掛け合わせ、読みにくく、しかもよく書き換えられるファイルを浮かび上がらせます。有限の候補が 5 件以上あれば、フラグを立てるには p90 と Code のフロア（22）の両方を超える必要があります。候補が 1〜4 件のときは、絶対値のフロアだけを使います。有限でないスコアにはフラグを立てません。ファイルごとの `🔥` は、そのファイルのほかの Finding に付く装飾です。そのため `Critical 🔥`、`High 🔥`、`Medium 🔥`、さらには `Ok 🔥` もありえます。
 
-誰も触らない複雑なファイルは負債、チームが毎日のように編集する複雑なファイルは先に確認する価値がある、と考えてください。デフォルトの解消キュー `(critical:hotspot)` がまさにその交差点です。だからこそ Hotspot は heal が出す **最もアクション可能なシグナル** です。
+誰も触らない複雑なファイルは負債です。チームが 1 日おきに書き換えている複雑なファイルは、もっと早く確かめる価値があります。既定の解消キュー `(critical:hotspot)` は、まさにその交わりです。Hotspot が、heal の出すシグナルの中で**いちばん行動につなげやすい**のはこのためです。
 
-同じ Code Tier と Severity の中では `hotspot_score` の高い順に並びます。これは優先付けのヒューリスティックであり、欠陥確率や修正効果の大きさを保証しません。
+Code の同じ Tier と Severity の中では、`hotspot_score` の高いものを先に並べます。これは優先順位を決めるための目安で、欠陥が起きる確率でも、ある修正の効果がより大きいことの保証でもありません。
 
-「Ok 🔥」サブセット — 低 Severity だが頻繁に編集されている、「なぜまだここを編集しているのか?」候補 — は `heal status --all` の専用セクションに現れます。
+「Ok 🔥」のもの、つまりよく触られているのに Severity の付く Finding がないファイルは、`heal status --all` で専用のセクションに表示されます。「なぜまだここを編集し続けているのか」を考える候補です。
 
-詳しい背景は [コンセプト › Hotspot](/heal/ja/concept/#hotspot--レバレッジが集中する場所) を参照。
+もっと詳しい理由は [コンセプト › Hotspot](/heal/ja/concept/#hotspot--レバレッジが集中する場所) を参照してください。

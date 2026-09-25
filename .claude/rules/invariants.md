@@ -21,6 +21,7 @@ Files under this rule:
 - `.heal/calibration.toml`
 - `.heal/findings/latest.json`
 - `.heal/findings/fixed.json`
+- `.heal/findings/accepted.json`
 - `.heal/semantic/verdicts/*.jsonl` and
   `.heal/cache/semantic/verdicts/*.jsonl` (`VerdictStore::save`)
 - `.claude/settings.json`

@@ -196,6 +196,11 @@ score is not a probability or guaranteed payoff.
 `--severity` is always a minimum floor. `--all` can reveal otherwise-hidden
 sections at or above that floor, but it never restores findings below it.
 
+With `[features.semantic]` enabled, `heal status --focus <file>`
+ranks for the work described in the file (see
+[Semantic (Jev)](/heal/semantic/)). It always rescans and does not
+update the saved TODO list.
+
 ## `heal diff`
 
 Compare the live worktree against the findings at an earlier commit.
@@ -317,11 +322,6 @@ this command. Put `floor_critical` / `floor_ok` overrides in
 `config.toml`, not `calibration.toml` — that way `heal calibrate
 --force` doesn't clobber them.
 
-With `[features.semantic]` enabled, `heal status --focus <file>`
-ranks for the work described in the file (see
-[Semantic (Jev)](/heal/semantic/)). It always rescans and does not
-update the saved TODO list.
-
 ## `heal semantic ask`
 
 Only available when `[features.semantic] enabled = true`. See
@@ -358,8 +358,15 @@ stored key. The key is never written under `.heal/`.
 ## Inspecting the cache
 
 `heal status --json` is the contract for scripts. If you want to peek
-at the on-disk state directly, three flat files live under
+at the on-disk state directly, four flat files live under
 `.heal/findings/`:
+
+| File                             | Purpose                                                                                   |
+| -------------------------------- | ----------------------------------------------------------------------------------------- |
+| `.heal/findings/latest.json`     | Current TODO — reused when fresh; replaced when stale/missing or forced with `--refresh`. |
+| `.heal/findings/fixed.json`      | Bounded record of fixes the skills claimed with `heal mark fix`.                          |
+| `.heal/findings/accepted.json`   | Findings the team accepted with `heal mark accept` (won't fix / intrinsic).               |
+| `.heal/findings/regressed.jsonl` | Audit trail for fixes that were re-detected.                                              |
 
 The two JSON views intentionally are not byte-for-byte identical.
 `latest.json` is the raw observer record. `heal status --json` uses the
@@ -369,12 +376,6 @@ workspace, feature, metric, path, and Severity filters to findings,
 re-review notices, and their aggregate counts. Coverage provenance has
 no Severity; it follows workspace/path scope and is omitted when a
 non-Test family or non-coverage metric is selected.
-
-| File                             | Purpose                                                                                   |
-| -------------------------------- | ----------------------------------------------------------------------------------------- |
-| `.heal/findings/latest.json`     | Current TODO — reused when fresh; replaced when stale/missing or forced with `--refresh`. |
-| `.heal/findings/fixed.json`      | Bounded record of fixes the skills claimed with `heal mark fix`.                          |
-| `.heal/findings/regressed.jsonl` | Audit trail for fixes that were re-detected.                                              |
 
 These are plain files, readable with `jq`:
 

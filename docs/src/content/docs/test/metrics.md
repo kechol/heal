@@ -38,7 +38,7 @@ emitted only for files with `< 100%` coverage. Calibration stores
 **inverted values** (`100 - coverage_pct`) so the same "value
 reaches p95 → Critical" cascade applies as for the rest of the
 metrics — see
-[Test › Configuration](/heal/test/configuration/#calibrationseverity-基準の調整)
+[Test › Configuration](/heal/test/configuration/#calibration)
 for the floors.
 
 Coverage output also carries observation provenance. `missing` means
