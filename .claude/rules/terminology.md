@@ -18,8 +18,10 @@ Common bites:
 - `FindingsRecord`, never `CheckRecord` / `Snapshot` / `Report`.
 - `heal status` (renders findings) and `heal metrics` (one-shot
   recompute) — distinct, not interchangeable.
-- `heal-code-review` / `heal-code-patch`, never `heal-code-check` /
-  `heal-code-fix`.
+- Skills are `/heal:setup`, `/heal:refactor`, `/heal:docs`,
+  `/heal:tests` — plugin namespace, colon form. Never the retired
+  hyphen names (`heal-code-review`, `heal-setup`, …) outside
+  `CHANGELOG.md` and upgrade notes.
 - The product is **HEAL** (in titles only) and **heal** (in prose,
   commands, source). Never "Heal" or "heal-cli" as the brand.
 - "workspace" is the only term for the monorepo overlay concept.
@@ -30,7 +32,7 @@ Common bites:
 A rename is one PR (`refactor!(...)`). The sweep covers:
 
 - Source under `crates/cli/src/` and `crates/cli/tests/`.
-- Skill bodies under `crates/cli/skills/`.
+- Plugin skill bodies and references under `plugins/heal/`.
 - Starlight docs (en `docs/src/content/docs/`, ja
   `docs/src/content/docs/ja/`).
 - `README.md`, `CLAUDE.md`, `CHANGELOG.md`.
@@ -48,10 +50,21 @@ a thing to extend:
 - `checks/`, `CheckRecord`, `check_id`, `regressed_check_id`.
 - `heal run`, `heal logs`, `heal snapshots`, `heal compact`,
   `heal fix`, `heal checks` subcommands.
-- `skills-install.json`.
-- `marketplace.json`, `.claude-plugin/`, `.claude/plugins/heal/`.
+- `skills-install.json`, `skill_assets`, `SkillTarget`, bundled-skill
+  `metadata:` blocks.
+- `heal skills install` / `update` / `status` (only `uninstall`
+  remains).
+- The `heal-local` marketplace and `.claude/plugins/heal/` (the old
+  project-local plugin layout). The repository-root
+  `.claude-plugin/marketplace.json` named `heal` is current.
 - `heal-core`, `heal-observer`, `heal-plugin-host` crates.
-- `heal-code-check`, `heal-code-fix` skills.
+- Every hyphenated skill name: `heal-cli`, `heal-setup`,
+  `heal-config`, `heal-concepts-setup`, `heal-code-review`,
+  `heal-code-patch`, `heal-code-check`, `heal-code-fix`,
+  `heal-doc-pair-setup`, `heal-doc-scaffold`, `heal-doc-review`,
+  `heal-doc-patch`, `heal-test-reporter-setup`, `heal-test-review`,
+  `heal-test-patch`. `legacy_skills::NAMES` keeps them as data for the
+  uninstall sweep.
 
 Mentions in `CHANGELOG.md` migration notes are intentional; leave them.
 Anywhere else, fix.

@@ -5,7 +5,7 @@ description: '[features.docs] ファミリが追加するドキュメント品�
 
 オプトインの **Docs** ファミリは、常時オンの Code ファミリの上に 7 つのメトリクスを追加します。各メトリクスは、ドキュメントが説明している実装からずれていく特定のしかたを狙い撃ちします。
 
-設定の調整値は [Docs › 設定](/heal/ja/docs/configuration/)、同梱スキルは [Docs › スキル](/heal/ja/docs/skills/) を参照。
+設定の調整値は [Docs › 設定](/heal/ja/docs/configuration/)、スキルは [Docs › スキル](/heal/ja/docs/skills/) を参照。
 
 ## 一覧
 
@@ -19,7 +19,7 @@ description: '[features.docs] ファミリが追加するドキュメント品�
 | `todo_density`    | A + B         | ドキュメント単位の `TODO` / `FIXME` / `XXX` / `TBD` / `[要確認]` / `[要修正]` カウント     | ≥ 3 Medium、≥ 10 High                      |
 | `doc_hotspot`     | A(ペア)       | `paired_src_churn × debt` の合成スコア。docs ファミリの Finding に `hotspot=true` を立てる | 常に Ok(装飾キャリア)                      |
 
-**Layer A**(ペアドキュメント)は `.heal/doc_pairs.json` の doc ⇔ src マッピングが必要で、`/heal-doc-pair-setup` が生成します。**Layer B**(standalone prose docs)は `[features.docs.standalone]` の include / exclude グロブで自動発見されます。
+**Layer A**(ペアドキュメント)は `.heal/doc_pairs.json` の doc ⇔ src マッピングが必要で、`/heal:setup docs` が生成します。**Layer B**(standalone prose docs)は `[features.docs.standalone]` の include / exclude グロブで自動発見されます。
 
 ## `doc_freshness`
 
@@ -79,7 +79,7 @@ Doc Hotspot 自体は常に `Severity::Ok` です。docs ファミリの Finding
 
 ## 解消パターン
 
-`/heal-doc-review` は **Diátaxis** のレンズで findings を読み解きますが、有効 Tier、Severity、Docs ファミリの `hotspot_score` 降順(欠落は末尾、同点は metric/path/id)という HEAL の順序を維持します。Tutorial / How-to / Reference / Explanation は診断と修正方法に使い、キューの優先度を上書きしません。`/heal-doc-patch` は docs スライスを 1 件 1 コミットで消化します:
+`/heal:docs` は **Diátaxis** のレンズで findings を読み解きますが、有効 Tier、Severity、Docs ファミリの `hotspot_score` 降順(欠落は末尾、同点は metric/path/id)という HEAL の順序を維持します。Tutorial / How-to / Reference / Explanation は診断と修正方法に使い、キューの優先度を上書きしません。承認された提案は 1 件 1 コミットで適用します:
 
 - **`doc_link_health`** → 相対パスまたは anchor slug を修正。
 - **`doc_drift`** → 古い識別子の参照を消す、または明確なリネームがあれば新しい名前で復活。

@@ -2,7 +2,7 @@
 //! src pair mappings used by the `[features.docs]` observer family.
 //!
 //! The HEAL binary is a **read-only consumer** of this file. Generation
-//! is the `/heal-doc-pair-setup` skill's responsibility (mention-based
+//! is the `/heal:setup` skill's responsibility (mention-based
 //! regex, directory mirror heuristics, optional LLM inference). That
 //! split keeps the binary deterministic — no heuristics, no model
 //! calls, just JSON in / `Vec<DocPair>` out — and matches the
@@ -46,12 +46,12 @@ use crate::core::error::{Error, Result};
 
 /// Schema version for [`DocPairsFile`]. Bump on any breaking change to
 /// the JSON shape — readers silently treat older versions as absent so
-/// the user re-runs `/heal-doc-pair-setup` rather than seeing
+/// the user re-runs `/heal:setup` rather than seeing
 /// half-decoded entries.
 pub const DOC_PAIRS_VERSION: u32 = 1;
 
 /// How a pair was discovered. The `manual` variant is load-bearing:
-/// `/heal-doc-pair-setup` must preserve hand-authored entries on
+/// `/heal:setup` must preserve hand-authored entries on
 /// regeneration so users can correct heuristics without losing the
 /// fix on the next sweep.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -117,7 +117,7 @@ impl DocPairsFile {
     /// `pairs_path` config resolves to).
     ///
     /// - `Ok(None)` — the file is absent. The caller is expected to
-    ///   surface a hint pointing the user at `/heal-doc-pair-setup`.
+    ///   surface a hint pointing the user at `/heal:setup`.
     /// - `Ok(Some(_))` — file present and parsed.
     /// - `Err(_)` — file present but malformed. Returned as
     ///   `core::Error::CacheParse` (same family as `findings_cache`)

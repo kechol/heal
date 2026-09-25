@@ -107,9 +107,9 @@ impl Family {
     #[must_use]
     pub fn patch_skill(self) -> &'static str {
         match self {
-            Self::Code => "/heal-code-patch",
-            Self::Test => "/heal-test-patch",
-            Self::Docs => "/heal-doc-patch",
+            Self::Code => "/heal:refactor",
+            Self::Test => "/heal:tests",
+            Self::Docs => "/heal:docs",
         }
     }
 

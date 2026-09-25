@@ -114,7 +114,7 @@ impl HealPaths {
     }
 
     /// Concept vocabulary for the `concept` / `doc_concept` semantic
-    /// tasks. Tracked team contract, written by `/heal-concepts-setup`.
+    /// tasks. Tracked team contract, written by `/heal:setup`.
     #[must_use]
     pub fn concepts(&self) -> PathBuf {
         self.root.join("concepts.toml")

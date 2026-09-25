@@ -66,7 +66,7 @@ impl Task for DocConcept {
             return Some("needs [features.docs] enabled = true".to_owned());
         }
         (!crate::core::HealPaths::new(ctx.project).concepts().exists())
-            .then(|| "no .heal/concepts.toml yet; run /heal-concepts-setup".to_owned())
+            .then(|| "no .heal/concepts.toml yet; run /heal:setup".to_owned())
     }
     fn plan(&self, ctx: &TaskContext<'_>) -> anyhow::Result<Vec<Group>> {
         let Some(concepts) = load_concepts(ctx)? else {
@@ -351,7 +351,7 @@ impl Task for DocPairs {
         "doc_pairs"
     }
     fn summary(&self) -> &'static str {
-        "on demand: for docs without a pair, which source file each documents (for /heal-doc-pair-setup)"
+        "on demand: for docs without a pair, which source file each documents (for /heal:setup)"
     }
     fn on_demand(&self) -> bool {
         true

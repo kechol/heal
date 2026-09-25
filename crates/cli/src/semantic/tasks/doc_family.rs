@@ -615,7 +615,7 @@ impl Task for DocDriftSemantic {
             ctx.reports
                 .and_then(|r| r.doc_pairs.as_ref())
                 .is_none()
-                .then(|| "needs .heal/doc_pairs.json; run /heal-doc-pair-setup".to_owned())
+                .then(|| "needs .heal/doc_pairs.json; run /heal:setup".to_owned())
         })
     }
     fn plan(&self, ctx: &TaskContext<'_>) -> anyhow::Result<Vec<Group>> {

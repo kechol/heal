@@ -1,0 +1,25 @@
+{
+  "name": "heal",
+  "owner": {
+    "name": "Kazuyuki SUZUKI",
+    "url": "https://github.com/kechol"
+  },
+  "description": "Claude Code plugin for the heal CLI, which turns code-health signals into work for AI coding agents.",
+  "plugins": [
+    {
+      "name": "heal",
+      "description": "Set up heal, then refactor code, docs, and tests from what heal finds.",
+      "version": "0.6.0",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/kechol/heal.git",
+        "path": "plugins/heal",
+        "ref": "v0.6.0"
+      },
+      "homepage": "https://kechol.github.io/heal/",
+      "repository": "https://github.com/kechol/heal",
+      "license": "MIT OR Apache-2.0",
+      "category": "development"
+    }
+  ]
+}

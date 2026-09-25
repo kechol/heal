@@ -1,27 +1,32 @@
 ---
-description: Constraints on the Claude Code integration layer — bundled skills, settings.json sweep, post-commit git hook, hidden mark group.
+description: Constraints on the Claude Code integration layer — the heal plugin (skills, SessionStart hook, marketplace), the post-commit git hook, legacy cleanup, hidden mark group.
 paths:
-  - "crates/cli/skills/**"
-  - "crates/cli/src/skill_assets.rs"
+  - "plugins/heal/**"
+  - ".claude-plugin/**"
+  - "crates/cli/src/legacy_skills.rs"
   - "crates/cli/src/claude_settings.rs"
   - "crates/cli/src/commands/init.rs"
   - "crates/cli/src/commands/skills.rs"
+  - "crates/cli/src/commands/doctor.rs"
   - "crates/cli/src/commands/hook.rs"
   - "crates/cli/src/commands/mark.rs"
 ---
 
 # Skills and hooks rules
 
-## R1. HEAL registers exactly one hook: post-commit (git)
+## R1. Two hooks, one each side
 
-No `SessionStart`, `Stop`, `PostToolUse`, `Edit`, `Notification`, or
-`PreCompact` in `.claude/settings.json`. The `claude_settings::wire`
-machinery exists only to **sweep** legacy entries from older HEAL
-versions.
+- **git post-commit**, installed by `heal init` into `.git/hooks/`.
+  Fires on every commit, human or agent.
+- **Claude Code SessionStart**, shipped by the plugin
+  (`plugins/heal/hooks/hooks.json` → `scripts/session-start.sh`). It
+  only compares `heal --version` with the plugin version.
 
-If your idea adds a new hook, redirect it to (a) post-commit nudge
-content or (b) a skill-driven flow the user opts into via
-`/heal-...`.
+Nothing else. No `Stop`, `PostToolUse`, `Edit`, `Notification`, or
+`PreCompact`, and the CLI never writes hook entries into
+`.claude/settings.json`. If your idea adds a hook, redirect it to (a)
+post-commit nudge content, (b) `heal doctor` output, or (c) a skill
+step the user invokes.
 
 ## R2. Post-commit hook never blocks a commit
 
@@ -30,140 +35,125 @@ heal hook commit || true
 ```
 
 The `|| true`, the `command -v heal` guard, and the marker
-`# heal post-commit hook` are all load-bearing. Don't change them
-without understanding the contract:
+`# heal post-commit hook` are load-bearing:
 
 - A broken HEAL install must never break the user's commit flow.
 - The marker is what makes the install idempotent without clobbering
   user-authored hooks.
 
-## R3. The hook is silent on uninitialised projects
+## R3. Hooks are silent on uninitialised projects
 
-If `.heal/` doesn't exist, `heal hook commit` returns 0 immediately
-without printing. Same for missing `config.toml`. Don't add startup
-hints here — put them in `heal status` instead.
+`heal hook commit` returns 0 without printing when `.heal/` or
+`config.toml` is missing. `session-start.sh` exits 0 without output
+when `$CLAUDE_PROJECT_DIR/.heal` does not exist — a user-scope plugin
+install runs it in every project. Both always exit 0. Startup hints
+belong in `heal doctor` / `heal status`, not here.
 
-## R4. Skill drift is a function of bytes, not state
+## R4. The SessionStart hook compares release series only
+
+0.x: `major.minor` must match; 1.0+: `major`. On mismatch it prints one
+JSON object (`systemMessage` + `hookSpecificOutput.additionalContext`)
+naming which side to upgrade. It never runs `heal` subcommands other
+than `--version`, never touches `.heal/`, and never uses the network.
+POSIX `sh` only — no `jq`, no bash-isms.
+
+## R5. Plugin version == CLI version, marketplace pinned to the tag
+
+`plugins/heal/.claude-plugin/plugin.json` `version`, the marketplace
+entry's `version`, and `workspace.package.version` in `Cargo.toml` are
+the same string; the marketplace entry's `git-subdir` source `ref` is
+`v<version>`. `/release` bumps all four together and
+`crates/cli/tests/plugin_manifest.rs` fails CI when they drift. Users
+therefore only ever receive the skills of a tagged release; `main` may
+run ahead of the published plugin.
+
+## R6. Skill layout and naming
 
 ```
-canonical(on-disk SKILL.md) != bundled raw bytes  →  drift
+plugins/heal/
+  .claude-plugin/plugin.json
+  hooks/hooks.json
+  scripts/session-start.sh
+  references/{cli,apply-loop}.md      # shared; skills load via ${CLAUDE_PLUGIN_ROOT}
+  skills/{setup,refactor,docs,tests}/SKILL.md (+ references/)
 ```
 
-`canonical()` strips the `metadata:` block from SKILL.md frontmatter;
-other files compared verbatim. There is no `skills-install.json`,
-no SHA store, no timestamp file.
+Claude Code namespaces plugin skills as `<plugin>:<dir>`, so the
+directory name is the invocation (`skills/refactor/` → `/heal:refactor`).
+SKILL.md `name` equals the directory name. Adding, renaming, or
+removing a skill is a user-visible contract change (`!` commit) and
+sweeps docs per `terminology.md` R2.
 
-The retired sidecar caused drift verdicts to diverge across teammates
-re-installing on different machines. Don't reintroduce it.
+## R7. One work skill per family; review and patch stay merged
 
-## R5. `metadata:` block in SKILL.md is auto-managed
+`/heal:refactor` (code), `/heal:docs`, and `/heal:tests` each run the
+same loop defined in `plugins/heal/references/apply-loop.md`:
+diagnose → propose → the user approves → one commit per approved
+proposal → report. Don't split a family back into read-only and
+write-only skills, and don't let a skill write before the user approved
+the proposal.
 
-In source SKILL.md, the frontmatter has `name` and `description` and
-**not** a `metadata:` block. `skill_assets::extract` injects:
+Loop rules — encoded in `apply-loop.md`, don't relax:
 
-```yaml
-metadata:
-  heal-version: <env!("CARGO_PKG_VERSION") at compile time>
-  heal-source: bundled
-```
+- Proposals follow `drain_rank` (T0 first; never re-derive, never mix
+  families).
+- Structural proposals need two independent signals on the same seam;
+  public renames, contested boundaries, and DDD strategic moves are
+  marked "needs a decision" and asked individually.
+- Refuses to write on a dirty worktree.
+- One approved proposal per commit; `heal mark fix` once per resolved
+  finding, all with that commit's SHA.
+- With `[features.semantic]`, `verify_patch` (and `verify_tests` for
+  tests) runs after each commit; a failing verdict undoes it.
+- Never pushes, opens a PR, amends, or skips hooks.
 
-on extract. Hand-editing `metadata:` in source is overwritten on
-every build.
+## R8. `/heal:setup` is idempotent and doctor-driven
 
-## R6. `LEGACY_HEAL_COMMANDS` is a closed list
+Every run starts from `heal doctor --json`; required steps come from
+`todo` / `error` sections, everything else is optional. It never
+recalibrates without the user's yes, never stores an API key, never
+runs the paid `heal semantic ask` unless asked, and writes only
+`.heal/config.toml`, `.heal/doc_pairs.json`, and `.heal/concepts.toml`
+directly (calibration, hook, and cleanup go through `heal` commands).
+Drift thresholds live in `commands/doctor.rs`, not in the skill.
 
-```rust
-const LEGACY_HEAL_COMMANDS: &[&str] = &["heal hook edit", "heal hook stop"];
-```
+## R9. Skills are Claude Code skills
 
-Add to it only when removing a hook entry shape we actually shipped.
-Don't add speculatively — sweeping more aggressively could remove
-user hooks that happen to share a name.
+Skill bodies may name Claude Code tools (`AskUserQuestion`) and use
+`${CLAUDE_PLUGIN_ROOT}` / `${CLAUDE_SKILL_DIR}`. Other agents are not a
+target (Codex users may copy the directories by hand, unsupported).
+Descriptions stay trigger-rich and end with the slash form
+(`/heal:setup`). Validate with
+`claude plugin validate --strict plugins/heal/skills` and
+`claude plugin validate --strict .`.
 
-## R7. heal-code-review and heal-code-patch are distinct
+## R10. The CLI does not bundle or install skills
 
-Don't merge them. (See `scope.md` R8 for the role boundary.)
+No `include_dir!`, no extraction, no `metadata:` injection, no drift
+detection, no sidecar manifest. `heal skills` keeps only `uninstall`,
+which removes the closed list in `legacy_skills::NAMES` under
+`legacy_skills::ROOTS` and runs `claude_settings::unregister`.
+`install` / `update` / `status` stay parseable (hidden) and exit 1
+with the plugin pointer. `heal init --yes` / `--no-skills` stay
+accepted as hidden no-ops.
 
-`heal-code-patch` rules — encoded in the skill body, don't relax:
+## R11. Legacy sweeps are closed and content-checked
 
-- One finding per commit, in the `core::order` drain order: effective
-  Tier, Severity, then — when `[features.semantic]` notes are present —
-  the semantic axes (focus, consequence, friction, bug-fix ratio, effort,
-  compared one after another), then descending family-local
-  `hotspot_score` (missing score last; metric/path/id ties). Without
-  notes the axes are neutral and the order is Tier → Severity →
-  `hotspot_score`.
-- Refuses dirty worktree.
-- Calls `heal mark fix` after each commit.
-- Does not push, does not open a PR.
-- No `--metric` filter (the point is to drain the cache).
+- `legacy_skills::NAMES` lists only names a released HEAL wrote. Add
+  to it only when retiring a name that actually shipped.
+- `LEGACY_HEAL_COMMANDS` (`heal hook edit`, `heal hook stop`) is closed
+  the same way.
+- `.claude-plugin/marketplace.json` is removed only when it parses as
+  the `heal-local` marketplace HEAL once wrote. A project that is itself
+  a marketplace (this repository is one) must keep its manifest.
 
-## R8. The `heal mark` group is hidden from `--help`
+## R12. The `heal mark` group is hidden from `--help`
 
-`#[command(hide = true)]` on the group. Both `mark fix` (called by
-`/heal-code-patch`) and `mark accept` (called by
-`/heal-code-review`) are agent-facing — surfacing them as
-top-level commands invites running them without the surrounding
-workflow that gives the entry meaning (a commit for `fix`, a
-documented `reason` for `accept`).
+`#[command(hide = true)]` on the group. `mark fix` and `mark accept`
+are agent-facing — surfacing them invites running them without the
+workflow that gives the entry meaning (a commit for `fix`, an approved
+`reason` for `accept`).
 
-`heal mark-fixed` is the deprecated v0.2 alias: same hidden flag,
-delegates to `heal mark fix` after a one-line stderr deprecation
-warning. Kept so older `/heal-code-patch` skill bundles keep
-working until the user runs `heal skills update`. Don't remove it
-without a major-version bump.
-
-## R9. Skill source location
-
-Source: `crates/cli/skills/<skill>/`. The path is **inside the crate
-dir** so `cargo publish` includes it. Don't move it out —
-`include_dir!` is a compile-time read of files under
-`$CARGO_MANIFEST_DIR`. Skills land in different on-disk locations
-depending on the agent target (see R12) but all read from this
-single source tree.
-
-## R10. Trigger-rich descriptions
-
-Skill `description` fields are long, list trigger phrases, and end
-with the slash-command form (`/heal-setup`). The pattern is what
-both Claude Code and Codex CLI's skill matchers key on (Codex uses
-the same `description`-driven implicit invocation — see
-<https://developers.openai.com/codex/skills>).
-
-When adding a new skill, follow the existing `description` shape;
-don't shorten it for terseness.
-
-## R11. Skill bodies are agent-neutral
-
-Source SKILL.md bodies are written so the same bytes serve every
-supported agent. Don't introduce text that hard-codes one host:
-
-- No "Claude Code" / "Codex CLI" name in instructions to the model
-  (the chat-language fallback line documents the host as a list,
-  not a singular).
-- No tool names (`Bash`, `Edit`, `Read`) — describe shell commands
-  via the heal CLI surface instead.
-- Slash-command references (`/heal-code-patch`) are fine — both
-  Claude Code and Codex resolve the same form.
-
-Drift fixes itself: any sweep needed for one host shows up
-identically in the other's install. Pin tests and dogfooding cover
-both.
-
-## R12. Two install destinations, one bundle
-
-The bundled skill set lands in different places per agent:
-
-- `SkillTarget::Claude` → `<project>/.claude/skills/<name>/`
-- `SkillTarget::Codex`  → `<project>/.agents/skills/<name>/`
-
-`heal init` decides per-target (one TTY prompt per detected
-agent's CLI; `--yes` installs to all detected; `--no-skills` skips
-all). `heal skills install / update / status / uninstall` accept
-`--target <detected|claude|codex|all>` (default `detected`,
-mirroring init). Each target's tree is independent: same bundled
-bytes, two on-disk records. Drift detection (R4) applies
-independently to each. Don't add a third path without first
-declaring a new `SkillTarget` variant — the enum is the single
-source of truth, and adding a variant must come with a matching
-`TargetFilter` clap value to keep `--target` exhaustive.
+`heal mark-fixed` is the deprecated v0.2 alias: hidden, delegates to
+`heal mark fix` after a stderr warning that points at the plugin and
+`heal skills uninstall`. Don't remove it without a major-version bump.

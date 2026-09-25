@@ -1,6 +1,6 @@
 ---
 name: docs
-description: Sync the heal repo's documentation with the current code. Reads every tracked Markdown / MDX page under `docs/src/` (Starlight site, en + ja mirror), `.claude/` (internal AI-agent reference and rules), and `README.md`, compares each claim against the live source tree, and rewrites stale or missing sections in place — preserving voice and structure, sweeping en + ja in lockstep, honoring the canonical-names contract in `.claude/docs/glossary.md`. Read-only on code; writes only to the doc files. Does NOT commit. Not for HEAL-finding triage (`/heal-doc-review`, `/heal-doc-patch`) or generating a fresh `.heal/docs/` scaffold (`/heal-doc-scaffold`) — those handle the observer family, not code → doc drift. Trigger on "/docs", "update the docs", "sync docs with code", "docs are stale, fix them", "rewrite outdated docs", "freshen the documentation".
+description: Sync the heal repo's documentation with the current code. Reads every tracked Markdown / MDX page under `docs/src/` (Starlight site, en + ja mirror), `.claude/` (internal AI-agent reference and rules), and `README.md`, compares each claim against the live source tree, and rewrites stale or missing sections in place — preserving voice and structure, sweeping en + ja in lockstep, honoring the canonical-names contract in `.claude/docs/glossary.md`. Read-only on code; writes only to the doc files. Does NOT commit. Not for HEAL-finding work (`/heal:docs`) or generating a fresh `.heal/docs/` scaffold (`/heal:docs scaffold`) — those handle the observer family, not code → doc drift. Trigger on "/docs", "update the docs", "sync docs with code", "docs are stale, fix them", "rewrite outdated docs", "freshen the documentation".
 ---
 
 # docs
@@ -14,7 +14,9 @@ Two audiences, two languages, one pass:
 - **User docs** — `docs/src/content/docs/**`, `README.md`. Junior
   engineer audience. English root, Japanese mirror under `ja/`.
 - **Internal docs** — `.claude/docs/**`, `.claude/rules/**`,
-  `.claude/skills/**/SKILL.md`, `CLAUDE.md`. AI-agent audience.
+  `.claude/skills/**/SKILL.md`, `CLAUDE.md`, `AGENTS.md`, and the
+  plugin's skills and references under `plugins/heal/`. AI-agent
+  audience.
   Always English (workflow.md R6.1). Capture decision rationale.
 
 ## Drift to look for
@@ -42,9 +44,9 @@ gets a 10% rewrite, not a tone overhaul.
 - New page from scratch — propose first, align on placement /
   audience / voice.
 - The `.heal/docs/` scaffold (HEAL's *output*) — that's
-  `/heal-doc-scaffold`.
+  `/heal:docs scaffold`.
 - `[features.docs]` findings on the docs site itself — that's
-  `/heal-doc-review` / `/heal-doc-patch`.
+  `/heal:docs`.
 
 ## Output language
 
@@ -91,7 +93,8 @@ git ls-files \
   'README.md' 'CLAUDE.md' \
   'docs/src/content/docs/**/*.md' 'docs/src/content/docs/**/*.mdx' \
   '.claude/docs/**/*.md' '.claude/rules/**/*.md' \
-  '.claude/skills/**/SKILL.md'
+  '.claude/skills/**/SKILL.md' 'AGENTS.md' \
+  'plugins/heal/**/*.md'
 ```
 
 Skip `CHANGELOG.md` (owned by `/release`). For each page, frontmatter
@@ -113,7 +116,7 @@ Where each claim category lives:
 | JSON output shapes | Type definitions in `crates/cli/src/{config,findings,observer,…}.rs` + `crates/cli/tests/core_*.rs` |
 | Schema versions | `FINDINGS_RECORD_VERSION`, `CONFIG_VERSION`, `CALIBRATION_VERSION` constants |
 | Observers, metric strings | `crates/cli/src/observer/`; emitted `Finding.metric` values |
-| Bundled skills | `.claude/skills/*/SKILL.md` frontmatter |
+| Plugin skills | `plugins/heal/skills/*/SKILL.md` frontmatter; `plugins/heal/references/cli.md` for the CLI contract they rely on |
 | Config keys | `crates/cli/src/config.rs` and `feature_*` modules |
 | Canonical names | `.claude/docs/glossary.md` |
 | Retired names (must NOT appear) | `.claude/rules/terminology.md` R3 |
@@ -149,7 +152,7 @@ Build a per-file change list before any write. Example shape:
 ```
 README.md
   L18  "Critical / High" → "Critical AND hotspot=true" (scope.md R1)
-  L57  Skills list missing /heal-doc-scaffold
+  L57  Skills list missing /heal:docs scaffold
 
 docs/src/content/docs/cli.md
   Add --feature docs flag; refresh exit-code table
@@ -239,7 +242,7 @@ One block per touched file:
 
 ```
 README.md
-  +2 -1   skills list now includes /heal-doc-scaffold
+  +2 -1   skills list now includes /heal:docs scaffold
           metrics table aligned with scope.md R1
 
 docs/src/content/docs/cli.md

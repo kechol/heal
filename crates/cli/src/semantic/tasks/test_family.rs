@@ -277,7 +277,7 @@ impl Task for TestValue {
             let (summary, hint) = if label == "delete" {
                 (
                     format!("`{test}` checks {checks} and would not catch the behaviour its name claims breaking"),
-                    "delete it (one test per commit; see heal-test-patch for the coverage guard) or rewrite it to assert behaviour",
+                    "delete it (one test per commit; see /heal:tests for the coverage guard) or rewrite it to assert behaviour",
                 )
             } else {
                 (

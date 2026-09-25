@@ -5,7 +5,7 @@ description: '[features.test] の有効化、lcov.info の配線、テストと�
 
 **Test** ファミリはオプトインです。デフォルトでオフ。`cargo llvm-cov`、`pytest --cov`、`nyc`、`scoverage` などのリポータが生成した `lcov.info` がある(または用意できる)ときに有効化してください。heal はテストを実行しません。テストスイートを実際に走らせて初めて分かること(flakiness、mutation score、ランタイム傾向など)はスコープ外です。
 
-各メトリクスが捕まえる内容は [Test › メトリクス](/heal/ja/test/metrics/)、同梱スキルは [Test › スキル](/heal/ja/test/skills/) を参照。
+各メトリクスが捕まえる内容は [Test › メトリクス](/heal/ja/test/metrics/)、スキルは [Test › スキル](/heal/ja/test/skills/) を参照。
 
 ## 有効化の手順
 
@@ -19,13 +19,13 @@ enabled = true
 
 デフォルトが Rust / TypeScript / JavaScript / Python / Go / Scala のテスト規約と 4 つの慣習的な `lcov.info` パスをカバーするので、ほとんどのプロジェクトは何も上書きする必要はありません。
 
-`lcov.info` がまだない場合は、同梱のセットアップスキルを実行してください。スタックを判別してリポータの配線を提案します。
+`lcov.info` がまだない場合は、セットアップ用スキルの tests の手順を実行してください。スタックを判別し、手順ごとに確認しながらリポータを配線します。Claude Code で次を実行します。
 
-```sh
-claude /heal-test-reporter-setup
+```
+/heal:setup tests
 ```
 
-スキルの完全な仕様は [Test › スキル](/heal/ja/test/skills/#heal-test-reporter-setup--lcov-を配線) を参照。
+詳しくは [Test › スキル](/heal/ja/test/skills/) を参照。
 
 ## `[features.test]`
 
@@ -53,7 +53,7 @@ test_paths = [
 
 ### `is_test_file` フラグ
 
-`[features.test]` を有効にすると、各 Finding に `is_test_file: bool` フラグが追加されます。スキルはこのフラグでフィルタリングして、テスト側と本番側の severity を独立に読みます。`/heal-test-review` はテスト findings に集中し、`/heal-code-review` は本番 findings に集中します。
+`[features.test]` を有効にすると、各 Finding に `is_test_file: bool` フラグが追加されます。スキルはこのフラグでフィルタリングして、テスト側と本番側の severity を独立に読みます。`/heal:tests` はテスト findings に集中し、`/heal:refactor` は本番 findings に集中します。
 
 フラグは false のとき JSON 出力から省略されるので、test ファミリを有効化していないプロジェクトは従来とバイト同等の `latest.json` を保てます。
 
@@ -72,7 +72,7 @@ lcov_paths = [
 
 - `enabled`(デフォルト `false`) — サブ機能スイッチ。`[features.test]` はオン、`[features.test.coverage]` はオフのまま、というのも有効です(`is_test_file` タグ付けと `skip_ratio` だけ使い、リポータ配線は後で行う、というケース)。
 - `lcov_paths` — プロジェクト相対のパスを順に探索します。**存在するファイルはすべて読み込んでマージ**するので、多言語モノレポならパッケージごとの `lcov.info` を列挙すればどれも集計に入ります。複数のファイルが同じソースファイルを記述している場合、カウンタは max を取ります(1ファイル内の重複レコードのマージと同じルール)。欠けているファイルは silent で警告は出ません。存在するのに読めないファイルは stderr に警告を出します。リポータがパッケージルート相対で書いた `SF:` パス(vitest、jest、scoverage など)は lcov ファイル自身のディレクトリ階層に対して解決されるので、パッケージごとのファイルはマージスクリプトなしでそのまま動きます。
-- `post_commit_refresh`(デフォルト未設定) — post-commit フックがバックグラウンドで実行するシェルコマンド。プロセスは detach され、出力は破棄されるので、コミットフローは待たされません。`/heal-test-reporter-setup` が提案するリポータコマンド(`cargo llvm-cov --workspace --lcov --output-path lcov.info --locked --ignore-run-fail`、`pytest --cov=...` など)をそのまま入れておくと、次の `heal status` が常に最新の `lcov.info` を読みます。`[features.test]` または `[features.test.coverage]` がオフのときは silent でスキップされます。
+- `post_commit_refresh`(デフォルト未設定) — post-commit フックがバックグラウンドで実行するシェルコマンド。プロセスは detach され、出力は破棄されるので、コミットフローは待たされません。`/heal:setup tests` が提案するリポータコマンド(`cargo llvm-cov --workspace --lcov --output-path lcov.info --locked --ignore-run-fail`、`pytest --cov=...` など)をそのまま入れておくと、次の `heal status` が常に最新の `lcov.info` を読みます。`[features.test]` または `[features.test.coverage]` がオフのときは silent でスキップされます。
 
 heal は CI / ローカルリポータが書き出したものを読みます。デフォルトの探索順がカバーするのは:
 

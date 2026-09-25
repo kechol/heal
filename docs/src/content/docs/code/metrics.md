@@ -31,7 +31,7 @@ Percentile breaks live in `.heal/calibration.toml` (rebuilt by
 by `[policy.drain]`:
 
 - **T0 — Drain queue** (default `["critical:hotspot"]`) — the
-  must-fix list `/heal-code-patch` works through.
+  must-fix list `/heal:refactor` proposes from first.
 - **T1 — Should drain** (default `["critical", "high:hotspot"]`)
   — surfaced separately, not auto-drained.
 - **Advisory** — anything else above Ok. Hidden unless `--all`.

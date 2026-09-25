@@ -5,7 +5,7 @@ description: heal をインストールして git リポジトリに導入し、
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-**heal はコードベースの劣化をエージェントの仕事に変えます。** コミットのたびに複雑度・Hotspot・重複を再計測し、出てきた TODO リストを Claude に渡して 1 コミット 1 修正で解消します。人間はポーリング役から降りられます。このページではそのループを最後まで、5 分ほどで立ち上げます。
+**heal はコードベースの劣化をエージェントの仕事に変えます。** コミットのたびに複雑度・Hotspot・重複を再計測し、出てきた TODO リストを Claude に渡します。Claude は修正を提案し、承認されたものを 1 件ずつコミットしていきます。人間はポーリング役から降りられます。このページではそのループを最後まで、5 分ほどで立ち上げます。
 
 ## 必要環境
 
@@ -13,7 +13,7 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 - macOS または Linux
 - 評価対象の git リポジトリ
-- (任意)[Claude Code](https://claude.com/code) CLI — 同梱の `/heal-setup`、`/heal-code-review`、`/heal-code-patch` などのスキルを使う場合
+- (任意)[Claude Code](https://claude.com/code) — heal プラグインの `/heal:setup`・`/heal:refactor`・`/heal:docs`・`/heal:tests` スキルを使う場合
 
 ## 1. インストール
 
@@ -58,17 +58,24 @@ heal --version
 heal init
 ```
 
-`.heal/`(設定・Calibration・出力)を作り、コミットのたびに次の Critical / High を表示する post-commit フックをインストールします。`PATH` にある AI エージェント CLI ごとに、同梱スキルを当該エージェントの配置先に展開するかどうかも確認します(Claude Code → `.claude/skills/`、OpenAI Codex → `.agents/skills/`)。`--yes` で全エージェント分を確認なしで展開、`--no-skills` で全スキップ。
+`.heal/`(設定と Calibration)を作り、コミットのたびに次の Critical / High を表示する post-commit フックをインストールします。何度実行しても安全で、`--force` を付けない限り既存の設定と Calibration はそのまま残ります。何が済んでいて何が残っているかは `heal doctor` で確認できます。
 
-## 3. `/heal-setup` で厳しさを調整する
+## 3. プラグインを入れて `/heal:setup` を実行する
 
-任意ですが、最初は実行を強くおすすめします。同梱のセットアップウィザードがコードベースを調べて、ちょうどよい厳しさを選び、オプションの Test / Docs ファミリを有効化するか確認します。インストールしたエージェントから実行してください:
+スキルは Claude Code プラグインとして配布しています。Claude Code で次を実行します。
 
-```sh
-/heal-setup
+```
+/plugin marketplace add kechol/heal
+/plugin install heal@heal
 ```
 
-Strict / Default / Lenient のどれにするかを聞き、`.heal/config.toml` を更新します。Test / Docs を有効化するなら、そのまま `/heal-doc-pair-setup`(`.heal/doc_pairs.json` を生成)や `/heal-test-reporter-setup`(lcov リポータの配線を提案)に連携します。コードベースが大きく変わって基準を動かしたくなったら、後から再実行できます。
+続けてセットアップ用のスキルを実行します。任意ですが、最初は実行をおすすめします。
+
+```
+/heal:setup
+```
+
+`heal doctor` の結果から始めるので、足りないことだけを行います。Strict / Default / Lenient のどれにするかを聞いて `.heal/config.toml` を更新し、オプションの Test / Docs / Semantic ファミリを有効にするか確認して、必要なもの(doc pairs、カバレッジのリポータ、concept の一覧)を用意します。再 calibrate はあなたが同意したときだけです。いつ再実行してもかまいません。セットアップ済みのプロジェクトなら、そろっていると報告するだけで終わります。
 
 ## 4. TODO リストを見る
 
@@ -80,29 +87,16 @@ heal status
 
 ファイル単位の TODO リストを Tier、Severity、スコア順で表示します。フィルタや JSON 出力は [CLI › heal status](/heal/ja/cli/#heal-status) を参照。
 
-## 5. エージェントに監査と修正を任せる
+## 5. Claude と Finding を片付ける
 
-やりたいことに合わせて同梱スキルを選びます。各機能ファミリには、読み取り専用の **review** スキル(アーキテクチャ視点の監査、書き込みなし)と、書き込み付きの **patch** スキル(1 コミット 1 修正、dirty な worktree では起動しない)が揃っています。下の例は `claude` を使っていますが、Codex を使っているなら `codex` に置き換えるだけでスラッシュコマンド形式は同じです。
+どのスキルも、heal が見つけたものを読んで変更を提案し、あなたが承認したものだけを適用します。1 提案につき 1 コミットで、コミットの前にテストを実行します。push や pull request の作成はしません。
 
-```sh
-# 常時オン — Code ファミリ:
-claude /heal-code-review     # 出力をシステムとして読み解く。問題のあるコードを精読し、優先度付きのリファクタ TODO を返す。コードは触らない。
-claude /heal-code-patch      # T0 を機械的に解消。1 コミット 1 修正、Tier / Severity / ファミリ内スコア順に進め、push も amend もしない。
-
-# [features.docs] が ON のとき:
-claude /heal-doc-review      # Diátaxis レンズでドキュメントを監査。読者がどこで迷うかを見つける。
-claude /heal-doc-patch       # 内部リンク切れ・参照切れの識別子・孤立ページを自動で修正。
-
-# [features.test] が ON のとき:
-claude /heal-test-review     # テストピラミッドの視点でカバレッジの穴と暗黙の skip を可視化。
-claude /heal-test-patch      # review が指摘したテストを書く。カバレッジ未達の hot path 1 つにつき 1 コミット。
 ```
-
-特定の場面向けにもう 2 つ:
-
-```sh
-claude /heal-doc-scaffold    # [features.docs]: コードベースのシグナルだけでドキュメントツリーを新規生成。docs がまだほぼ無いプロジェクト向け。
-claude /heal-cli             # heal CLI 自体の使い方をエージェントに聞く。全フラグと JSON 形式を安定した契約として参照できる。
+/heal:refactor          # コードの Finding をシステムとして読み、構造的なものも含めてリファクタを提案する
+/heal:refactor plan     # 提案だけ。適用は後で
+/heal:docs              # [features.docs]: Diátaxis の視点でドキュメントを直す・書き直す・移す・分ける
+/heal:docs scaffold     # [features.docs]: docs がまだ無いプロジェクトで、コードベースからドキュメントツリーを作る
+/heal:tests             # [features.test]: テストピラミッドの視点でテストを書く・合わせる・skip を戻す・消す
 ```
 
 スキルの詳細は [Code › スキル](/heal/ja/code/skills/)、[Docs › スキル](/heal/ja/docs/skills/)、[Test › スキル](/heal/ja/test/skills/) を参照。

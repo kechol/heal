@@ -6,8 +6,7 @@ messages, user-facing docs, and skill bodies.
 
 The term tree drifts every refactor (recent renames: `CheckRecord →
 FindingsRecord`, `heal check → heal status`, `heal status → heal metrics`,
-`/heal-code-check → /heal-code-review`, `/heal-code-fix →
-/heal-code-patch`). When you find drift, fix it in the same PR — see
+the twelve `heal-*` skills → the four `/heal:*` plugin skills). When you find drift, fix it in the same PR — see
 `.claude/rules/terminology.md`.
 
 ---
@@ -38,15 +37,16 @@ reappear in code or text.
 
 | Canonical | Status | Was once / never use |
 |---|---|---|
-| `heal init` | live | — |
+| `heal init` | live | Re-runnable: keeps `config.toml` and `calibration.toml` unless `--force`. `--yes` / `--no-skills` are hidden no-ops. |
+| `heal doctor` | live | Read-only setup report; `/heal:setup` reads `--json`. |
 | `heal hook commit` | live (post-commit only) | `heal hook stop`, `heal hook edit` are kept as **silent no-op** variants for back-compat with stale `settings.json`. New installs do **not** add them. |
 | `heal status` | live (renders findings) | Was named `heal check` until v0.2 rename. **Do not** call any new feature `check`. |
 | `heal metrics` | live (one-shot recompute, no cache) | Was `heal status`. The role flipped in the rename. |
 | `heal diff <ref>` | live | — |
-| `heal mark fix --finding-id … --commit-sha …` | live, **hidden** | Called by `/heal-code-patch`. Do not expose in `--help`. |
-| `heal mark accept --finding-id … [--reason …]` | live, **hidden** | Called by `/heal-code-review`. Do not expose in `--help`. |
-| `heal mark-fixed --finding-id … --commit-sha …` | **deprecated alias** for `heal mark fix` | Hidden. Prints a stderr deprecation warning and delegates. Kept so v0.2 skill bundles keep working until `heal skills update`. |
-| `heal skills install\|update\|status\|uninstall` | live | — |
+| `heal mark fix --finding-id … --commit-sha …` | live, **hidden** | Called by `/heal:refactor`, `/heal:docs`, `/heal:tests` after each commit. Do not expose in `--help`. |
+| `heal mark accept --finding-id … [--reason …]` | live, **hidden** | Called by the work skills after the user approves. Do not expose in `--help`. |
+| `heal mark-fixed --finding-id … --commit-sha …` | **deprecated alias** for `heal mark fix` | Hidden. Prints a stderr deprecation warning and delegates. Kept so v0.2 skill bundles keep working; the warning points at the plugin and `heal skills uninstall`. |
+| `heal skills uninstall` | live | Removes skill folders older versions copied into the project. `install` / `update` / `status` are **retired** (hidden, exit 1 with the plugin pointer). |
 | `heal calibrate` | live | `--reason`, `--check` were removed; do not add back. |
 | `heal semantic ask` | live, opt-in (`[features.semantic]`) | The only command that sends project content over the network. |
 | `heal auth jev set\|status\|clear` | live | `status` is the only other network call (key check). Keys never go under `.heal/`. |
@@ -160,10 +160,10 @@ below). Constants live in `core::calibration` (`FLOOR_CCN`,
 | `.heal/findings/fixed.json` | `heal mark fix` writes; `heal status` reconciles | **yes** | `BTreeMap<finding_id, FixedFinding>`. Bounded by outstanding claims. |
 | `.heal/findings/regressed.jsonl` | `heal status` appends | **yes** | Append-only audit trail of re-detected fixes. |
 | `.heal/findings/accepted.json` | `heal mark accept` writes; renderers read | **yes** | `BTreeMap<finding_id, AcceptedFinding>`. Team contract for "won't fix / intrinsic" findings. Decorates `Finding.accepted: bool` at render time. |
-| `.heal/concepts.toml` | `/heal-concepts-setup` writes; semantic tasks read | **yes** | Concept vocabulary (`[[concept]] { id, description }`). Team contract; an observation input of `config_hash` while `[features.semantic]` is on. |
+| `.heal/concepts.toml` | `/heal:setup` writes; semantic tasks read | **yes** | Concept vocabulary (`[[concept]] { id, description }`). Team contract; an observation input of `config_hash` while `[features.semantic]` is on. |
 | `.heal/semantic/verdicts/<task>.jsonl` | `heal semantic ask` writes; `heal status` reads | **yes** | Jev verdicts of shared tasks, one per line, sorted by key. Tracked so teammates without an API key see the same Findings. |
 | `.heal/cache/semantic/verdicts/<task>.jsonl` | `heal semantic ask` writes | no | Verdicts of on-demand tasks and `focus`: one person's input, never hashed. |
-| `.heal/doc_pairs.json` | `/heal-doc-pair-setup` writes; HEAL binary reads | **yes** | `[features.docs]` SSoT. `DocPairsFile` (schema-versioned by `DOC_PAIRS_VERSION`). Maps Layer A doc paths to one or more srcs. HEAL never auto-generates it — `R3` (no auto-recalibration) extends to this file. |
+| `.heal/doc_pairs.json` | `/heal:setup` writes; HEAL binary reads | **yes** | `[features.docs]` SSoT. `DocPairsFile` (schema-versioned by `DOC_PAIRS_VERSION`). Maps Layer A doc paths to one or more srcs. HEAL never auto-generates it — `R3` (no auto-recalibration) extends to this file. |
 
 | Term | Canonical | Wrong / drift |
 |---|---|---|
@@ -224,55 +224,37 @@ the enum in `core::monorepo` instead.
 
 ---
 
-## Skills (agent targets)
+## Skills (the heal plugin)
 
-Skills under `crates/cli/skills/`. Names are kebab-case and
-prefixed `heal-`. Trigger forms in skill bodies are slash-commands.
-The same source bytes serve every supported agent — see *Agent
-targets* below.
+Skills ship as the Claude Code plugin `heal` under `plugins/heal/`,
+listed by the repository's marketplace (`.claude-plugin/marketplace.json`,
+also named `heal`). Claude Code namespaces them `<plugin>:<skill>`, so
+the canonical form is the colon form.
 
-| Canonical skill name | Slash-command form | Role |
+| Canonical skill | Replaces | Role |
 |---|---|---|
-| `heal-cli` | `/heal-cli` | CLI reference (read-only). |
-| `heal-setup` | `/heal-setup` | Calibrate + write `.heal/config.toml`; gate `[features.docs]` / `[features.test]` (chains to `/heal-doc-pair-setup` / `/heal-test-reporter-setup`). **Was** `heal-config`. |
-| `heal-code-review` | `/heal-code-review` | Read-only architectural analysis. **Was** `heal-code-check`. |
-| `heal-code-patch` | `/heal-code-patch` | Drain cache, one finding per commit. **Was** `heal-code-fix`. |
-| `heal-concepts-setup` | `/heal-concepts-setup` | `[features.semantic]`. Draft the concept vocabulary with the user and write `.heal/concepts.toml`. |
-| `heal-doc-pair-setup` | `/heal-doc-pair-setup` | `[features.docs]` only. Detect doc ⇔ src pairs and write `.heal/doc_pairs.json`. SSoT writer. |
-| `heal-doc-scaffold` | `/heal-doc-scaffold` | `[features.docs]` only. Stand up the doc tree from codebase signals under `scaffold_root`. |
-| `heal-doc-review` | `/heal-doc-review` | `[features.docs]` only. Read-only Diátaxis-grounded review of doc findings. |
-| `heal-doc-patch` | `/heal-doc-patch` | `[features.docs]` only. Mechanical drain of doc findings (broken links, dangling identifiers, resolvable TODOs). |
-| `heal-test-reporter-setup` | `/heal-test-reporter-setup` | `[features.test]` only. Install and wire an lcov reporter with per-step approval. |
-| `heal-test-review` | `/heal-test-review` | `[features.test]` only. Read-only test-pyramid review of test findings. |
-| `heal-test-patch` | `/heal-test-patch` | `[features.test]` only. Mechanical drain of test findings. |
+| `/heal:setup` | `heal-setup` (was `heal-config`), `heal-concepts-setup`, `heal-doc-pair-setup`, `heal-test-reporter-setup` | Idempotent setup from `heal doctor --json`: init, recalibrate on approval, strictness, enable docs / test / semantic and build their inputs, clean up old skill folders. |
+| `/heal:refactor` | `heal-code-review` (was `heal-code-check`), `heal-code-patch` (was `heal-code-fix`) | Diagnose code findings, propose (structural when two signals agree), apply approved proposals one commit each. |
+| `/heal:docs` | `heal-doc-review`, `heal-doc-patch`, `heal-doc-scaffold` | Same loop for `[features.docs]` through Diátaxis; `scaffold` mode builds a doc tree. |
+| `/heal:tests` | `heal-test-review`, `heal-test-patch` | Same loop for `[features.test]` through the test pyramid. |
 
-The pair `heal-code-review` ↔ `heal-code-patch` and the parallel
-`heal-doc-review` ↔ `heal-doc-patch` are intentional: review =
-read-only, patch = mechanical write. Don't merge them.
+`heal-cli` is retired as a skill; its content is the plugin's shared
+`references/cli.md`.
 
 | Canonical | Notes |
 |---|---|
-| metadata block | YAML `metadata:` in SKILL.md frontmatter. Carries `heal-version`, `heal-source`. |
-| canonical bytes | On-disk SKILL.md with `metadata:` block stripped (`skill_assets::strip_skill_metadata`). |
-| drift | Function of (canonical on-disk) vs. bundled raw bytes. Not a timestamp; not a state file. |
-| bundled tree | The `crates/cli/skills/` directory embedded via `include_dir!`. |
-| sidecar manifest | **Removed.** `skills-install.json` no longer exists. |
-| HEAL plugin tree | **Removed.** `.claude-plugin/marketplace.json`, `.claude/plugins/heal/` are pre-v0.2 layouts swept on install. |
+| heal plugin | `plugins/heal/`: manifest, SessionStart hook, shared references, four skills. Version == CLI version. |
+| heal marketplace | `.claude-plugin/marketplace.json` named `heal`; one `git-subdir` entry pinned to `v<version>`. |
+| work skill | `/heal:refactor`, `/heal:docs`, or `/heal:tests` — the three that share the apply loop. |
+| apply loop | `plugins/heal/references/apply-loop.md`: diagnose → propose → approve → one commit per proposal → report. |
+| proposal | One approved-or-not change in a work skill; may resolve several findings. Carries Change / Why / Resolves / Touches / Risk. |
+| needs a decision | A proposal the user must settle individually (public rename, contested boundary, editorial or harness choice). |
+| legacy skills | Skill directories older versions copied into projects; `legacy_skills::NAMES` × `ROOTS`. Removed by `heal skills uninstall`. |
+| `heal-local` marketplace | **Removed.** The pre-v0.2 project-local layout (`.claude/plugins/heal/`, a `heal-local` marketplace file and settings keys), swept by `heal skills uninstall`. |
+| bundled tree, metadata block, canonical bytes, drift, sidecar manifest | **Removed** with CLI skill bundling. Don't reintroduce. |
 
-### Agent targets
-
-`SkillTarget` (`crates/cli/src/skill_assets.rs`) enumerates every
-host the bundled skills install for. The skill **bodies** are
-agent-neutral; only the on-disk destination differs.
-
-| Canonical | Variant | Dest (project-relative) | CLI on `PATH` | Discovery doc |
-|---|---|---|---|---|
-| Claude Code | `SkillTarget::Claude` | `.claude/skills/` | `claude` | <https://code.claude.com/docs/en/skills> |
-| Codex CLI | `SkillTarget::Codex` | `.agents/skills/` | `codex` | <https://developers.openai.com/codex/skills> |
-
-`AGENTS.md` (Codex's `CLAUDE.md` analogue) is **not** generated by
-HEAL — it is the user's project-level convention, not a skill
-artifact.
+Codex CLI is not a supported target; its users may copy
+`plugins/heal/skills/*` into `.agents/skills/` by hand.
 
 ---
 
@@ -321,7 +303,7 @@ Cross-check before merging:
 - `config_hash` not "fingerprint".
 - `regressed_in_record_id` not "regressed_check_id" / "in_record".
 - `change_coupling` not "co-change" / "co-occurrence" (those are internal mechanism descriptions, fine in comments).
-- `heal-code-review` and `heal-code-patch` not "heal-check" / "heal-fix" / "code-check" / "code-fix" — the prefix `heal-` is mandatory and the verbs `review`/`patch` are the canonical ones.
+- `/heal:setup`, `/heal:refactor`, `/heal:docs`, `/heal:tests` — colon form, never the retired `heal-*` hyphen names (except in `CHANGELOG.md` and upgrade notes).
 - "the loop" not "the harness", "the run", "the cycle" (in user-facing prose).
 - "workspace" not "subproject" / "package" / "module" (for the monorepo concept).
 - "primary language" not "main language" / "top language".

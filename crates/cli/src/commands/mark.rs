@@ -3,11 +3,11 @@
 //!
 //! Two actions live here:
 //!
-//! - `mark fix` (skill-driven): the `/heal-code-patch` flow records a
+//! - `mark fix` (skill-driven): the `/heal:refactor` flow records a
 //!   fix into `.heal/findings/fixed.json` after each commit so the
 //!   next `heal status --refresh` either retires the entry (genuinely
 //!   fixed) or moves it to `regressed.jsonl` (re-detected).
-//! - `mark accept` (skill-driven): the `/heal-code-review` flow
+//! - `mark accept` (skill-driven): the `/heal:refactor` flow
 //!   records "this Finding is intrinsic / cohesive procedural / a
 //!   load-bearing boundary; stop surfacing it in the drain queue"
 //!   into `.heal/findings/accepted.json`. Distinct from `fix` —
@@ -21,9 +21,9 @@
 //!
 //! `heal mark-fixed` (the v0.2 surface) is kept as a hidden alias
 //! that delegates to `mark fix` with a one-line stderr deprecation
-//! warning. The `/heal-code-patch` skill bundle is updated to call
-//! `heal mark fix` directly; users on stale skill copies see the
-//! warning until they run `heal skills update`.
+//! warning. The heal plugin's skills call `heal mark fix` directly;
+//! users on stale skill copies see the warning until they install the
+//! plugin and remove the old copies with `heal skills uninstall`.
 
 use std::path::Path;
 
@@ -83,7 +83,7 @@ pub fn run_fix_legacy(
     eprintln!(
         "warning: `heal mark-fixed` is deprecated. Use `heal mark fix --finding-id <ID> --commit-sha <SHA>`."
     );
-    eprintln!("         To refresh bundled skills: `heal skills update`");
+    eprintln!("         Skills now ship as the heal Claude Code plugin; remove old copies with `heal skills uninstall`.");
     run_fix(project, finding_id, commit_sha, as_json)
 }
 

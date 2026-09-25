@@ -7,7 +7,7 @@
 //!   that does not describe it? The patch skills run this after each
 //!   commit and revert a commit that fails.
 //! - `verify_proposal` — given `--focus proposals.json`, the five
-//!   readability questions of `heal-code-review/references/readability.md`
+//!   readability questions of `plugins/heal/skills/refactor/references/readability.md`
 //!   §3, one question each.
 //!
 //! Both report through `heal semantic ask --json` (`tasks[].result`).
@@ -222,7 +222,7 @@ impl Task for VerifyPatch {
 
 pub struct VerifyProposal;
 
-/// `heal-code-review/references/readability.md` §3, phrased so that
+/// `plugins/heal/skills/refactor/references/readability.md` §3, phrased so that
 /// "true" is the good outcome.
 const PROPOSAL_CHECKS: [(&str, &str); 5] = [
     ("reads_faster", "After the proposed change, a reader would understand this code faster than before."),

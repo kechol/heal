@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod calibrate;
 pub mod diff;
+pub mod doctor;
 pub mod hook;
 pub mod hook_install;
 pub mod init;

@@ -1,6 +1,6 @@
 ---
 name: release
-description: Cut a release of heal-cli. Reads Conventional Commits since the last tag, picks the next semver, bumps versions in Cargo.toml + Cargo.lock, rewrites the CHANGELOG.md "Unreleased" section into a versioned entry, and opens a `release/vX.Y.Z` PR. Does NOT tag and does NOT publish — those happen after the PR merges. Trigger on "/release", "cut a release", "bump heal version", "prep the next release".
+description: Cut a release of heal-cli. Reads Conventional Commits since the last tag, picks the next semver, bumps versions in Cargo.toml + Cargo.lock + the heal plugin manifests, rewrites the CHANGELOG.md "Unreleased" section into a versioned entry, and opens a `release/vX.Y.Z` PR. Does NOT tag and does NOT publish — those happen after the PR merges. Trigger on "/release", "cut a release", "bump heal version", "prep the next release".
 ---
 
 # release
@@ -89,14 +89,24 @@ override is strictly greater than the current.
 - `Cargo.toml` — `[workspace.package]` `version = "X.Y.Z"`.
 - `Cargo.lock` — refresh by running `cargo update -p heal-cli`. If
   that's a no-op, run `cargo build --workspace` to settle the lock.
+- `plugins/heal/.claude-plugin/plugin.json` — `"version": "X.Y.Z"`.
+- `.claude-plugin/marketplace.json` — the `heal` entry's
+  `"version": "X.Y.Z"` and its source `"ref": "vX.Y.Z"`. The ref names
+  the tag the maintainer pushes after merge, so the plugin users
+  install is exactly the released one; until that tag exists, plugin
+  installs fail — tag promptly.
 - `CHANGELOG.md` — see the next section. Mandatory.
+
+`crates/cli/tests/plugin_manifest.rs` fails when these four disagree,
+so run it after editing. Validate the manifests with
+`claude plugin validate --strict .` and
+`claude plugin validate --strict plugins/heal/skills` when the
+`claude` CLI is available.
 
 Do NOT touch:
 
 - `crates/cli/Cargo.toml` — inherits via `version.workspace = true`.
-- `crates/cli/skills/*/SKILL.md` — the `metadata:` block
-  is auto-injected by `skill_assets::extract` on build using
-  `env!("CARGO_PKG_VERSION")`. Bumping `Cargo.toml` is enough.
+- `plugins/heal/skills/**` — skill bodies don't carry a version.
 - `docs/package.json` — independent versioning for the docs site.
 - `README.md` / `docs/` prose — unless the user asks; version strings
   there are typically advisory.
@@ -174,7 +184,8 @@ just `# Changelog` then the new versioned section.
 ```sh
 git switch -c release/vX.Y.Z
 # ...edits + cargo update + CHANGELOG rewrite...
-git add Cargo.toml Cargo.lock CHANGELOG.md
+git add Cargo.toml Cargo.lock CHANGELOG.md \
+  plugins/heal/.claude-plugin/plugin.json .claude-plugin/marketplace.json
 git commit -m "chore(release): bump to vX.Y.Z"
 ```
 
@@ -221,6 +232,8 @@ gh pr create \
 
 ## Release checklist (after merge)
 - [ ] Tag the merge commit: `git tag vX.Y.Z && git push origin vX.Y.Z`
+      (the marketplace entry's `ref` points at this tag)
+- [ ] `/plugin marketplace update heal` + `/plugin install heal@heal` in a scratch project installs the new version
 - [ ] Confirm `release.yml` ran (cargo-dist artifacts + crates.io publish)
 - [ ] Confirm GitHub Release page is populated
 EOF
@@ -236,8 +249,9 @@ branch local and surface the error:
 
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
-- `cargo test --workspace`
+- `cargo test --workspace` (includes `plugin_manifest.rs`)
 - `cargo deny check`
+- `claude plugin validate --strict .` (when available)
 
 The pre-commit hook already runs `cargo fmt --check` + `gitleaks`,
 but the rest are CI-side; running them locally avoids a red CI on

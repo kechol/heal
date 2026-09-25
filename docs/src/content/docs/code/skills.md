@@ -1,162 +1,136 @@
 ---
 title: Code · Skills
-description: The bundled skills for the always-on Code family — /heal-cli, /heal-setup, /heal-code-review, /heal-code-patch — for Claude Code and OpenAI Codex.
+description: The heal Claude Code plugin's skills for the always-on Code family — /heal:setup and /heal:refactor.
 ---
 
-heal ships a bundled set of skills so the metrics it collects flow
-into your AI agent sessions. The same skill bodies serve every
-supported agent:
+heal's skills ship as a Claude Code plugin, so the findings heal
+collects flow straight into your Claude sessions. Install it once, in
+Claude Code:
 
-| Agent        | Project install path | Discovery doc                                |
-| ------------ | -------------------- | -------------------------------------------- |
-| Claude Code  | `.claude/skills/`    | <https://code.claude.com/docs/en/skills>     |
-| OpenAI Codex | `.agents/skills/`    | <https://developers.openai.com/codex/skills> |
-
-`heal init` installs them automatically for every agent it detects
-on your `PATH` (you'll get one Y/N prompt per agent in TTY mode;
-`--yes` accepts all, `--no-skills` skips all). To run the install
-explicitly later:
-
-```sh
-heal init --force --yes              # refresh every detected agent's tree
-heal skills install                  # default --target detected (every CLI on PATH)
-heal skills install --target codex   # only the Codex tree
-heal skills install --target all     # every known target regardless of detection
+```
+/plugin marketplace add kechol/heal
+/plugin install heal@heal
 ```
 
-This page covers the four Code-family skills. The doc-family
-skills live under [Docs › Skills](/heal/docs/skills/); the
-test-family skills under [Test › Skills](/heal/test/skills/).
+The plugin lives in your Claude Code settings, not in your project —
+nothing is added to your git tree. It is pinned to the heal release it
+shipped with; when you upgrade the `heal` CLI, update the plugin too
+(`/plugin marketplace update heal`, then `/plugin update heal@heal`).
+At the start of a session in a project that uses heal, the plugin
+prints one line if the CLI and the plugin come from different releases.
 
-The skill set is shipped inside the `heal` binary, so the version
-installed always matches the binary in use. After upgrading
-`heal`, run `heal skills update` to refresh — `--target detected`
-covers every agent on your `PATH`.
+The plugin has four skills:
 
-## `/heal-code-review` — the audit skill
+| Skill            | For                                                                    |
+| ---------------- | ---------------------------------------------------------------------- |
+| `/heal:setup`    | Set up heal, or re-check the setup. Covered on this page.              |
+| `/heal:refactor` | Read the code findings, propose refactors, apply the ones you approve. |
+| `/heal:docs`     | The same for docs — see [Docs › Skills](/heal/docs/skills/).           |
+| `/heal:tests`    | The same for tests — see [Test › Skills](/heal/test/skills/).          |
 
-Read-only. Reads `heal status --all --json`, deep-reads the
-flagged code, and returns:
+None of the skills push, open a pull request, or change files before
+you approve what they propose.
 
-1. An **architectural reading** — what the findings say
-   _as a system_, not as a list (the dominant axis: complexity,
-   duplication, coupling, hub).
-2. A **prioritized TODO list** drawn from T0 only by default. T1
-   gets an "if bandwidth permits" section; Advisory is summarized
-   as a count.
+## `/heal:setup` — set up and re-check
 
-Never edits source. Can recommend `heal mark accept` for findings
-the team has decided are intrinsic — a deliberately complex tax
-engine, a procedurally cohesive parser combinator.
+Safe to run any time. It starts from `heal doctor`, which reports what
+is already in place, and then does only what is missing or stale:
 
-After reading a review, you can act on any item right away — just
-ask the agent in the same session ("apply the first three", "let's
-fix the extract-function items"). Mechanical fixes get routed
-through `/heal-code-patch`; judgment-call items wait for your
-direction.
+- **Initialize** the project (`heal init`) when `.heal/` does not exist.
+- **Tune strictness** — asks Strict / Default / Lenient and writes
+  `.heal/config.toml` from a survey of your codebase (excluded paths,
+  workspaces in a monorepo, metrics with no signal). Offered on the
+  first run and whenever you ask to tune.
+- **Recalibrate** when the codebase has moved on — more than 200
+  commits since calibration, the file count changed by more than 20%,
+  or no Critical / High findings are left after ten or more fixes. It
+  asks first; heal never recalibrates by itself.
+- **Enable the optional families** and build what each needs: doc
+  pairs for Docs, a coverage reporter for Test, and an API key plus a
+  concept vocabulary for [Semantic (Jev)](/heal/semantic/).
+- **Remove skill folders** that heal 0.6 and earlier copied into the
+  project (`.claude/skills/heal-*`, `.agents/skills/heal-*`).
 
-### Why review and patch are split
+On a project that is already set up, it reports that everything is in
+place and asks nothing. Pass a step to go straight to it:
+`/heal:setup docs`, `/heal:setup tests`, `/heal:setup semantic`, or
+`/heal:setup config`.
 
-**Patch** handles the mechanical class — a long function that
-wants Extract Function, a duplicate that wants a shared helper, a
-drifted test that needs realignment. Steps that don't require
-domain knowledge.
+Trigger phrases: "set up heal", "check my heal setup", "make heal
+stricter", "enable heal coverage", "/heal:setup".
 
-**Review** also surfaces the items that _do_ need a human call —
-should this hub be split? is this duplication two different
-concepts that grew the same shape? is this complex function
-intrinsic to the problem or accidental? — so review proposes and
-stops. Mixing them into one auto-driver would either rush
-judgment calls or refuse to touch the mechanical pile.
+## `/heal:refactor` — propose and apply refactors
 
-Trigger phrases: "review the codebase health", "what does heal
-say?", "where should we refactor?", "/heal-code-review".
+One skill for understanding what heal found in the code and acting on
+it. It runs in five steps:
 
-## `/heal-code-patch` — the write skill
+1. **Diagnose.** Reads `heal status --all --feature code --json`,
+   opens the flagged files, and reads them as a system: which files
+   carry several findings, which pairs of files change together across
+   module boundaries, which files are hubs, and how the codebase is
+   layered.
+2. **Propose.** Starts with a short architectural reading — the
+   dominant problem (complexity, duplication, coupling, mixed concepts)
+   — then numbered proposals, Critical findings on hotspot files first.
+   Each proposal names the change, the friction it removes, the
+   findings it resolves, the files it touches, and its risk.
+3. **Choose.** You pick which proposals to apply.
+4. **Apply.** One commit per proposal. Before each commit the skill
+   runs your build and tests; if they fail, the attempt is discarded.
+   After the commit it records the resolved findings (`heal mark fix`)
+   and re-checks them with `heal status`.
+5. **Report.** What was applied, what was skipped and why, and what is
+   left in the queue.
 
-Drains `.heal/findings/latest.json` one finding at a time, in effective
-Tier, Severity, then descending family-local `hotspot_score` order
-(missing scores last; metric/path/id ties), committing once per fix. The loop drains **T0
-(`must`) only**; T1 / Advisory are surfaced for review but never
-auto-drained.
+**Structural proposals.** Splitting a file along its concepts, moving a
+function to the module it belongs to, extracting a class, or
+introducing an interface at a layer boundary are ordinary proposals
+when at least two independent signals point at the same seam — for
+example, LCOM clusters that match the concepts
+[Semantic (Jev)](/heal/semantic/) found in a file, or a function whose
+concept lives elsewhere and whose file changes together with that
+other file. With a single signal, the skill raises it as a question
+instead.
 
-**Pre-flight** (refuses to start otherwise):
+**Needs a decision.** Renaming public API (exported items, CLI flags,
+JSON fields), choosing between two defensible module boundaries, and
+domain-level moves get their own question with concrete options before
+anything is applied.
 
-- Clean worktree.
-- Cache exists (runs `heal status --json` to populate if missing).
-- Calibration exists (without it every Finding is `Severity::Ok`
-  — nothing to act on).
+**Accept instead of change.** Some findings measure something
+intentional — a generated parser table, an exhaustive `match` over a
+closed enum, a pipeline whose steps belong together. The skill proposes
+recording those as accepted (`heal mark accept`, with a short reason)
+so they leave the queue; it never accepts without your approval.
 
-**Per-metric moves** (Fowler / Tornhill vocabulary):
+**With [Semantic (Jev)](/heal/semantic/) enabled**, proposals are
+checked before you see them (`verify_proposal`), and each commit is
+checked after it lands (`verify_patch`): when complexity only moved, a
+condition was flipped into early returns, the commit message does not
+match the change, or a refactor changed behaviour, the skill undoes
+that commit and moves on. Without the family or a key, those checks
+are skipped.
 
-| Metric                                 | Common move                                                      |
-| -------------------------------------- | ---------------------------------------------------------------- |
-| `ccn` / `cognitive`                    | Extract Function, Guard Clauses, Decompose Conditional           |
-| `duplication`                          | Extract Function / Method, Pull Up Method, Rule of Three         |
-| `change_coupling` (incl. `.symmetric`) | Surface the architectural seam — patch never auto-fixes coupling |
-| `lcom`                                 | Extract Class along the cluster boundary                         |
-| `hotspot`                              | Hotspot is a flag, not a problem — act on the underlying metric  |
+Arguments: a path (`/heal:refactor src/payments`) narrows the work to
+findings under it, a finding id narrows it to that finding, and `plan`
+stops after the proposals.
 
-**Constraints** (enforced by the skill): one finding = one
-commit, Conventional Commit subject + `Refs: F#<finding_id>`
-trailer, never push / amend / `--no-verify`. Findings whose
-metric belongs to the docs or test families are skipped — those
-go through `/heal-doc-patch` / `/heal-test-patch`.
+Trigger phrases: "what does heal say?", "where should we refactor?",
+"fix the heal findings", "/heal:refactor".
 
-**With [Semantic (Jev)](/heal/semantic/) enabled**, the skill reads
-the semantic notes on each finding as a second opinion, and after each
-commit runs `heal semantic ask --task verify_patch --diff HEAD~1..HEAD`.
-When Jev reports that complexity only moved, a condition was flipped
-into early returns, the commit message does not match the change, or
-a refactor changed behaviour, the skill undoes that commit, notes why,
-and moves on to the next finding. Without the family or a key, nothing
-changes.
+## Upgrading from heal 0.6 or earlier
 
-Trigger phrases: "fix the heal findings", "drain the cache",
-"work through the TODO list", "/heal-code-patch".
+Earlier versions bundled twelve skills in the CLI and copied them into
+each project. They map onto the plugin like this:
 
-## `/heal-cli` — CLI reference
+| Before                                                                                     | Now                     |
+| ------------------------------------------------------------------------------------------ | ----------------------- |
+| `/heal-setup`, `/heal-concepts-setup`, `/heal-doc-pair-setup`, `/heal-test-reporter-setup` | `/heal:setup`           |
+| `/heal-code-review`, `/heal-code-patch`                                                    | `/heal:refactor`        |
+| `/heal-doc-review`, `/heal-doc-patch`, `/heal-doc-scaffold`                                | `/heal:docs`            |
+| `/heal-test-review`, `/heal-test-patch`                                                    | `/heal:tests`           |
+| `/heal-cli`                                                                                | (built into the plugin) |
 
-A concise, complete reference for the `heal` CLI — every
-subcommand, every `--json` shape, the `.heal/` files each command
-reads or writes. Loaded by every other skill before shelling out
-to `heal` so the CLI surface is treated as a stable contract.
-
-## `/heal-setup` — setup wizard
-
-One-shot setup wizard. Calibrates the project, surveys the
-codebase, asks for a strictness level (Strict / Default /
-Lenient), writes or updates `.heal/config.toml`, then offers to
-turn on `[features.docs]` / `[features.test]` and chain into the
-matching setup skill (`/heal-doc-pair-setup` /
-`/heal-test-reporter-setup`).
-
-Re-run when the codebase shifts enough that the bar should move,
-or when every Critical has been drained for a sustained run —
-the skill recommends `heal calibrate --force` in those cases.
-
-## `/heal-concepts-setup` — concept vocabulary
-
-Only for the opt-in [Semantic (Jev)](/heal/semantic/) family. Reads
-your code, glossary, and docs, drafts a list of the concepts the
-codebase is built from — each with a one-line responsibility — reviews
-it with you, and writes `.heal/concepts.toml`. HEAL then maps every
-function and doc section to one of those concepts to find files that
-mix concepts, functions that belong elsewhere, words that mean the same
-thing, and concepts no doc explains.
-
-## Maintenance
-
-```sh
-heal skills update                   # refresh every detected agent's tree (drift-aware)
-heal skills update --target all      # refresh every known target regardless of detection
-heal skills status                   # list installed version + drift per target
-heal skills status --target codex    # scope status to one agent
-heal skills uninstall                # remove bundled skills for detected agents
-heal skills uninstall --target all   # remove from every known target
-```
-
-`update` leaves hand-edited files in place with a warning; pass
-`--force` to overwrite. `uninstall` removes every `heal-*`
-directory under each target's tree; sibling skills you authored
-survive, and project data under `.heal/` is untouched.
+After installing the plugin, run `heal skills uninstall` in each
+project to remove the old copies, then commit the deletion. Only the
+folders heal wrote are removed; your own skills stay.

@@ -32,9 +32,9 @@ Layered view of `heal-cli` (the only published crate; binary `heal`).
 │   config  calibration  finding  findings_cache  source_cache         │
 │   paths  fs  hash  monorepo  term  error                             │
 ├──────────────────────────────────────────────────────────────────────┤
-│ harness integration    src/claude_settings.rs  src/skill_assets.rs   │
-│   reads/writes .claude/settings.json (sweep-only, no new hooks)      │
-│   embeds skills/ via include_dir!                                    │
+│ harness integration    src/legacy_skills.rs  src/claude_settings.rs  │
+│   cleans up what older versions wrote (heal skills uninstall);       │
+│   skills ship separately as the plugin in plugins/heal/              │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -249,20 +249,21 @@ in the same PR (see `.claude/rules/terminology.md`):
 - No `heal run`, `heal logs`, `heal snapshots`, `heal compact`, `heal
   fix`, `heal checks` — all removed.
 - No `state.json`, `snapshots/`, `checks/`, `docs/reports/`,
-  `skills-install.json`, `marketplace.json` (in current `.claude-plugin/`
-  position) — all removed.
+  `skills-install.json`, the `heal-local` marketplace — all removed.
 - No `Snapshot` type, no `CheckRecord` type — both renamed/retired.
 - No `heal-core` / `heal-observer` / `heal-plugin-host` published crates
   — inlined into `heal-cli`.
 - No persistent metrics history. `heal metrics` recomputes every time.
   No delta tracking. The motivation is **per-team determinism** (see
   CLAUDE.md "No persistent metrics history" section).
-- No marketplace, no plugin distribution, no `.claude/plugins/heal/`
-  layout. Skills are extracted directly to `.claude/skills/<name>/` from
-  the embedded tree.
-- No Claude Code hooks registered by HEAL anymore. Only the post-commit
-  **git** hook. `heal hook edit` / `heal hook stop` exist as silent
-  no-ops for back-compat — `heal skills install` actively sweeps them.
+- No skills inside the CLI: no `include_dir!`, no extraction, no
+  `.claude/skills/heal-*` in user repos. Skills ship as the `heal`
+  plugin (`plugins/heal/`) from this repository's marketplace, pinned
+  to the release tag (`skills-and-hooks.md`).
+- No Claude Code hooks written by the CLI. The post-commit **git** hook
+  comes from `heal init`; the plugin's SessionStart hook only compares
+  versions. `heal hook edit` / `heal hook stop` exist as silent no-ops
+  for back-compat — `heal skills uninstall` sweeps them.
 - No network access outside `heal semantic ask` and `heal auth jev
   status` (`semantic::client` is the only HTTP client). Observers,
   `Feature::lower`, `heal status`, and the post-commit hook read
@@ -282,4 +283,6 @@ When you change one of these, propagate to its named friends:
 | `cli::MetricKind` | `cli::FindingMetric` (CLI filter), `MetricsConfig` field names (must match JSON keys), glossary metric table |
 | any observer | `feature.rs` Feature impl, `commands/metrics/<m>.rs` section, `tests/observer_<m>.rs` |
 | `claude_settings::LEGACY_HEAL_COMMANDS` | think hard — this is the back-compat sweep list, not "things to delete". Add only when actually removing a hook entry shape. |
-| `skills/<skill>/SKILL.md` | the `metadata:` block is **rewritten on extract** by `skill_assets`; do not hand-author it in source. Edit body, version is auto-injected. |
+| `plugins/heal/skills/<skill>/SKILL.md` | a CLI flag or JSON shape it uses → also `plugins/heal/references/cli.md`; the loop → `references/apply-loop.md`; validate with `claude plugin validate --strict plugins/heal/skills` |
+| `workspace.package.version` | `plugins/heal/.claude-plugin/plugin.json` `version`, the marketplace entry's `version` and `ref` (`/release` does this; `tests/plugin_manifest.rs` checks) |
+| `legacy_skills::NAMES` | only when retiring a skill name that shipped |

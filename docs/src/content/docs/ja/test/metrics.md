@@ -5,7 +5,7 @@ description: '[features.test] ファミリが追加するテスト品質メト�
 
 オプトインの **Test** ファミリは、常時オンの Code ファミリの上にトップレベルのメトリクスを 3 つ追加します — `coverage_pct`・`skip_ratio`・Test Hotspot です。これに加えて `change_coupling` に `change_coupling.drift` というサブメトリクスが乗ります。中心的なシグナルは **行カバレッジ** で、外部生成された `lcov.info` を読み取り、Hotspot のスコアに反映させてカバレッジ未達の hot path がキューの上位に浮かぶようにします。
 
-設定の調整値は [Test › 設定](/heal/ja/test/configuration/)、同梱スキルは [Test › スキル](/heal/ja/test/skills/) を参照。
+設定の調整値は [Test › 設定](/heal/ja/test/configuration/)、スキルは [Test › スキル](/heal/ja/test/skills/) を参照。
 
 ## 一覧
 
@@ -61,4 +61,4 @@ heal: recorded · 3 critical, 7 high · heal status
 
 ## 解消パターン
 
-`/heal-test-review` はテストピラミッドのレンズ(unit / integration / e2e)で findings をフレーム化します。`/heal-test-patch` は 1 コミット 1 件で消化していきます — `coverage_pct` には未カバーの hot path に unit テストを書く、`skip_ratio` には理由の成立しなくなった skip を再有効化、`change_coupling.drift` にはドリフトしたテストとソースを揃え直す。assertion を弱める / 本物の flake を覆い隠すといった refusal はスキル本体に encoded されています。詳しい契約は [Test › スキル](/heal/ja/test/skills/) を参照。
+`/heal:tests` はテストピラミッドのレンズ(unit / integration / e2e)で findings をフレーム化し、承認された提案を 1 コミット 1 件で適用します — `coverage_pct` には未カバーの hot path に unit テストを書く、`skip_ratio` には理由の成立しなくなった skip を再有効化、`change_coupling.drift` にはドリフトしたテストとソースを揃え直す。assertion を弱めたり、本物の flake を覆い隠したりはしません。詳しい契約は [Test › スキル](/heal/ja/test/skills/) を参照。

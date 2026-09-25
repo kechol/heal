@@ -31,7 +31,7 @@ enabled = true
 # exclude = ["secrets/", "*.pem"]
 ```
 
-有効にすると、`heal status` は保存された答えを使って TODO リストを並べ替えます。同梱の patch 系スキルは、自分の変更を Jev に確かめさせます。
+有効にすると、`heal status` は保存された答えを使って TODO リストを並べ替えます。`/heal:refactor`・`/heal:docs`・`/heal:tests` の各スキルは、自分の提案とコミットを Jev に確かめさせます。
 
 ## API キーを設定する
 
@@ -76,17 +76,17 @@ heal semantic ask --prune     # どこからも参照されなくなった答え
 | -------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | `commit_intent`      | 最近の commit が、バグ修正・機能追加・リファクタなどのどれに当たるか                                           | バグ修正が集中するファイルが、`heal status` の上のほうに来る               |
 | `consequence`        | フラグの立ったファイルに不具合があったとき、どれだけの損失になるか                                             | 重要なコードが `heal status` の上のほうに来る                              |
-| `triage`             | drain queue の Finding が、機械的に直せるか、誤検出か、設計判断が要るか、修正の大きさ                          | patch 系スキルの判断材料。小さい修正から先に並ぶ                           |
+| `triage`             | drain queue の Finding が、機械的に直せるか、誤検出か、設計判断が要るか、修正の大きさ                          | 各スキルの判断材料。小さい修正から先に並ぶ                                 |
 | `friction`           | 複雑なコードが、変えにくいか・テストしにくいか・読みにくいか、複雑さが本質的か                                 | 実際に困るコードが上に来る                                                 |
 | `focus`              | これからやる作業（`--focus`）が、各ファイルにどれだけ関わるか                                                  | `heal status --focus` で、先に整えるべきファイルが上に来る                 |
 | `concept`            | 各関数が、語彙のどの概念を実装しているか（インラインの単体テストは除く）                                       | 概念が混ざったファイル、置き場所の違う関数、多くのファイルに散らばった概念 |
 | `term_drift`         | 関数名の 2 つの単語が同じものを指しているか（`user` / `account`）                                              | 1 つのものに 1 つの単語を使うための rename の提案                          |
 | `name_mismatch`      | 関数の名前や doc comment が、本体のしていることと合っているか                                                  | 中身と違うことを約束している名前                                           |
-| `split_points`       | 長く複雑な関数が、1 つずつ目的を持つ手順にどこで分かれるか                                                     | 複雑さの Finding に付く分割位置。`/heal-code-patch` が使う                 |
-| `fix_pattern`        | 複雑さや重複の Finding に、どの定番のリファクタリングが合うか                                                  | `/heal-code-patch` の手がかりになる                                        |
+| `split_points`       | 長く複雑な関数が、1 つずつ目的を持つ手順にどこで分かれるか                                                     | 複雑さの Finding に付く分割位置。`/heal:refactor` が使う                   |
+| `fix_pattern`        | 複雑さや重複の Finding に、どの定番のリファクタリングが合うか                                                  | `/heal:refactor` の手がかりになる                                          |
 | `test_value`         | 各テストが、名前が示す振る舞いの不具合を捕まえられるか。mock・フレームワーク・何も確かめていないだけではないか | 削除・書き直しの候補（`[features.test]` が必要）                           |
 | `mock_scope`         | 各 mock が何を差し替えているか（外部のサービス、テスト対象そのもの、内部の部品）                               | テストを実装の詳細に縛り付けている mock                                    |
-| `test_triage`        | カバーされていないコードが、ロジック・協調・I/O のどれか。skip されたテストの理由                              | `/heal-test-review` が、単体テストの効く場所を判断する材料                 |
+| `test_triage`        | カバーされていないコードが、ロジック・協調・I/O のどれか。skip されたテストの理由                              | `/heal:tests` が、単体テストの効く場所を判断する材料                       |
 | `test_duplicate`     | 似た 2 つのテストが同じことを確かめているか、入力が違うだけか                                                  | 削除するか、1 つのテーブル駆動テストにまとめる候補                         |
 | `doc_structure`      | 各節がどの種類の文書か（tutorial、how-to、reference、explanation など）、どこから別の文書が始まるか            | 分割・統合すべきページ、種類が混ざったページ（`[features.docs]` が必要）   |
 | `doc_placement`      | 読み手が各ページを探しそうな docs の節はどこか                                                                 | 置き場所の違うページと、孤立したページのリンク先                           |
@@ -96,7 +96,7 @@ heal semantic ask --prune     # どこからも参照されなくなった答え
 
 ### TODO リストの並び順
 
-答えが保存されていても、`heal status` は今までどおり tier と severity でまとめます。そのうえで各まとまりの中を、不具合の損失が大きいファイル、扱いにくいコード、バグ修正が集中するファイル、手間の小さい修正の順に並べ、最後にいつもの hotspot の値で並べます。答えがなければ、並び順は今までと変わりません。同梱の patch 系スキルやスクリプトは、同じ並び順を `heal status --json` から読めます。キューに入る Finding にはそれぞれ `drain_rank`（1 が次に扱うもの。ファミリーごとに数える）と `drain_tier` が付きます。
+答えが保存されていても、`heal status` は今までどおり tier と severity でまとめます。そのうえで各まとまりの中を、不具合の損失が大きいファイル、扱いにくいコード、バグ修正が集中するファイル、手間の小さい修正の順に並べ、最後にいつもの hotspot の値で並べます。答えがなければ、並び順は今までと変わりません。スキルやスクリプトは、同じ並び順を `heal status --json` から読めます。キューに入る Finding にはそれぞれ `drain_rank`（1 が次に扱うもの。ファミリーごとに数える）と `drain_tier` が付きます。
 
 特定の作業に備えたいときは、作業の内容をファイルに書いて次を実行します。
 
@@ -107,10 +107,10 @@ heal status --focus plan.md
 
 ### 概念の語彙
 
-`concept` タスクには、コードを形づくる概念の一覧が `.heal/concepts.toml` に必要です。Jev は渡された名前の中から選ぶだけで、名前を作ることはありません。同梱のスキルで下書きを作り、見直してから commit してください。
+`concept` タスクには、コードを形づくる概念の一覧が `.heal/concepts.toml` に必要です。Jev は渡された名前の中から選ぶだけで、名前を作ることはありません。セットアップ用のスキルで下書きを作り、見直してから commit してください。Claude Code で次を実行します。
 
-```sh
-claude /heal-concepts-setup
+```
+/heal:setup semantic
 ```
 
 ```toml
@@ -119,7 +119,7 @@ id = "calibration"
 description = "Derives thresholds from the project's own metric distribution."
 ```
 
-patch 系と review のスキルは、`--task` を付けて確認用のタスク（`verify_patch`、`verify_tests`、`verify_proposal`、`name_choice`）も実行します。`verify_patch` と `verify_tests` は、`--diff` で渡した commit（例: `--diff HEAD~1..HEAD`）を判定します。どれもエージェント自身の作業を確かめるためのもので、`--task` なしの `heal semantic ask` では実行されません。
+`/heal:refactor`・`/heal:docs`・`/heal:tests` の各スキルは、`--task` を付けて確認用のタスク（`verify_patch`、`verify_tests`、`verify_proposal`、`name_choice`）も実行します。`verify_patch` と `verify_tests` は、`--diff` で渡した commit（例: `--diff HEAD~1..HEAD`）を判定します。どれもエージェント自身の作業を確かめるためのもので、`--task` なしの `heal semantic ask` では実行されません。
 
 ## 料金
 

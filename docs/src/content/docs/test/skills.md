@@ -1,126 +1,91 @@
 ---
 title: Test · Skills
-description: The three bundled skills for [features.test] — /heal-test-reporter-setup, /heal-test-review, /heal-test-patch. Available for Claude Code and OpenAI Codex.
+description: The heal plugin's skill for [features.test] — /heal:tests, which reviews and improves your test suite — and the /heal:setup step that wires up coverage.
 ---
 
-The opt-in **Test** family ships three skills, extracted alongside
-the Code-family skills for every detected agent target on
-`heal init`. They only act on findings produced by the test
-observers.
+The opt-in **Test** family is served by two skills from the heal
+Claude Code plugin: the tests step of `/heal:setup`, which enables the
+family and wires up a coverage reporter, and `/heal:tests`, which works
+on the tests themselves. For installing the plugin, see
+[Code › Skills](/heal/code/skills/).
 
-For installation and the drift-aware update model, see
-[Code › Skills](/heal/code/skills/) — the mechanism is shared.
+## `/heal:setup tests` — enable the family and wire up lcov
 
-## `/heal-test-reporter-setup` — wire up lcov
+Turns `[features.test]` on with `test_paths` and `lcov_paths` fitted to
+your repository, then detects your language stack and sets up a
+coverage reporter so `lcov.info` lands where heal reads it.
 
-One-shot setup skill. Detects your project's language stack and
-proposes the lcov reporter configuration plus CI integration so
-`lcov.info` lands at one of heal's default `lcov_paths`.
-
-| Stack   | Proposes                                                                   |
+| Stack   | Reporter                                                                   |
 | ------- | -------------------------------------------------------------------------- |
 | Rust    | `cargo llvm-cov --lcov --output-path lcov.info`                            |
 | Python  | `pytest --cov=src --cov-report=lcov` (`pytest-cov`)                        |
 | JS / TS | `nyc --reporter=lcov mocha` / `vitest --coverage --coverage.reporter=lcov` |
 | Go      | `go test -coverprofile=coverage.out` + `gcov2lcov`                         |
 | Scala   | `scoverage` plugin + lcov reporter                                         |
-| Mixed   | per-stack proposals + a CI step producing a single `lcov.info`             |
+| Mixed   | one reporter per stack                                                     |
 
-Read-only on the codebase — proposes commands and config edits
-without running them. You run the commands; heal reads the
-resulting `lcov.info` on the next `heal status`.
+Every step — installing the reporter, editing `.heal/config.toml`,
+running the reporter — asks first. It can also set
+`[features.test.coverage].post_commit_refresh` so the post-commit hook
+refreshes `lcov.info` after each commit. CI changes are printed as a
+proposal to copy, not applied. `heal doctor` reports the test area as
+`todo` when coverage is on but no lcov file exists, so `/heal:setup`
+offers the step again.
 
-Trigger phrases: "set up coverage reporting", "configure lcov for
-heal", "wire up coverage", "/heal-test-reporter-setup".
+## `/heal:tests` — review and improve the tests
 
-## `/heal-test-review` — the audit skill
+Works like `/heal:refactor`, for tests. It reads the test findings,
+proposes changes, and applies only the ones you approve — one commit
+per proposal, with the test suite green before every commit. It never
+pushes or opens a pull request.
 
-Read-only. Reads `heal status --json`, filters to the
-`[features.test]` slice, and returns:
+1. **Diagnose.** Reads `heal status --all --feature test --json`, then
+   each flagged source file with its tests. Uncovered code is sorted by
+   the layer that should test it, following the **test pyramid**: pure
+   logic gets unit tests; code that coordinates other modules gets a
+   small integration test; code at an I/O boundary gets a thin contract
+   test. Skips are sorted by their reason (environment, slow, broken,
+   pending).
+2. **Propose.** A short reading of the suite's shape — an inverted
+   pyramid, hotspots without tests, skips piling up, tests that no
+   longer follow their source — then numbered proposals,
+   highest-priority findings first. Each test proposal names the cases
+   it will assert.
+3. **Choose.** You pick which proposals to apply.
+4. **Apply.** One commit per proposal; the suite must pass, and the
+   coverage reporter is re-run when coverage changes.
+5. **Report.** What changed and what is left.
 
-1. An **architectural reading** of the test suite — is the
-   dominant axis "no unit tests", "tests aren't keeping up with
-   their source", "important paths uncovered", or "skipped flakes
-   that solidified into permanent skips"?
-2. A **prioritized test-fix TODO list** — exact effective Tier,
-   Severity, then descending Test-family `hotspot_score` order;
-   coverage, drift, and skip categories explain the remedy but do not
-   override that order.
+What it proposes, by finding:
 
-Never edits source. After reading the review you can act on any
-item right away — ask the agent in the same session ("write the
-missing tests for the top three", "re-enable the skipped tests
-under `auth/`"). Mechanical fixes flow through
-`/heal-test-patch`; judgment calls — should this skip stay
-because the underlying flake is real? is this uncovered file
-something we test, or something we delete? — wait for your
-direction.
+| Metric                  | Typical proposal                                                                                          |
+| ----------------------- | --------------------------------------------------------------------------------------------------------- |
+| `coverage_pct`          | Unit tests for documented pure logic; an integration or contract test for coordination and I/O code.      |
+| `change_coupling.drift` | Update the test to the source's current contract, or rewrite it when the behaviour moved elsewhere.       |
+| `skip_ratio`            | Re-enable a test whose skip reason no longer holds; delete one whose feature is gone; ask about the rest. |
 
-### Why review and patch are split
+When the same problem repeats across files it proposes **suite-level**
+changes too: rebalancing an inverted pyramid, splitting a suite,
+extracting a shared fixture, or retiring a test file. Code whose
+intended behaviour is not documented anywhere is raised as a question —
+writing a test would only cement a guess.
 
-**Patch** handles the mechanical: write a unit test for a clearly
-uncovered branch, sync a drifted test back to its source, unskip
-a test whose recorded reason ("waiting on issue #123") is now
-resolved. **Review** also surfaces the judgment calls —
-suspiciously weak assertions, skips that probably hide a real
-flake, files that maybe shouldn't be tested at this layer at all.
-Mixing the two would either paper over a real flake or refuse to
-write the easy tests.
+**Refusals:** never weakens an assertion to make a test pass, never
+skips a flaky test to lower `skip_ratio`, never commits a test it has
+not run, and never lowers coverage thresholds or turns the family off
+to make findings go away.
 
-Trigger phrases: "review the test health", "where should we add
-tests", "which tests should we unskip", "/heal-test-review".
+**With [Semantic (Jev)](/heal/semantic/) enabled**, it can also remove
+tests that check nothing — a `test_value` finding marked `delete` at
+high confidence, one test per commit, only while the suite passes and
+coverage does not drop (unless the test only checked its own mocks);
+merge or remove duplicated tests (`test_duplicate`); and replace mocks
+of plain values with the real values (`mock_scope`). After each commit
+it runs `heal semantic ask --task verify_tests --diff HEAD~1..HEAD` and
+undoes a commit whose new test only checks its own mocks.
 
-## `/heal-test-patch` — the write skill
+Arguments: a path narrows the work to findings under it, a finding id
+narrows it to that finding, and `plan` stops after the proposals.
 
-Drains the test slice of `.heal/findings/latest.json` one finding at a
-time in effective Tier, Severity, then descending Test-family
-`hotspot_score` order (missing scores last; metric/path/id ties).
-**One commit per fix.**
-
-**Pre-flight** (refuses to start otherwise):
-
-- Clean worktree.
-- Cache exists (runs `heal status --json` to populate if missing).
-- `[features.test]` enabled in `.heal/config.toml`.
-- `lcov.info` present at one of `lcov_paths` when `coverage_pct`
-  findings are in scope (otherwise the skill points the user at
-  `/heal-test-reporter-setup`).
-
-**Per-metric moves:**
-
-| Metric                  | Default move                                                                                                         |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `coverage_pct`          | Write or extend a unit test for an uncovered hot path; re-run the reporter so `lcov.info` updates.                   |
-| `skip_ratio`            | Re-enable a skipped test whose reason no longer holds; remove the skip marker, run the test, fix any failure inline. |
-| `change_coupling.drift` | Align the drifted test with its source — the skill surfaces both files together.                                     |
-
-**Refusals** (encoded in the skill body, won't budge with
-prompting):
-
-- **Assertion-weakening** — never converts `assert.equal(x, 5)` to
-  `assert.ok(x)` to pass a stale test. If the assertion is wrong,
-  the test gets removed with a commit message naming the reason.
-- **Skip-the-flake** — never adds a skip marker to make a flaky
-  test go away.
-- **Scaffold-without-running** — every commit runs the test
-  suite. Tests that "look right" but haven't been executed never
-  land.
-
-**Constraints**: one finding = one commit, Conventional Commit
-subject + `Refs: F#<finding_id>` trailer, never push / amend /
-`--no-verify`. Findings whose metric belongs to the Code or Docs
-families are skipped.
-
-**With [Semantic (Jev)](/heal/semantic/) enabled**, the skill can also
-remove tests that check nothing: a `test_value` finding marked `delete`
-at confidence 0.9 or higher, one test per commit, only while the suite
-still passes and coverage does not drop, unless the test checked only
-its own mocks or nothing at all (without coverage data it only lists
-the test for review). `test_duplicate` pairs are deleted or
-merged into one parameterized test, and a mock of a plain value is
-replaced by the real value. After each commit it runs
-`heal semantic ask --task verify_tests --diff HEAD~1..HEAD` and undoes
-a commit whose new test only checks its own mocks.
-
-Trigger phrases: "fix the test findings", "drain the test cache",
-"add tests heal flagged", "/heal-test-patch".
+Trigger phrases: "review the test health", "fix the test findings",
+"add the tests heal flagged", "remove useless tests", "/heal:tests".

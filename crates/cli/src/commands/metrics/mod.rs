@@ -50,7 +50,7 @@ pub fn run(
         if !family.is_enabled(cfg_ref) {
             eprintln!(
                 "heal metrics: --feature {0} requested but `[features.{0}].enabled = false`. \
-                 Edit `.heal/config.toml` (or run `/heal-setup`) to enable the family before re-running.",
+                 Edit `.heal/config.toml` (or run `/heal:setup`) to enable the family before re-running.",
                 family.name(),
             );
             std::process::exit(1);

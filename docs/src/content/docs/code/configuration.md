@@ -313,8 +313,8 @@ max_loc_threshold = 200_000
 ## `[policy.drain]`
 
 The drain policy decides which `(Severity, hotspot)` combinations
-`/heal-code-patch` must drain (T0) vs may drain when bandwidth
-permits (T1). Anything outside both lists falls to Advisory and is
+must be drained (T0) vs may be drained when bandwidth permits (T1) —
+`/heal:refactor` proposes from T0 first. Anything outside both lists falls to Advisory and is
 shown only with `--all`.
 
 ```toml
@@ -361,9 +361,9 @@ p95 = 145.0
 
 `heal calibrate` (no flags) only creates the file when missing — if
 it already exists, the command reports its presence without
-rewriting anything. Pass `--force` to actually rescan. The
-`/heal-setup` skill watches for drift and recommends
-`heal calibrate --force` when the codebase has moved enough.
+rewriting anything. Pass `--force` to actually rescan.
+`heal doctor` reports when the codebase has moved enough, and
+`/heal:setup` then recommends `heal calibrate --force`.
 
 ## Strict by design
 

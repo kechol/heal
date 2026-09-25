@@ -8,7 +8,8 @@ when they apply to the task.
 HEAL is a local Rust CLI (`heal`, crate `heal-cli`) that turns code-health
 signals into work for coding agents. Code observers are always enabled;
 Docs and Test are opt-in. Findings appear through `heal status`, `heal metrics`,
-and `heal diff`. Bundled skills support Claude Code and Codex.
+and `heal diff`; `heal doctor` reports setup state. Skills ship as a Claude
+Code plugin in `plugins/heal/`.
 See [README.md](./README.md) for the user overview.
 
 ## Working agreement
@@ -37,8 +38,10 @@ See [README.md](./README.md) for the user overview.
   deterministic observations unless the request includes changing them.
 - Metrics indicate change friction; they are not optimization targets. The
   drain target is Critical with `hotspot=true`.
-- Keep review and patch skills distinct. Do not add persistent metrics history,
-  automatic recalibration, additional hook types, or a skill marketplace.
+- Keep each work skill's propose → approve → apply loop intact; nothing is
+  written before the user approves. Do not add persistent metrics history,
+  automatic recalibration, hooks beyond post-commit (git) and the plugin's
+  SessionStart version check, or skills inside the CLI.
 
 ## Relevant references
 
@@ -81,7 +84,7 @@ version check for MSRV-sensitive changes. Starlight changes use `npm run build`
 in `docs/`. Instruction-only edits need content, tracked-link, and diff checks.
 Do not repeat passing checks or broaden testing without a concrete reason.
 
-For CLI, classification, or bundled-skill changes, also run the dogfooding flow
+For CLI, classification, or plugin skill changes, also run the dogfooding flow
 in the workflow rules. Preserve user configuration, hooks, and installed tools;
 use a disposable checkout and installation prefix when necessary. Report any
 required check that could not run.
@@ -93,7 +96,7 @@ README, and English docs in English. Japanese user docs mirror the English
 pages in natural Japanese. Comments explain why; user docs address new users.
 
 CLI, JSON, schema, and naming changes include affected tests, English/Japanese
-docs, bundled skills, internal references, and a `CHANGELOG.md` Unreleased entry
+docs, plugin skills, internal references, and a `CHANGELOG.md` Unreleased entry
 in the same change. Apply schema bumps and breaking notes where required.
 
 Write commit subjects and bodies in English. Follow Conventional Commits and

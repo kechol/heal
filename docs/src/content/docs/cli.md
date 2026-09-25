@@ -9,14 +9,19 @@ for the full argument list.
 
 ## User commands
 
-The day-to-day surface — these are the four you'll actually type.
+The day-to-day surface — these are the ones you'll actually type.
 
 | Command       | Purpose                                                                                                                |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `heal init`   | Set up `.heal/`, calibrate, and install the post-commit hook in the current repository.                                |
-| `heal skills` | Install / update / inspect / remove the bundled Claude skill set.                                                      |
+| `heal doctor` | Check which parts of the setup are in place and what is left to do.                                                    |
 | `heal status` | Render the current TODO list (or refresh it). Reads `.heal/findings/`.                                                 |
 | `heal diff`   | Compare the live worktree against an earlier commit (default: the calibration baseline). Like `git diff` for findings. |
+
+The Claude skills are not part of the CLI — they ship as a Claude Code
+plugin (see [Installation](/heal/installation/#claude-code-plugin)).
+`heal skills uninstall` removes skill folders that heal 0.6 and earlier
+copied into a project.
 
 With the opt-in [Semantic (Jev)](/heal/semantic/) family enabled, two
 more commands join them. They are the only heal commands that connect
@@ -30,23 +35,23 @@ to the network:
 ## Automation commands
 
 These run on your behalf — from the git post-commit hook, from a
-bundled Claude skill, or only when your codebase has shifted enough
-to warrant attention. Hidden from `--help`.
+Claude skill, or only when your codebase has shifted enough to
+warrant attention. `heal hook` and `heal mark` are hidden from
+`--help`.
 
-| Command            | Driven by                 | Purpose                                                                       |
-| ------------------ | ------------------------- | ----------------------------------------------------------------------------- |
-| `heal hook`        | git post-commit           | Run observers and emit the Severity nudge after each commit.                  |
-| `heal mark fix`    | `/heal-code-patch` skill  | Record that a commit fixed a finding so the next `heal status` reconciles it. |
-| `heal mark accept` | `/heal-code-review` skill | Record an intrinsic finding the team has decided not to refactor.             |
-| `heal metrics`     | `/heal-code-review` skill | Per-metric summary recomputed on every invocation.                            |
-| `heal calibrate`   | `/heal-setup` skill       | Reset Severity thresholds to today's codebase distribution.                   |
+| Command            | Driven by                                     | Purpose                                                                       |
+| ------------------ | --------------------------------------------- | ----------------------------------------------------------------------------- |
+| `heal hook`        | git post-commit                               | Run observers and emit the Severity nudge after each commit.                  |
+| `heal mark fix`    | `/heal:refactor`, `/heal:docs`, `/heal:tests` | Record that a commit fixed a finding so the next `heal status` reconciles it. |
+| `heal mark accept` | `/heal:refactor`, `/heal:docs`, `/heal:tests` | Record an intrinsic finding the team has decided not to change.               |
+| `heal metrics`     | `/heal:setup`                                 | Per-metric summary recomputed on every invocation.                            |
+| `heal calibrate`   | `/heal:setup`                                 | Reset Severity thresholds to today's codebase distribution.                   |
 
 `heal metrics` and `heal calibrate` are listed here because the
-bundled skills decide _when_ to run them — `/heal-code-review` reads
-the per-metric summary while orchestrating an audit, and
-`/heal-setup` watches for calibration drift and recommends a
-recalibration when the codebase has moved enough. Run them by hand
-only when you need the raw output without going through Claude.
+skills decide _when_ to run them — `/heal:setup` reads the per-metric
+summary while tuning the config, and recommends a recalibration when
+`heal doctor` reports that the codebase has moved enough. Run them by
+hand only when you need the raw output without going through Claude.
 
 ---
 
@@ -55,10 +60,8 @@ only when you need the raw output without going through Claude.
 Bootstraps heal inside a git repository:
 
 ```sh
-heal init                # interactive — one Y/N prompt per detected agent
-heal init --yes          # extract skills for every detected agent (no prompt)
-heal init --no-skills    # skip every agent (CI / no AI agent installed)
-heal init --force        # overwrite an existing config.toml / hook; refresh skills
+heal init                # set up .heal/, calibrate, install the hook
+heal init --force        # overwrite an existing config.toml, calibration, and hook
 heal init --explicit     # write every default to config.toml (long form)
 ```
 
@@ -78,98 +81,73 @@ of every available knob.
    distribution per metric — that becomes `calibration.toml`.
 3. Install `.git/hooks/post-commit` (idempotent — re-installation
    never duplicates the line).
-4. For each AI agent on `PATH`, extract the bundled skill set into
-   that agent's project-scope discovery path:
-   - `claude` → `.claude/skills/`
-   - `codex` → `.agents/skills/`
 
-   In a TTY, you get one Y/N prompt per detected agent (default
-   `Y`). `--yes` accepts every prompt; `--no-skills` skips every
-   prompt. Agents whose CLI is not on `PATH` are silently skipped —
-   their skills would have nowhere to be invoked from.
+When done, `heal init` prints an "Installed:" summary listing what it
+wrote or kept — config, calibration, post-commit hook — and how to add
+the Claude Code plugin. It does not install skills itself; `--yes` and
+`--no-skills` are still accepted so older scripts keep working, and do
+nothing.
 
-When done, `heal init` prints an "Installed:" summary listing every
-file it wrote — config, calibration, post-commit hook, and one line
-per agent target (or the reason it was skipped).
+Re-running is safe: an existing `config.toml` and `calibration.toml`
+are kept unless `--force` is passed, and the post-commit hook is
+refreshed only when it carries the heal marker. If a non-heal
+`post-commit` hook already exists, `heal init` leaves it alone — pass
+`--force` to overwrite. If skill folders from heal 0.6 or earlier are
+still in the project, the summary says so.
 
-Re-running is safe: `config.toml` is left in place unless `--force`
-is passed; the post-commit hook is replaced only when it carries
-the heal marker. If a non-heal `post-commit` hook already exists,
-`heal init` leaves it alone — pass `--force` to overwrite.
-
-## `heal skills`
-
-Manages the bundled skill set across every agent target. Each
-subcommand takes `--target <detected|claude|codex|all>` (default
-`detected`, mirroring `heal init`):
+## `heal doctor`
 
 ```sh
-heal skills install                  # extract for every CLI on PATH
-heal skills install --target codex   # only `.agents/skills/`
-heal skills install --target all     # every known target regardless of detection
-heal skills update                   # refresh after a heal binary upgrade
-heal skills status                   # per-target installed version + drift
-heal skills uninstall --target all   # remove from every tree
+heal doctor          # one line per area, with the next step for anything missing
+heal doctor --json   # the same report as JSON (what /heal:setup reads)
 ```
 
-The skill set is embedded in the `heal` binary at compile time, so
-each subcommand always operates on the version matching the binary
-in use. `update` is drift-aware: files that have been hand-edited
-are left in place per target (use `--force` to overwrite anyway).
-The Claude target's `install` / `update` also sweep legacy
-`heal hook edit` / `heal hook stop` entries from
-`.claude/settings.json`; Codex has no sibling settings file.
+Checks what heal needs and reports each area as `ok`, `todo`,
+`warn`, `off` (an optional feature you have not enabled), or
+`error`, with the command or skill that fixes it:
 
-The bundled set ships twelve skills, grouped by feature family:
+- `.heal/config.toml` exists and loads.
+- `.heal/calibration.toml` exists and still fits the codebase. It is
+  flagged when more than 200 commits landed since calibration, the
+  file count moved by more than 20%, or no Critical / High findings
+  remain after ten or more recorded fixes. heal never recalibrates by
+  itself — run `heal calibrate --force` when you agree.
+- The post-commit hook is installed.
+- Each optional feature you enabled has what it needs: doc pairs for
+  docs, an lcov file for coverage, an API key and a concept list for
+  semantic.
+- Skill folders that older heal versions copied into the project.
 
-**Code (always on):**
+`heal doctor` only reads. It changes nothing and never connects to
+the network (use `heal auth jev status` to check the key against the
+API). `/heal:setup` starts from this report, which is why re-running
+it only does what is missing.
 
-- `/heal-code-review` (read-only) ingests `heal status --all --json`,
-  deep-reads the flagged code, and produces an architectural reading
-  plus a prioritized refactor TODO list.
-- `/heal-code-patch` (write) drains T0 one finding per commit in
-  effective Tier, Severity, then family-local score order.
-- `/heal-cli` is a concise reference for the `heal` CLI surface.
-- `/heal-setup` is the setup wizard. It calibrates the project,
-  asks for a strictness level, writes `config.toml`, then asks
-  whether to enable the optional `[features.docs]` and
-  `[features.test]` families — chaining to `/heal-doc-pair-setup`
-  and `/heal-test-reporter-setup` when you opt in. Also detects
-  calibration drift and recommends `heal calibrate --force` when
-  warranted.
-- `/heal-concepts-setup` (write `.heal/concepts.toml`) drafts the
-  concept vocabulary the opt-in [Semantic (Jev)](/heal/semantic/)
-  tasks classify code and docs into.
+## `heal skills uninstall`
 
-**`[features.docs]`** (opt-in):
+Skills ship as a Claude Code plugin now, so the CLI no longer
+installs or updates them. The one subcommand left cleans up after
+heal 0.6 and earlier, which copied the skills into each project:
 
-- `/heal-doc-pair-setup` (write `.heal/doc_pairs.json`) detects doc
-  ⇔ src pairings.
-- `/heal-doc-scaffold` (write under `[features.docs] scaffold_root`)
-  stands up a fresh documentation tree from codebase signals alone.
-- `/heal-doc-review` (read-only) audits the docs slice through a
-  Diátaxis lens.
-- `/heal-doc-patch` (write) drains broken internal links, dangling
-  identifiers, orphan pages, and resolvable TODOs.
+```sh
+heal skills uninstall          # remove old heal skill folders
+heal skills uninstall --json   # list what was removed as JSON
+```
 
-**`[features.test]`** (opt-in):
+It removes `.claude/skills/heal-*` and `.agents/skills/heal-*`
+folders from a fixed list of names heal itself wrote — skills you
+wrote yourself stay — and sweeps old heal entries from
+`.claude/settings.json`. Commit the deletion afterwards.
 
-- `/heal-test-reporter-setup` (read-only) proposes lcov reporter +
-  CI configuration.
-- `/heal-test-review` (read-only) audits the test slice through a
-  test-pyramid lens.
-- `/heal-test-patch` (write) drains uncovered hot paths, drifting
-  tests, and skipped tests whose reason no longer holds.
-
-See [Code › Skills](/heal/code/skills/),
-[Test › Skills](/heal/test/skills/), and
-[Docs › Skills](/heal/docs/skills/) for the full contracts.
+`heal skills install`, `update`, and `status` still parse so old
+scripts fail with a clear message: they print how to install the
+plugin and exit 1.
 
 ## `heal status`
 
 Runs every observer, classifies each finding by Severity, and writes
-the TODO list `/heal-code-review` audits and `/heal-code-patch`
-drains:
+the TODO list the `/heal:refactor`, `/heal:docs`, and `/heal:tests`
+skills work from:
 
 ```sh
 heal status                              # render the cached TODO (default)
@@ -328,8 +306,8 @@ heal **never** recalibrates automatically — a refactor that genuinely
 improves the codebase shouldn't silently move the goalposts. Run
 `--force` when:
 
-- A large structural change has shifted the distribution (the
-  `/heal-setup` skill watches for this and recommends).
+- A large structural change has shifted the distribution
+  (`heal doctor` flags this, and `/heal:setup` recommends it).
 - You've changed `floor_critical` / `floor_ok` overrides in
   `config.toml` and want the percentile ladder rebuilt against them.
 
@@ -395,7 +373,7 @@ non-Test family or non-coverage metric is selected.
 | File                             | Purpose                                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------------------------- |
 | `.heal/findings/latest.json`     | Current TODO — reused when fresh; replaced when stale/missing or forced with `--refresh`. |
-| `.heal/findings/fixed.json`      | Bounded record of fixes claimed by `/heal-code-patch`.                                    |
+| `.heal/findings/fixed.json`      | Bounded record of fixes the skills claimed with `heal mark fix`.                          |
 | `.heal/findings/regressed.jsonl` | Audit trail for fixes that were re-detected.                                              |
 
 These are plain files, readable with `jq`:

@@ -18,7 +18,7 @@ Code ファミリは 7 つのメトリクスを同梱しています。どれも
 
 `heal status` は Ok 以外の Finding を `[policy.drain]` 駆動で 3 つのティアにグループ化します:
 
-- **T0 — 解消キュー**(デフォルト `["critical:hotspot"]`) — `/heal-code-patch` が解消する must-fix リスト。
+- **T0 — 解消キュー**(デフォルト `["critical:hotspot"]`) — `/heal:refactor` が最初に提案する must-fix リスト。
 - **T1 — 余裕があれば解消**(デフォルト `["critical", "high:hotspot"]`) — 別セクションで表示し、自動解消はしない。
 - **Advisory** — それ以外の非 Ok。`--all` を付けない限り表示されない。
 

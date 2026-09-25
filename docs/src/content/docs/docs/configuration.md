@@ -10,7 +10,7 @@ stay out of scope (heal is local-only — `lychee` / `linkchecker`
 cover the HTTP side in CI).
 
 For what each metric flags, see [Docs › Metrics](/heal/docs/metrics/).
-For the bundled skills, see [Docs › Skills](/heal/docs/skills/).
+For the skills, see [Docs › Skills](/heal/docs/skills/).
 
 ## Quick enable
 
@@ -19,13 +19,14 @@ For the bundled skills, see [Docs › Skills](/heal/docs/skills/).
 enabled = true
 ```
 
-Then run the bundled pair-setup skill once to populate
-`.heal/doc_pairs.json`. heal is a read-only consumer of that
-file — see [`.heal/doc_pairs.json`](#healdoc_pairsjson--the-pair-file)
-below.
+Then run the docs step of the setup skill once to populate
+`.heal/doc_pairs.json` (it can also turn the family on for you). heal
+is a read-only consumer of that file — see
+[`.heal/doc_pairs.json`](#healdoc_pairsjson--the-pair-file) below. In
+Claude Code:
 
-```sh
-claude /heal-doc-pair-setup
+```
+/heal:setup docs
 ```
 
 ## `[features.docs]`
@@ -34,7 +35,7 @@ claude /heal-doc-pair-setup
 [features.docs]
 enabled       = false                        # master switch
 pairs_path    = ".heal/doc_pairs.json"       # SSoT location
-scaffold_root = ".heal/docs"                 # /heal-doc-scaffold output root
+scaffold_root = ".heal/docs"                 # /heal:docs scaffold output root
 ```
 
 - `enabled` (default `false`) — master switch. While false, every
@@ -42,9 +43,9 @@ scaffold_root = ".heal/docs"                 # /heal-doc-scaffold output root
   consulted.
 - `pairs_path` (default `.heal/doc_pairs.json`) — project-relative
   path to the pair file. heal only reads it; generation is the
-  `/heal-doc-pair-setup` skill's job.
+  `/heal:setup` skill's job.
 - `scaffold_root` (default `.heal/docs`) — project-relative root
-  the `/heal-doc-scaffold` skill writes Markdown skeletons into.
+  `/heal:docs scaffold` writes Markdown skeletons into.
   heal itself never reads or writes this tree — the field is
   consumer metadata so teammates regenerating the scaffold land
   in the same place. The default keeps output under the `.heal/`
@@ -204,7 +205,7 @@ pairing universe. heal never auto-generates it.
 | `pairs[].confidence` | `0.0` – `1.0`. Manual entries are usually `1.0`; auto-detected entries carry the heuristic's confidence.                                                                 |
 | `pairs[].source`     | One of `"mention"` (doc references the src), `"mirror"` (directory layout mirrors), `"llm"` (LLM inference), `"manual"` (user-authored — preserved across regeneration). |
 
-**Manual entries are sacred.** When `/heal-doc-pair-setup`
+**Manual entries are sacred.** When `/heal:setup`
 regenerates the file, every `source: "manual"` row is preserved
 unchanged. Only the auto-detected rows are recomputed.
 

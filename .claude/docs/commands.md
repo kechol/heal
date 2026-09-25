@@ -22,7 +22,7 @@ lives in `core::paths::find_project_root`.
 ## `heal init`
 
 ```
-heal init [--force] [--yes] [--no-skills] [--json] [--explicit]
+heal init [--force] [--json] [--explicit]      # --yes / --no-skills: hidden no-ops
 ```
 
 Lifecycle (`commands/init.rs`):
@@ -42,17 +42,15 @@ Lifecycle (`commands/init.rs`):
    (`HEAL_HOOK_MARKER = "# heal post-commit hook"`); refreshes only if
    marked. Skips user-authored hooks unless `--force`. `chmod 0o755` on
    Unix.
-4. Run initial observer scan (`run_all`); build calibration with
-   `calibrated_at_sha` + `codebase_files` metadata; write
-   `calibration.toml`.
-5. Optionally install bundled skills. Decision tree:
-   - `--no-skills` → skip.
-   - `claude` not on `PATH` → skip.
-   - `--yes` → install.
-   - stdin is TTY → prompt (default `Y`).
-   - else → skip with non-interactive hint.
-6. Sweep legacy `heal hook edit` / `heal hook stop` from
-   `.claude/settings.json` if present (via `claude_settings::wire`).
+4. Run the initial observer scan (`run_all`). Keep an existing
+   `calibration.toml` that loads unless `--force`; otherwise build one
+   with `calibrated_at_sha` + `codebase_files` metadata and write it
+   (`calibration.action` ∈ `wrote | overwrote | kept_existing`).
+   Re-running init therefore never recalibrates silently (`scope.md`
+   R3).
+5. List leftover skill directories via `legacy_skills::find` for the
+   summary. No skills are installed and `.claude/` is not touched —
+   skills ship as the plugin (`skills-and-hooks.md`).
 
 **Hook script written:**
 
@@ -68,10 +66,12 @@ exit 0
 Failures swallowed (`|| true`) so a broken HEAL never blocks a commit.
 
 **Output (text):** init outcome summary, primary language, severity
-counts, monorepo signals.
+counts, monorepo signals, the plugin install commands, and a
+`heal skills uninstall` pointer when legacy skill folders exist.
 
-**Output (JSON):** `InitReport` (action enums, version, severity
-counts).
+**Output (JSON):** `InitReport { project, heal_dir, primary_language,
+config, calibration_path, calibration, post_commit_hook,
+legacy_skills?, severity_counts, monorepo_signals? }`.
 
 **Exit:** 0 success; anyhow error otherwise.
 
@@ -322,8 +322,9 @@ heal mark accept --finding-id <ID> [--reason <TEXT>]   [--json]
 ```
 
 **Hidden** in `--help` (`#[command(hide = true)]` on the group).
-Both subcommands are skill-driven: `mark fix` is called by
-`/heal-code-patch`, `mark accept` is called by `/heal-code-review`.
+Both subcommands are skill-driven: the work skills (`/heal:refactor`,
+`/heal:docs`, `/heal:tests`) call `mark fix` once per finding a commit
+resolves, and `mark accept` after the user approves an accept.
 
 ### `mark fix`
 
@@ -350,8 +351,8 @@ missing or the id isn't found — usually a stale id; user should
 run `heal status --refresh` first.
 
 `--reason` is optional and defaults to the empty string. The CLI
-does not enforce non-empty reasons; the AI agent driving
-`/heal-code-review` is expected to fill it.
+does not enforce non-empty reasons; the work skill driving it fills a
+categorical reason the user approved.
 
 **Output (text):** `marked <id> as accepted (<metric>) (recorded in <path>)`.
 **Output (JSON):** `AcceptedFinding` fields flattened next to
@@ -363,9 +364,9 @@ does not enforce non-empty reasons; the AI agent driving
 heal mark-fixed --finding-id <ID> --commit-sha <SHA> [--json]
 ```
 
-Kept hidden so v0.2 skill bundles keep working. Prints a one-line
-stderr deprecation warning suggesting `heal mark fix` and
-`heal skills update`, then delegates to `mark fix`. Same exit code
+Kept hidden so v0.2 skill bundles keep working. Prints a stderr
+deprecation warning suggesting `heal mark fix`, the heal plugin, and
+`heal skills uninstall`, then delegates to `mark fix`. Same exit code
 and output shape.
 
 ---
@@ -384,7 +385,7 @@ heal calibrate [--force] [--json]
    `calibrated_at_sha`, `codebase_files` metadata.
 
 **Auto-recalibration is forbidden.** HEAL never triggers `heal calibrate`
-on its own — `heal-setup` skill or the user decides. The header comment
+on its own — `heal doctor` reports drift and the user decides (through `/heal:setup` or by hand). The header comment
 written into `calibration.toml` reflects this.
 
 **Output (text):** path, `codebase_files`, percentile breaks (CCN/Cog
@@ -399,46 +400,64 @@ survive recalibration.
 
 ---
 
+## `heal doctor`
+
+```
+heal doctor [--json]
+```
+
+`commands/doctor.rs`. Read-only, offline, exit 0 whenever the report
+is produced. `diagnose(project) -> DoctorReport` checks, in order:
+
+| Section | `todo` / `error` when | `fix` |
+|---|---|---|
+| `config` | `.heal/config.toml` missing (`todo`) or fails to load (`error`) | `heal init` |
+| `calibration` | file missing, fails to load, or any drift rule fires | `heal calibrate --force` |
+| `post_commit_hook` | no `post-commit` hook (`warn` when one exists without the HEAL marker; `off` outside git) | `heal init` |
+| `docs` | enabled and `pairs_path` missing / older schema / naming missing paths | `/heal:setup` |
+| `test` | coverage enabled and no `lcov_paths` entry exists | `/heal:setup` |
+| `semantic` | enabled and no key resolves, or `.heal/concepts.toml` missing | `heal auth jev set` / `/heal:setup` |
+| `legacy_skills` | `legacy_skills::find` returns any directory | `heal skills uninstall` |
+
+Drift rules (`calibration.reasons`), shared by every caller:
+`commits_since_calibration` (> 200 commits since `calibrated_at_sha`,
+via `git::commits_since`), `file_count_drift` (LOC-observer file count
+differs from `codebase_files` by > 20%), `graduated` (latest record has
+no Critical / High and ≥ 10 `fixed.json` entries are newer than
+`meta.created_at`).
+
+Doctor never runs `heal calibrate` (`scope.md` R3), never flips a
+feature, and resolves the Jev key through `credentials::resolve`
+without calling the API (`scope.md` R5). A config that fails to load
+makes the feature sections fall back to `Config::default()` (all
+`off`).
+
+**Output (JSON):** `DoctorReport { heal_version, project, initialized,
+config, calibration, post_commit_hook, docs, test, semantic,
+legacy_skills, todo }`. Every section flattens `{ status, detail,
+fix? }` (`status` ∈ `ok | todo | warn | off | error`) plus its facts;
+`todo` lists the sections whose status is `todo` or `error`, in report
+order.
+
+---
+
 ## `heal skills <action>`
 
 ```
-heal skills install [--force] [--json]
-heal skills update  [--force] [--json]
-heal skills status  [--json]
-heal skills uninstall       [--json]
+heal skills uninstall [--json]            # --target: hidden, ignored
+heal skills install | update | status     # hidden; exit 1 with the plugin pointer
 ```
 
-`commands/skills.rs`. See `skills-and-hooks.md` for the underlying
-`skill_assets` and `claude_settings` mechanisms.
+`commands/skills.rs`. Skills ship as the plugin; the CLI only cleans
+up after older versions. `uninstall` removes `legacy_skills::find`
+directories (closed name list under `.claude/skills` and
+`.agents/skills`), drops empty roots, and calls
+`claude_settings::unregister` (legacy hook commands, `heal-local`
+marketplace keys and files — the marketplace file only when its `name`
+is `heal-local`). See `skills-and-hooks.md`.
 
-### `install`
-
-Extracts bundled skills from the `include_dir!`-embedded tree to
-`<project>/.claude/skills/<skill-name>/`. Modes:
-
-- default → `ExtractMode::InstallSafe` (skip existing files).
-- `--force` → `ExtractMode::InstallForce` (overwrite all).
-
-Always sweeps legacy hook entries via `claude_settings::wire`.
-
-### `update`
-
-`ExtractMode::Update { force }`. Drift-aware: skips files where
-`canonical(on-disk) != bundled` unless `--force`.
-
-### `status`
-
-Reads SKILL.md `metadata:` block for installed `heal-version`. Compares
-to `bundled_version()`. Returns drift list (files user edited).
-States: `NotInstalled` | `Installed` (with version comparison:
-`up_to_date` | `bundled-newer` | `installed-newer`).
-
-### `uninstall`
-
-Removes bundled skill directories. Sweeps the **pre-v0.2 plugin
-layout** (`.claude/plugins/heal/`, `.claude-plugin/marketplace.json`,
-`extraKnownMarketplaces["heal-local"]`, `enabledPlugins["heal@heal-local"]`).
-Leaves non-bundled sibling skills intact.
+**Output (JSON):** `{ removed: [project-relative paths],
+claude_settings: "updated" | "unchanged" }`.
 
 ---
 
@@ -537,9 +556,10 @@ Stable JSON shapes (skills depend on these):
 - `heal status --json` → `FindingsRecord` (top-level on-disk shape).
 - `heal init --json` → `InitReport`.
 - `heal calibrate --json` → `CalibrateReport`.
+- `heal doctor --json` → `DoctorReport`.
 - `heal diff --json` → `DiffReport`.
 - `heal metrics --json` → `{ initialized, ... }` map.
-- `heal skills <action> --json` → action-specific structured summary.
+- `heal skills uninstall --json` → `{ removed, claude_settings }`.
 - `heal mark fix --json` → `{ finding_id, commit_sha, fixed_at, path }`.
 - `heal mark accept --json` → `AcceptedFinding` fields + `finding_id`, `path`.
 
@@ -553,14 +573,15 @@ skills in the same PR.
 ```rust
 // cli.rs (Cli::run dispatch — abridged)
 match self.command {
-    Init { force, yes, no_skills, json } => commands::init::run(...),
+    Init { force, json, explicit, .. }   => commands::init::run(...),
+    Doctor { json }                      => commands::doctor::run(...),
     Hook { event }                       => commands::hook::run(...),
     Metrics { json, metric, workspace }  => commands::metrics::run(...),
     Status(args)                         => commands::status::run(...),
     Diff(args)                           => commands::diff::run(...),
     Mark { action }                      => commands::mark::run_{fix,accept}(...),
     MarkFixed { ... }                    => commands::mark::run_fix_legacy(...),  // deprecated alias
-    Skills { action }                    => commands::skills::run(...),
+    Skills { action }                    => commands::skills::run(...),  // uninstall; rest exit 1
     Calibrate { force, json }            => commands::calibrate::run(...),
 }
 ```
