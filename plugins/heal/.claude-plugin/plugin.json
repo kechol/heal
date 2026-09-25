@@ -1,6 +1,6 @@
 {
   "name": "heal",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Set up heal, then refactor code, docs, and tests from what heal finds.",
   "author": {
     "name": "Kazuyuki SUZUKI",
