@@ -1,160 +1,160 @@
 ---
 title: CLI
-description: heal のサブコマンドを日々の重要度順に並べた一覧と、運用で使うコマンドの例。
+description: heal のサブコマンドを、日々よく使う順に、普段の操作の例とあわせて紹介します。
 ---
 
-`heal` は単一のバイナリです。すべての操作は以下のサブコマンドのどれかを通じて行います。引数の詳細は `heal --help` または `heal <subcommand> --help` を参照してください。
+`heal` は 1 つのバイナリで、操作はすべて下のサブコマンドのどれかを通して行います。引数の一覧は `heal --help` または `heal <subcommand> --help` で確認できます。
 
 ## ユーザー向けコマンド
 
-日々使う操作は実質この 4 つです。
+普段、実際に打つのはこれらのコマンドです。
 
-| コマンド      | 用途                                                                                                           |
-| ------------- | -------------------------------------------------------------------------------------------------------------- |
-| `heal init`   | カレントリポジトリに `.heal/` をセットアップし、calibrate して post-commit フックを設置。                      |
-| `heal doctor` | セットアップのどこまでが済んでいて、何が残っているかを確認する。                                               |
-| `heal status` | 現在の TODO リストを表示する（`--refresh` で再スキャン）。`.heal/findings/` を読みます。                       |
-| `heal diff`   | ライブ worktree と過去のコミットを比較する（デフォルトは calibration の基準 SHA）。findings の `git diff` 版。 |
+| コマンド      | 役割                                                                                                     |
+| ------------- | -------------------------------------------------------------------------------------------------------- |
+| `heal init`   | 今いるリポジトリに `.heal/` を作り、calibration を行い、post-commit フックを設置する。                   |
+| `heal doctor` | セットアップのどこまでが済んでいて、何が残っているかを確認する。                                         |
+| `heal status` | 今の TODO リストを表示する（または作り直す）。`.heal/findings/` を読む。                                 |
+| `heal diff`   | 今の作業ツリーを以前のコミット（既定は calibration の基準点）と比べる。Finding を対象にした `git diff`。 |
 
-Claude のスキルは CLI には含まれず、Claude Code プラグインとして配布しています([インストール](/heal/ja/installation/#claude-code-プラグイン) を参照)。`heal skills uninstall` は、heal 0.6 以前がプロジェクトにコピーしたスキルのフォルダを消します。
+Claude のスキルは CLI には含まれず、Claude Code プラグインとして配布しています（[インストール](/heal/ja/installation/#claude-code-プラグイン) を参照）。`heal skills uninstall` は、heal 0.6 以前がプロジェクトにコピーしたスキルのフォルダを消します。
 
-opt-in の [Semantic (Jev)](/heal/ja/semantic/) を有効にすると、コマンドが 2 つ増えます。heal のコマンドのうち、ネットワークにつながるのはこの 2 つだけです。
+オプトインの [Semantic (Jev)](/heal/ja/semantic/) を有効にすると、コマンドが 2 つ加わります。heal の中でネットワークにつながるのは、この 2 つだけです。
 
-| コマンド            | 用途                                                                                             |
-| ------------------- | ------------------------------------------------------------------------------------------------ |
-| `heal semantic ask` | heal が選んだコード・テスト・ドキュメントについて Jev に問い合わせ、答えを `.heal/` に保存する。 |
-| `heal auth jev`     | Jev の API キーを保存・確認・削除する（`set` / `status` / `clear`）。                            |
+| コマンド            | 役割                                                                                                 |
+| ------------------- | ---------------------------------------------------------------------------------------------------- |
+| `heal semantic ask` | heal が選んだコード・テスト・ドキュメントについて Jev に問い合わせ、答えを `.heal/` の下に保存する。 |
+| `heal auth jev`     | Jev の API キーを保存・確認・削除する（`set` / `status` / `clear`）。                                |
 
 ## 自動化向けコマンド
 
-git の post-commit フックや Claude のスキル経由で、ユーザーの代わりに走るコマンドです。`heal hook` と `heal mark` は `--help` には表示されません。
+これらは、git の post-commit フックや Claude のスキルから、あるいはコードベースが大きく変わって見直しが必要になったときに、自動で実行されます。`heal hook` と `heal mark` は `--help` には表示されません。
 
-| コマンド           | 駆動元                                        | 用途                                                                   |
-| ------------------ | --------------------------------------------- | ---------------------------------------------------------------------- |
-| `heal hook`        | git post-commit                               | コミットごとにオブザーバーを実行し Severity ナッジを表示。             |
-| `heal mark fix`    | `/heal:refactor`、`/heal:docs`、`/heal:tests` | コミットで直した Finding を記録して、次の `heal status` で整合させる。 |
-| `heal mark accept` | `/heal:refactor`、`/heal:docs`、`/heal:tests` | チームが「設計上のもので直さない」と判断した項目を記録する。           |
-| `heal metrics`     | `/heal:setup`                                 | 各メトリクスのサマリを毎回ワーキングツリーから再計算。                 |
-| `heal calibrate`   | `/heal:setup`                                 | Severity しきい値を現在のコードベース分布にリセット。                  |
+| コマンド           | 呼び出し元                                    | 役割                                                                                |
+| ------------------ | --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `heal hook`        | git の post-commit                            | コミットのたびにオブザーバを実行し、Severity の通知を出す。                         |
+| `heal mark fix`    | `/heal:refactor`、`/heal:docs`、`/heal:tests` | Finding を直したコミットを記録し、次の `heal status` で突き合わせられるようにする。 |
+| `heal mark accept` | `/heal:refactor`、`/heal:docs`、`/heal:tests` | チームが変えないと決めた、本質的な Finding を記録する。                             |
+| `heal metrics`     | `/heal:setup`                                 | メトリクスごとの集計を、実行のたびに計算し直す。                                    |
+| `heal calibrate`   | `/heal:setup`                                 | Severity のしきい値を、今のコードベースの分布に合わせて作り直す。                   |
 
-`heal metrics` と `heal calibrate` をここに置いているのは、_いつ_ 走らせるかをスキルが判断するからです。`/heal:setup` は設定を調整するときに各メトリクスのサマリを参照し、コードベースが十分に動いたと `heal doctor` が報告したら recalibrate を提案します。手動で叩くのは、Claude を介さずに生の出力が欲しいときだけです。
+`heal metrics` と `heal calibrate` をここに入れているのは、いつ実行するかをスキルが決めるからです。`/heal:setup` は設定を調整するときにメトリクスごとの集計を読み、コードベースが十分に変わったと `heal doctor` が報告すれば calibration のやり直しを勧めます。手で実行するのは、Claude を通さずに生の出力を見たいときだけで十分です。
 
 ---
 
 ## `heal init`
 
-git リポジトリ内で heal をブートストラップします。
+git リポジトリの中で heal を使える状態にします。
 
 ```sh
-heal init                # .heal/ を作り、calibrate し、フックを入れる
-heal init --force        # 既存の config.toml・calibration・フックを上書き
-heal init --explicit     # 全デフォルト値を config.toml に書き出す
+heal init                # .heal/ を作り、calibration を行い、フックを設置する
+heal init --force        # 既存の config.toml、calibration、フックを上書きする
+heal init --explicit     # すべての既定値を config.toml に書き出す（長い形式）
 ```
 
-デフォルトの `heal init` は **最小形式** で `config.toml` を書き出します — チームが実際にカスタマイズした値だけがファイルに残り、新規プロジェクトでは事実上の空ファイルになります。`--explicit` を付けるとデフォルトツリー全体を書き出すので、利用可能なすべてのチューニングノブを参照できる形になります。
+`heal init` は、既定では `config.toml` を**最小の形**で書きます。ディスクに残るのは、利用者が実際に変更した項目だけなので、新しいプロジェクトではほぼ空のファイルになります。`--explicit` なら既定値をすべて書き出すので、どんな設定項目があるかを見渡すリファレンスとしても使えます。
 
-`heal init` の処理:
+`heal init` が行うことは次の 3 つです。
 
-1. `.heal/` を作成し、`config.toml`、`calibration.toml`、`findings/` を配置します。`config.toml`、`calibration.toml`、`findings/` の中身はすべて git に追跡されるので、同じコミット上のチームメイトは同じ Severity ラダーと解消キューを共有できます。
-2. 全オブザーバを一度走らせ、メトリクスごとにコードベースのパーセンタイル分布を計算 — これが `calibration.toml` になります。
-3. `.git/hooks/post-commit` をインストール(冪等 — 再インストールでも行が重複しません)。
+1. `config.toml`、`calibration.toml`、`findings/` を含む `.heal/` を作ります。`config.toml`、`calibration.toml`、`findings/` の下のキャッシュはどれも git で管理するので、同じコミットにいるチームメンバーは同じ Severity の段階と解消キューを見ます。
+2. すべてのオブザーバを 1 回実行し、メトリクスごとにコードベースのパーセンタイル分布を計算します。これが `calibration.toml` になります。
+3. `.git/hooks/post-commit` を設置します。何度設置しても行は重複しません。
 
-完了時には "Installed:" サマリで、書いたもの・残したもの(config、calibration、post-commit フック)と、Claude Code プラグインの入れ方を表示します。スキルを入れることはしません。`--yes` と `--no-skills` は古いスクリプトが動き続けるように受け付けますが、何もしません。
+終わると、`heal init` は「Installed:」の一覧を出します。設定、calibration、post-commit フックのそれぞれについて書き込んだか残したかを示し、Claude Code プラグインの入れ方も添えます。スキルそのものは入れません。`--yes` と `--no-skills` は、古いスクリプトが動き続けるように今も受け付けますが、何もしません。
 
-再実行は安全です。`--force` を付けない限り、既存の `config.toml` と `calibration.toml` はそのまま残ります。post-commit フックは heal の目印を持つときだけ置き換えられます。heal 由来でない `post-commit` フックがすでに存在する場合は触りません(上書きするには `--force`)。heal 0.6 以前のスキルのフォルダが残っていれば、サマリでそう伝えます。
+何度実行しても安全です。既存の `config.toml` と `calibration.toml` は `--force` を付けない限り残し、post-commit フックは heal の目印があるときだけ更新します。heal 以外の `post-commit` フックがすでにあれば、`heal init` はそれに触りません。上書きするには `--force` を付けます。heal 0.6 以前のスキルのフォルダがプロジェクトに残っていれば、一覧でそのことを知らせます。
 
 ## `heal doctor`
 
 ```sh
-heal doctor          # 項目ごとに 1 行。足りないものには次にやることを添える
-heal doctor --json   # 同じ内容を JSON で(/heal:setup はこれを読む)
+heal doctor          # 領域ごとに 1 行。足りないものには次の手順を添える
+heal doctor --json   # 同じ内容を JSON で出す（/heal:setup が読む形式）
 ```
 
-heal が必要とするものを確認し、項目ごとに `ok`・`todo`・`warn`・`off`(有効にしていない任意の機能)・`error` のどれかと、それを直すコマンドやスキルを報告します。
+heal に必要なものを確認し、領域ごとに `ok`、`todo`、`warn`、`off`（有効にしていないオプション機能）、`error` のどれかで報告します。直すためのコマンドやスキルも添えます。確認するのは次の項目です。
 
 - `.heal/config.toml` があり、読み込めるか。
-- `.heal/calibration.toml` があり、今のコードベースに合っているか。calibration 後に 200 を超えるコミットが入った、ファイル数が 20% を超えて変わった、修正を 10 件以上記録して Critical / High が残っていない、のどれかに当てはまると知らせます。heal が自分で calibrate し直すことはありません。納得したら `heal calibrate --force` を実行してください。
-- post-commit フックが入っているか。
-- 有効にした任意の機能に必要なものがそろっているか。docs なら doc pairs、coverage なら lcov ファイル、semantic なら API キーと concept の一覧です。
-- 古い heal がプロジェクトにコピーしたスキルのフォルダが残っていないか。
+- `.heal/calibration.toml` があり、今のコードベースにまだ合っているか。calibration の後に 200 を超えるコミットが入った、ファイル数が 20% を超えて増減した、修正を 10 件以上記録したのに Critical / High が 1 件も残っていない、のどれかに当てはまると知らせます。heal が自分で calibration をやり直すことはありません。納得したら `heal calibrate --force` を実行してください。
+- post-commit フックが設置されているか。
+- 有効にしたオプション機能に必要なものがそろっているか。docs ならドキュメントのペア、カバレッジなら lcov ファイル、semantic なら API キーと概念の一覧です。
+- 古いバージョンの heal がプロジェクトにコピーしたスキルのフォルダが残っていないか。
 
-`heal doctor` は読むだけで、何も変更せず、ネットワークにもつなぎません。API に対してキーを確かめるときは `heal auth jev status` を使います。`/heal:setup` はこの報告から始めるので、再実行しても足りないことしかしません。
+`heal doctor` は読むだけです。何も変更せず、ネットワークにもつながりません（キーが API で通るかは `heal auth jev status` で確かめます）。`/heal:setup` はこの報告を起点にするので、何度実行しても足りない作業だけを行います。
 
 ## `heal skills uninstall`
 
-スキルは Claude Code プラグインとして配布するようになったので、CLI がスキルを入れたり更新したりすることはもうありません。残っているサブコマンドは、スキルを各プロジェクトにコピーしていた heal 0.6 以前の後片付けだけです。
+スキルは Claude Code プラグインとして配布するようになったので、CLI はもうスキルを入れたり更新したりしません。残っている唯一のサブコマンドは、スキルを各プロジェクトにコピーしていた heal 0.6 以前の後片付けをします。
 
 ```sh
 heal skills uninstall          # 古い heal のスキルのフォルダを消す
-heal skills uninstall --json   # 消したものを JSON で出す
+heal skills uninstall --json   # 消したものを JSON で一覧にする
 ```
 
-`.claude/skills/heal-*` と `.agents/skills/heal-*` のうち、heal 自身が書いた決まった名前のフォルダだけを消し(自分で作ったスキルは残ります)、`.claude/settings.json` から古い heal のエントリを取り除きます。終わったら削除をコミットしてください。
+消すのは `.claude/skills/heal-*` と `.agents/skills/heal-*` のうち、heal 自身が書いた決まった名前のフォルダだけで、自分で書いたスキルは残ります。あわせて `.claude/settings.json` から古い heal のエントリを取り除きます。終わったら、削除をコミットしてください。
 
-`heal skills install`・`update`・`status` は、古いスクリプトが分かりやすく失敗するように受け付けたうえで、プラグインの入れ方を表示して終了コード 1 で終わります。
+`heal skills install`、`update`、`status` は、古いスクリプトが分かりやすいメッセージで止まるように、今もコマンドとしては受け付けます。プラグインの入れ方を表示し、終了コード 1 で終わります。
 
 ## `heal status`
 
-各オブザーバを実行し、Finding を Severity 分類して、`/heal:refactor`・`/heal:docs`・`/heal:tests` の各スキルが使う TODO リストを書き出します。
+すべてのオブザーバを実行し、Finding ごとに Severity を決めて、`/heal:refactor`、`/heal:docs`、`/heal:tests` の各スキルが使う TODO リストを書き出します。
 
 ```sh
-heal status                              # キャッシュを再描画（デフォルト）
-heal status --refresh                    # 再スキャンしてキャッシュを上書き
-heal status --metric lcom                # LCOM の Finding のみ
-heal status --metric coverage-pct        # カバレッジ findings のみ（[features.test]）
-heal status --metric doc-drift           # doc-drift findings のみ（[features.docs]）
-heal status --severity high              # High と Critical（--all でもこの下限は下がらない）
-heal status --feature code               # code ファミリのみ表示(test / docs を抑制)
-heal status --feature test               # test ファミリのみ([features.test])
-heal status --feature docs               # docs ファミリのみ([features.docs])
-heal status --path src/payments          # パスプレフィックスで絞る(v0.4 以前は --feature)
-heal status --all                        # Advisory、Medium、Ok、accepted セクションも表示
-heal status --top 5                      # 各 Tier/Severity バケットを 5 行で打ち切り
-heal status --no-pager                   # ページャを通さず stdout に直接書く
-heal status --json                       # 機械可読な形式を stdout へ
+heal status                              # キャッシュ済みの TODO を表示する（既定）
+heal status --refresh                    # 走査し直してキャッシュを上書きする
+heal status --metric lcom                # LCOM の Finding だけ
+heal status --metric coverage-pct        # カバレッジの Finding だけ（[features.test]）
+heal status --metric doc-drift           # doc-drift の Finding だけ（[features.docs]）
+heal status --severity high              # High と Critical。--all を付けてもこの下限は下がらない
+heal status --feature code               # code ファミリだけ（test / docs を除く）
+heal status --feature test               # test ファミリだけ（[features.test]）
+heal status --feature docs               # docs ファミリだけ（[features.docs]）
+heal status --path src/payments          # 1 つのパスの配下に絞る（v0.4 より前は --feature）
+heal status --all                        # Advisory、Medium、Ok、受け入れ済みのセクションも表示する
+heal status --top 5                      # Tier / Severity ごとのグループを 5 行までにする
+heal status --no-pager                   # ページャを通さず標準出力に書く
+heal status --json                       # 機械可読な形で標準出力に書く
 ```
 
-stdout がターミナルのときは `$PAGER`(または `less`)にパイプします(`git diff` / `git log` と同じ慣習)。`--no-pager` を渡すか、出力をパイプ(リダイレクト、`| cat`、CI ログ)するとページャは自動的にスキップされます。`--json` は常に raw のまま stdout に出します。
+標準出力が端末のときは、`heal status` は `$PAGER`（なければ `less`）を通して表示します。`git diff` や `git log` と同じ流儀です。ページャを使いたくなければ `--no-pager` を付けます。リダイレクトや `| cat`、CI のログのように出力をどこかへ流したときも、ページャは自動的に使いません。`--json` は常に標準出力にそのまま書きます。
 
-デフォルトの `heal status` は鮮度が有効なキャッシュを再利用するため、温まっていれば実質コスト 0 です。キャッシュが欠けているか古ければ自動的に再スキャンして置き換え、`--refresh` は鮮度にかかわらず同じ再スキャンと書き込みを強制します。
+既定では、`heal status` はキャッシュ済みの TODO が新しければそれを使い回すので、2 回目以降はほとんど時間がかかりません。キャッシュがない、または古いときは、自動で走査し直して新しいものに置き換えます。キャッシュが新しくても走査し直したいときは、`--refresh` を使います。
 
-鮮度は HEAD と clean-worktree gate だけでなく、有効な非 git 観測入力も含めて判定します。ignored な LCOV や doc-pair を更新すると、HEAD が同じでも cache は無効です。mtime と checkout の絶対パスは使いません。human/JSON の coverage provenance は `missing` / `read_error` / `partial` / `complete` を区別します。LCOV にない production ファイルは未計測であり、0% とは判定せず reporter/package scope の確認へ案内します。
+キャッシュが新しいかどうかは、HEAD と、作業ツリーに未コミットの変更がないかに加えて、有効にしている git 以外の入力でも判断します。git の管理外にある LCOV レポートやドキュメントのペアのファイルを更新すれば、HEAD が動いていなくてもキャッシュは無効になります。ファイルの更新時刻や、チェックアウトした場所の絶対パスは判断に使いません。人向けの出力でも JSON でも、カバレッジの観測状態を `missing`、`read_error`、`partial`、`complete` で区別します。レポートに載っていない本番ファイルは「未計測」として扱い、リポータやパッケージの範囲を確かめるよう促します。計測済みの 0% としては扱いません。
 
-出力は Finding を有効 Drain Tier と Severity でグループ化し(低優先度セクションは `--all` が必要)、ファイル単位に 1 行へ集約します。Hotspot は全行 hot のセクションまたは混在行の `🔥` で表示します。優先順は Tier、Severity、同一ファミリの `hotspot_score` 降順、metric/path/id の tie-break です。Code、Test、Docs の生スコアは相互比較せず、確率や修正効果の保証でもありません。
+出力では、Finding を有効な解消 Tier と Severity ごとにまとめ（優先度の低いセクションは `--all` を付けたときだけ表示します）、ファイルごとに 1 行に集約します。Hotspot は、すべてが Hotspot のセクションや、Hotspot とそうでないものが混ざった行に `🔥` として表示されます。並び順は Tier、Severity、ファミリ内の `hotspot_score` の降順で、同点ならメトリクス、パス、id の順に決めます。Code・Test・Docs のスコアを互いに比べることはありません。スコアは確率でも、修正の効果を約束するものでもありません。
 
-`--severity` は常に最小 Severity の下限です。`--all` はその下限以上にある通常非表示のセクションを表示できますが、下限未満の finding は復元しません。
+`--severity` は常に下限として働きます。`--all` は、その下限以上で隠れていたセクションを表示しますが、下限より下の Finding を戻すことはありません。
 
 ## `heal diff`
 
-ライブ worktree と指定した過去コミットでの finding を比較します。デフォルト ref は calibration の基準 SHA(`heal init` / `heal calibrate --force` が記録した `meta.calibrated_at_sha`)で、記録されていないときは `HEAD` にフォールバックします。「Progress: N% complete」が「calibration からどれだけ 解消したか」として自然に読めるようにしているためです。
+今の作業ツリーを、以前のコミット時点の Finding と比べます。既定の比較先は calibration の基準点の SHA（`heal init` や `heal calibrate --force` が記録します）で、記録がなければ `HEAD` を使います。そのため「Progress: N% complete」は、そのまま「calibration 以降にどれだけ片付いたか」と読めます。
 
 ```sh
-heal diff                              # ライブ vs calibration 基準
-heal diff HEAD                         # ライブ vs 直近のコミット
-heal diff main                         # ライブ vs main
-heal diff v0.2.1                       # ライブ vs v0.2.1 タグ
-heal diff HEAD~5                       # ライブ vs 5 コミット前
-heal diff --all                        # Improved + Unchanged と High 未満のエントリも表示
-heal diff --hide-accepted              # `heal mark accept` 済みの行を隠す
-heal diff --no-pager                   # ページャを通さず stdout に直接書く
-heal diff --json                       # 機械可読な形式
+heal diff                              # 今の状態と calibration の基準点を比べる
+heal diff HEAD                         # 直前のコミットと比べる
+heal diff main                         # main と比べる
+heal diff v0.2.1                       # v0.2.1 タグと比べる
+heal diff HEAD~5                       # 5 つ前のコミットと比べる
+heal diff --all                        # Improved、Unchanged、High 未満の行も表示する
+heal diff --hide-accepted              # `heal mark accept` で受け入れ済みの行を隠す
+heal diff --no-pager                   # ページャを通さず標準出力に書く
+heal diff --json                       # 機械可読な形で出力する
 ```
 
-`<git-ref>` には `git rev-parse` で解釈できるものを渡せます。heal は対象 ref を **現在の** `config.toml` / `calibration.toml` で再評価するので、apples-to-apples の比較になります(当時の評価ではなく、いまのルールで過去と現在を見る形です)。
+`<git-ref>` には、`git rev-parse` が理解できるものなら何でも渡せます。heal は指定されたコミットを*今の* `config.toml` と `calibration.toml` で評価し直すので、同じ条件で比べられます。見えるのは当時の評価ではなく、今のルールで過去と現在を判定した結果です。
 
-ターミナル出力時のページャ動作は `heal status` と同じです。`--no-pager` で直接 stdout に出せます。
+標準出力が端末のときは、`heal diff` も `heal status` と同じく `$PAGER`（なければ `less`）を通します。`--no-pager` を付けると標準出力にそのまま書き、`--json` は常にそのまま書きます。
 
-出力バケットは Resolved / Regressed / Improved / New / Unchanged + 進捗パーセンテージです。右辺は **常にワーキングツリーの即席スキャン** で、永続化されません。
+出力は Resolved / Regressed / Improved / New / Unchanged の各グループと、進み具合のパーセンテージです。比較の右側は常に、今の作業ツリーをその場で走査した結果で、保存はしません。
 
-人間向けレンダラはデフォルトで `from`/`to` のいずれもが High 未満のエントリを隠し、`[N entries below High hidden — pass --all]` というフッターを出します(ノイズの多い baseline で実行可能な行が埋もれないようにするためです)。`--all` を渡すとこの絞り込みが外れ、Improved / Unchanged バケットも一緒に表示されます。`--json` 出力は常にフィルタなしで、skill や CI からは全行が見えます。
+人向けの表示では、比較前と比較後の Severity がどちらも High 未満の行を既定で隠し、`[N entries below High hidden — pass --all]` というフッターを出します。隠さないと、ノイズの多い基準点のせいで対処すべき行が埋もれるからです。`--all` はこの絞り込みを外し、Improved / Unchanged のグループも表示します。`--json` の出力はどちらの場合も絞り込まないので、スキルや CI はすべての行を受け取ります。
 
-`heal mark accept` で受容済みの finding には `📌 accepted` マーカーが付き、New / Regressed の行が「把握済みで対応不要」だと一目で分かります。`--hide-accepted` を渡すとこれらの行ごと隠れ、対応が必要な行だけが残ります(`[N accepted entries hidden]` フッターで件数は見えます)。この絞り込みは `--all` とは独立に効きます。
+チームが `heal mark accept` で受け入れた Finding には `📌 accepted` の印が付くので、New や Regressed の行でも「把握済みで対応不要」とひと目で分かります。`--hide-accepted` を付けるとこれらの行を消し、対処が必要な行だけを見られます。件数は `[N accepted entries hidden]` というフッターに残ります。2 つの絞り込みは独立していて、`--all --hide-accepted` ならすべての Severity を表示しつつ、受け入れ済みの行は省きます。
 
-coverage が有効なら、JSON は `from_coverage_observation` と `to_coverage_observation` を返します。両側の `missing` / `read_error` / `partial` / `complete` と入力一覧により、未計測と実測 0% / 100% を区別できます。
+カバレッジを有効にしていると、JSON に `from_coverage_observation` と `to_coverage_observation` が入ります。それぞれの `missing` / `read_error` / `partial` / `complete` の状態と出どころの一覧によって、計測していない側を、計測済みの 0% や 100% と取り違えずに済みます。
 
-accepted finding の Severity が上昇するか、そのファミリの Hotspot が false から true になると、status、diff の現在側、post-commit hook に再レビュー通知が出ます。JSON は 1 つの `accepted_rereview` に 1 つまたは両方の理由を返します。accept は解除せず、finding を解消キューに戻しません。
+受け入れ済みの Finding でも、Severity が上がったときや、そのファミリの Hotspot が false から true に変わったときは、見直しを促す通知が出ます。通知を出すのは status、diff の現在側、post-commit フックです。JSON では、理由を 1 つか 2 つ持つ `accepted_rereview` のエントリが 1 つ返ります。この通知で受け入れが取り消されたり、Finding が解消キューに戻ったりはしません。
 
-巨大なリポジトリではこの比較が高コストになります。`config.toml` の `[diff]` で LOC 上限を設定でき、超過時は手動 2 ブランチ手順に切り替わります。詳しくは [Code › 設定](/heal/ja/code/configuration/#diff) を参照。
+とても大きなリポジトリでは、比較に時間がかかることがあります。`config.toml` の `[diff]` で LOC の上限を決めておくと、それを超えたときに 2 つのブランチを手動で比べる手順へ切り替わります。[Code › 設定](/heal/ja/code/configuration/#diff) を参照してください。
 
 ## `heal metrics`
 
@@ -168,93 +168,93 @@ heal metrics --metric doc-freshness
 heal metrics --no-pager
 ```
 
-有効化された各メトリクスのサマリ(主言語、worst-N の複雑な関数、トップ Hotspot、最も分割可能なクラスなど)を表示します。`--metric <name>` で出力を単一のオブザーバに絞り込めます。指定できる名前:
+有効なメトリクスすべての集計を表示します。主な言語、複雑な関数のワースト N 件、上位の Hotspot、最も分かれたクラスなどです。1 つのオブザーバの出力に絞るには `--metric <name>` を使います。指定できる名前は次のとおりです。
 
-- **Code**(常時利用可): `loc`、`complexity`、`churn`、`change-coupling`、`duplication`、`hotspot`、`lcom`。
-- **`[features.docs]`**(有効化時): `doc-freshness`、`doc-drift`、`doc-coverage`、`doc-link-health`、`orphan-pages`、`todo-density`、`doc-hotspot`。
-- **`[features.test]`**(有効化時): `coverage-pct`、`skip-ratio`、`test-hotspot`。
+- **Code**（いつでも使える）: `loc`、`complexity`、`churn`、`change-coupling`、`duplication`、`hotspot`、`lcom`
+- **`[features.docs]`**（有効なとき）: `doc-freshness`、`doc-drift`、`doc-coverage`、`doc-link-health`、`orphan-pages`、`todo-density`、`doc-hotspot`
+- **`[features.test]`**（有効なとき）: `coverage-pct`、`skip-ratio`、`test-hotspot`
 
-`--json` は同じデータを機械可読な JSON で出力するので、`jq` でのパイプ処理に向きます。
+`--json` は同じ内容を機械可読な JSON で出力するので、`jq` に渡すのに向いています。
 
-ターミナル出力時のページャ動作は `heal status` / `heal diff` と同じです。`--no-pager` で stdout に直接書き出せます。
+標準出力が端末のときは、`heal metrics` も `heal status` / `heal diff` と同じく `$PAGER`（なければ `less`）を通します。`--no-pager` を付けると、標準出力にそのまま書きます。
 
-呼び出しごとにワーキングツリーから再計算します。履歴は保持しないので、過去との差分は出ません。
+実行のたびに最初から計算し直します。差分を取るための過去の記録はありません。
 
 ## `heal calibrate`
 
 ```sh
-heal calibrate            # calibration.toml が無ければ作成、あれば no-op
-heal calibrate --force    # 常に再スキャンして calibration.toml を上書き
+heal calibrate            # calibration.toml がなければ作る。あれば何もしない
+heal calibrate --force    # 常に走査し直して calibration.toml を上書きする
 ```
 
-heal は **絶対に** 自動で recalibrate しません。コードベースを実際に改善するリファクタが、暗黙のうちにゴールポストを動かしてしまうのを避けるためです。`--force` を実行するのは次の場面です:
+heal が自動で calibration をやり直すことは**ありません**。リファクタでコードベースが本当に良くなったときに、基準がこっそり動いてしまっては困るからです。`--force` を付けて実行するのは、次のようなときです。
 
-- 大きな構造変更で分布が変わったとき(`heal doctor` が知らせ、`/heal:setup` が提案します)。
-- `config.toml` の `floor_critical` / `floor_ok` を変えて、パーセンタイルラダーを合わせて作り直したいとき。
+- 大きな構造の変更で分布が変わったとき（`heal doctor` が知らせ、`/heal:setup` がやり直しを勧めます）。
+- `config.toml` で `floor_critical` / `floor_ok` の上書きを変え、それに合わせてパーセンタイルの段階を作り直したいとき。
 
-生成された `calibration.toml` の先頭には、ファイルの来歴を示すコメントヘッダが付きます。ファイルを開いただけでドキュメントなしに来歴をたどれるようにするためです。`floor_critical` / `floor_ok` の上書きは `calibration.toml` ではなく `config.toml` 側に置いてください。さもないと `heal calibrate --force` で消えてしまいます。
+生成される `calibration.toml` の先頭には出どころを示すコメントが入るので、ファイルを開いた人はこのコマンドにたどり着けます。`floor_critical` / `floor_ok` の上書きは、`calibration.toml` ではなく `config.toml` に書いてください。そうすれば `heal calibrate --force` で消えずに済みます。
 
-`[features.semantic]` が有効なら、`heal status --focus <file>` で、ファイルに書いた作業に合わせて並べられます（[Semantic (Jev)](/heal/ja/semantic/) を参照）。この場合は必ず再スキャンし、保存済みの TODO リストは更新しません。
+`[features.semantic]` を有効にしていると、`heal status --focus <file>` で、ファイルに書いた作業に合わせた並び順を出せます（[Semantic (Jev)](/heal/ja/semantic/) を参照）。このときは常に走査し直し、保存済みの TODO リストは更新しません。
 
 ## `heal semantic ask`
 
 `[features.semantic] enabled = true` のときだけ使えます。何が送られるかは [Semantic (Jev)](/heal/ja/semantic/) を参照してください。
 
 ```sh
-heal semantic ask --dry-run          # 計画と見積もりだけ。何も送らない
-heal semantic ask                    # 有効なタスクをすべて問い合わせる
-heal semantic ask --task <id>        # 1 つのタスクだけ（複数指定可）
+heal semantic ask --dry-run          # 計画と料金の見積もりだけ。何も送らない
+heal semantic ask                    # 有効なタスクすべてを問い合わせる
+heal semantic ask --task <id>        # 1 つのタスクだけ（繰り返し指定できる）
 heal semantic ask --refresh          # 答えが保存済みでも問い合わせ直す
-heal semantic ask --prune            # どこからも参照されない答えを消す
-heal semantic ask --check            # キーが使えるかの確認だけ
-heal semantic ask --task focus --focus plan.md    # plan.md の作業に合わせて並べる
-heal semantic ask --task verify_patch --diff HEAD~1..HEAD   # commit の範囲を判定する
-heal semantic ask --json             # 実行結果を JSON で出す
+heal semantic ask --prune            # どこからも参照されない保存済みの答えを消す
+heal semantic ask --check            # キーが API で通るかだけを確かめる
+heal semantic ask --task focus --focus plan.md    # plan.md に書いた作業に合わせて並べる
+heal semantic ask --task verify_patch --diff HEAD~1..HEAD   # コミット範囲を判定する
+heal semantic ask --json             # 実行結果を機械可読な形で出力する
 ```
 
-終了コード `2` は、利用者にしか直せない問題を表します。機能が無効、API キーが未設定、キーが拒否された、設定した `model` を API が知らない、のいずれかです。
+終了コード `2` は、利用者の側でしか直せない問題を表します。機能が無効になっている、API キーが設定されていない、キーが拒否された、設定した `model` を API が知らない、のどれかです。
 
 ## `heal auth jev`
 
 ```sh
-printf '%s\n' "$KEY" | heal auth jev set   # ユーザーの設定ファイルに保存（mode 600）
-heal auth jev status                        # キーの出どころと、実際に使えるかの確認
-heal auth jev status --offline              # 通信での確認を省く
+printf '%s\n' "$KEY" | heal auth jev set   # ユーザー設定に保存する（mode 600）
+heal auth jev status                        # キーの出どころと、API での確認結果
+heal auth jev status --offline              # API での確認を省く
 heal auth jev clear                         # 保存したキーを消す
 ```
 
-`TYPESAFE_API_KEY`（または `TYPESAFEAI_API_KEY`）が、保存したキーより優先されます。キーが `.heal/` の下に書かれることはありません。
+`TYPESAFE_API_KEY`（または `TYPESAFEAI_API_KEY`）が設定されていれば、保存したキーより優先されます。キーが `.heal/` の下に書かれることはありません。
 
 ## キャッシュを覗く
 
-スクリプト用の契約は `heal status --json` です。直接オンディスク状態を覗きたい場合は、`.heal/findings/` 配下にフラットな成果物が 4 つ置かれています:
+スクリプトから使うなら、`heal status --json` が正式な窓口です。ディスク上の状態を直接覗きたいときは、`.heal/findings/` の下に 4 つのファイルがあります。
 
-| ファイル                         | 役割                                                                      |
-| -------------------------------- | ------------------------------------------------------------------------- |
-| `.heal/findings/latest.json`     | 現在の TODO — fresh なら再利用し、stale/欠落時または `--refresh` で置換。 |
-| `.heal/findings/fixed.json`      | スキルが `heal mark fix` で記録した修正の有界マップ。                     |
-| `.heal/findings/accepted.json`   | `heal mark accept` で「直さない」と判断した finding の記録。              |
-| `.heal/findings/regressed.jsonl` | 修正済みが再検出された監査トレイル。                                      |
+| ファイル                         | 役割                                                                             |
+| -------------------------------- | -------------------------------------------------------------------------------- |
+| `.heal/findings/latest.json`     | 今の TODO。新しければ使い回し、古い・ない・`--refresh` のときは置き換える。      |
+| `.heal/findings/fixed.json`      | スキルが `heal mark fix` で記録した修正の一覧（件数に上限がある）。              |
+| `.heal/findings/accepted.json`   | チームが `heal mark accept` で受け入れた Finding（直さないもの、本質的なもの）。 |
+| `.heal/findings/regressed.jsonl` | 直したはずの Finding が再び見つかったときの監査記録。                            |
 
-2 つの JSON 表示は意図的に byte-for-byte では一致しません。`latest.json` はオブザーバの生レコードです。`heal status --json` は同じレコードschemaを使い、現在の accepted 状態と一時的な `accepted_rereview` 通知をoverlayしたうえで、指定された workspace、feature、metric、path、Severity のfilterを finding、再レビュー通知、その集計値へ適用します。coverage provenance 自体には Severity がなく、workspace/path の範囲に従い、Test 以外のfamilyまたはcoverage以外のmetricが指定された場合は省略します。
+2 つの JSON は、あえてバイト単位では一致させていません。`latest.json` はオブザーバの生の記録です。`heal status --json` は同じ構造を使いつつ、今の受け入れ状態と、その場限りの `accepted_rereview` 通知を重ねます。さらに、指定された workspace、feature、metric、path、Severity の絞り込みを、Finding、見直しの通知、それらの集計に当てます。カバレッジの観測状態そのものには Severity がありません。workspace とパスの範囲には従い、Test 以外のファミリや coverage 以外のメトリクスを指定したときは省きます。
 
-これらはすべて素のファイルなので `jq` で直接読めます。
+どれも普通のファイルなので、`jq` で読めます。
 
 ```sh
 jq '.severity_counts' .heal/findings/latest.json
-jq 'keys | length' .heal/findings/fixed.json     # 記録済み修正数
+jq 'keys | length' .heal/findings/fixed.json     # 記録済みの修正の件数
 tail .heal/findings/regressed.jsonl
 ```
 
 ## `heal hook commit`
 
-`heal init` がインストールする git の post-commit フックから自動的に呼ばれます。全オブザーバを実行し、`Critical` と `High` の Finding を 1 行のナッジとして stdout に出します(Hotspot フラグ付きが先頭)。クールダウンはありません。同じ問題は修正されるまで毎コミット出続けます — それが狙いです。ディスクには何も書きません(出力はナッジのみ)。
+`heal init` が設置した git の post-commit フックから、自動で呼ばれます。すべてのオブザーバを実行し、Severity の通知を出します。`Critical` と `High` の Finding をすべて標準出力に書き、Hotspot の付いたものを先に並べます。一度表示した問題をしばらく黙らせる仕組みはなく、直すまでコミットのたびに表示されます。それがこの通知の狙いです。ディスクには何も書かず、出力はこの通知だけです。
 
-`[features.test.coverage]` が有効で、High / Critical な `coverage_pct` finding が hotspot ファイル上にあるとき、ナッジには「N uncovered hotspot」をカウントするインデント付き 2 行目が追加されます。「次のテストはここに書くべき」の最短リマインダです。
+`[features.test.coverage]` を有効にしていると、通知に 2 行目が加わることがあります。High / Critical の `coverage_pct` の Finding が Hotspot のファイルにあるときに、その件数を「uncovered hotspot」として数える行です。次のテストをどこに書けばいいかを、いちばん短く伝える行です。
 
-coverage が欠落・読取不能・partial なとき、hook は未計測ファイルを uncovered Hotspot と解釈せず、status と同じ reporter/package scope の案内を出します。accepted の判断前提が変わった場合も再レビューを通知します。
+カバレッジがない、読めない、一部しかないときは、status と同じく、リポータやパッケージの範囲を確かめるよう案内します。計測していないファイルを、テストのない Hotspot と見なすことはしません。受け入れ済みの項目のうち、判断の前提を見直す必要が出たものも知らせます。
 
-デバッグ用に手動で実行することもあります。
+手で実行すると、デバッグに役立つことがあります。
 
 ```sh
 heal hook commit
@@ -262,6 +262,6 @@ heal hook commit
 
 ## ヒント
 
-- **`heal status` が標準ワークフローです。** 意味のあるコミットの後に実行して、キャッシュをリフレッシュし TODO リストの残りを確認します。
-- **`heal diff`**（引数なし）は calibration 基準との進捗確認に便利です。「% complete」が「calibration からどれだけ 解消したか」を表します。直近コミットとの比較がほしいときは `heal diff HEAD` を渡します。
-- **post-commit フックは保持する。** 削除するとコミット後の Severity ナッジが出なくなりますが、`heal status` は引き続きオンデマンドで動きます。
+- **基本の流れは `heal status` です。** 意味のあるコミットをしたら実行して、キャッシュを新しくし、TODO リストに何が残っているかを確かめてください。
+- **`heal diff`**（引数なし）は、calibration の基準点からの進み具合を見せます。「% complete」は「calibration 以降にどれだけ片付いたか」と読めます。直前のコミット以降を見たいなら `HEAD` を渡します。ほかにも、`git rev-parse` が理解できる参照なら何でも渡せます。
+- **post-commit フックは残しておいてください。** 消すと、コミットのたびの Severity の通知が止まります。`heal status` は、それでも必要なときにいつでも使えます。

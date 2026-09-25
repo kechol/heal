@@ -1,9 +1,9 @@
 ---
 title: アーキテクチャ
-description: heal がどこにデータを置き、いつ何が書き出されるか、各要素がどう組み合わさるか。
+description: heal がどこにデータを置き、いつ何を書き出し、各部分がどう組み合わさっているか。
 ---
 
-このページでは、heal がどんなファイルを作り、いつ書き出され、何を含むかを説明します。ナッジが出ない原因を調べたり、JSON 出力に対してスクリプトを書いたり、heal がバックグラウンドで何をしているのかを理解したいときに役立ちます。
+このページでは、heal がどんなファイルを作り、いつ書き出し、それぞれに何が入っているかを説明します。コミット時の通知が出ないときの調査や、JSON 出力を使ったスクリプトづくりに役立ちます。heal が裏で何をしているのかを知りたいときにも読んでください。
 
 ## 全体像
 
@@ -13,84 +13,84 @@ git commit
     ▼
 .git/hooks/post-commit  ──►  heal hook commit
                                   │
-                                  ├──►  オブザーバー（LOC, complexity, churn, …, lcom）
-                                  │       (run_all を 1 回; 結果は下流で使用)
+                                  ├──►  オブザーバ（LOC, complexity, churn, …, lcom）
+                                  │       （run_all を 1 回実行し、結果をその下で使う）
                                   │
-                                  └──►  stdout: Severity ナッジ
-                                         (Critical / High Finding のみ)
+                                  └──►  標準出力: Severity の通知
+                                         （Critical / High の Finding だけ）
 
-ユーザー: heal status（または Claude Code で `/heal:refactor`）
+利用者: heal status（または Claude Code で `/heal:refactor`）
     │
     ▼
 heal status  ──►  calibration.toml で Finding を分類
                        │
                        ├──►  .heal/findings/latest.json
-                       │       (FindingsRecord — TODO リスト)
+                       │       （FindingsRecord — TODO リスト）
                        │
-                       ├──►  fixed.json ↔ regressed.jsonl を整合
+                       ├──►  fixed.json と regressed.jsonl を突き合わせる
                        │
-                       └──►  Severity ごとのビューを stdout に描画
+                       └──►  Tier / Severity / スコアの順に並べて標準出力に表示
 ```
 
-`heal` は単一バイナリです。両方の経路がこれを通ります。デーモンも、スケジューラも、バックグラウンドプロセスも、履歴ストリームも一切ありません。post-commit フックは全オブザーバを **一度だけ** 実行してナッジを出し、終了します(永続化は行いません)。
+`heal` は 1 つのバイナリで、どちらの経路もこのバイナリを通ります。デーモンも、スケジューラも、バックグラウンドプロセスも、履歴を書き足していく仕組みもありません。post-commit フックはすべてのオブザーバを **1 回だけ** 実行し、通知を表示して終わります。何も保存しません。
 
 ## オンディスクのレイアウト
 
-`heal init` 直後:
+`heal init` の直後は次のようになります。
 
 ```
 <your-repo>/
 ├── .heal/
-│   ├── config.toml               # 自分で編集する(git 追跡対象)
-│   ├── calibration.toml          # 自動 — heal init / heal calibrate(git 追跡対象)
-│   └── findings/                 # git 追跡対象 — チームで TODO を共有
-│       ├── latest.json           # 現在の FindingsRecord(TODO リスト)
-│       ├── fixed.json            # 修正済み記録の有界マップ
-│       ├── accepted.json         # 「直さない」と判断した finding の記録
-│       └── regressed.jsonl       # 再検出された修正の追記専用監査トレイル
+│   ├── config.toml                # 自分で編集する（git で管理）
+│   ├── calibration.toml           # 自動生成 — heal init / heal calibrate（git で管理）
+│   └── findings/                  # git で管理 — チームで TODO を共有する
+│       ├── latest.json            # 今の FindingsRecord（TODO リスト）
+│       ├── fixed.json             # 修正の記録（件数に上限がある）
+│       ├── accepted.json          # 「直さない・本質的」と判断したものの置き場
+│       └── regressed.jsonl        # 直したはずの Finding が再び見つかった記録（追記のみ）
 │
-└── .git/hooks/post-commit         # `heal hook commit` を呼ぶ 1 行のシム
+└── .git/hooks/post-commit         # 1 行だけのスクリプト: `heal hook commit` を呼ぶ
 ```
 
-Claude のスキルはリポジトリには置きません。heal の Claude Code プラグインとして入り、Claude Code が自分の設定ディレクトリで管理するので、入れても更新しても git 管理下のファイルは変わりません。heal 0.6 以前はスキルを `.claude/skills/heal-*` と `.agents/skills/heal-*` にコピーしていました。そのコピーは `heal skills uninstall` で消せます。
+Claude のスキルはリポジトリには置きません。heal の Claude Code プラグインから入り、Claude Code が自分の設定ディレクトリで管理するので、入れても更新しても git 管理下のファイルは変わりません。heal 0.6 以前はスキルを `.claude/skills/heal-*` と `.agents/skills/heal-*` にコピーしていました。そのコピーは `heal skills uninstall` で消せます。
 
-`config.toml`、`calibration.toml`、`findings/` の中身はすべて git で追跡されるので、同じコミット上のチームメイトは同じ Severity ラダーと解消キューを共有できます。
+`config.toml`、`calibration.toml`、`findings/` ディレクトリは、どれも git で管理します。同じコミットにいるチームメンバーは、同じ Severity の段階と、同じ解消キューを共有します。
 
 ## 何がいつ書かれるか
 
-| ファイル / ディレクトリ          | 書き出し元                                                                | タイミング                                                 |
-| -------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `.heal/config.toml`              | `heal init`                                                               | セットアップ時に一度。自由に編集可。                       |
-| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                                            | セットアップ時、その後は明示的な再 calibrate 時。          |
-| `.heal/findings/latest.json`     | `heal status`                                                             | 新規 `heal status`（キャッシュミス経路）ごと。             |
-| `.heal/findings/fixed.json`      | `heal mark fix`（`/heal:refactor`・`/heal:docs`・`/heal:tests` から呼出） | それらのスキルがコミットするごと。                         |
-| `.heal/findings/accepted.json`   | `heal mark accept`（同じスキルが、承認を得てから呼出）                    | チームが「設計上のもので直さない」と判断した項目を記録時。 |
-| `.heal/findings/regressed.jsonl` | `heal status`（整合パス）                                                 | 修正済み Finding が再検出されたとき。                      |
-| `.heal/doc_pairs.json`           | `/heal:setup` スキル（`[features.docs]` 有効時）                          | ユーザがスキルを実行したとき。HEAL は読み取り専用。        |
-| `.heal/concepts.toml`            | `/heal:setup` スキル（`[features.semantic]` 有効時）                      | ユーザがスキルを実行したとき、または語彙を編集したとき。   |
-| `.heal/semantic/verdicts/`       | `heal semantic ask`                                                       | 新しく問い合わせたとき。コードと一緒に commit する。       |
-| `.heal/cache/source-v1.json`     | source observer                                                           | source解析結果が変わったとき。削除しても問題ありません。   |
-| `.heal/cache/semantic/verdicts/` | `heal semantic ask`（確認用タスク、`focus`）                              | そうしたタスクを実行したとき。削除しても問題ありません。   |
+| ファイル / ディレクトリ          | 書き出すもの                                                                  | タイミング                                                |
+| -------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `.heal/config.toml`              | `heal init`                                                                   | セットアップ時に 1 度。あとは自由に編集できる。           |
+| `.heal/calibration.toml`         | `heal init` / `heal calibrate`                                                | セットアップ時と、明示的に calibration をやり直したとき。 |
+| `.heal/findings/latest.json`     | `heal status`                                                                 | キャッシュが使えず、`heal status` が走査し直したとき。    |
+| `.heal/findings/fixed.json`      | `heal mark fix`（`/heal:refactor`、`/heal:docs`、`/heal:tests` から呼ばれる） | それらのスキルがコミットするたび。                        |
+| `.heal/findings/accepted.json`   | `heal mark accept`（同じスキルが、承認を得てから呼ぶ）                        | チームが本質的な Finding を受け入れたとき。               |
+| `.heal/findings/regressed.jsonl` | `heal status`（突き合わせの処理）                                             | 直したはずの Finding が再び見つかったとき。               |
+| `.heal/doc_pairs.json`           | `/heal:setup` スキル（`[features.docs]` が有効なとき）                        | 利用者がスキルを実行したとき。HEAL は読むだけ。           |
+| `.heal/concepts.toml`            | `/heal:setup` スキル（`[features.semantic]` が有効なとき）                    | 利用者がスキルを実行したとき、または語彙を編集したとき。  |
+| `.heal/semantic/verdicts/`       | `heal semantic ask`                                                           | 新しく問い合わせるたび。コードと一緒にコミットする。      |
+| `.heal/cache/source-v1.json`     | ソースのオブザーバ                                                            | ソースの解析結果が変わったとき。消しても問題ない。        |
+| `.heal/cache/semantic/verdicts/` | `heal semantic ask`（その場で行う確認、`focus`）                              | そうした確認を実行するたび。消しても問題ない。            |
 
-イベントログも、月次ローテーションも、`.heal/snapshots/` / `.heal/logs/` / `.heal/reports/` も存在しません。heal は現在の状態と `regressed.jsonl` の小さな監査トレイルだけを保持します。
+イベントログも、月ごとのローテーションも、`.heal/snapshots/`、`.heal/logs/`、`.heal/reports/` といったディレクトリもありません。heal が持つのは、今の状態と、`regressed.jsonl` の小さな監査記録だけです。
 
-`.heal/cache/` はgit追跡対象のFindings cacheとは別物です。変更のないsourceファイルについてのComplexity、LCOM、Duplication tokenの再生成可能なデータと、一人ひとりの作業についてのsemanticの確認結果だけを保持し、自身をgitの対象外にします。再利用前には必ずファイル内容を検証します。ディレクトリを削除した場合や、cacheが壊れている、書き込めない場合は通常のsource解析へ戻ります。
+`.heal/cache/` は、git で管理する findings のキャッシュとは別物です。中身は、あとから作り直せるデータだけです。入っているのは、変更のないソースファイルの Complexity・LCOM・Duplication のトークンデータと、一人ひとりの作業についての semantic の確認結果です。ディレクトリ自身が、git の管理から外れるように設定されています。heal は使い回す前に毎回ファイルの中身を検証します。ディレクトリを消しても、中身が壊れていても、書き込みに失敗しても、通常どおりソースを解析するだけです。
 
-`.heal/docs/` だけは例外で、`/heal:docs scaffold` を実行すると `[features.docs] scaffold_root`(デフォルトは `.heal/docs/`)に生成済みドキュメントツリーが書き出されます。HEAL 自身はこのツリーを **読む** だけで、書くのはスキル側だけです。
+例外は `.heal/docs/` です。`/heal:docs scaffold` を実行すると、生成したドキュメントのツリーを `[features.docs] scaffold_root` で指定したディレクトリ（既定は `.heal/docs/`）に書き出します。HEAL 自身はこのツリーを**読む**だけで、書くのはスキルだけです。
 
-## Findings キャッシュ(項目一覧の保管場所)
+## Findings キャッシュ
 
-`.heal/findings/` には 4 つの成果物が並びます。`latest.json` と `regressed.jsonl` の writer は `heal status` だけ、`fixed.json` の writer は `heal mark fix` だけ、`accepted.json` の writer は `heal mark accept` だけです。
+`.heal/findings/` には 4 つのファイルがあります。`latest.json` と `regressed.jsonl` を書くのは `heal status` だけ、`fixed.json` を書くのは `heal mark fix` だけ、`accepted.json` を書くのは `heal mark accept` だけです。
 
-### `latest.json` — 現在の TODO
+### `latest.json` — 今の TODO
 
 ```json
 {
   "version": 9,
-  "id": "9f8e7d6c5b4a3210", // (head_sha, config_hash, worktree_clean) の FNV-1a hex
+  "id": "9f8e7d6c5b4a3210", // (head_sha, config_hash, worktree_clean) の FNV-1a（16 進）
   "head_sha": "a0a6d1a…",
   "worktree_clean": true,
-  "config_hash": "9f8e7d6c5b4a3210", // ルール + 有効な非 git 観測入力
+  "config_hash": "9f8e7d6c5b4a3210", // ルールと、有効にしている git 以外の入力
   "severity_counts": { "critical": 2, "high": 5, "medium": 12, "ok": 84 },
   "coverage_observation": {
     "state": "partial",
@@ -103,13 +103,13 @@ Claude のスキルはリポジトリには置きません。heal の Claude Cod
 }
 ```
 
-`heal status` は `(head_sha, config_hash, worktree_clean=true)` がキャッシュレコードと一致するときショートサーキットします。`config_hash` には `config.toml`、`calibration.toml`、有効な LCOV / doc-pair の論理パス・読取可否/欠落状態・内容が入ります。mtime、checkout の絶対パス、無効なファミリの入力は含みません。そのため、同じ HEAD でも ignored な LCOV や doc-pair が変われば再利用せず、同じ観測は checkout 間でバイト再現されます。履歴窓の基準は実行時刻ではなく観測対象 HEAD/ref のコミット時刻です。
+`heal status` は、`(head_sha, config_hash, worktree_clean=true)` がキャッシュの記録と一致すれば、走査を省きます。`config_hash` には、`config.toml`、`calibration.toml`、そして有効にしている LCOV とドキュメントのペアのファイルそれぞれについての論理パス、読めるかどうか、中身が入ります。ファイルの更新時刻、チェックアウトした場所の絶対パス、無効にしたファミリの入力は入りません。そのため、git の管理外にある LCOV レポートやペアのファイルが変わると、HEAD が同じでも結果は使い回しません。一方で、観測した内容が同じなら、どこにチェックアウトしてもバイト単位で同じ結果になります。履歴を見る期間は、実行時の時計ではなく、観測した HEAD（または指定した参照）のコミット時刻を基準にします。
 
-スキーマ v6 でこの観測 hash、v7 で coverage provenance、v8 で optional な `findings[].hotspot_score` が入りました。古い cache は自動的に無効化され、再構築されます。LCOV にない production ファイルは 0% と合成せず未計測とし、LCOV が明示する 0% は実測 Finding のままです。
+スキーマ v6 でこの広い範囲のハッシュが入り、v7 でカバレッジの観測状態、v8 で任意の `findings[].hotspot_score` が加わりました。古いバージョンのキャッシュは捨てられ、自動で作り直されます。LCOV に載っていない本番ファイルは「未計測」として報告し、0% とみなして Finding を作ることはしません。LCOV に 0% と明記された記録は、計測済みの Finding として扱います。
 
-### `fixed.json` — 有界の修正記録
+### `fixed.json` — 修正の記録
 
-`BTreeMap<finding_id, FixedFinding>` を 1 つの JSON オブジェクトとしてシリアライズしたもの。各エントリは決定論的な `finding_id` をキーにします。
+`BTreeMap<finding_id, FixedFinding>` を 1 つの JSON オブジェクトにしたものです。各エントリのキーは、決まった手順で作る `finding_id` です。
 
 ```json
 {
@@ -120,20 +120,20 @@ Claude のスキルはリポジトリには置きません。heal の Claude Cod
 }
 ```
 
-有界です — 追記専用ではありません。新規 `heal status` で過去に fixed だった `finding_id` が再出現すると、heal は `fixed.json` から取り除いて `regressed.jsonl` に 1 行追記し、レンダラーが警告を出します。
+件数に上限があり、追記するだけのファイルではありません。一度直した `finding_id` が新しい `heal status` で再び現れると、heal はそれを `fixed.json` から外し、`regressed.jsonl` に 1 行書きます。表示でも警告が出ます。
 
-### `regressed.jsonl` — 監査トレイル
+### `regressed.jsonl` — 監査記録
 
-`.heal/` 配下で唯一の追記専用ファイルです。再検出イベントごとに JSON を 1 行追加し、「修正したはずが再検出された」という警告を表示するためだけに使います。
+`.heal/` の中で、追記だけを行う唯一のファイルです。直したはずの Finding が戻ってくるたびに JSON を 1 行書きます。使い道は「修正が再び見つかった」という警告を出すことだけです。
 
-### `accepted.json` — 「直さない」レーン
+### `accepted.json` — 「直さない・本質的」の置き場
 
-`BTreeMap<finding_id, AcceptedFinding>` を 1 つの JSON オブジェクトとしてシリアライズしたもの。`heal mark accept` が writer で、`/heal:refactor`・`/heal:docs`・`/heal:tests` の各スキルが、あなたの承認を得て「この項目は設計上避けられないので解消対象から外す」という判断を記録するときに呼びます。
+`BTreeMap<finding_id, AcceptedFinding>` を 1 つの JSON オブジェクトにしたものです。書き出すのは `heal mark accept` で、`/heal:refactor`、`/heal:docs`、`/heal:tests` から呼ばれます。チームが「この Finding は本質的なものなので解消しない」と記録することを承認したときです。
 
 ```json
 {
   "ccn:src/payments/engine.ts:processOrder:9f8e…": {
-    "reason": "設計上分岐が多い(税金エンジン)",
+    "reason": "intrinsic — branchy by design (tax engine)",
     "file": "src/payments/engine.ts",
     "metric": "ccn",
     "severity": "critical",
@@ -146,15 +146,15 @@ Claude のスキルはリポジトリには置きません。heal の Claude Cod
 }
 ```
 
-`fixed.json` とは異なり、accepted エントリは finding が再出現しても消費されません。解消キューでの存在を無期限に抑制し、`heal status` は `Accepted: N findings` ヘッダ行と、`--all` 指定時の `📌 Accepted` セクションでそれらを別途表示します。
+`fixed.json` とは違い、Finding が再び現れても受け入れのエントリは消えません。受け入れた Finding は期限なく解消キューから外れます。`heal status` では、ヘッダーに `Accepted: N findings` の 1 行が出て、`--all` を付けると `📌 Accepted` のセクションに表示されます。
 
-`Finding.accepted: bool` はレンダリング時に `accepted.json` を finding リストに畳み込むことで装飾されます — `latest.json` 自体は raw observer truth を保ち、`accepted: true` を持ちません。これにより accept のオン / オフを切り替えても再スキャンは不要です。
+`Finding.accepted: bool` は、表示するときに `accepted.json` を Finding の一覧に重ねて付けます。`latest.json` そのものにはオブザーバの生の結果だけを残し、`accepted: true` は書き込みません。そのため、受け入れを付けたり外したりしても走査し直す必要はありません。
 
-エントリの削除: ファイルを手編集して該当行を消すか、スキルフローから `heal mark accept --remove` を呼びます。次の `heal status` で元の finding が再び表面化します。
+エントリを消すには、ファイルを手で編集してその行を削除するか、スキルの流れの中で `heal mark accept --remove` を呼びます。次の `heal status` で、元の Finding がまた表示されます。
 
-accepted finding の Severity が上昇するか、そのファミリの Hotspot が false から true になると、status、現在側 diff、post-commit hook が再レビューを通知します。JSON は 1 つの `accepted_rereview` オブジェクトに 1 つまたは両方の理由 (`severity_increased`, `became_hotspot`) を返します。accept は解除せず T0 に戻しません。安定・冷却・改善時は通知しません。
+受け入れ済みの Finding でも、Severity が上がったときや、そのファミリの Hotspot が false から true に変わったときは、見直しを求めます。求めるのは status、diff の現在側、post-commit フックです。JSON には、理由（`severity_increased`、`became_hotspot` の一方または両方）を持つ `accepted_rereview` オブジェクトが 1 つ入ります。受け入れは取り消されず、Finding が T0 に戻ることもありません。変化がない、落ち着いてきた、良くなったという受け入れ済みの Finding については何も知らせません。
 
-このキャッシュは `jq` で直接覗けます。
+キャッシュは `jq` で直接見られます。
 
 ```sh
 jq '.severity_counts' .heal/findings/latest.json
@@ -163,35 +163,35 @@ jq 'keys | length'    .heal/findings/accepted.json
 tail .heal/findings/regressed.jsonl
 ```
 
-## Calibration(Severity 基準の調整)
+## Calibration
 
-`calibration.toml` は Severity を扱う各メトリクスのコードベース相対パーセンタイル区切りを保持します。`heal init` が初回スキャンから計算し、`heal calibrate --force` がオンデマンドで更新します。`config.toml` の `floor_critical` / `floor_ok` は calibrate されたパーセンタイルに勝ちます。再 calibrate は **絶対に自動では行いません** — [CLI › `heal calibrate`](/heal/ja/cli/#heal-calibrate) を参照。
+`calibration.toml` には、Severity を持つすべてのメトリクスについて、コードベースを基準にしたパーセンタイルの区切りが入っています。`heal init` が最初の走査から計算し、`heal calibrate --force` で必要なときに作り直します。`config.toml` で設定した `floor_critical` / `floor_ok` は、calibration で求めたパーセンタイルより優先されます。calibration のやり直しが**自動で行われることはありません**。[CLI › `heal calibrate`](/heal/ja/cli/#heal-calibrate) を参照してください。
 
-Hotspot は有限スコアが 5 件以上なら p90 + ファミリフロア、1〜4 件なら既存の絶対ファミリフロアのみ (Code 22、Test 25、Docs 5) で判定します。非有限値はフラグしません。この fallback はパーセンタイル、確率、修正効果の保証ではありません。
+Hotspot は、有限の候補が 5 件以上あれば p90 とファミリのフロアを使います。1〜4 件のときは、ファミリごとに決まっている絶対値のフロア（Code 22、Test 25、Docs 5）だけを使い、有限でない値はフラグの対象にしません。この代わりの判定は、パーセンタイルでも、確率の見積もりでも、修正の効果の保証でもありません。
 
-## Calibration(Severity 基準の調整)と policy: 2 つのレイヤ
+## Calibration と policy: 2 つのレイヤ
 
-heal はコード健全性の **測定** と、それに対して何を行うかの **意図** を分離しています。
+heal は、コードの健全性を*測ること*と、何に手を付けるかという*意図*を分けています。
 
-- **Calibration レイヤ**（`.heal/calibration.toml` + metric ごとの `[metrics.<m>]` override）は「この Finding は赤か？」を判定。3 段の分類器 — `floor_critical`（逃げ道）+ `floor_ok`（卒業ゲート、proxy メトリクスのみ）+ パーセンタイル区切り — が Severity を生成します。このレイヤは測定の問い: 値が文献閾値とプロジェクト分布に対してどこに位置するか、に答えます。
-- **Policy レイヤ**（`config.toml` の `[policy.drain]`）は「その Finding はアクション対象か？」を判定。`(Severity, hotspot)` の組が 3 つの drain tier (T0 / `must`、T1 / `should`、Advisory) のいずれかにマップされます。このレイヤは意図の問い: チームが何を drain するとコミットするか、に答えます。
+- **calibration のレイヤ**（`.heal/calibration.toml` と、メトリクスごとの `[metrics.<m>]` の上書き）は、「この Finding は赤か」を決めます。`floor_critical`（逃げ道）、`floor_ok`（卒業の基準。代理指標のメトリクスだけ）、パーセンタイルの区切りの 3 つを組み合わせて Severity を出します。答えるのは測定の問いです。この値は、文献のしきい値と、プロジェクト自身の分布に対してどこにあるか。
+- **policy のレイヤ**（`config.toml` の `[policy.drain]`）は、「この Finding に手を付けるべきか」を決めます。`(Severity, hotspot)` の組を、T0 / `must`、T1 / `should`、Advisory の 3 つの解消 Tier のどれかに割り当てます。答えるのは意図の問いです。チームは何を解消すると約束するか。
 
-両レイヤは直交しています — 再 calibrate は Severity 境界を動かしますが policy には触れません。逆に policy を厳しく/緩くしても観測は再実行されません。チームは通常 calibration を文献デフォルト近くに保ち、自分たちの帯域に合わせて `[policy.drain]` を調整します。
+2 つのレイヤは独立しています。calibration をやり直しても Severity の境目が動くだけで、policy には触れません。policy を厳しくしても緩くしても、解消の扱いが変わるだけで、オブザーバを実行し直す必要はありません。多くのチームは、calibration を文献の既定値に近いまま保ち、自分たちの手の空き具合に合わせて `[policy.drain]` を調整しています。
 
-## 解消キュー モデル
+## 解消キューのモデル
 
-`heal status` は非 Ok の Finding を `[policy.drain]` 駆動で 3 つのバケットに分けます。
+`heal status` は、Ok 以外のすべての Finding を、`[policy.drain]` に従って 3 つのグループのどれかに分けます。
 
-| Tier                      | デフォルト spec                         | レンダラー挙動                 | Skill 挙動                                           |
-| ------------------------- | --------------------------------------- | ------------------------------ | ---------------------------------------------------- |
-| **T0 / 解消キュー**       | `must = ["critical:hotspot"]`           | 常に決定的な優先順で表示。     | 最初に提案し、承認されたら 1 提案 1 コミットで適用。 |
-| **T1 / 余裕があれば解消** | `should = ["critical", "high:hotspot"]` | デフォルト表示、別セクション。 | T0 のあとに提案。                                    |
-| **Advisory**              | それ以外の非 Ok                         | `--all` 時のみ表示。           | 文脈として使うだけで、単独では提案しない。           |
+| Tier                  | 既定の指定                              | 表示                               | スキルの動き                                           |
+| --------------------- | --------------------------------------- | ---------------------------------- | ------------------------------------------------------ |
+| **T0 / Drain queue**  | `must = ["critical:hotspot"]`           | 常に表示。決まった優先順で並ぶ。   | 最初に提案する。承認されたら 1 提案 1 コミットで適用。 |
+| **T1 / Should drain** | `should = ["critical", "high:hotspot"]` | 既定で表示。別のセクションになる。 | T0 の後に提案する。                                    |
+| **Advisory**          | それ以外の、Ok より上のもの             | `--all` を付けたときだけ表示。     | 文脈として使うだけ。単独では提案しない。               |
 
-`Severity::Ok` の Finding は解消対象外です。`--all` では通常の Ok セクションにスコア順で表示し、hotspot/plain が混在する場合は該当行へ `🔥` を付けます。`--all` なしでは隠し合計カウントにだけ含めます。
+`Severity::Ok` に分類された Finding は、解消の対象から完全に外れます。`--all` を付けると、通常の Ok のセクションにスコア順で表示されます。Hotspot とそうでないものが混ざったセクションでは、Hotspot の行に `🔥` が付きます。`--all` を付けなければ、隠れた項目の件数に数えられるだけです。
 
-各ファミリ・Tier の中では Severity、`hotspot_score` 降順、安定した metric/path/id の順で並びます。Code、Test、Docs の生スコアを相互に比較することはありません。
+各ファミリの各 Tier の中では、行は Severity、`hotspot_score` の降順の順に並び、同点ならメトリクス、パス、id で安定して決めます。Code・Test・Docs のスコアを互いに比べることはありません。
 
-Override の可視化: `[metrics.<m>] floor_ok` / `floor_critical` が文献デフォルトと異なる場合、`heal status` はヘッダ行に `override: ccn floor_ok=15 [override from 11]` のような注釈を出力します。CI ログや PR diff で policy 変更が監査可能になります。
+上書きの見える化: `[metrics.<m>] floor_ok` や `floor_critical` が文献の既定値と違うと、`heal status` はヘッダーに `override: ccn floor_ok=15 [override from 11]` のような行を出します。policy の変更が、CI のログや PR の差分から追えるようにするためです。
 
-`[policy.drain]` の DSL は `<severity>`（hotspot 不問）または `<severity>:hotspot`（hotspot=true 必須）。Severity トークンは小文字: `critical / high / medium / ok`。詳細は[設定 › Drain ポリシー](/heal/ja/configuration/#drain-ポリシー)を参照。
+`[policy.drain]` の書き方は、`<severity>`（Hotspot かどうかを問わない）か `<severity>:hotspot`（hotspot=true が必要）です。Severity は小文字で `critical / high / medium / ok` と書きます。[Code › 設定 › `[policy.drain]`](/heal/ja/code/configuration/#policydrain) を参照してください。

@@ -1,14 +1,14 @@
 ---
 title: インストール
-description: heal CLI をインストールする 3 つの方法 — Homebrew、Cargo、シェルインストーラー — と、スキルを入れる Claude Code プラグイン。
+description: heal CLI を入れる 3 つの方法（Homebrew、Cargo、シェルインストーラー）と、スキルを収めた Claude Code プラグインの入れ方。
 ---
 
-heal は `heal` という名前の単一バイナリです。以下の 3 つのインストール方法はいずれも同じバイナリを生成します。環境に合うものを選んでください。Claude のスキルは別に、Claude Code プラグインとして入れます（下の [Claude Code プラグイン](#claude-code-プラグイン) を参照）。
+heal は `heal` という名前の 1 つのバイナリです。下の 3 つの方法のどれでも同じバイナリが入るので、環境に合うものを選んでください。Claude のスキルは別に、Claude Code プラグインとして入れます（[Claude Code プラグイン](#claude-code-プラグイン) を参照）。
 
 ## 必要なもの
 
-- **OS**: macOS または Linux。Windows は未対応 — フックスクリプトとパス処理は POSIX シェルを前提にしています。
-- **Git**: モダンな任意のリリース。heal は内部で libgit2 を使いますが、post-commit フックを発火させるためには `git` CLI も動作する必要があります。
+- **OS**: macOS または Linux。フックのスクリプトとパスの扱いが POSIX シェルを前提にしているため、Windows には対応していません。
+- **Git**: 最近のバージョンなら何でも構いません。heal は内部で libgit2 を使いますが、post-commit フックを動かすには `git` コマンドも必要です。
 
 ## Homebrew（macOS / Linux）
 
@@ -16,28 +16,28 @@ heal は `heal` という名前の単一バイナリです。以下の 3 つの�
 brew install kechol/tap/heal-cli
 ```
 
-`kechol/homebrew-tap` を tap し、各リリースに同梱されるビルド済みの `heal` バイナリをインストールします。アップグレードは通常通り `brew upgrade` です。
+`kechol/homebrew-tap` を tap し、リリースごとに配布しているビルド済みの `heal` バイナリを入れます。更新はいつもの `brew upgrade` でできます。
 
 ## Cargo
 
-`PATH` に Rust ツールチェーン（1.90 以上）がすでに通っている場合:
+Rust ツールチェーン（1.90 以降）が `PATH` にあれば、次のコマンドで入ります。
 
 ```sh
 cargo install heal-cli
 ```
 
-`cargo install` は crates.io からビルドし、`heal` を `~/.cargo/bin` に配置します。このディレクトリが `PATH` に含まれていることを確認してください。
+`cargo install` は crates.io のソースからビルドし、`heal` を `~/.cargo/bin` に置きます。このディレクトリが `PATH` に入っていることを確かめてください。
 
 ## シェルインストーラー（ビルド済みバイナリ）
 
-Homebrew も Rust もない環境向け:
+Homebrew も Rust もない環境向けの方法です。
 
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/kechol/heal/releases/latest/download/heal-cli-installer.sh | sh
 ```
 
-スクリプトは [GitHub の最新リリース](https://github.com/kechol/heal/releases/latest) からホストプラットフォーム向けのビルド済みバイナリをダウンロードし、`$CARGO_HOME/bin`（デフォルト `~/.cargo/bin`）に配置します。配信物は Homebrew が使うものと同一で、`brew` のワークフローを介さない経路です。
+スクリプトは [GitHub の最新リリース](https://github.com/kechol/heal/releases/latest) から、実行中のプラットフォームに合うビルド済みバイナリを取得し、`$CARGO_HOME/bin`（既定は `~/.cargo/bin`）に置きます。中身は Homebrew で入るものと同じで、`brew` を使わずに届けるという違いだけです。
 
 ## インストールを確認
 
@@ -46,40 +46,40 @@ heal --version
 heal --help
 ```
 
-`heal --help` で全サブコマンドが列挙されます。コマンドが見つからない場合は、`~/.cargo/bin`（または独自の `CARGO_HOME/bin`）がシェルの `PATH` に通っているか確認してください。
+`heal --help` はすべてのサブコマンドを一覧表示します。コマンドが見つからないときは、`~/.cargo/bin`（`CARGO_HOME` を変えているならその下の `bin`）がシェルの `PATH` に入っているか確かめてください。
 
 ## Claude Code プラグイン
 
-スキル（`/heal:setup`・`/heal:refactor`・`/heal:docs`・`/heal:tests`）は、heal リポジトリから Claude Code プラグインとして配布しています。Claude Code で次を実行します。
+スキル（`/heal:setup`、`/heal:refactor`、`/heal:docs`、`/heal:tests`）は、heal のリポジトリから Claude Code プラグインとして配布しています。Claude Code で次を実行します。
 
 ```
 /plugin marketplace add kechol/heal
 /plugin install heal@heal
 ```
 
-プラグインはプロジェクトではなく Claude Code の設定側に入るので、git 管理下のファイルは増えません。プラグインは公開時の heal リリースに固定されています。heal を使っているプロジェクトでセッションを始めると、`heal` CLI が同じリリースのものかを確かめ、違っていれば更新コマンドを 1 行だけ表示します。
+プラグインはプロジェクトではなく Claude Code の設定の側に入るので、git 管理下のファイルは増えません。プラグインは、公開したときの heal のリリースに固定されています。heal を使っているプロジェクトでセッションを始めるたびに、プラグインは `heal` CLI が同じリリースのものかを確かめ、違っていれば更新コマンドを 1 行で表示します。
 
-スキルは Claude Code 向けに書かれています。Codex CLI を使う場合は、[heal リポジトリ](https://github.com/kechol/heal) の `plugins/heal/skills/` 以下のフォルダを、プロジェクトの `.agents/skills/` に手でコピーすれば使えます。ただしサポート対象外です。
+スキルは Claude Code 向けに書いています。Codex CLI で使いたい場合は、[heal のリポジトリ](https://github.com/kechol/heal) にある `plugins/heal/skills/` 以下のフォルダを、プロジェクトの `.agents/skills/` に手でコピーすれば動きますが、この使い方はサポートしていません。
 
 ## アップデート
 
-| インストール方法 | 更新コマンド                      |
-| ---------------- | --------------------------------- |
-| Homebrew         | `brew upgrade heal-cli`           |
-| Cargo            | `cargo install heal-cli` を再実行 |
-| Shell            | インストーラーコマンドを再実行    |
+| インストール方法 | 更新コマンド                            |
+| ---------------- | --------------------------------------- |
+| Homebrew         | `brew upgrade heal-cli`                 |
+| Cargo            | `cargo install heal-cli` をもう一度実行 |
+| シェル           | インストーラーのコマンドをもう一度実行  |
 
-CLI をアップグレードしたら、スキルが合うようにプラグインも更新してください。Claude Code で `/plugin marketplace update heal` を実行してから `/plugin update heal@heal` を実行します。
+CLI を更新したら、スキルと揃うようにプラグインも更新してください。Claude Code で `/plugin marketplace update heal` を実行してから、`/plugin update heal@heal` を実行します。
 
 ### heal 0.6 以前からのアップグレード
 
-以前のバージョンは、スキルを各プロジェクトにコピーしていました（`.claude/skills/heal-*`、`.agents/skills/heal-*`）。プラグインを入れたら、各プロジェクトで次を実行してコピーを消し、削除をコミットしてください。
+以前のバージョンは、スキルを各プロジェクトにコピーしていました（`.claude/skills/heal-*`、`.agents/skills/heal-*`）。プラグインを入れたら、各プロジェクトでそのコピーを消し、削除をコミットしてください。
 
 ```sh
 heal skills uninstall
 ```
 
-消すのは heal 自身が書いたフォルダだけで、自分で作ったスキルは残ります。残っているものは `heal doctor` が一覧にします。
+消すのは heal 自身が書いたフォルダだけで、自分で作ったスキルは残ります。消し残しがあれば `heal doctor` が一覧で示します。
 
 ## アンインストール
 
@@ -87,6 +87,6 @@ heal skills uninstall
 | ---------------- | -------------------------- |
 | Homebrew         | `brew uninstall heal-cli`  |
 | Cargo            | `cargo uninstall heal-cli` |
-| Shell            | `rm ~/.cargo/bin/heal`     |
+| シェル           | `rm ~/.cargo/bin/heal`     |
 
-`heal` が書き込みを行うのは、`heal init` を実行したリポジトリ内の `.heal/` と `.git/hooks/post-commit` フックだけです。完全に消したい場合は手動で削除してください。プラグインは Claude Code で `/plugin uninstall heal@heal` を実行すると外れます。
+`heal` が書き込むのは、`heal init` を実行したリポジトリの `.heal/` と `.git/hooks/post-commit` フックだけです。まっさらな状態に戻したいときは、これらを手で消してください。プラグインは Claude Code で `/plugin uninstall heal@heal` を実行すると外れます。

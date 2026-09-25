@@ -1,23 +1,23 @@
 ---
 title: クイックスタート
-description: heal をインストールして git リポジトリに導入し、最初の TODO リストを Claude に渡すまでの手順。
+description: heal をインストールして git リポジトリにつなぎ、最初の TODO リストを見て、Claude に渡すまで。
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-**heal はコードベースの劣化をエージェントの仕事に変えます。** コミットのたびに複雑度・Hotspot・重複を再計測し、出てきた TODO リストを Claude に渡します。Claude は修正を提案し、承認されたものを 1 件ずつコミットしていきます。人間はポーリング役から降りられます。このページではそのループを最後まで、5 分ほどで立ち上げます。
+**heal は、コードベースの劣化をエージェントの仕事に変えます。** コミットのたびに複雑度、Hotspot、重複を測り直し、その結果の TODO リストを Claude に渡します。Claude は修正を提案し、承認されたものを 1 件 1 コミットで適用します。人が様子を見に行く必要はなくなります。このページでは、その流れを 5 分ほどで最後まで組み立てます。
 
 ## 必要環境
 
-始める前に揃えておくもの:
+始める前に、次のものを用意してください。
 
 - macOS または Linux
-- 評価対象の git リポジトリ
-- (任意)[Claude Code](https://claude.com/code) — heal プラグインの `/heal:setup`・`/heal:refactor`・`/heal:docs`・`/heal:tests` スキルを使う場合
+- 試す git リポジトリ
+- （任意）heal プラグインの `/heal:setup`、`/heal:refactor`、`/heal:docs`、`/heal:tests` スキルを使うための [Claude Code](https://claude.com/code)
 
 ## 1. インストール
 
-どの方法でも同じ `heal` バイナリが入ります。好みのものを選んでください。
+どの方法を選んでも、同じ `heal` バイナリが入ります。
 
 <Tabs syncKey="installer">
   <TabItem label="Homebrew">
@@ -48,17 +48,17 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 heal --version
 ```
 
-各方式の詳細は [インストール](/heal/ja/installation/) を参照。
+方法ごとの詳細は [インストール](/heal/ja/installation/) を参照してください。
 
-## 2. リポジトリをブートストラップ
+## 2. リポジトリを準備する
 
-`.heal/` の作成と git フックの設置を、このコマンド 1 つでまとめて行います。
+`.heal/` の作成と git フックの設置を、1 つのコマンドで済ませます。
 
 ```sh
 heal init
 ```
 
-`.heal/`(設定と Calibration)を作り、コミットのたびに次の Critical / High を表示する post-commit フックをインストールします。何度実行しても安全で、`--force` を付けない限り既存の設定と Calibration はそのまま残ります。何が済んでいて何が残っているかは `heal doctor` で確認できます。
+`.heal/`（設定と calibration）を作り、コミットのたびに新しい Critical / High を知らせる post-commit フックを設置します。何度実行しても安全で、既存の設定と calibration は `--force` を付けない限りそのまま残ります。何が済んでいて何が残っているかは、`heal doctor` で確認できます。
 
 ## 3. プラグインを入れて `/heal:setup` を実行する
 
@@ -69,51 +69,49 @@ heal init
 /plugin install heal@heal
 ```
 
-続けてセットアップ用のスキルを実行します。任意ですが、最初は実行をおすすめします。
+続けて、セットアップ用のスキルを実行します。必須ではありませんが、初回は実行をおすすめします。
 
 ```
 /heal:setup
 ```
 
-`heal doctor` の結果から始めるので、足りないことだけを行います。Strict / Default / Lenient のどれにするかを聞いて `.heal/config.toml` を更新し、オプションの Test / Docs / Semantic ファミリを有効にするか確認して、必要なもの(doc pairs、カバレッジのリポータ、concept の一覧)を用意します。再 calibrate はあなたが同意したときだけです。いつ再実行してもかまいません。セットアップ済みのプロジェクトなら、そろっていると報告するだけで終わります。
+このスキルは `heal doctor` の結果を起点にするので、足りない作業だけを行います。まず Strict / Default / Lenient のどれにするかを尋ねて、`.heal/config.toml` を更新します。次に、オプトインの Test / Docs / Semantic を有効にするかを尋ねます。有効にしたものには、必要な準備も整えます。Docs ならドキュメントのペア、Test ならカバレッジのリポータ、Semantic なら概念の一覧です。calibration のやり直しは、同意したときだけ行います。何度実行しても構いません。準備がすべて済んだプロジェクトでは、その旨を報告するだけです。
 
 ## 4. TODO リストを見る
 
-有効 Drain Tier と Severity でまとまり、同一ファミリ内では Hotspot スコア降順になった項目の一覧です。
+TODO リストは、Tier（T0、T1 といった解消の優先段階）と Severity ごとにまとまり、同じファミリの中では Hotspot スコアの高い順に並びます。
 
 ```sh
 heal status
 ```
 
-ファイル単位の TODO リストを Tier、Severity、スコア順で表示します。フィルタや JSON 出力は [CLI › heal status](/heal/ja/cli/#heal-status) を参照。
+ファイルごとの TODO リストを、Tier、Severity、スコアの順に表示します。絞り込みや JSON 出力については [CLI › heal status](/heal/ja/cli/#heal-status) を参照してください。
 
 ## 5. Claude と Finding を片付ける
 
-どのスキルも、heal が見つけたものを読んで変更を提案し、あなたが承認したものだけを適用します。1 提案につき 1 コミットで、コミットの前にテストを実行します。push や pull request の作成はしません。
+どのスキルも、heal が見つけたものを読んで変更を提案し、承認されたものだけを適用します。適用は 1 提案 1 コミットで、コミットの前には毎回テストを実行します。push や pull request の作成は、どのスキルもしません。
 
 ```
-/heal:refactor          # コードの Finding をシステムとして読み、構造的なものも含めてリファクタを提案する
-/heal:refactor plan     # 提案だけ。適用は後で
-/heal:docs              # [features.docs]: Diátaxis の視点でドキュメントを直す・書き直す・移す・分ける
-/heal:docs scaffold     # [features.docs]: docs がまだ無いプロジェクトで、コードベースからドキュメントツリーを作る
-/heal:tests             # [features.test]: テストピラミッドの視点でテストを書く・合わせる・skip を戻す・消す
+/heal:refactor          # コードの Finding を全体として読み、構造的な変更も含めてリファクタを提案する
+/heal:refactor plan     # 提案だけを行い、適用はあとで
+/heal:docs              # [features.docs]: Diátaxis の観点でドキュメントを直す・書き直す・移す・分ける
+/heal:docs scaffold     # [features.docs]: ドキュメントがまだないプロジェクトで、コードベースから文書ツリーを作る
+/heal:tests             # [features.test]: テストピラミッドの観点でテストを書く・揃える・再び有効にする・消す
 ```
 
-スキルの詳細は [Code › スキル](/heal/ja/code/skills/)、[Docs › スキル](/heal/ja/docs/skills/)、[Test › スキル](/heal/ja/test/skills/) を参照。
+スキルの詳細は [Code › スキル](/heal/ja/code/skills/)、[Docs › スキル](/heal/ja/docs/skills/)、[Test › スキル](/heal/ja/test/skills/) を参照してください。
 
 ## 続けて読む
 
-ドキュメントサイトの各ページへ:
-
-- [コンセプト](/heal/ja/concept/) — heal の設計思想
-- [機能](/heal/ja/features/) — Code(常時オン)、Test(`[features.test]`)、Docs(`[features.docs]`)
-- [CLI](/heal/ja/cli/) — 全コマンド
+- [コンセプト](/heal/ja/concept/) — heal がこの形をしている理由
+- [機能](/heal/ja/features/) — Code（常時オン）、Test（`[features.test]`）、Docs（`[features.docs]`）
+- [CLI](/heal/ja/cli/) — すべてのサブコマンド
 - [Code › メトリクス](/heal/ja/code/metrics/) — 7 つの Code メトリクス
 - [Code › 設定](/heal/ja/code/configuration/) — `.heal/config.toml` のリファレンス
 
-常時オンの Code ファミリ以上を試したくなったら:
+常時オンの Code ファミリの先に進むときは、次のページへ。
 
 - [Test › 設定](/heal/ja/test/configuration/) — `lcov.info` の取り込みと、それで有効になるカバレッジ・skip 比率のレポート
-- [Docs › 設定](/heal/ja/docs/configuration/) — ペアになったドキュメントのドリフトとリンク切れ検出
+- [Docs › 設定](/heal/ja/docs/configuration/) — ペアになったドキュメントのずれとリンク切れのチェック
 
-ドキュメント通りに動かないときは [issue を立ててください](https://github.com/kechol/heal/issues)。
+書いてあるとおりに動かない手順があれば、[issue で知らせてください](https://github.com/kechol/heal/issues)。

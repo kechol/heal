@@ -1,64 +1,64 @@
 ---
 title: Test · メトリクス
-description: '[features.test] ファミリが追加するテスト品質メトリクス 3 つ — coverage_pct、skip_ratio、Test Hotspot — と change_coupling.drift サブメトリクス。'
+description: '[features.test] ファミリが加える、テストの質を見る 3 つのメトリクス（coverage_pct、skip_ratio、Test Hotspot）と、change_coupling.drift サブメトリクス。'
 ---
 
-オプトインの **Test** ファミリは、常時オンの Code ファミリの上にトップレベルのメトリクスを 3 つ追加します — `coverage_pct`・`skip_ratio`・Test Hotspot です。これに加えて `change_coupling` に `change_coupling.drift` というサブメトリクスが乗ります。中心的なシグナルは **行カバレッジ** で、外部生成された `lcov.info` を読み取り、Hotspot のスコアに反映させてカバレッジ未達の hot path がキューの上位に浮かぶようにします。
+オプトインの **Test** ファミリは、常時オンの Code ファミリに、トップレベルのメトリクスを 3 つ加えます。`coverage_pct`、`skip_ratio`、Test Hotspot です。あわせて、`change_coupling` のサブメトリクスとして `change_coupling.drift` も加えます。中心になるシグナルは**行カバレッジ**です。外部のツールが生成した `lcov.info` から読み、Hotspot のスコアに反映するので、テストの届いていないよく変わる箇所がキューの上位に来ます。
 
-設定の調整値は [Test › 設定](/heal/ja/test/configuration/)、スキルは [Test › スキル](/heal/ja/test/skills/) を参照。
+設定項目は [Test › 設定](/heal/ja/test/configuration/) を、スキルは [Test › スキル](/heal/ja/test/skills/) を参照してください。
 
 ## 一覧
 
-| メトリクス              | レイヤ                   | 何を捕まえるか                                                                        |
-| ----------------------- | ------------------------ | ------------------------------------------------------------------------------------- |
-| `coverage_pct`          | ソースファイル単位       | `lcov.info` から読んだ行カバレッジ。Finding は `< 100%` のファイルにのみ発行          |
-| `skip_ratio`            | テストファイル単位       | ファイル内の skip テスト数 / 総テスト数(%)                                            |
-| `test_hotspot`          | ソースファイル単位       | `commits × uncov_pct` の合成スコア。`coverage_pct` Finding に `hotspot=true` を立てる |
-| `change_coupling.drift` | ペア単位(サブメトリクス) | ソースだけが先に変わっていて、テストがついていけていないペア                          |
+| メトリクス              | 単位                       | 何を見つけるか                                                                           |
+| ----------------------- | -------------------------- | ---------------------------------------------------------------------------------------- |
+| `coverage_pct`          | ソースファイルごと         | `lcov.info` から読んだ行カバレッジ。Finding を出すのは `< 100%` のファイルだけ           |
+| `skip_ratio`            | テストファイルごと         | ファイル内のテストのうち、skip されているものの割合                                      |
+| `test_hotspot`          | ソースファイルごと         | `commits × uncov_pct` の合成スコア。`coverage_pct` の Finding に `hotspot=true` を立てる |
+| `change_coupling.drift` | ペアごと（サブメトリクス） | ソースは変わり続けているのに、一緒に変わっていないテスト                                 |
 
-加えて構造的な追加: 各 Finding に `is_test_file: bool` フラグが付き、スキルがテスト側と本番側の Severity を独立に読めるようになります。
+構造の面でも 1 つ加わります。すべての Finding に `is_test_file: bool` のフラグが付き、スキルがテスト側と本番側の Severity を分けて読めるようになります。
 
 ## `coverage_pct`
 
-> _「テストスイートから見えていない本番コードはどこか?」_
+> _「テストから見えていない本番コードはどこか?」_
 
-`[features.test.coverage].lcov_paths` に存在するすべての `lcov.info` を parse・マージした、ソースファイル単位の行カバレッジ率です(多言語モノレポならパッケージごとのファイルを列挙すればどれも集計に入ります)。Finding は `< 100%` のファイルにのみ発行されます。Calibration は **反転値**(`100 - coverage_pct`)を保存するので、他のメトリクスと同じ「value が p95 に達したら Critical」のカスケードがそのまま使えます — フロアの調整は [Test › 設定](/heal/ja/test/configuration/#calibrationseverity-基準の調整) を参照。
+ソースファイルごとの行カバレッジです。`[features.test.coverage].lcov_paths` にある `lcov.info` のうち、存在するものをすべて読み、1 つにまとめます（多言語のモノレポでパッケージごとにファイルを並べれば、どれも集計に入ります）。Finding を出すのは、カバレッジが `< 100%` のファイルだけです。calibration では**反転した値**（`100 - coverage_pct`）を保存します。ほかのメトリクスと同じ「値が p95 に届いたら Critical」の段階をそのまま使えるようにするためです。フロアについては [Test › 設定](/heal/ja/test/configuration/#calibration) を参照してください。
 
-coverage 出力は観測 provenance も持ちます。`missing` は設定済み report がない、`read_error` は 1 つ以上を読めない、`partial` は LCOV にない対応 production ファイルを列挙、`complete` は欠落なしを意味します。不在ファイルは **未計測** であり 0% とは推定せず、reporter/package scope の設定確認へ案内し、Test 解消キューには入りません。hit 0 の LCOV record は実測 0% Finding です。設定した test path、generated、exclude は未計測 production に数えません。
+カバレッジの出力には、観測の状態も入ります。`missing` は設定したレポートが見つからない、`read_error` は少なくとも 1 つを読めなかった、`partial` は LCOV に載っていない対象の本番ファイルがある（その一覧も出ます）、`complete` は欠けがない、という意味です。載っていないファイルは**未計測**として扱い、0% とはみなしません。リポータやパッケージの範囲の設定を見直すよう促し、Test の解消キューには入れません。ヒット数 0 の LCOV の記録は、計測済みの 0% として Finding になります。設定したテストのパス、生成されたファイル、除外したパスは、未計測の本番ファイルには数えません。
 
 ## `skip_ratio`
 
-> _「skip テストの比率が無視できないファイルはどれか?」_
+> _「skip されたテストが無視できない割合を占めるファイルはどれか?」_
 
-テストファイル単位の skip 比率(skip 数 / 総テスト数、パーセンテージ)です。`[features.test].test_paths` でマッチしたファイルを歩き、言語別の skip マーカーをカウントします — Rust の `#[ignore]`、Python の `@pytest.mark.skip` / `@unittest.skipIf`、JS / TS の `it.skip` / `xit` / `xdescribe`、Go の `t.Skip()`、ScalaTest の `ignore` / `pending`。検出は構造的なので、コメントや文字列リテラル中のマーカーで false positive が出ることはありません。
+テストファイルごとの、テストの総数に対する skip されたテストの割合です。heal は `[features.test].test_paths` に一致するファイルをたどり、言語ごとの skip の印を数えます。Rust の `#[ignore]`、Python の `@pytest.mark.skip` / `@unittest.skipIf`、JS / TS の `it.skip` / `xit` / `xdescribe`、Go の `t.Skip()`、ScalaTest の `ignore` / `pending` です。検出は構文を見て行うので、コメントや文字列の中の印を誤って数えることはありません。
 
 ## `change_coupling.drift`
 
-> _「カバーするソースについていけていないテストはどれか?」_
+> _「カバーしているソースについていけていないテストはどれか?」_
 
-`[features.test]` を有効にすると、テスト ↔ ソースのペアの合算 co-change カウントがプロジェクトの中央値を **下回る**(テストがソースの動きについていけていない)とき、`change_coupling.expected`(Advisory)から `change_coupling.drift`(Medium)に再タグ付けされます。「テストは存在するが、ソースの最近の変更がすべてテストなしで起きている」という意味で読んでください。
+`[features.test]` がオンのときは、テストとソースのペアのうち、一緒に変わった回数がプロジェクトの中央値を**下回る**ものに注目します。テストがソースと一緒に動いていないペアです。こうしたペアを、`change_coupling.expected`（Advisory）から `change_coupling.drift`（Medium）に付け直します。「テストはあるが、ソースへの最近の変更はどれもテストなしで行われている」と読んでください。
 
-ドキュメント ↔ ソースのペアは drift に昇格しません。drift はテスト品質シグナルだからです。
+ドキュメントとソースのペアが drift に格上げされることはありません。drift はテストの質のシグナルだからです。
 
-## Test Hotspot — 変更があるのにテストがない箇所はどこか
+## Test Hotspot — 変更が続くのにテストがない場所
 
-Test Hotspot は code Hotspot の test ファミリ版です。src ファイルを `commits × uncov_pct` でランクします。スコアが高い = そのファイルは編集が続いている **かつ** 大部分がテストされていない、という意味です。30 commits ある低 CCN の config-loader でカバレッジ 0% なら本物のテスト対象ですが、code Hotspot は CCN が低いせいで取りこぼします。
+Test Hotspot は、code の Hotspot の test ファミリ版です。ソースファイルを `commits × uncov_pct` でランク付けします。スコアが高いほど、そのファイルは変更が続いていて、**しかも**大部分がテストされていません。CCN が低い設定の読み込み処理でも、カバレッジが 0% で 30 回コミットされていれば、テストを書くべき本当の対象です。code の Hotspot では、これを見落とします。
 
-Test Hotspot に入るのは LCOV に明示された production ファイルだけです。不在 entry は未計測、明示的な 0% entry は 100% gap です。100% coverage のファイルはスコア 0 で落ちます。
+このスコアに入るのは、LCOV に明記された本番ファイルだけです。載っていないものは未計測で、0% と明記されたものは 100% の不足として数えます。カバレッジが 100% のファイルは、スコアが 0 になって外れます。
 
-有限候補が 5 件以上なら p90 と Test フロア (25) の両方、1〜4 件なら絶対フロアのみでフラグします。非有限スコアは対象外です。同じ Test Tier と Severity の中では高スコアから着手します。これは優先付けのヒューリスティックであり、確率や修正効果の保証ではありません。
+有限の候補が 5 件以上あれば、Test Hotspot には p90 と Test のフロア（25）の両方が必要です。1〜4 件のときは、絶対値のフロアだけを使います。有限でないスコアにはフラグを立てません。Test の同じ Tier と Severity の中では、スコアの高いものから取り組みます。これは優先順位を決めるための目安で、確率でも効果の保証でもありません。
 
-Test Hotspot 自体は常に `Severity::Ok` です。スコアの仕事は同じファイルの `coverage_pct` Finding に `hotspot=true` を立てることです。解消対象は「Critical AND `hotspot=true`」のままで、test ファミリ単位にスコープされます。
+Test Hotspot 自体は常に `Severity::Ok` です。役目は、同じファイルの `coverage_pct` の Finding に `hotspot=true` を立てることです。そのため、解消の対象は「Critical かつ `hotspot=true`」のままで、範囲が test ファミリになるだけです。
 
-## post-commit ナッジ:「uncovered hotspot」
+## post-commit の通知:「uncovered hotspot」
 
 ```
 heal: recorded · 3 critical, 7 high · heal status
          · 2 uncovered hotspot
 ```
 
-カウントは `coverage_pct` Finding のうち Severity が High または Critical で、かつ `hotspot=true` のものです。「次のテストはここに書くべき」の最短リマインダ。`[features.test.coverage]` がオフのとき、または該当する Finding がないときはこの行は出ません。
+この数は、High か Critical の `coverage_pct` の Finding のうち、`hotspot=true` も付いているものの件数です。次のテストをどこに書けばいいかを、いちばん短く伝える行です。`[features.test.coverage]` がオフのとき、または Hotspot のファイルに High / Critical の `coverage_pct` がないときは出ません。
 
-## 解消パターン
+## 解消のしかた
 
-`/heal:tests` はテストピラミッドのレンズ(unit / integration / e2e)で findings をフレーム化し、承認された提案を 1 コミット 1 件で適用します — `coverage_pct` には未カバーの hot path に unit テストを書く、`skip_ratio` には理由の成立しなくなった skip を再有効化、`change_coupling.drift` にはドリフトしたテストとソースを揃え直す。assertion を弱めたり、本物の flake を覆い隠したりはしません。詳しい契約は [Test › スキル](/heal/ja/test/skills/) を参照。
+`/heal:tests` は、Finding をテストピラミッド（単体 / 結合 / E2E）の観点で整理し、承認された提案を 1 コミットずつ適用します。`coverage_pct` には足りない単体テストを書き、`skip_ratio` には skip の理由がなくなったテストを再び有効にし、`change_coupling.drift` にはずれたテストを揃え直します。アサーションを弱めたり、本当に不安定なテストをごまかしたりはしません。詳しい約束ごとは [Test › スキル](/heal/ja/test/skills/) を参照してください。
