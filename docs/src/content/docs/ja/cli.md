@@ -124,6 +124,8 @@ heal status --json                       # 機械可読な形で標準出力に�
 
 `--severity` は常に下限として働きます。`--all` は、その下限以上で隠れていたセクションを表示しますが、下限より下の Finding を戻すことはありません。
 
+`[features.semantic]` を有効にしていると、`heal status --focus <file>` で、ファイルに書いた作業に合わせた並び順を出せます（[Semantic (Jev)](/heal/ja/semantic/) を参照）。このときは常に走査し直し、保存済みの TODO リストは更新しません。
+
 ## `heal diff`
 
 今の作業ツリーを、以前のコミット時点の Finding と比べます。既定の比較先は calibration の基準点の SHA（`heal init` や `heal calibrate --force` が記録します）で、記録がなければ `HEAD` を使います。そのため「Progress: N% complete」は、そのまま「calibration 以降にどれだけ片付いたか」と読めます。
@@ -193,8 +195,6 @@ heal が自動で calibration をやり直すことは**ありません**。リ�
 - `config.toml` で `floor_critical` / `floor_ok` の上書きを変え、それに合わせてパーセンタイルの段階を作り直したいとき。
 
 生成される `calibration.toml` の先頭には出どころを示すコメントが入るので、ファイルを開いた人はこのコマンドにたどり着けます。`floor_critical` / `floor_ok` の上書きは、`calibration.toml` ではなく `config.toml` に書いてください。そうすれば `heal calibrate --force` で消えずに済みます。
-
-`[features.semantic]` を有効にしていると、`heal status --focus <file>` で、ファイルに書いた作業に合わせた並び順を出せます（[Semantic (Jev)](/heal/ja/semantic/) を参照）。このときは常に走査し直し、保存済みの TODO リストは更新しません。
 
 ## `heal semantic ask`
 

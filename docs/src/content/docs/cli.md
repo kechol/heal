@@ -196,6 +196,11 @@ score is not a probability or guaranteed payoff.
 `--severity` is always a minimum floor. `--all` can reveal otherwise-hidden
 sections at or above that floor, but it never restores findings below it.
 
+With `[features.semantic]` enabled, `heal status --focus <file>`
+ranks for the work described in the file (see
+[Semantic (Jev)](/heal/semantic/)). It always rescans and does not
+update the saved TODO list.
+
 ## `heal diff`
 
 Compare the live worktree against the findings at an earlier commit.
@@ -316,11 +321,6 @@ provenance, so anyone opening the file can find their way back to
 this command. Put `floor_critical` / `floor_ok` overrides in
 `config.toml`, not `calibration.toml` — that way `heal calibrate
 --force` doesn't clobber them.
-
-With `[features.semantic]` enabled, `heal status --focus <file>`
-ranks for the work described in the file (see
-[Semantic (Jev)](/heal/semantic/)). It always rescans and does not
-update the saved TODO list.
 
 ## `heal semantic ask`
 

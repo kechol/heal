@@ -287,4 +287,4 @@ auditable in CI logs and PR diffs.
 The `[policy.drain]` DSL is `<severity>` (any hotspot) or
 `<severity>:hotspot` (hotspot=true required). Severity tokens are
 lowercase: `critical / high / medium / ok`. See
-[Configuration › Drain policy](/heal/configuration/#drain-policy).
+[Code › Configuration › `[policy.drain]`](/heal/code/configuration/#policydrain).
