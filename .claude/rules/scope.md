@@ -76,16 +76,18 @@ Don't propose these without explicit roadmap discussion:
 - Cloud sync, telemetry, network access (HEAL is local-only;
   network access = `git2` over the local repo only). The single
   exception is the opt-in `[features.semantic]` family: only
-  `heal semantic ask` and `heal auth jev status` may connect, and
-  only to the TypeSafe Jev API. No other command, hook, or observer
-  may open a connection, with or without the feature enabled.
+  `heal semantic ask` and `heal auth <provider> status` may reach the
+  network, and only to the provider of the configured `model`: the
+  TypeSafe Jev API, or Anthropic (the Messages API directly, or through
+  a `claude` CLI child process). No other command, hook, or observer
+  may do so, with or without the feature enabled.
 - `[features.docs]` extensions deferred past v0.4: external HTTP
   link checking, executable example verification, issue-tracker /
   Stack Overflow question coverage, readability scores, terminology
   consistency vs a glossary, structural-depth analysis. `doc_drift`
   Type 2 (signature mismatch via per-language code-block parsing)
   also defers. Type 3 (semantic drift) ships only through
-  `[features.semantic]` (Jev verdicts), never as an LLM call from
+  `[features.semantic]` (cached verdicts), never as an LLM call from
   an observer.
 
 ## R6. New `.heal/` files require a decision
@@ -95,14 +97,14 @@ In user repositories everything under `.heal/` is tracked:
 `.heal/findings/*` is shared per-commit state (R4), and
 `.heal/concepts.toml` is the concept vocabulary the semantic tasks
 classify against (team contract, like `config.toml`), and
-`.heal/semantic/verdicts/*.jsonl` is the Jev verdict cache — tracked
+`.heal/semantic/verdicts/*.jsonl` is the verdict cache — tracked
 so teammates without an API key read the same verdicts and
 `latest.json` stays byte-identical across them. Verdicts of tasks that
 judge one person's input (on-demand checks such as `verify_patch`,
 and `focus`) are not team state: they live in the untracked
 `.heal/cache/semantic/verdicts/` and stay out of `config_hash`, so a
 patch session never dirties the worktree. Secrets never go
-under `.heal/`; the Jev key lives in the environment or in the
+under `.heal/`; provider keys live in the environment or in the
 per-user `credentials.toml`. (`.heal/cache/` is the one untracked,
 machine-local directory.) New top-level files must state which side
 they fall on and why. When in doubt, open an issue first.

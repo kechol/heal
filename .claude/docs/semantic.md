@@ -1,7 +1,7 @@
-# `[features.semantic]` — Jev tasks
+# `[features.semantic]` — tasks and providers
 
 Descriptive reference for the opt-in family that asks TypeSafe's Jev
-classifier typed questions. Rules that constrain it live in
+classifier or Claude Haiku typed questions. Rules that constrain it live in
 `scope.md` R5 / R6 and `design-philosophy.md` §2.
 
 ## Shape
@@ -38,7 +38,51 @@ heal semantic ask                     heal status / heal diff
 - A task failing to plan is logged and skipped; it never fails
   `heal status`.
 
-## Live API behaviour (measured 2026-09-23, `jev-1.13.0`)
+## Providers
+
+`SemanticProvider::of_model` picks the provider from the model id, so a
+team has no second setting to keep in step. `build_client` returns a
+`client::Classifier`; the runner and every task see only that trait.
+
+| | Jev | Claude (API) | Claude (CLI) |
+|---|---|---|---|
+| Selected by | any other id (default `jev-1.13.0`) | `claude-haiku-5-5` + a key | `claude-haiku-5-5`, no key, `claude` on `PATH` |
+| Code | `client::JevDialect` | `claude::ClaudeDialect` | `claude_cli::ClaudeCli` |
+| Transport | `ApiClient` (retries, pacer) | `ApiClient` | child process, ≤ 4 at once, 180 s timeout, 2 retries of a `Transient` failure |
+| Output billed | no | yes | yes (estimated; depends on the plan) |
+| Questions per request | budget only | ≤ 25 (`cost::Pricing`) | ≤ 25 |
+
+Verdict keys contain the model id, not the backend, so API and CLI answers
+for one model share a cache and Jev and Claude answers never mix. Planning
+budgets and task plans are the same for every provider, so a provider
+switch changes who answers, not what is asked.
+
+`claude.rs` turns one `(state, questions)` pair into a prompt with
+positional ids (`q0`, …) and a single generic JSON schema (a list of
+`{option, probability}` per question), then rebuilds the same `Answer`
+shapes Jev returns: `noul` from the `true` share, `choice` = the most
+likely option, `score` = the mean of the levels, `confidence` = the top
+probability. Unknown options are dropped; a question left with no answer
+counts as failed and is asked again on the next run. Requests use
+`effort: low` and no sampling parameters. `stop_reason: max_tokens` is
+`AskErrorKind::TooBig`, which splits the batch; `refusal` fails that batch
+only. Claude Haiku 5.5 has no server-side refusal fallback.
+
+Claude's probabilities are self-reported. Every cutoff in the task table
+was tuned against Jev and has not been re-measured for Claude. The drain
+order axes read the same notes, with the same caveat.
+
+The CLI child runs from the temp directory with `--tools ""`,
+`--setting-sources ""`, `--strict-mcp-config`,
+`--disable-slash-commands`, and `--no-session-persistence`, and takes the
+prompt over stdin. `--bare` is not used: it ignores the OAuth sign-in this
+backend exists for. `CLAUDECODE` is removed from the child's environment
+so the skills can run `heal semantic ask` inside a Claude Code session.
+Confirmed against CLI 2.1.316 on 2026-11-02 with one `commit_intent`
+request: the flags are accepted and `structured_output` carries the
+answers. The Messages API backend has not been run against the live API.
+
+## Live Jev API behaviour (measured 2026-09-23, `jev-1.13.0`)
 
 - `POST /v1/systemone` answers `{model, answers, usage}` exactly as
   `semantic::api::Response` expects; `model` echoes the pinned id.
@@ -54,7 +98,7 @@ heal semantic ask                     heal status / heal diff
   Pinned ids are usable but unlisted, so the listing can confirm a
   model, never rule one out.
 - An unknown model is HTTP 400 `api_usage_error` / `Unknown model:
-  <id>` → `JevErrorKind::Setup`, which stops the run (exit 2).
+  <id>` → `AskErrorKind::Setup`, which stops the run (exit 2).
   An empty `questions` map is HTTP 422, so there is no free probe.
 - Every code-family task on this repository (505 requests, 2.24M
   input tokens) cost $0.094 and took 31 s at `concurrency = 8`.
@@ -144,7 +188,7 @@ observe_self_calibrated`) by the HEAL drain order, churn, LOC, and a
 pseudo-random order; labels files by later bug-fix commits
 (Conventional `fix` or fix / bug / hotfix / regression words; `(heal)`
 scope excluded); prints precision@k and fixes captured at 20% LOC.
-Labels never come from Jev, so a semantic axis is not graded by its
+Labels never come from the model, so a semantic axis is not graded by its
 own verdicts.
 
 Axes the backtest cannot grade: `consequence` and the `triage` effort —

@@ -20,10 +20,12 @@ the twelve `heal-*` skills → the four `/heal:*` plugin skills). When you find 
 | **Feature** | "lowering", "classifier" | The post-observer pass that turns reports into `Vec<Finding>`. Trait `Feature` in `crates/cli/src/feature.rs`. Distinct from "metric"; one Feature can lower multiple metrics (e.g. Complexity → CCN + Cognitive). |
 | **Finding** | "issue", "violation", "alert", "result" | One row in the cache. See `data-model.md`. |
 | **the loop** | "drain", "harness loop" | Observe → classify → drain (review/patch). The HEAL backronym's "Loop". |
-| **Jev** | "the LLM", "the AI", "GPT" | TypeSafe's classifier model behind `[features.semantic]`. Returns typed probabilities, never text. Write "Jev" in prose, `jev` in commands (`heal auth jev`). |
-| **semantic task** | "rule", "check", "prompt" | One kind of question HEAL asks Jev (`semantic::task::Task`). Has a stable id used as the verdict file name and the `[features.semantic.tasks.<id>]` key. |
+| **Jev** | "the LLM", "the AI", "GPT" | TypeSafe's classifier model, the default provider behind `[features.semantic]`. Returns typed probabilities, never text. Write "Jev" in prose, `jev` in commands (`heal auth jev`). |
+| **Claude Haiku** | "the LLM", "the AI", "Anthropic model" | The other `[features.semantic]` provider, selected by `model = "claude-haiku-5-5"`. Reports probabilities under HEAL's schema. Write `claude` in commands (`heal auth claude`). |
+| **provider** | "vendor", "backend" (for Jev vs Claude) | Who answers semantic tasks (`core::config::SemanticProvider`), decided by the model id. A provider's **backend** is how it is reached: Claude has `api` and `claude_cli`. |
+| **semantic task** | "rule", "check", "prompt" | One kind of question HEAL asks the model (`semantic::task::Task`). Has a stable id used as the verdict file name and the `[features.semantic.tasks.<id>]` key. |
 | **concept vocabulary** | "taxonomy", "tags", "categories" | `.heal/concepts.toml`: the team's list of concepts (id + one-line responsibility) that the `concept` / `term_drift` / `doc_concept` tasks classify into. Written by `/heal:setup semantic`. |
-| **verdict** | "answer cache", "result", "judgment" | One cached Jev answer (`semantic::store::Verdict`), stored in `.heal/semantic/verdicts/<task>.jsonl` (shared tasks) or `.heal/cache/semantic/verdicts/<task>.jsonl` (the rest). |
+| **verdict** | "answer cache", "result", "judgment" | One cached model answer (`semantic::store::Verdict`), stored in `.heal/semantic/verdicts/<task>.jsonl` (shared tasks) or `.heal/cache/semantic/verdicts/<task>.jsonl` (the rest). |
 | **on-demand task** | "manual task", "ad-hoc check" | A semantic task that runs only with `heal semantic ask --task <id>` (`Task::on_demand`): the `verify_*` checks, `name_choice`, `doc_pairs`. Its answer is `tasks[].result` in `--json`, not a Finding. |
 | **shared task** | "tracked task", "team task" | A semantic task whose verdicts are team state (`Task::shared`): tracked and hashed into `config_hash`. Every task except the on-demand ones and `focus`. |
 | **semantic note** | "annotation", "tag", "label" | `Finding.semantic[<name>]`, a `SemanticNote { label, p, confidence, lines, detail }` decorating an existing Finding from a cached verdict (e.g. `consequence`, `fix_ratio`). Never part of `Finding.id`. |
@@ -49,7 +51,7 @@ reappear in code or text.
 | `heal skills uninstall` | live | Removes skill folders older versions copied into the project. `install` / `update` / `status` are **retired** (hidden, exit 1 with the plugin pointer). |
 | `heal calibrate` | live | `--reason`, `--check` were removed; do not add back. |
 | `heal semantic ask` | live, opt-in (`[features.semantic]`) | The only command that sends project content over the network. |
-| `heal auth jev set\|status\|clear` | live | `status` is the only other network call (key check). Keys never go under `.heal/`. |
+| `heal auth <jev\|claude> set\|status\|clear` | live | `status` is the only other network call (credentials check). Keys never go under `.heal/`. |
 | ~~`heal checks`~~ | **removed** | Old persistent-snapshots view. |
 | ~~`heal compact`~~ | **removed** | Compaction job for retired snapshots. |
 | ~~`heal logs`~~ | **removed** | Log-rotation viewer. |
@@ -161,7 +163,7 @@ below). Constants live in `core::calibration` (`FLOOR_CCN`,
 | `.heal/findings/regressed.jsonl` | `heal status` appends | **yes** | Append-only audit trail of re-detected fixes. |
 | `.heal/findings/accepted.json` | `heal mark accept` writes; renderers read | **yes** | `BTreeMap<finding_id, AcceptedFinding>`. Team contract for "won't fix / intrinsic" findings. Decorates `Finding.accepted: bool` at render time. |
 | `.heal/concepts.toml` | `/heal:setup` writes; semantic tasks read | **yes** | Concept vocabulary (`[[concept]] { id, description }`). Team contract; an observation input of `config_hash` while `[features.semantic]` is on. |
-| `.heal/semantic/verdicts/<task>.jsonl` | `heal semantic ask` writes; `heal status` reads | **yes** | Jev verdicts of shared tasks, one per line, sorted by key. Tracked so teammates without an API key see the same Findings. |
+| `.heal/semantic/verdicts/<task>.jsonl` | `heal semantic ask` writes; `heal status` reads | **yes** | Verdicts of shared tasks, one per line, sorted by key. Tracked so teammates without an API key see the same Findings. |
 | `.heal/cache/semantic/verdicts/<task>.jsonl` | `heal semantic ask` writes | no | Verdicts of on-demand tasks and `focus`: one person's input, never hashed. |
 | `.heal/doc_pairs.json` | `/heal:setup` writes; HEAL binary reads | **yes** | `[features.docs]` SSoT. `DocPairsFile` (schema-versioned by `DOC_PAIRS_VERSION`). Maps Layer A doc paths to one or more srcs. HEAL never auto-generates it — `R3` (no auto-recalibration) extends to this file. |
 

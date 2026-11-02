@@ -338,7 +338,9 @@ Config { project, git, metrics, policy, diff, features }
 ```
 
 `SemanticConfig.model` rejects the moving aliases `jev-latest` /
-`jev-preview`; `tasks` keys must be in `core::config::SEMANTIC_TASK_IDS`
+`jev-preview` and any `claude-` id outside
+`core::config::SUPPORTED_CLAUDE_MODELS`; the id alone selects the
+`SemanticProvider`. `tasks` keys must be in `core::config::SEMANTIC_TASK_IDS`
 (pinned equal to `semantic::task::registry()` by a test). The API key
 is **not** a config field — `deny_unknown_fields` rejects `api_key`.
 

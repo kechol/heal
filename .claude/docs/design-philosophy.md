@@ -105,11 +105,13 @@ opt-in exception, below.
 
 **The `[features.semantic]` exception.** When a team sets
 `[features.semantic] enabled = true`, exactly two commands may reach
-the network: `heal semantic ask` (sends selected code / prose to
-TypeSafe's Jev classifier and caches the typed answers under
-`.heal/semantic/verdicts/`) and `heal auth jev status` (confirms the
-key). Jev is a classifier, not a generator: it returns a probability
-per question, never text or code. Everything else — `heal status`,
+the network: `heal semantic ask` (sends selected code / prose to the
+configured model, TypeSafe's Jev classifier or Claude Haiku, and caches
+the typed answers under `.heal/semantic/verdicts/`) and
+`heal auth <provider> status` (confirms the credentials). The model acts
+as a classifier, not a generator: HEAL keeps a probability per question,
+never text or code. Jev does so by construction; Claude does so because
+HEAL's prompt and schema only admit probabilities over given options. Everything else — `heal status`,
 `heal metrics`, `heal diff`, the post-commit hook — only *reads* the
 verdict cache, so the pipeline stays offline and deterministic. The
 patch skills may run `heal semantic ask --task verify` as an explicit
@@ -264,7 +266,7 @@ overturn the relevant section above before being accepted:
 - **Single composite "code health" score.** §1.2.
 - **Auto-recalibration.** §1.1, `scope.md` R3.
 - **Generative LLM calls inside `heal` CLI**, or model calls from
-  any command other than `heal semantic ask` / `heal auth jev
+  any command other than `heal semantic ask` / `heal auth <provider>
   status`. §2.
 - **Cool-down / suppression state.** §3.
 - **Persistent metrics history (`snapshots/`, rolling deltas).** §4.
