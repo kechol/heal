@@ -1,6 +1,6 @@
 ---
-title: Semantic (Jev)
-description: Opt-in judgments from TypeSafe's Jev classifier — what gets sent, how to set up the API key, and how the answers are cached.
+title: Semantic
+description: Opt-in judgments from TypeSafe's Jev classifier or Claude Haiku — what gets sent, how to set up credentials, and how the answers are cached.
 ---
 
 HEAL's metrics are computed locally from your source and git history.
@@ -8,11 +8,12 @@ They tell you **where** code is hard to change, but not **what it
 means**: whether a function's name matches what it does, whether a
 test actually checks anything, whether a doc still describes the code.
 
-The optional `[features.semantic]` family asks those questions to
-[Jev](https://docs.typesafe.ai/), a classifier from TypeSafe. Jev does
-not write text or code. It answers each question with a probability,
-so heal can turn the answers into findings the same way it does for
-every other metric.
+The optional `[features.semantic]` family asks those questions to a
+model you choose: [Jev](https://docs.typesafe.ai/), a classifier from
+TypeSafe, or Claude Haiku from Anthropic. Either way the model does not
+write text or code for heal. It answers each question with a
+probability, so heal can turn the answers into findings the same way it
+does for every other metric.
 
 Everything in this family is **off by default**. If you never enable
 it, heal behaves exactly as before.
@@ -21,9 +22,10 @@ it, heal behaves exactly as before.
 
 - Only `heal semantic ask` sends anything. It sends the pieces of
   code, tests, or documentation that heal has already selected (for
-  example, functions in files that change often), to the TypeSafe API.
-- `heal auth jev status` checks that your API key works. It sends the
-  key, but no project content.
+  example, functions in files that change often), to the provider of
+  the model you configured.
+- `heal auth jev status` and `heal auth claude status` check that your
+  credentials work. They send no project content.
 - Every other command — `heal status`, `heal metrics`, `heal diff`,
   and the post-commit hook — never connects to the network. They read
   the answers `heal semantic ask` saved earlier.
@@ -32,7 +34,9 @@ it, heal behaves exactly as before.
 TypeSafe states that it does not train models on customer data. Zero
 data retention is available on enterprise plans only. Read the
 [TypeSafe legal pages](https://docs.typesafe.ai/legal.md) before
-enabling this on a private codebase.
+enabling this on a private codebase. With a Claude model, the content
+goes to Anthropic under the terms of your API account or Claude plan;
+read [Anthropic's terms](https://www.anthropic.com/legal) first.
 
 ## Enable it
 
@@ -43,6 +47,7 @@ config:
 [features.semantic]
 enabled = true
 # model = "jev-1.13.0"   # pinned version; moving aliases are rejected
+# model = "claude-haiku-5-5"   # use Claude Haiku instead of Jev
 # max_usd = 1.0          # stop a single run before it spends more
 # concurrency = 8        # requests in flight at once
 # exclude = ["secrets/", "*.pem"]
@@ -50,11 +55,15 @@ enabled = true
 
 Once enabled, `heal status` also uses the saved answers to order the
 TODO list, and the `/heal:refactor`, `/heal:docs`, and `/heal:tests`
-skills ask Jev to double-check their proposals and their own commits.
+skills ask the model to double-check their proposals and their own commits.
 
-## Set up the API key
+## Set up credentials
 
-Each person uses their own key. Get one from the
+Each person uses their own credentials. Which ones depends on `model`.
+
+### Jev
+
+Get a key from the
 [TypeSafe console](https://console.typesafe.ai/), then either export it:
 
 ```sh
@@ -73,6 +82,25 @@ heal auth jev clear     # removes the stored key
 The key is never written under `.heal/`. `TYPESAFE_API_KEY` wins over
 the stored file when both are present. `TYPESAFEAI_API_KEY` is also
 accepted, so a key you already use for other Jev tools works as is.
+
+### Claude Haiku
+
+Set `model = "claude-haiku-5-5"`. heal then uses the first of these it
+finds:
+
+1. An API key: `ANTHROPIC_API_KEY`, or one stored with
+   `printf '%s\n' "$KEY" | heal auth claude set`. Requests go straight
+   to the Anthropic API and are billed to that key.
+2. The `claude` command of [Claude Code](https://code.claude.com/), when
+   it is on your `PATH`. No key is needed: heal runs it with your
+   existing sign-in, so usage counts against your Claude plan. Sign in
+   first with `claude auth login`.
+
+`heal auth claude status` shows which one applies and checks it, and
+`heal auth claude clear` removes a stored key. When heal runs the
+`claude` command, it starts the command outside your project with its
+tools, MCP servers, and settings turned off. It can only answer the
+question.
 
 ## Ask
 
@@ -146,8 +174,8 @@ heal status --focus plan.md
 ### The concept vocabulary
 
 The `concept` task needs a list of the ideas your code is built from,
-in `.heal/concepts.toml`. Jev chooses among names you give it; it never
-invents one. Generate a first draft with the setup skill, review it,
+in `.heal/concepts.toml`. The model chooses among names you give it; it
+never invents one. Generate a first draft with the setup skill, review it,
 and commit the file. In Claude Code:
 
 ```
@@ -168,18 +196,32 @@ the agent's own work and are never part of a plain `heal semantic ask`.
 
 ## Cost
 
-Jev charges for input only ($42 per billion input tokens at the time of
-writing). `--dry-run` prints an estimate before anything is sent, and
-`max_usd` stops a run before it crosses the limit. A run over a
-medium-sized repository typically costs a few cents.
+`--dry-run` prints an estimate before anything is sent, and `max_usd`
+stops a run before it crosses the limit, whichever model you use.
+
+- **Jev** charges for input only ($42 per billion input tokens at the
+  time of writing). A run over a medium-sized repository typically costs
+  a few cents.
+- **Claude Haiku 5.5** charges for input and output ($0.10 and $0.50 per
+  million tokens at the time of writing). heal sends at most 25 questions
+  in one request, because every answer is generated text, so the same
+  run sends more requests than with Jev. With the `claude` command the
+  amounts are what the same tokens would cost on the API; what you
+  actually pay depends on your plan.
 
 ## Results are candidates, not verdicts
 
-A classifier is sometimes wrong, and a score close to a threshold can
-change slightly between model versions. HEAL pins the model version and
-reuses saved answers so results stay stable, but treat each semantic
-finding as something for a person to look at, not an instruction to
-follow blindly.
+A model is sometimes wrong, and a score close to a threshold can change
+slightly between model versions. HEAL pins the model version and reuses
+saved answers so results stay stable, but treat each semantic finding as
+something for a person to look at, not an instruction to follow blindly.
+
+Each task's default `cutoff` was tuned against Jev's probabilities.
+Claude reports its own estimate of each probability, so the same cutoff
+can flag more or fewer findings. If a task is too noisy or too quiet with
+Claude, adjust its `cutoff`. Answers are saved per model: switching
+`model` asks every question again, and the two models' answers are never
+mixed.
 
 ## Turn it off
 

@@ -264,8 +264,9 @@ in the same PR (see `.claude/rules/terminology.md`):
   comes from `heal init`; the plugin's SessionStart hook only compares
   versions. `heal hook edit` / `heal hook stop` exist as silent no-ops
   for back-compat — `heal skills uninstall` sweeps them.
-- No network access outside `heal semantic ask` and `heal auth jev
-  status` (`semantic::client` is the only HTTP client). Observers,
+- No network access outside `heal semantic ask` and `heal auth <provider>
+  status` (`semantic::client` is the only HTTP client;
+  `semantic::claude_cli` is the only child process that reaches a model). Observers,
   `Feature::lower`, `heal status`, and the post-commit hook read
   verdicts from `.heal/semantic/verdicts/` and never connect.
 

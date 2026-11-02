@@ -25,9 +25,10 @@ pub enum PackError {
     StateTooLarge { tokens: usize },
 }
 
-/// Split `items` into requests sharing `state`. Duplicate keys (the same
-/// subject asked twice in one plan) are sent once.
-pub fn pack(state: Value, items: Vec<Item>) -> Result<Vec<Batch>, PackError> {
+/// Split `items` into requests sharing `state`, at most `max_questions` in
+/// each. Duplicate keys (the same subject asked twice in one plan) are sent
+/// once.
+pub fn pack(state: Value, items: Vec<Item>, max_questions: usize) -> Result<Vec<Batch>, PackError> {
     let state_bytes = serde_json::to_vec(&state)
         .expect("state serialization")
         .len();
@@ -54,7 +55,7 @@ pub fn pack(state: Value, items: Vec<Item>) -> Result<Vec<Batch>, PackError> {
             + item.key.len()
             + 8;
         let q_tokens = estimate_tokens(q_bytes);
-        if !current.is_empty() && used + q_tokens > budget {
+        if !current.is_empty() && (used + q_tokens > budget || current.len() >= max_questions) {
             batches.push(Batch {
                 state: Arc::clone(&state),
                 questions: std::mem::take(&mut current),
@@ -96,6 +97,7 @@ mod tests {
         let batches = pack(
             json!("s"),
             vec![item("a", "x"), item("b", "y"), item("a", "x")],
+            usize::MAX,
         )
         .unwrap();
         assert_eq!(batches.len(), 1);
@@ -106,7 +108,7 @@ mod tests {
     fn many_questions_spill_into_more_requests_under_budget() {
         let long = "q".repeat(3000);
         let items: Vec<Item> = (0..200).map(|i| item(&format!("k{i:03}"), &long)).collect();
-        let batches = pack(json!("state"), items).unwrap();
+        let batches = pack(json!("state"), items, usize::MAX).unwrap();
         assert!(batches.len() > 1);
         assert!(batches.iter().all(|b| b.est_tokens <= request_budget()));
         let total: usize = batches.iter().map(|b| b.questions.len()).sum();
@@ -114,10 +116,18 @@ mod tests {
     }
 
     #[test]
+    fn question_cap_spills_into_more_requests() {
+        let items: Vec<Item> = (0..7).map(|i| item(&format!("k{i}"), "x")).collect();
+        let batches = pack(json!("state"), items, 3).unwrap();
+        let sizes: Vec<usize> = batches.iter().map(|b| b.questions.len()).collect();
+        assert_eq!(sizes, [3, 3, 1]);
+    }
+
+    #[test]
     fn oversized_state_is_refused() {
         let big = "x".repeat(200_000);
         assert!(matches!(
-            pack(json!(big), vec![item("a", "x")]),
+            pack(json!(big), vec![item("a", "x")], usize::MAX),
             Err(PackError::StateTooLarge { .. })
         ));
     }

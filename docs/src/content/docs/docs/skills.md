@@ -76,8 +76,8 @@ is worse than none), no "harmonizing" of changelogs, migration notes,
 or quotations that mention old names on purpose, and no changing code
 to match a drifted doc — the source is the truth; the doc is updated.
 
-**With [Semantic (Jev)](/heal/semantic/) enabled**, the skill also
-uses the page kind Jev assigned, pages that combine several documents
+**With [Semantic](/heal/semantic/) enabled**, the skill also
+uses the page kind the model assigned, pages that combine several documents
 or mix purposes (`doc_structure`), pages filed in the wrong section
 (`doc_placement`), statements the code no longer supports
 (`doc_drift.semantic`), and concepts explained twice, inconsistently,

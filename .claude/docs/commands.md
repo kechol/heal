@@ -416,7 +416,7 @@ is produced. `diagnose(project) -> DoctorReport` checks, in order:
 | `post_commit_hook` | no `post-commit` hook (`warn` when one exists without the HEAL marker; `off` outside git) | `heal init` |
 | `docs` | enabled and `pairs_path` missing / older schema / naming missing paths | `/heal:setup` |
 | `test` | coverage enabled and no `lcov_paths` entry exists | `/heal:setup` |
-| `semantic` | enabled and no key resolves, or `.heal/concepts.toml` missing | `heal auth jev set` / `/heal:setup` |
+| `semantic` | enabled and no key resolves (for a Claude model, nor is `claude` on `PATH`), or `.heal/concepts.toml` missing | `heal auth <provider> set` / `/heal:setup` |
 | `legacy_skills` | `legacy_skills::find` returns any directory | `heal skills uninstall` |
 
 Drift rules (`calibration.reasons`), shared by every caller:
@@ -427,8 +427,8 @@ no Critical / High and ≥ 10 `fixed.json` entries are newer than
 `meta.created_at`).
 
 Doctor never runs `heal calibrate` (`scope.md` R3), never flips a
-feature, and resolves the Jev key through `credentials::resolve`
-without calling the API (`scope.md` R5). A config that fails to load
+feature, and resolves the provider's key through `credentials::resolve`
+without calling the API or starting `claude` (`scope.md` R5). A config that fails to load
 makes the feature sections fall back to `Config::default()` (all
 `off`).
 
@@ -478,42 +478,50 @@ that sends project content over the network (`scope.md` R5).
 1. Load config; exit 2 unless `[features.semantic] enabled`.
 2. Select tasks from `semantic::task::registry()` (`--task` repeatable;
    default = every `task_enabled` task). Unknown ids error.
-3. Build the client unless `--dry-run`: key via
+3. Build the `Classifier` unless `--dry-run` (`build_client`): the
+   model id selects the provider; key via
    `semantic::credentials::resolve` (env `TYPESAFE_API_KEY` →
-   `TYPESAFEAI_API_KEY` → `<config dir>/heal/credentials.toml`, mode
-   0600 enforced), transport `UreqTransport` (rustls + OS roots).
-   `--check` stops after `GET /v1/models`. The listing names only the
-   moving aliases (`jev-latest`, `jev-preview`; measured 2026-09-23),
-   so a pinned model it omits is reported as unconfirmed, not as an
-   error (`client::model_listed`).
+   `TYPESAFEAI_API_KEY`, or `ANTHROPIC_API_KEY`, →
+   `<config dir>/heal/credentials.toml`, mode 0600 enforced), transport
+   `UreqTransport` (rustls + OS roots). A Claude model with no key falls
+   back to `claude_cli::ClaudeCli` when `claude` is on `PATH`. `--check`
+   stops after `Classifier::check`: `GET /v1/models` for HTTP, or
+   `claude auth status` for the CLI. Jev's listing names only the moving
+   aliases (`jev-latest`, `jev-preview`; measured 2026-09-23), so a pinned
+   model it omits is reported as unconfirmed, not as an error
+   (`client::model_listed`).
 4. For each task: `Task::plan` → groups of `(key, Question)` sharing
    one `state`. Keys already in `VerdictStore` are skipped unless
    `--refresh`. `plan::pack` splits a group into requests under the
-   state (32Ki) and request (64Ki) budgets with a 0.85 margin; a
+   state (32Ki) and request (64Ki) budgets with a 0.85 margin, and
+   under `Pricing::max_questions_per_request` (25 for Claude); a
    state over budget is counted as `oversized_groups`, never
    truncated.
-5. `dispatch` sends up to `concurrency` requests at once, reserving
-   each batch's estimated USD against `max_usd` first; a
-   `JevErrorKind::Setup` failure (401/402/403, or 400 `Unknown model`)
-   stops every worker and exits 2. Answers are inserted in sorted order.
+5. `dispatch` sends up to `concurrency` requests at once (at most 4 for
+   the CLI backend), reserving each batch's estimated USD against
+   `max_usd` first; an `AskErrorKind::Setup` failure (bad credentials,
+   no credit, unknown model) stops every worker and exits 2. Answers are inserted in sorted order.
 6. `--prune` drops verdicts no current subject references.
 7. `VerdictStore::save` writes only changed task files.
 
 `--json` emits `AskReport` (`model`, `dry_run`, `tasks[]` with
 `subjects/cached/to_ask/requests/est_input_tokens/est_usd/answered/
 failed/oversized_groups/pruned`, `requests_sent`, `input_tokens`,
-`usd`, `stopped_by_budget`, `fatal`, `errors`).
+`output_tokens`, `usd`, `stopped_by_budget`, `fatal`, `errors`).
 
-## `heal auth jev <set|status|clear>`
+## `heal auth <jev|claude> <set|status|clear>`
 
-`commands/auth.rs`. `set` reads one line from stdin and writes the
-per-user credentials file (0600, via a private tempfile + rename).
-`status` prints the masked key and its source, then — unless
-`--offline` — calls `GET /v1/models` (the second and last network
-call site). `model_available` is `true` when the model is listed and
-`null` otherwise; never `false`, since the listing omits pinned
-versions. `clear` deletes the file. Nothing is ever written under
-`.heal/`.
+`commands/auth.rs`. `set` reads one line from stdin and writes that
+provider's table in the per-user credentials file (0600, via a private
+tempfile + rename), keeping the other provider's. `status` prints the
+masked key and its source, then — unless `--offline` — runs
+`Classifier::check` (the second and last network call site). `backend`
+is `api`, `claude_cli`, or `null` when nothing is configured.
+`model_available` is `true` when listed; for Jev `null` otherwise, never
+`false`, since its listing omits pinned versions; for Claude `false` when
+unlisted, and `null` on the CLI backend, which cannot tell. `clear`
+removes the provider's table, and the file once no key is left. Nothing
+is ever written under `.heal/`.
 
 ## Exit codes (full table)
 
@@ -522,7 +530,7 @@ versions. `clear` deletes the file. Nothing is ever written under
 | 0 | success | normal happy path; broken pipe on `heal status` pager |
 | 1 | unspecified error | any anyhow `Err(_)` propagation |
 | 2 | LOC threshold exceeded | `heal diff` only, when project LOC > `[diff].max_loc_threshold` |
-| 2 | semantic setup required | `heal semantic ask` / `heal auth jev status`: `[features.semantic]` disabled, no API key, key rejected (401/402/403), or model unknown to the API (400 `Unknown model` on the first `heal semantic ask` request) (`SEMANTIC_SETUP_EXIT_CODE`) |
+| 2 | semantic setup required | `heal semantic ask` / `heal auth <provider> status`: `[features.semantic]` disabled, no credentials, credentials rejected, or model unknown to the provider (on the first `heal semantic ask` request) (`SEMANTIC_SETUP_EXIT_CODE`) |
 
 No other documented exit codes. Don't invent new ones without updating
 this table and `docs/cli.md`.

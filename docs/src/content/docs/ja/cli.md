@@ -18,12 +18,12 @@ description: heal のサブコマンドを、日々よく使う順に、普段�
 
 Claude のスキルは CLI には含まれず、Claude Code プラグインとして配布しています（[インストール](/heal/ja/installation/#claude-code-プラグイン) を参照）。`heal skills uninstall` は、heal 0.6 以前がプロジェクトにコピーしたスキルのフォルダを消します。
 
-オプトインの [Semantic (Jev)](/heal/ja/semantic/) を有効にすると、コマンドが 2 つ加わります。heal の中でネットワークにつながるのは、この 2 つだけです。
+オプトインの [Semantic](/heal/ja/semantic/) を有効にすると、コマンドが 2 つ加わります。heal の中でネットワークにつながるのは、この 2 つだけです。
 
-| コマンド            | 役割                                                                                                 |
-| ------------------- | ---------------------------------------------------------------------------------------------------- |
-| `heal semantic ask` | heal が選んだコード・テスト・ドキュメントについて Jev に問い合わせ、答えを `.heal/` の下に保存する。 |
-| `heal auth jev`     | Jev の API キーを保存・確認・削除する（`set` / `status` / `clear`）。                                |
+| コマンド                             | 役割                                                                                                            |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `heal semantic ask`                  | heal が選んだコード・テスト・ドキュメントについて、設定したモデルに問い合わせ、答えを `.heal/` の下に保存する。 |
+| `heal auth jev` / `heal auth claude` | 提供元ごとの API キーを保存・確認・削除する（`set` / `status` / `clear`）。                                     |
 
 ## 自動化向けコマンド
 
@@ -78,7 +78,7 @@ heal に必要なものを確認し、領域ごとに `ok`、`todo`、`warn`、`
 - 有効にしたオプション機能に必要なものがそろっているか。docs ならドキュメントのペア、カバレッジなら lcov ファイル、semantic なら API キーと概念の一覧です。
 - 古いバージョンの heal がプロジェクトにコピーしたスキルのフォルダが残っていないか。
 
-`heal doctor` は読むだけです。何も変更せず、ネットワークにもつながりません（キーが API で通るかは `heal auth jev status` で確かめます）。`/heal:setup` はこの報告を起点にするので、何度実行しても足りない作業だけを行います。
+`heal doctor` は読むだけです。何も変更せず、ネットワークにもつながりません（認証情報が使えるかは `heal auth jev status` または `heal auth claude status` で確かめます）。`/heal:setup` はこの報告を起点にするので、何度実行しても足りない作業だけを行います。
 
 ## `heal skills uninstall`
 
@@ -124,7 +124,7 @@ heal status --json                       # 機械可読な形で標準出力に�
 
 `--severity` は常に下限として働きます。`--all` は、その下限以上で隠れていたセクションを表示しますが、下限より下の Finding を戻すことはありません。
 
-`[features.semantic]` を有効にしていると、`heal status --focus <file>` で、ファイルに書いた作業に合わせた並び順を出せます（[Semantic (Jev)](/heal/ja/semantic/) を参照）。このときは常に走査し直し、保存済みの TODO リストは更新しません。
+`[features.semantic]` を有効にしていると、`heal status --focus <file>` で、ファイルに書いた作業に合わせた並び順を出せます（[Semantic](/heal/ja/semantic/) を参照）。このときは常に走査し直し、保存済みの TODO リストは更新しません。
 
 ## `heal diff`
 
@@ -198,7 +198,7 @@ heal が自動で calibration をやり直すことは**ありません**。リ�
 
 ## `heal semantic ask`
 
-`[features.semantic] enabled = true` のときだけ使えます。何が送られるかは [Semantic (Jev)](/heal/ja/semantic/) を参照してください。
+`[features.semantic] enabled = true` のときだけ使えます。何が送られるかは [Semantic](/heal/ja/semantic/) を参照してください。
 
 ```sh
 heal semantic ask --dry-run          # 計画と料金の見積もりだけ。何も送らない
@@ -214,7 +214,9 @@ heal semantic ask --json             # 実行結果を機械可読な形で出�
 
 終了コード `2` は、利用者の側でしか直せない問題を表します。機能が無効になっている、API キーが設定されていない、キーが拒否された、設定した `model` を API が知らない、のどれかです。
 
-## `heal auth jev`
+## `heal auth jev` と `heal auth claude`
+
+どちらも同じサブコマンドを受け付けます。例では `jev` を使います。
 
 ```sh
 printf '%s\n' "$KEY" | heal auth jev set   # ユーザー設定に保存する（mode 600）
@@ -223,7 +225,7 @@ heal auth jev status --offline              # API での確認を省く
 heal auth jev clear                         # 保存したキーを消す
 ```
 
-`TYPESAFE_API_KEY`（または `TYPESAFEAI_API_KEY`）が設定されていれば、保存したキーより優先されます。キーが `.heal/` の下に書かれることはありません。
+`TYPESAFE_API_KEY`（または `TYPESAFEAI_API_KEY`）は保存した Jev のキーより、`ANTHROPIC_API_KEY` は保存した Claude のキーより優先されます。キーが `.heal/` の下に書かれることはありません。Claude のキーがないとき、`heal auth claude status` は `claude` コマンドのサインインを確かめます。`heal semantic ask` もそのコマンドを使います。
 
 ## キャッシュを覗く
 

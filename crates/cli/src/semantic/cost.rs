@@ -3,11 +3,70 @@
 //! The estimate is deliberately conservative (it over-counts): jev-lint
 //! measured its own estimator at ~14% above the billed count, and an
 //! under-estimate would let a request cross the 32Ki state ceiling, which
-//! the server answers by dropping verdicts rather than by splitting.
+//! the server answers by dropping verdicts rather than by splitting. Every
+//! provider plans under Jev's ceilings, so a task selects the same subjects
+//! whichever model answers.
 
-/// Input price, USD per token (`$42` per billion input tokens; output
-/// tokens are free). Source: <https://docs.typesafe.ai/models.md>.
-pub const USD_PER_INPUT_TOKEN: f64 = 42.0 / 1_000_000_000.0;
+use crate::core::config::SemanticProvider;
+
+/// What one model costs, and how a plan for it is priced.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Pricing {
+    pub usd_per_input_token: f64,
+    pub usd_per_output_token: f64,
+    /// Planning estimate. Zero when output is free.
+    pub est_output_tokens_per_question: usize,
+    /// Prompt text the provider's wire format adds to every request.
+    pub request_overhead_tokens: usize,
+    pub max_questions_per_request: usize,
+}
+
+/// `$42` per billion input tokens; output tokens are free. Source:
+/// <https://docs.typesafe.ai/models.md>.
+pub const JEV_PRICING: Pricing = Pricing {
+    usd_per_input_token: 42.0 / 1_000_000_000.0,
+    usd_per_output_token: 0.0,
+    est_output_tokens_per_question: 0,
+    request_overhead_tokens: 0,
+    max_questions_per_request: usize::MAX,
+};
+
+/// Claude Haiku 5.5 at its rate for prompts of 100K tokens or fewer, which
+/// [`request_budget`] guarantees. Every answer is generated text, so the
+/// question cap keeps a response short enough for the request timeout.
+pub const CLAUDE_HAIKU_PRICING: Pricing = Pricing {
+    usd_per_input_token: 0.10 / 1_000_000.0,
+    usd_per_output_token: 0.50 / 1_000_000.0,
+    est_output_tokens_per_question: 100,
+    request_overhead_tokens: 400,
+    max_questions_per_request: 25,
+};
+
+#[must_use]
+pub fn pricing(model: &str) -> Pricing {
+    match SemanticProvider::of_model(model) {
+        SemanticProvider::Jev => JEV_PRICING,
+        SemanticProvider::Claude => CLAUDE_HAIKU_PRICING,
+    }
+}
+
+impl Pricing {
+    #[must_use]
+    pub fn usd(&self, input_tokens: u64, output_tokens: u64) -> f64 {
+        #[allow(clippy::cast_precision_loss)]
+        let (input, output) = (input_tokens as f64, output_tokens as f64);
+        input * self.usd_per_input_token + output * self.usd_per_output_token
+    }
+
+    /// Estimated price of one request carrying `questions` questions.
+    #[must_use]
+    pub fn estimate_usd(&self, est_input_tokens: usize, questions: usize) -> f64 {
+        self.usd(
+            (est_input_tokens + self.request_overhead_tokens) as u64,
+            (questions * self.est_output_tokens_per_question) as u64,
+        )
+    }
+}
 
 /// Ceiling on the whole request, in input tokens.
 pub const REQUEST_TOKEN_LIMIT: usize = 65_536;
@@ -23,13 +82,6 @@ pub const PLANNING_MARGIN: f64 = 0.85;
 #[must_use]
 pub fn estimate_tokens(bytes: usize) -> usize {
     bytes.div_ceil(3)
-}
-
-#[must_use]
-pub fn usd_for(input_tokens: u64) -> f64 {
-    #[allow(clippy::cast_precision_loss)]
-    let t = input_tokens as f64;
-    t * USD_PER_INPUT_TOKEN
 }
 
 /// Planning budget for a whole request.
@@ -60,7 +112,16 @@ mod tests {
 
     #[test]
     fn one_billion_tokens_cost_forty_two_dollars() {
-        assert!((usd_for(1_000_000_000) - 42.0).abs() < 1e-9);
+        assert!((JEV_PRICING.usd(1_000_000_000, 1_000_000) - 42.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn claude_haiku_charges_for_output_and_estimates_it() {
+        assert_eq!(pricing("claude-haiku-5-5"), CLAUDE_HAIKU_PRICING);
+        assert_eq!(pricing("jev-1.13.0"), JEV_PRICING);
+        assert!((CLAUDE_HAIKU_PRICING.usd(1_000_000, 1_000_000) - 0.60).abs() < 1e-9);
+        let expected = CLAUDE_HAIKU_PRICING.usd(1400, 200);
+        assert!((CLAUDE_HAIKU_PRICING.estimate_usd(1000, 2) - expected).abs() < 1e-12);
     }
 
     #[test]

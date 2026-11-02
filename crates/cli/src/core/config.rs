@@ -111,13 +111,57 @@ pub const SEMANTIC_TASK_IDS: &[&str] = &[
 /// verdict cache can never silently mix answers from two models.
 const MOVING_MODEL_ALIASES: &[&str] = &["jev-latest", "jev-preview"];
 
+/// Claude models `[features.semantic].model` accepts. Closed because
+/// `semantic::cost` must know the price to enforce `max_usd`.
+pub const SUPPORTED_CLAUDE_MODELS: &[&str] = &["claude-haiku-5-5"];
+
+const CLAUDE_MODEL_PREFIX: &str = "claude-";
+
+/// Who answers the semantic tasks, decided by the model id alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SemanticProvider {
+    Jev,
+    Claude,
+}
+
+impl SemanticProvider {
+    #[must_use]
+    pub fn of_model(model: &str) -> Self {
+        if model.starts_with(CLAUDE_MODEL_PREFIX) {
+            Self::Claude
+        } else {
+            Self::Jev
+        }
+    }
+
+    /// The word used in commands and messages (`heal auth <id> set`).
+    #[must_use]
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Jev => "jev",
+            Self::Claude => "claude",
+        }
+    }
+
+    /// The model to assume when the configured one belongs to another
+    /// provider.
+    #[must_use]
+    pub const fn default_model(self) -> &'static str {
+        match self {
+            Self::Jev => SemanticConfig::DEFAULT_MODEL,
+            Self::Claude => SUPPORTED_CLAUDE_MODELS[0],
+        }
+    }
+}
+
 /// `[features.semantic]` — opt-in judgments from `TypeSafe`'s Jev
-/// classifier (<https://docs.typesafe.ai/>). While `enabled = false`
-/// nothing in HEAL changes. When enabled, `heal semantic ask` (and the
-/// key check in `heal auth jev status`) are the only commands that open a
-/// network connection; they send the selected code or prose to the
-/// `TypeSafe` API and store the answers under `.heal/semantic/verdicts/`.
-/// Every other command reads those verdicts offline.
+/// classifier (<https://docs.typesafe.ai/>) or Anthropic's Claude Haiku,
+/// chosen by `model`. While `enabled = false` nothing in HEAL changes.
+/// When enabled, `heal semantic ask` (and the check in
+/// `heal auth <provider> status`) are the only commands that reach the
+/// network; they send the selected code or prose to the model's provider
+/// and store the answers under `.heal/semantic/verdicts/`. Every other
+/// command reads those verdicts offline.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SemanticConfig {
@@ -125,8 +169,9 @@ pub struct SemanticConfig {
     /// `heal status` and the verification step of the patch skills.
     #[serde(default)]
     pub enabled: bool,
-    /// Pinned model id. Moving aliases (`jev-latest`, `jev-preview`) are
-    /// rejected: verdicts are cached, and a cache must not mix models.
+    /// Pinned model id; a `claude-` id selects Claude, anything else Jev.
+    /// Moving aliases (`jev-latest`, `jev-preview`) are rejected: verdicts
+    /// are cached, and a cache must not mix models.
     #[serde(default = "SemanticConfig::default_model")]
     pub model: String,
     /// Estimated spend ceiling for one `heal semantic ask` run, in USD.
@@ -163,6 +208,11 @@ impl SemanticConfig {
         Self::DEFAULT_CONCURRENCY
     }
 
+    #[must_use]
+    pub fn provider(&self) -> SemanticProvider {
+        SemanticProvider::of_model(&self.model)
+    }
+
     /// Whether `task` runs: the master switch, then the per-task switch
     /// (tasks default to on once the family is enabled).
     #[must_use]
@@ -185,6 +235,14 @@ impl SemanticConfig {
             return Err(format!(
                 "[features.semantic].model `{model}` is a moving alias; pin a version such as `{}`",
                 Self::DEFAULT_MODEL
+            ));
+        }
+        if SemanticProvider::of_model(model) == SemanticProvider::Claude
+            && !SUPPORTED_CLAUDE_MODELS.contains(&model)
+        {
+            return Err(format!(
+                "[features.semantic].model `{model}` is not supported; Claude models: {}",
+                SUPPORTED_CLAUDE_MODELS.join(", ")
             ));
         }
         if !self.max_usd.is_finite() || self.max_usd <= 0.0 {

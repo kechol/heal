@@ -1,8 +1,8 @@
 # Semantic family: enable, key, concepts
 
 Loaded by `/heal:setup` for the semantic step. `[features.semantic]`
-asks TypeSafe's Jev classifier typed questions about the code, tests,
-and docs, and caches the answers under `.heal/semantic/verdicts/`.
+asks a model (TypeSafe's Jev classifier, or Claude Haiku) typed
+questions about the code, tests, and docs, and caches the answers under `.heal/semantic/verdicts/`.
 It is the only heal feature that sends project content over the
 network, and it costs money per run, so every part below waits for
 the user's explicit yes.
@@ -10,33 +10,40 @@ the user's explicit yes.
 ## Part 1 — Enable
 
 Ask once with `AskUserQuestion`, stating plainly that `heal semantic
-ask` sends the selected code and prose to the TypeSafe API and is
+ask` sends the selected code and prose to the model's provider and is
 billed per request, and that every other heal command stays offline.
 On a yes, set `enabled = true` under `[features.semantic]` in
 `.heal/config.toml` (keep the shipped pinned `model` and `max_usd`
-unless the user names others; moving aliases such as `jev-latest` are
-rejected by the loader).
+unless the user names others; `model = "claude-haiku-5-5"` selects
+Claude, which sends the content to Anthropic instead of TypeSafe; moving
+aliases such as `jev-latest` are rejected by the loader).
 
-## Part 2 — API key
+## Part 2 — Credentials
 
-The key never goes into the chat, the config, or anything under
+A key never goes into the chat, the config, or anything under
 `.heal/`. When doctor reports no `key_source`, ask the user to run
 one of these themselves:
 
 ```sh
-heal auth jev set            # reads the key from stdin into the per-user credentials file
+heal auth jev set            # Jev: reads the key from stdin into the per-user credentials file
 export TYPESAFE_API_KEY=…    # or provide it through the environment
+heal auth claude set         # Claude: the same, for an Anthropic key
+export ANTHROPIC_API_KEY=…   # or provide it through the environment
 ```
 
-Then `heal auth jev status --json` confirms it against the API (one
-network call; exit 2 means the key or model was rejected).
+For a Claude model, doctor reports `key_source: "claude_cli"` when there
+is no key but the `claude` CLI is on `PATH`. No key is needed then:
+`heal semantic ask` uses that CLI's sign-in.
+
+Then `heal auth <provider> status --json` confirms the credentials (exit
+2 means they or the model were rejected).
 
 ## Part 3 — Concept vocabulary (`.heal/concepts.toml`)
 
 Writes `.heal/concepts.toml`: the list of concepts the codebase is
 built from. HEAL's `concept`, `term_drift`, and `doc_concept` tasks
-ask Jev to classify every function and doc section into one of these
-concepts. Jev can only choose among names it is given, so the quality
+ask the model to classify every function and doc section into one of
+these concepts. It can only choose among names it is given, so the quality
 of this list decides the quality of every split, move, rename, and
 doc proposal that follows. This skill is read-only on the codebase;
 the only file it writes is `.heal/concepts.toml`.

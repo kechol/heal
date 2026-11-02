@@ -136,7 +136,7 @@ Don't classify in the observer. Don't bypass `Feature::lower` from
 the orchestrator.
 
 The one other place that assigns Severity is `semantic::lower::apply`,
-which runs after the Feature pass and builds Findings from cached Jev
+which runs after the Feature pass and builds Findings from cached
 verdicts (`Task::lower` via `tasks::common::finding`). It is capped at
 `High`: a classifier verdict is a candidate for a person to judge,
 never `Critical` on its own. It must stay offline and must not

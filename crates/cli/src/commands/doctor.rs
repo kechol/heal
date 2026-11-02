@@ -8,7 +8,7 @@
 //!
 //! Doctor only reports. It never recalibrates (`scope.md` R3), never
 //! flips a feature on, and never checks the API key against the network
-//! (`scope.md` R5) — `heal auth jev status` does that. Exit code is 0
+//! (`scope.md` R5) — `heal auth <provider> status` does that. Exit code is 0
 //! whenever the report could be produced, whatever it says.
 
 use std::path::Path;
@@ -20,14 +20,14 @@ use serde::Serialize;
 use crate::commands::hook_install::HEAL_HOOK_MARKER;
 use crate::core::calibration::Calibration;
 use crate::core::concepts::Concepts;
-use crate::core::config::{load_from_project, Config};
+use crate::core::config::{load_from_project, Config, SemanticProvider};
 use crate::core::doc_pairs::DocPairsFile;
 use crate::core::findings_cache::{read_fixed, read_latest};
 use crate::core::HealPaths;
 use crate::legacy_skills;
 use crate::observer::code::loc::LocObserver;
 use crate::observer::shared::git;
-use crate::semantic::credentials::{default_credentials_path, resolve, KeySource};
+use crate::semantic::credentials::{default_credentials_path, resolve_backend, Backend, KeySource};
 
 /// Commits since calibration past which the percentile breaks may no
 /// longer describe the codebase.
@@ -210,7 +210,7 @@ pub(crate) fn diagnose(project: &Path) -> DoctorReport {
     let effective = cfg.clone().unwrap_or_default();
     let docs = check_docs(project, &effective);
     let test = check_test(project, &effective);
-    let key_source = key_source();
+    let key_source = key_source(effective.features.semantic.provider());
     let semantic = check_semantic(&paths, &effective, key_source);
     let legacy_skills = check_legacy_skills(project);
 
@@ -513,14 +513,16 @@ fn check_test(project: &Path, cfg: &Config) -> TestCheck {
     }
 }
 
-/// Where a Jev key would be read from, without contacting the API.
-fn key_source() -> Option<&'static str> {
+/// Where the provider's credentials would be read from, without contacting
+/// it or starting the `claude` CLI.
+fn key_source(provider: SemanticProvider) -> Option<&'static str> {
     let file = default_credentials_path();
-    match resolve(file.as_deref()) {
-        Ok(Some(key)) => Some(match key.source {
+    match resolve_backend(provider, file.as_deref()) {
+        Ok(Some(Backend::Api(key))) => Some(match key.source {
             KeySource::Env(_) => "environment",
             KeySource::File(_) => "credentials_file",
         }),
+        Ok(Some(backend @ Backend::ClaudeCli)) => Some(backend.id()),
         Ok(None) | Err(_) => None,
     }
 }
@@ -545,10 +547,19 @@ fn check_semantic(
             Some("/heal:setup"),
         )
     } else if key_source.is_none() {
+        let provider = cfg.features.semantic.provider();
         Check::new(
             Status::Todo,
-            "no Jev API key is configured",
-            Some("heal auth jev set"),
+            match provider {
+                SemanticProvider::Jev => "no Jev API key is configured",
+                SemanticProvider::Claude => {
+                    "no Claude API key is configured and the claude CLI is not on PATH"
+                }
+            },
+            Some(match provider {
+                SemanticProvider::Jev => "heal auth jev set",
+                SemanticProvider::Claude => "heal auth claude set",
+            }),
         )
     } else if concept_count.is_none() {
         Check::new(
@@ -727,6 +738,11 @@ mod tests {
         let no_key = check_semantic(&paths, &cfg, None);
         assert_eq!(no_key.check.status, Status::Todo);
         assert_eq!(no_key.check.fix.as_deref(), Some("heal auth jev set"));
+
+        cfg.features.semantic.model = "claude-haiku-5-5".to_owned();
+        let no_claude = check_semantic(&paths, &cfg, None);
+        assert_eq!(no_claude.check.fix.as_deref(), Some("heal auth claude set"));
+        cfg.features.semantic.model = SemanticProvider::Jev.default_model().to_owned();
 
         let no_concepts = check_semantic(&paths, &cfg, Some("environment"));
         assert_eq!(no_concepts.check.status, Status::Todo);

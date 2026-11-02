@@ -230,9 +230,9 @@ without parsing either file. Implementation:
 This pass is medium-precision (false positives on coincidentally-
 named files) and medium-recall.
 
-##### Step 3a — Jev inference (`source: "llm"`, real confidence)
+##### Step 3a — Semantic inference (`source: "llm"`, real confidence)
 
-When `[features.semantic]` is enabled, ask Jev first — it scores every
+When `[features.semantic]` is enabled, ask the model first — it scores every
 unpaired doc against candidate sources in one run, with no cap:
 
 ```sh
@@ -241,10 +241,10 @@ heal semantic ask --task doc_pairs --json
 
 `tasks[0].result.pairs` lists one entry per doc, already shaped like a
 pair: `{doc, srcs, confidence, scores, source: "llm"}`. `srcs` holds every
-candidate Jev judged the page to document (probability at or above
+candidate the model judged the page to document (probability at or above
 `tasks[0].result.cutoff`), most likely first; `confidence` is the lowest
 of their probabilities; `scores` has each one. Write `doc`, `srcs`,
-`confidence`, and `source` as they are (there is no separate Jev value,
+`confidence`, and `source` as they are (there is no separate value per model,
 so older heal versions can still read the file). Docs missing from the
 list had no candidate above the cutoff — leave them to Step 3. Exit
 code 2 (no key, family off) means skip this step.
