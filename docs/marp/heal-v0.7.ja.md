@@ -617,7 +617,7 @@ TODO リスト全体を見渡して、**どこを、どう分ければ変えや�
 
 <p class="cta-heading">ぜひ使ってみてください</p>
 
-<div class="install-hero">brew install kechol/tap/heal-cli</div>
+<div class="install-hero">brew install kechol/tap/heal</div>
 
 <div class="plugin-cmd">
   <span class="plugin-label">Claude Code で Skill を入れる</span>

@@ -11,6 +11,8 @@ ci = "github"
 installers = ["shell", "homebrew"]
 # A GitHub repo to push Homebrew formulas to
 tap = "kechol/homebrew-tap"
+# Named after the binary; the crate name `heal-cli` stays for crates.io.
+formula = "heal"
 # Cargo features the released binary is built with. Mirrors the
 # `default` set in `crates/cli/Cargo.toml` — kept explicit here so a
 # future Cargo.toml `default = []` change does not silently strip
