@@ -52,7 +52,7 @@ identifier under its new name.
 
 Type 2 (signature mismatch) is not implemented yet. Type 3
 (semantic drift) ships as `doc_drift.semantic` when
-[Semantic (Jev)](/heal/semantic/) is enabled.
+[Semantic](/heal/semantic/) is enabled.
 
 ## `doc_coverage`
 

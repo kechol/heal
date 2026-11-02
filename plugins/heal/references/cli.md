@@ -60,15 +60,17 @@ Behind the scenes:
 
 ## Subcommands (alphabetical)
 
-### `heal auth jev set | status [--offline] | clear [--json]`
+### `heal auth <jev|claude> set | status [--offline] | clear [--json]`
 
-Manage the Jev API key outside `.heal/`. `set` reads one line from
+Manage a provider's API key outside `.heal/`. `set` reads one line from
 stdin into the per-user `credentials.toml` (mode 600);
-`TYPESAFE_API_KEY` takes precedence. `status` shows the masked key and
-its source, then checks it against the API unless `--offline` (exit 2
-when no key is configured or the check fails). `clear` deletes the
-stored key. Never ask the user to paste a key into the chat — tell them
-to run `heal auth jev set` themselves.
+`TYPESAFE_API_KEY` (Jev) and `ANTHROPIC_API_KEY` (Claude) take
+precedence. `status` shows the masked key and its source, then checks it
+with the provider unless `--offline` (exit 2 when nothing is configured
+or the check fails). Without a Claude key, `status` reports `backend:
+"claude_cli"` and checks the `claude` CLI's sign-in instead. `clear`
+deletes the stored key. Never ask the user to paste a key into the chat —
+tell them to run `heal auth <provider> set` themselves.
 
 ### `heal calibrate [--force] [--json]`
 
@@ -242,7 +244,9 @@ Re-runs every observer and renders per-metric summaries. With
 ### `heal semantic ask [--task <ID>]… [--dry-run] [--refresh] [--prune] [--check] [--focus <FILE>] [--diff <RANGE>] [--json]`
 
 `[features.semantic]` only, and one of the two commands that send
-project content over the network (to the TypeSafe Jev API). Plans
+project content over the network (to the provider of
+`[features.semantic].model`: TypeSafe for `jev-*`, Anthropic for
+`claude-*`). Plans
 questions, skips anything cached, and writes answers to
 `.heal/semantic/verdicts/<task>.jsonl` (tracked). On-demand tasks
 (`verify_patch`, `verify_proposal`, `verify_tests`, `name_choice`,
@@ -359,4 +363,4 @@ requested with `--feature`). It does **not** exit non-zero because
 findings exist — gating on Severity is the caller's job. Exit 2 means
 something only the user can fix: `heal diff` over
 `[diff].max_loc_threshold`, or the semantic setup for
-`heal semantic ask` / `heal auth jev status`.
+`heal semantic ask` / `heal auth <provider> status`.

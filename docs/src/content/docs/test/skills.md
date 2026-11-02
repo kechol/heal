@@ -75,7 +75,7 @@ skips a flaky test to lower `skip_ratio`, never commits a test it has
 not run, and never lowers coverage thresholds or turns the family off
 to make findings go away.
 
-**With [Semantic (Jev)](/heal/semantic/) enabled**, it can also remove
+**With [Semantic](/heal/semantic/) enabled**, it can also remove
 tests that check nothing — a `test_value` finding marked `delete` at
 high confidence, one test per commit, only while the suite passes and
 coverage does not drop (unless the test only checked its own mocks);

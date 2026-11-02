@@ -142,8 +142,8 @@ export default defineConfig({
               ],
             },
             {
-              label: 'Semantic (Jev)',
-              translations: { ja: 'Semantic (Jev)' },
+              label: 'Semantic',
+              translations: { ja: 'Semantic' },
               slug: 'semantic',
             },
           ],

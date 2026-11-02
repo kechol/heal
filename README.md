@@ -55,12 +55,12 @@ approve.
 
 - **Semantic** (opt-in via `[features.semantic]`) — _"Does this code,
   test, or doc mean what it says?"_ Asks TypeSafe's
-  [Jev](https://docs.typesafe.ai/) classifier typed questions — misnamed
+  [Jev](https://docs.typesafe.ai/) classifier or Claude Haiku typed questions — misnamed
   functions, files that mix concepts, tests that check nothing, docs
   that no longer match the code — and uses the answers to order the TODO
   list. The only part of heal that sends content over the network, and
   only when you run `heal semantic ask`. Details:
-  [Semantic (Jev)](https://kechol.github.io/heal/semantic/).
+  [Semantic](https://kechol.github.io/heal/semantic/).
 
 Adoption order is usually Code first, then Test once you have (or
 can produce) an `lcov.info`, then Docs once drift becomes a

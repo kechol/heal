@@ -1,22 +1,22 @@
 ---
-title: Semantic (Jev)
-description: TypeSafe の分類モデル Jev によるオプトインの判定。何が送られるか、API キーの設定、答えの保存のしかた。
+title: Semantic
+description: TypeSafe の分類モデル Jev または Claude Haiku によるオプトインの判定。何が送られるか、認証情報の設定、答えの保存のしかた。
 ---
 
 HEAL のメトリクスは、ソースと git の履歴からローカルで計算します。コードの**どこ**が変えにくいかは分かりますが、コードが**何を意味しているか**までは分かりません。たとえば、関数の名前が中身と合っているか、テストが本当に何かを確かめているか、ドキュメントの説明がまだコードと合っているか、といったことです。
 
-オプトインの `[features.semantic]` は、こうした問いを TypeSafe の分類モデル [Jev](https://docs.typesafe.ai/) に投げます。Jev は文章やコードを書きません。問いごとに確率で答えるので、heal はほかのメトリクスと同じように、その答えを Finding にできます。
+オプトインの `[features.semantic]` は、こうした問いを、選んだモデルに投げます。TypeSafe の分類モデル [Jev](https://docs.typesafe.ai/) か、Anthropic の Claude Haiku です。どちらのモデルも、heal のために文章やコードを書くことはありません。問いごとに確率で答えるので、heal はほかのメトリクスと同じように、その答えを Finding にできます。
 
 このファミリの機能は、どれも**既定では無効**です。有効にしなければ、heal の動きは今までと変わりません。
 
 ## 何が、いつ送られるか
 
-- 送信するのは `heal semantic ask` だけです。heal があらかじめ選んだコード・テスト・ドキュメントの一部（よく変更されるファイルの関数など）を、TypeSafe の API に送ります。
-- `heal auth jev status` は、API キーが使えるかを確かめます。キーは送りますが、プロジェクトの中身は送りません。
+- 送信するのは `heal semantic ask` だけです。heal があらかじめ選んだコード・テスト・ドキュメントの一部（よく変更されるファイルの関数など）を、設定したモデルの提供元に送ります。
+- `heal auth jev status` と `heal auth claude status` は、認証情報が使えるかを確かめます。プロジェクトの中身は送りません。
 - それ以外のコマンド（`heal status`、`heal metrics`、`heal diff`、post-commit フック）は、ネットワークにつながりません。`heal semantic ask` が保存した答えを読むだけです。
 - `[features.semantic].exclude` に一致するファイルは送りません。
 
-TypeSafe は、利用者のデータをモデルの学習に使わないとしています。データを保持しない契約（Zero Data Retention）は enterprise プランだけです。非公開のコードベースで有効にする前に、[TypeSafe の規約](https://docs.typesafe.ai/legal.md) を確認してください。
+TypeSafe は、利用者のデータをモデルの学習に使わないとしています。データを保持しない契約（Zero Data Retention）は enterprise プランだけです。非公開のコードベースで有効にする前に、[TypeSafe の規約](https://docs.typesafe.ai/legal.md) を確認してください。Claude のモデルを使うと、中身は API アカウントまたは Claude のプランの条件のもとで Anthropic に送られます。先に [Anthropic の規約](https://www.anthropic.com/legal) を確認してください。
 
 ## 有効にする
 
@@ -26,16 +26,21 @@ TypeSafe は、利用者のデータをモデルの学習に使わないとし�
 [features.semantic]
 enabled = true
 # model = "jev-1.13.0"   # バージョンを固定する。動くエイリアスは使えない
+# model = "claude-haiku-5-5"   # Jev の代わりに Claude Haiku を使う
 # max_usd = 1.0          # 1 回の実行で、これ以上使う前に止める
 # concurrency = 8        # 同時に送るリクエストの数
 # exclude = ["secrets/", "*.pem"]
 ```
 
-有効にすると、`heal status` は保存された答えも使って TODO リストを並べます。`/heal:refactor`・`/heal:docs`・`/heal:tests` の各スキルは、自分の提案とコミットを Jev に確かめさせます。
+有効にすると、`heal status` は保存された答えも使って TODO リストを並べます。`/heal:refactor`・`/heal:docs`・`/heal:tests` の各スキルは、自分の提案とコミットをモデルに確かめさせます。
 
-## API キーを設定する
+## 認証情報を設定する
 
-キーは一人ひとりが自分のものを使います。[TypeSafe のコンソール](https://console.typesafe.ai/) で取得したら、環境変数に入れるか、
+認証情報は一人ひとりが自分のものを使います。何が要るかは `model` によって変わります。
+
+### Jev
+
+[TypeSafe のコンソール](https://console.typesafe.ai/) でキーを取得したら、環境変数に入れるか、
 
 ```sh
 export TYPESAFE_API_KEY=...
@@ -50,6 +55,15 @@ heal auth jev clear     # 保存したキーを消す
 ```
 
 キーが `.heal/` の下に書かれることはありません。両方あるときは `TYPESAFE_API_KEY` が優先されます。`TYPESAFEAI_API_KEY` も読むので、ほかの Jev のツールで使っているキーをそのまま使えます。
+
+### Claude Haiku
+
+`model = "claude-haiku-5-5"` を設定します。heal は次の順に探し、最初に見つかったものを使います。
+
+1. API キー。`ANTHROPIC_API_KEY`、または `printf '%s\n' "$KEY" | heal auth claude set` で保存したキーです。リクエストは Anthropic の API に直接送られ、料金はそのキーに請求されます。
+2. [Claude Code](https://code.claude.com/) の `claude` コマンド（`PATH` にあるとき）。キーは要りません。heal は今のサインインのままこのコマンドを実行するので、使った分は Claude のプランの利用枠に数えられます。先に `claude auth login` でサインインしてください。
+
+`heal auth claude status` で、どちらが使われるかの表示と確認ができます。保存したキーは `heal auth claude clear` で消せます。heal が `claude` コマンドを実行するときは、プロジェクトの外で、ツール・MCP サーバー・設定をすべて切って起動します。できるのは問いに答えることだけです。
 
 ## 問い合わせる
 
@@ -107,7 +121,7 @@ heal status --focus plan.md
 
 ### 概念の語彙
 
-`concept` タスクには、コードを形づくっている考え方の一覧が必要です。`.heal/concepts.toml` に書きます。Jev は与えられた名前の中から選ぶだけで、新しい名前を作ることはありません。最初の案はセットアップ用のスキルで作り、見直してからコミットしてください。Claude Code で次を実行します。
+`concept` タスクには、コードを形づくっている考え方の一覧が必要です。`.heal/concepts.toml` に書きます。モデルは与えられた名前の中から選ぶだけで、新しい名前を作ることはありません。最初の案はセットアップ用のスキルで作り、見直してからコミットしてください。Claude Code で次を実行します。
 
 ```
 /heal:setup semantic
@@ -123,11 +137,16 @@ description = "Derives thresholds from the project's own metric distribution."
 
 ## 料金
 
-Jev の料金は入力だけにかかります（執筆時点で、入力 10 億トークンあたり 42 ドル）。`--dry-run` を付けると、送る前に見積もりを表示します。`max_usd` を設定しておけば、上限を超える前に実行を止めます。中くらいの規模のリポジトリなら、1 回の実行はたいてい数セントです。
+どのモデルでも、`--dry-run` を付けると送る前に見積もりを表示し、`max_usd` を設定しておけば上限を超える前に実行を止めます。
+
+- **Jev** の料金は入力だけにかかります（執筆時点で、入力 10 億トークンあたり 42 ドル）。中くらいの規模のリポジトリなら、1 回の実行はたいてい数セントです。
+- **Claude Haiku 5.5** の料金は入力と出力の両方にかかります（執筆時点で、100 万トークンあたり入力 0.10 ドル、出力 0.50 ドル）。答えがすべて生成されたテキストになるため、heal は 1 リクエストの問いを 25 個までに抑えます。そのぶん、同じ実行でも Jev よりリクエストが増えます。`claude` コマンドを使うときの金額は、同じトークン数を API で使った場合の額です。実際の負担はプランによって変わります。
 
 ## 結果は候補として扱う
 
-分類モデルは間違えることがあります。しきい値に近いスコアは、モデルのバージョンによって少し変わることもあります。HEAL はモデルのバージョンを固定し、保存した答えを使い回して結果を安定させていますが、semantic の Finding は、人が確かめるための候補として扱ってください。そのまま従うべき指示ではありません。
+モデルは間違えることがあります。しきい値に近いスコアは、モデルのバージョンによって少し変わることもあります。HEAL はモデルのバージョンを固定し、保存した答えを使い回して結果を安定させていますが、semantic の Finding は、人が確かめるための候補として扱ってください。そのまま従うべき指示ではありません。
+
+各タスクの既定の `cutoff` は、Jev の確率に合わせて調整したものです。Claude が答える確率は Claude 自身の見積もりなので、同じ `cutoff` でも Finding が増えたり減ったりすることがあります。Claude で多すぎる、または少なすぎると感じたら、そのタスクの `cutoff` を調整してください。答えはモデルごとに保存されます。`model` を変えるとすべて問い合わせ直し、2 つのモデルの答えが混ざることはありません。
 
 ## 無効にする
 

@@ -111,11 +111,11 @@ Claude Code:
 
 > _"Does this code, test, or doc mean what it says?"_
 
-Asks TypeSafe's Jev classifier questions that metrics cannot answer
+Asks TypeSafe's Jev classifier or Claude Haiku questions that metrics cannot answer
 and adds the answers to the Code, Test, and Docs families. It is the
 only part of heal that sends content over the network, and only when
-you run `heal semantic ask`. See [Semantic (Jev)](/heal/semantic/)
-for what is sent, the API key, and cost.
+you run `heal semantic ask`. See [Semantic](/heal/semantic/)
+for what is sent, credentials, and cost.
 
 ```toml
 [features.semantic]

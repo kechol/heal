@@ -23,14 +23,14 @@ plugin (see [Installation](/heal/installation/#claude-code-plugin)).
 `heal skills uninstall` removes skill folders that heal 0.6 and earlier
 copied into a project.
 
-With the opt-in [Semantic (Jev)](/heal/semantic/) family enabled, two
+With the opt-in [Semantic](/heal/semantic/) family enabled, two
 more commands join them. They are the only heal commands that connect
 to the network:
 
-| Command             | Purpose                                                                                     |
-| ------------------- | ------------------------------------------------------------------------------------------- |
-| `heal semantic ask` | Ask Jev about the code, tests, and docs heal selected, and save the answers under `.heal/`. |
-| `heal auth jev`     | Store, check, or remove your Jev API key (`set` / `status` / `clear`).                      |
+| Command                              | Purpose                                                                                                      |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `heal semantic ask`                  | Ask the configured model about the code, tests, and docs heal selected, and save the answers under `.heal/`. |
+| `heal auth jev` / `heal auth claude` | Store, check, or remove your API key for that provider (`set` / `status` / `clear`).                         |
 
 ## Automation commands
 
@@ -119,8 +119,8 @@ Checks what heal needs and reports each area as `ok`, `todo`,
 - Skill folders that older heal versions copied into the project.
 
 `heal doctor` only reads. It changes nothing and never connects to
-the network (use `heal auth jev status` to check the key against the
-API). `/heal:setup` starts from this report, which is why re-running
+the network (use `heal auth jev status` or `heal auth claude status` to
+check your credentials). `/heal:setup` starts from this report, which is why re-running
 it only does what is missing.
 
 ## `heal skills uninstall`
@@ -198,7 +198,7 @@ sections at or above that floor, but it never restores findings below it.
 
 With `[features.semantic]` enabled, `heal status --focus <file>`
 ranks for the work described in the file (see
-[Semantic (Jev)](/heal/semantic/)). It always rescans and does not
+[Semantic](/heal/semantic/)). It always rescans and does not
 update the saved TODO list.
 
 ## `heal diff`
@@ -325,7 +325,7 @@ this command. Put `floor_critical` / `floor_ok` overrides in
 ## `heal semantic ask`
 
 Only available when `[features.semantic] enabled = true`. See
-[Semantic (Jev)](/heal/semantic/) for what gets sent.
+[Semantic](/heal/semantic/) for what gets sent.
 
 ```sh
 heal semantic ask --dry-run          # plan and price; nothing is sent
@@ -333,17 +333,19 @@ heal semantic ask                    # ask every enabled task
 heal semantic ask --task <id>        # one task (repeatable)
 heal semantic ask --refresh          # re-ask even where an answer is saved
 heal semantic ask --prune            # drop saved answers nothing refers to
-heal semantic ask --check            # only check the key against the API
+heal semantic ask --check            # only check your credentials
 heal semantic ask --task focus --focus plan.md    # rank for the work in plan.md
 heal semantic ask --task verify_patch --diff HEAD~1..HEAD   # judge a commit range
 heal semantic ask --json             # machine-readable run report
 ```
 
 Exit code `2` means something only you can fix: the feature is
-disabled, no API key is configured, the key was rejected, or the API
-does not know the configured `model`.
+disabled, no credentials are configured, they were rejected, or the
+provider does not know the configured `model`.
 
-## `heal auth jev`
+## `heal auth jev` and `heal auth claude`
+
+Both take the same subcommands. The examples use `jev`.
 
 ```sh
 printf '%s\n' "$KEY" | heal auth jev set   # store in your user config (mode 600)
@@ -353,7 +355,10 @@ heal auth jev clear                         # remove the stored key
 ```
 
 `TYPESAFE_API_KEY` (or `TYPESAFEAI_API_KEY`) takes precedence over the
-stored key. The key is never written under `.heal/`.
+stored Jev key, and `ANTHROPIC_API_KEY` over the stored Claude key. A key
+is never written under `.heal/`. Without a Claude key,
+`heal auth claude status` checks the sign-in of the `claude` command
+instead, which is what `heal semantic ask` then uses.
 
 ## Inspecting the cache
 

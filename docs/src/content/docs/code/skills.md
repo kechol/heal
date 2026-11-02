@@ -47,7 +47,7 @@ is already in place, and then does only what is missing or stale:
   asks first; heal never recalibrates by itself.
 - **Enable the optional families** and build what each needs: doc
   pairs for Docs, a coverage reporter for Test, and an API key plus a
-  concept vocabulary for [Semantic (Jev)](/heal/semantic/).
+  concept vocabulary for [Semantic](/heal/semantic/).
 - **Remove skill folders** that heal 0.6 and earlier copied into the
   project (`.claude/skills/heal-*`, `.agents/skills/heal-*`).
 
@@ -87,7 +87,7 @@ function to the module it belongs to, extracting a class, or
 introducing an interface at a layer boundary are ordinary proposals
 when at least two independent signals point at the same seam — for
 example, LCOM clusters that match the concepts
-[Semantic (Jev)](/heal/semantic/) found in a file, or a function whose
+[Semantic](/heal/semantic/) found in a file, or a function whose
 concept lives elsewhere and whose file changes together with that
 other file. With a single signal, the skill raises it as a question
 instead.
@@ -103,7 +103,7 @@ closed enum, a pipeline whose steps belong together. The skill proposes
 recording those as accepted (`heal mark accept`, with a short reason)
 so they leave the queue; it never accepts without your approval.
 
-**With [Semantic (Jev)](/heal/semantic/) enabled**, proposals are
+**With [Semantic](/heal/semantic/) enabled**, proposals are
 checked before you see them (`verify_proposal`), and each commit is
 checked after it lands (`verify_patch`): when complexity only moved, a
 condition was flipped into early returns, the commit message does not

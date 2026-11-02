@@ -33,7 +33,7 @@ description: '[features.docs] ファミリが出す、ドキュメントの質�
 
 Layer A の各ドキュメントを走査して、識別子の形をしたバッククォートの範囲（`` `Foo::bar` ``、`` `processOrder` ``）を取り出し、ペアのソースのどの識別子にも当たらないものごとに Finding を出します。**Severity: Critical**。存在しない識別子を頼りに動いた読み手は、もうないコードを探して時間を失うからです。直し方は機械的で、参照を消すか、識別子を新しい名前で書き直します。
 
-Type 2（シグネチャの不一致）は、まだ実装していません。Type 3（意味のずれ）は、[Semantic (Jev)](/heal/ja/semantic/) を有効にすると `doc_drift.semantic` として出ます。
+Type 2（シグネチャの不一致）は、まだ実装していません。Type 3（意味のずれ）は、[Semantic](/heal/ja/semantic/) を有効にすると `doc_drift.semantic` として出ます。
 
 ## `doc_coverage`
 

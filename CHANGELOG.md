@@ -2,12 +2,27 @@
 
 ## Unreleased
 
+### Features
+
+- `[features.semantic]` can use Claude Haiku as well as Jev. Set
+  `model = "claude-haiku-5-5"`. `heal semantic ask` then calls the
+  Anthropic API with `ANTHROPIC_API_KEY` or a key stored by the new
+  `heal auth claude set`, and falls back to the sign-in of the `claude`
+  CLI when there is no key. Jev stays the default. Answers are saved per
+  model, and task cutoffs are still tuned against Jev's probabilities.
+- `heal semantic ask --json` adds `output_tokens`, `heal auth <provider>
+  status --json` adds `backend`, and `heal doctor --json` can report
+  `key_source: "claude_cli"`.
+
 ### Changes
 
 - The Homebrew formula is now named `heal`, matching the binary:
   `brew install kechol/tap/heal`. `kechol/tap/heal-cli` still resolves
   through a rename in the tap. The crate stays `heal-cli`, so
   `cargo install heal-cli` is unchanged.
+- `heal auth jev clear` now removes only the Jev key from the credentials
+  file, deleting the file once no key is left.
+- The `Semantic (Jev)` documentation page is now `Semantic`.
 
 ## v0.7.1 — 2026-09-25
 
