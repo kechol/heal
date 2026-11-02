@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.7.2 — 2026-11-02
+
 ### Features
 
 - `[features.semantic]` can use Claude Haiku as well as Jev. Set
@@ -13,15 +15,21 @@
 - `heal semantic ask --json` adds `output_tokens`, `heal auth <provider>
   status --json` adds `backend`, and `heal doctor --json` can report
   `key_source: "claude_cli"`.
+- `heal auth jev clear` now removes only the Jev key from the credentials
+  file, deleting the file once no key is left.
 
-### Changes
+### Fixes
+
+- Released binaries are built against `libz-sys`, `rustls`, and
+  `rustls-webpki` versions with fixes for RUSTSEC-2026-0418,
+  RUSTSEC-2026-0346 to 0349, and RUSTSEC-2026-0382 (`c50753f`).
+
+### Chore
 
 - The Homebrew formula is now named `heal`, matching the binary:
   `brew install kechol/tap/heal`. `kechol/tap/heal-cli` still resolves
   through a rename in the tap. The crate stays `heal-cli`, so
   `cargo install heal-cli` is unchanged.
-- `heal auth jev clear` now removes only the Jev key from the credentials
-  file, deleting the file once no key is left.
 - The `Semantic (Jev)` documentation page is now `Semantic`.
 
 ## v0.7.1 — 2026-09-25
