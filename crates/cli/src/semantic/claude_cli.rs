@@ -10,8 +10,8 @@
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
-use std::thread::JoinHandle;
+use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -29,9 +29,11 @@ const PROGRAM: &str = "claude";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(180);
 /// Each request is a whole CLI process, far heavier than an HTTP request.
 const MAX_CONCURRENCY: usize = 4;
-/// Fewer than over HTTP: every attempt starts a process, and a timed-out
-/// one has already waited [`REQUEST_TIMEOUT`].
+/// Fewer than over HTTP: every attempt starts a process.
 const RETRIES: u32 = 2;
+/// How long the output may keep arriving after the child is gone. A
+/// process the child left behind can hold the pipes open indefinitely.
+const PIPE_GRACE: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub struct CommandOutput {
@@ -40,8 +42,11 @@ pub struct CommandOutput {
 }
 
 /// The process boundary. Tests hand in a fake so no test ever starts `claude`.
+/// A program that cannot start is a [`AskErrorKind::Setup`] failure, since
+/// every batch would fail alike; a timeout is not retried, since the retry
+/// would most likely wait as long again.
 pub trait CommandRunner: Send + Sync {
-    fn run(&self, args: &[String], stdin: &[u8]) -> Result<CommandOutput, String>;
+    fn run(&self, args: &[String], stdin: &[u8]) -> Result<CommandOutput, AskError>;
 }
 
 /// Whether `claude` is on `PATH`. Starts nothing.
@@ -56,57 +61,109 @@ pub fn available() -> bool {
 pub struct SystemRunner;
 
 impl CommandRunner for SystemRunner {
-    fn run(&self, args: &[String], stdin: &[u8]) -> Result<CommandOutput, String> {
-        let mut child = Command::new(PROGRAM)
-            .args(args)
-            .current_dir(std::env::temp_dir())
-            // Claude Code refuses to start under this marker, and the plugin
-            // skills run `heal semantic ask` from inside a session.
-            .env_remove("CLAUDECODE")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("could not start `{PROGRAM}`: {e}"))?;
-        let mut input = child.stdin.take().expect("stdin is piped");
-        let body = stdin.to_vec();
-        // Threads, so a full pipe on any side cannot deadlock the others.
-        let writer = std::thread::spawn(move || {
-            let _ = input.write_all(&body);
-        });
-        let stdout = drain(child.stdout.take().expect("stdout is piped"));
-        let stderr = drain(child.stderr.take().expect("stderr is piped"));
-        let started = Instant::now();
-        let timed_out = loop {
-            if child.try_wait().map_err(|e| e.to_string())?.is_some() {
-                break false;
-            }
-            if started.elapsed() > REQUEST_TIMEOUT {
-                let _ = child.kill();
-                let _ = child.wait();
-                break true;
-            }
-            std::thread::sleep(Duration::from_millis(50));
-        };
-        let _ = writer.join();
-        let stdout = stdout.join().unwrap_or_default();
-        let stderr = stderr.join().unwrap_or_default();
-        if timed_out {
-            return Err(format!(
-                "`{PROGRAM}` did not answer within {}s",
-                REQUEST_TIMEOUT.as_secs()
-            ));
-        }
-        Ok(CommandOutput { stdout, stderr })
+    fn run(&self, args: &[String], stdin: &[u8]) -> Result<CommandOutput, AskError> {
+        run_program(PROGRAM, args, stdin, REQUEST_TIMEOUT, PIPE_GRACE)
     }
 }
 
-fn drain(mut pipe: impl Read + Send + 'static) -> JoinHandle<String> {
+fn run_program(
+    program: &str,
+    args: &[String],
+    stdin: &[u8],
+    timeout: Duration,
+    grace: Duration,
+) -> Result<CommandOutput, AskError> {
+    let mut child = Command::new(program)
+        .args(args)
+        .current_dir(std::env::temp_dir())
+        // Claude Code refuses to start under this marker, and the plugin
+        // skills run `heal semantic ask` from inside a session.
+        .env_remove("CLAUDECODE")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            error(
+                AskErrorKind::Setup,
+                format!("could not start `{program}`: {e}"),
+            )
+        })?;
+    let mut input = child.stdin.take().expect("stdin is piped");
+    let body = stdin.to_vec();
+    // Threads, so a full pipe on any side cannot deadlock the others.
+    // None is joined: each ends once its pipe closes.
     std::thread::spawn(move || {
-        let mut text = String::new();
-        let _ = pipe.read_to_string(&mut text);
-        text
+        let _ = input.write_all(&body);
+    });
+    let stdout = Drain::start(child.stdout.take().expect("stdout is piped"));
+    let stderr = Drain::start(child.stderr.take().expect("stderr is piped"));
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if started.elapsed() <= timeout => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            outcome => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error(
+                    AskErrorKind::Other,
+                    match outcome {
+                        Err(e) => format!("lost track of `{program}`: {e}"),
+                        Ok(_) => {
+                            format!("`{program}` did not answer within {}s", timeout.as_secs())
+                        }
+                    },
+                ));
+            }
+        }
+    }
+    let waited = Instant::now();
+    Ok(CommandOutput {
+        stdout: stdout.finish(waited + grace),
+        stderr: stderr.finish(waited + grace),
     })
+}
+
+/// One pipe read on its own thread into a shared buffer, so what arrived
+/// is kept even when something else holds the pipe open past the child.
+struct Drain {
+    buf: Arc<Mutex<Vec<u8>>>,
+    done: Receiver<()>,
+}
+
+impl Drain {
+    fn start(mut pipe: impl Read + Send + 'static) -> Self {
+        let buf = Arc::new(Mutex::new(Vec::new()));
+        let (tx, done) = mpsc::channel();
+        let sink = Arc::clone(&buf);
+        std::thread::spawn(move || {
+            let mut chunk = [0_u8; 8192];
+            loop {
+                match pipe.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => sink
+                        .lock()
+                        .expect("pipe buffer")
+                        .extend_from_slice(&chunk[..n]),
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(_) => break,
+                }
+            }
+            let _ = tx.send(());
+        });
+        Self { buf, done }
+    }
+
+    /// Lossy, so one stray byte does not discard the whole output.
+    fn finish(self, deadline: Instant) -> String {
+        let _ = self
+            .done
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()));
+        String::from_utf8_lossy(&self.buf.lock().expect("pipe buffer")).into_owned()
+    }
 }
 
 /// The one result object of `claude -p --output-format json`.
@@ -210,8 +267,7 @@ impl ClaudeCli {
     ) -> Result<Response, AskError> {
         let output = self
             .runner
-            .run(&self.ask_args(), user_prompt(state, questions).as_bytes())
-            .map_err(|e| error(AskErrorKind::Transient, e))?;
+            .run(&self.ask_args(), user_prompt(state, questions).as_bytes())?;
         let Ok(result) = serde_json::from_str::<CliResult>(output.stdout.trim()) else {
             let detail = if output.stderr.trim().is_empty() {
                 &output.stdout
@@ -253,15 +309,26 @@ fn error(kind: AskErrorKind, message: String) -> AskError {
     }
 }
 
-/// The CLI reports these failures as prose. Sign-in and account problems
-/// fail every batch alike; a too-long prompt is the one a split can fix.
+/// The CLI reports these failures as prose. Sign-in, account, and model
+/// problems fail every batch alike; a too-long prompt is the one a split
+/// can fix. A model the plan does not offer surfaces only here, since
+/// `claude auth status` cannot tell.
 fn classify_failure(message: &str) -> AskErrorKind {
     let lower = message.to_lowercase();
     if lower.contains("prompt is too long") {
         AskErrorKind::TooBig
-    } else if ["log in", "login", "api key", "credit balance", "hit your"]
-        .iter()
-        .any(|needle| lower.contains(needle))
+    } else if [
+        "log in",
+        "login",
+        "api key",
+        "credit balance",
+        "hit your",
+        "selected model",
+        "model not found",
+        "not_found_error",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
     {
         AskErrorKind::Setup
     } else if ["rate limit", "overloaded", "timed out"]
@@ -307,7 +374,7 @@ impl Classifier for ClaudeCli {
         let output = self
             .runner
             .run(&args, b"")
-            .map_err(|e| error(AskErrorKind::Setup, e))?;
+            .map_err(|e| error(AskErrorKind::Setup, e.message))?;
         let status: AuthStatus = serde_json::from_str(output.stdout.trim()).map_err(|e| {
             error(
                 AskErrorKind::Setup,
@@ -338,7 +405,6 @@ impl Classifier for ClaudeCli {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::sync::Mutex;
 
     /// Answers each run with the next scripted output, then repeats the last.
     struct Fake {
@@ -368,7 +434,7 @@ mod tests {
     }
 
     impl CommandRunner for Fake {
-        fn run(&self, args: &[String], stdin: &[u8]) -> Result<CommandOutput, String> {
+        fn run(&self, args: &[String], stdin: &[u8]) -> Result<CommandOutput, AskError> {
             self.seen
                 .lock()
                 .unwrap()
@@ -475,6 +541,82 @@ mod tests {
         let fake = Fake::new(&stdout.to_string(), "");
         cli(&fake).ask(&json!("s"), &one_noul()).unwrap_err();
         assert_eq!(fake.seen.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn an_unavailable_model_stops_the_run() {
+        for message in [
+            "There's an issue with the selected model (claude-haiku-5-5). It may not exist \
+             or you may not have access to it.",
+            r#"API Error: 404 {"type":"error","error":{"type":"not_found_error"}}"#,
+        ] {
+            assert_eq!(classify_failure(message), AskErrorKind::Setup, "{message}");
+        }
+    }
+
+    struct Failing {
+        kind: AskErrorKind,
+        calls: Mutex<usize>,
+    }
+
+    impl CommandRunner for Failing {
+        fn run(&self, _: &[String], _: &[u8]) -> Result<CommandOutput, AskError> {
+            *self.calls.lock().unwrap() += 1;
+            Err(error(self.kind, "failed".to_owned()))
+        }
+    }
+
+    #[test]
+    fn process_failures_keep_their_kind_and_are_not_retried() {
+        for kind in [AskErrorKind::Setup, AskErrorKind::Other] {
+            let runner = Arc::new(Failing {
+                kind,
+                calls: Mutex::new(0),
+            });
+            let c =
+                ClaudeCli::new(runner.clone(), "claude-haiku-5-5".to_owned()).with_sleeper(|_| {});
+            assert_eq!(c.ask(&json!("s"), &one_noul()).unwrap_err().kind, kind);
+            assert_eq!(*runner.calls.lock().unwrap(), 1);
+        }
+    }
+
+    const LONG: Duration = Duration::from_secs(30);
+
+    #[test]
+    fn a_program_that_cannot_start_is_a_setup_failure() {
+        let e = run_program("heal-test-no-such-program", &[], b"", LONG, LONG).unwrap_err();
+        assert_eq!(e.kind, AskErrorKind::Setup);
+    }
+
+    #[cfg(unix)]
+    fn sh(script: &str) -> Vec<String> {
+        vec!["-c".to_owned(), script.to_owned()]
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_hung_program_is_killed_at_the_timeout() {
+        let short = Duration::from_millis(200);
+        let started = Instant::now();
+        let e = run_program("sh", &sh("sleep 10"), b"", short, short).unwrap_err();
+        assert_eq!(e.kind, AskErrorKind::Other);
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_survives_a_leftover_process_holding_the_pipe() {
+        let started = Instant::now();
+        let out = run_program(
+            "sh",
+            &sh("cat; printf '\\377'; sleep 10 &"),
+            b"from stdin",
+            LONG,
+            Duration::from_millis(200),
+        )
+        .unwrap();
+        assert!(out.stdout.starts_with("from stdin"), "{:?}", out.stdout);
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]
