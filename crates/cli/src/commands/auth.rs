@@ -150,9 +150,13 @@ pub fn run_status(
             (Some(src), Some(key)) => println!("{name} API key: {key} (from {src})"),
             _ if via_cli => println!("{name} API key: none; using the claude CLI's sign-in"),
             _ => println!(
-                "{name} API key: not configured. Export {}, or run `heal auth {} set`.",
-                credentials::api_key_vars(provider)[0],
-                provider.id()
+                "{name} API key: not configured. {}",
+                match provider {
+                    SemanticProvider::Jev => "Export TYPESAFE_API_KEY, or run `heal auth jev set`.",
+                    SemanticProvider::Claude =>
+                        "Export ANTHROPIC_API_KEY, run `heal auth claude set`, or install and \
+                         sign in to the `claude` CLI.",
+                }
             ),
         }
         match report.reachable {
