@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changes
+
+- The Homebrew formula is now named `heal`, matching the binary:
+  `brew install kechol/tap/heal`. `kechol/tap/heal-cli` still resolves
+  through a rename in the tap. The crate stays `heal-cli`, so
+  `cargo install heal-cli` is unchanged.
+
 ## v0.7.1 — 2026-09-25
 
 A documentation release: the docs, the slides, and one help text now

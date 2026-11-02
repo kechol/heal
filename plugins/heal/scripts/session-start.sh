@@ -37,13 +37,13 @@ older() {
 }
 
 if ! command -v heal >/dev/null 2>&1; then
-  msg="The heal plugin $plugin_version is installed but the heal CLI is not on PATH. Install it (cargo install heal-cli, or brew install kechol/tap/heal-cli) before using the /heal: skills."
+  msg="The heal plugin $plugin_version is installed but the heal CLI is not on PATH. Install it (cargo install heal-cli, or brew install kechol/tap/heal) before using the /heal: skills."
 else
   cli_version=$(heal --version 2>/dev/null | awk '{print $2}')
   [ -n "$cli_version" ] || exit 0
   [ "$(series "$cli_version")" = "$(series "$plugin_version")" ] && exit 0
   if older "$cli_version" "$plugin_version"; then
-    msg="heal CLI $cli_version is older than the heal plugin $plugin_version. Upgrade the CLI (cargo install heal-cli, or brew upgrade heal-cli) before using the /heal: skills."
+    msg="heal CLI $cli_version is older than the heal plugin $plugin_version. Upgrade the CLI (cargo install heal-cli, or brew upgrade heal) before using the /heal: skills."
   else
     msg="The heal plugin $plugin_version is older than heal CLI $cli_version. Update it with /plugin marketplace update heal, then /plugin update heal@heal."
   fi

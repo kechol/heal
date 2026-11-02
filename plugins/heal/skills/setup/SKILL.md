@@ -20,7 +20,7 @@ skill follows.
 
 1. Run `heal --version`. When `heal` is missing, stop and point the
    user at the install commands (`cargo install heal-cli` or
-   `brew install kechol/tap/heal-cli`). When `heal doctor` is an
+   `brew install kechol/tap/heal`). When `heal doctor` is an
    unknown subcommand, the CLI predates this plugin: stop and ask the
    user to upgrade it.
 2. Run `heal doctor --json` and keep the result. Show it as a short

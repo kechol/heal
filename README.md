@@ -72,7 +72,7 @@ Pick whichever fits your environment.
 
 ```sh
 # Homebrew (macOS / Linux)
-brew install kechol/tap/heal-cli
+brew install kechol/tap/heal
 
 # Cargo (Rust toolchain)
 cargo install heal-cli

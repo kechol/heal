@@ -13,7 +13,7 @@ heal は `heal` という名前の 1 つのバイナリです。下の 3 つの�
 ## Homebrew（macOS / Linux）
 
 ```sh
-brew install kechol/tap/heal-cli
+brew install kechol/tap/heal
 ```
 
 `kechol/homebrew-tap` を tap し、リリースごとに配布しているビルド済みの `heal` バイナリを入れます。更新はいつもの `brew upgrade` でできます。
@@ -65,7 +65,7 @@ heal --help
 
 | インストール方法 | 更新コマンド                            |
 | ---------------- | --------------------------------------- |
-| Homebrew         | `brew upgrade heal-cli`                 |
+| Homebrew         | `brew upgrade heal`                     |
 | Cargo            | `cargo install heal-cli` をもう一度実行 |
 | シェル           | インストーラーのコマンドをもう一度実行  |
 
@@ -85,7 +85,7 @@ heal skills uninstall
 
 | インストール方法 | アンインストールコマンド   |
 | ---------------- | -------------------------- |
-| Homebrew         | `brew uninstall heal-cli`  |
+| Homebrew         | `brew uninstall heal`      |
 | Cargo            | `cargo uninstall heal-cli` |
 | シェル           | `rm ~/.cargo/bin/heal`     |
 

@@ -18,7 +18,7 @@ plugin (see [Claude Code plugin](#claude-code-plugin) below).
 ## Homebrew (macOS / Linux)
 
 ```sh
-brew install kechol/tap/heal-cli
+brew install kechol/tap/heal
 ```
 
 This taps `kechol/homebrew-tap` and installs the prebuilt `heal`
@@ -88,7 +88,7 @@ copy the folders under `plugins/heal/skills/` from the
 
 | Install method | Update command                 |
 | -------------- | ------------------------------ |
-| Homebrew       | `brew upgrade heal-cli`        |
+| Homebrew       | `brew upgrade heal`            |
 | Cargo          | `cargo install heal-cli` again |
 | Shell          | re-run the installer command   |
 
@@ -113,7 +113,7 @@ It removes only the folders heal itself wrote; your own skills stay.
 
 | Install method | Uninstall command          |
 | -------------- | -------------------------- |
-| Homebrew       | `brew uninstall heal-cli`  |
+| Homebrew       | `brew uninstall heal`      |
 | Cargo          | `cargo uninstall heal-cli` |
 | Shell          | `rm ~/.cargo/bin/heal`     |
 
