@@ -1,10 +1,11 @@
-//! Resolving the `TypeSafe` API key.
+//! Resolving the provider's API key.
 //!
-//! Lookup order: `TYPESAFE_API_KEY`, then `TYPESAFEAI_API_KEY` (the same
-//! pair jev-lint and jev-lexer read, so one exported key serves every
-//! tool), then the per-user file `<config dir>/heal/credentials.toml`.
+//! Lookup order for Jev: `TYPESAFE_API_KEY`, then `TYPESAFEAI_API_KEY` (the
+//! same pair jev-lint and jev-lexer read, so one exported key serves every
+//! tool). For Claude: `ANTHROPIC_API_KEY`. Then the per-user file
+//! `<config dir>/heal/credentials.toml`, one table per provider.
 //!
-//! The key never lives under `.heal/`: `config.toml` is a tracked team
+//! A key never lives under `.heal/`: `config.toml` is a tracked team
 //! contract and a secret does not belong in version control. The user
 //! file must not be readable by group or others; a looser mode is an
 //! error rather than a warning, since the file only ever holds a secret.
@@ -13,9 +14,18 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-pub const API_KEY_VARS: [&str; 2] = ["TYPESAFE_API_KEY", "TYPESAFEAI_API_KEY"];
+use crate::core::config::SemanticProvider;
+use crate::semantic::claude_cli;
 
-/// Where the resolved key came from. Printed by `heal auth jev status`.
+#[must_use]
+pub const fn api_key_vars(provider: SemanticProvider) -> &'static [&'static str] {
+    match provider {
+        SemanticProvider::Jev => &["TYPESAFE_API_KEY", "TYPESAFEAI_API_KEY"],
+        SemanticProvider::Claude => &["ANTHROPIC_API_KEY"],
+    }
+}
+
+/// Where the resolved key came from. Printed by `heal auth <provider> status`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeySource {
     Env(&'static str),
@@ -67,16 +77,61 @@ pub fn mask(key: &str) -> String {
     format!("{head}…{tail}")
 }
 
+/// How `heal semantic ask` reaches the provider.
+#[derive(Debug)]
+pub enum Backend {
+    Api(ResolvedKey),
+    /// Claude without a key: the `claude` CLI's own sign-in.
+    ClaudeCli,
+}
+
+impl Backend {
+    /// The `backend` field of `heal auth <provider> status --json`.
+    #[must_use]
+    pub const fn id(&self) -> &'static str {
+        match self {
+            Self::Api(_) => "api",
+            Self::ClaudeCli => "claude_cli",
+        }
+    }
+}
+
+/// A key wins; Claude without one falls back to the `claude` CLI when it
+/// is on `PATH`.
+pub fn resolve_backend(
+    provider: SemanticProvider,
+    file: Option<&Path>,
+) -> Result<Option<Backend>, String> {
+    Ok(match resolve(provider, file)? {
+        Some(key) => Some(Backend::Api(key)),
+        None if provider == SemanticProvider::Claude && claude_cli::available() => {
+            Some(Backend::ClaudeCli)
+        }
+        None => None,
+    })
+}
+
 #[derive(Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CredentialsFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    jev: Option<JevCredentials>,
+    jev: Option<ProviderCredentials>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    claude: Option<ProviderCredentials>,
+}
+
+impl CredentialsFile {
+    fn slot(&mut self, provider: SemanticProvider) -> &mut Option<ProviderCredentials> {
+        match provider {
+            SemanticProvider::Jev => &mut self.jev,
+            SemanticProvider::Claude => &mut self.claude,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct JevCredentials {
+struct ProviderCredentials {
     api_key: String,
 }
 
@@ -100,16 +155,20 @@ fn credentials_path_from(env: impl Fn(&str) -> Option<PathBuf>) -> Option<PathBu
     Some(base.join("heal").join("credentials.toml"))
 }
 
-/// Resolve the key from the environment, then from `file`.
-pub fn resolve(file: Option<&Path>) -> Result<Option<ResolvedKey>, String> {
-    resolve_with(|name| std::env::var(name).ok(), file)
+/// Resolve `provider`'s key from the environment, then from `file`.
+pub fn resolve(
+    provider: SemanticProvider,
+    file: Option<&Path>,
+) -> Result<Option<ResolvedKey>, String> {
+    resolve_with(provider, |name| std::env::var(name).ok(), file)
 }
 
 fn resolve_with(
+    provider: SemanticProvider,
     env: impl Fn(&str) -> Option<String>,
     file: Option<&Path>,
 ) -> Result<Option<ResolvedKey>, String> {
-    for var in API_KEY_VARS {
+    for var in api_key_vars(provider) {
         if let Some(v) = env(var)
             .map(|v| v.trim().to_owned())
             .filter(|v| !v.is_empty())
@@ -129,7 +188,7 @@ fn resolve_with(
         Err(e) => return Err(format!("{}: {e}", path.display())),
     };
     check_private(path)?;
-    let parsed: CredentialsFile = toml::from_str(&raw).map_err(|e| {
+    let mut parsed: CredentialsFile = toml::from_str(&raw).map_err(|e| {
         // Neither the error's Display (it quotes the offending line) nor its
         // message (serde's type errors quote the value) may be printed: the
         // offending text is usually the key itself.
@@ -137,13 +196,15 @@ fn resolve_with(
             raw[..s.start.min(raw.len())].matches('\n').count() + 1
         });
         format!(
-            "{}: line {line}: not a valid credentials file; expected `[jev]` with \
-             `api_key = \"<key>\"` (run `heal auth jev set` to rewrite it)",
-            path.display()
+            "{}: line {line}: not a valid credentials file; expected `[{id}]` with \
+             `api_key = \"<key>\"` (run `heal auth {id} set` to rewrite it)",
+            path.display(),
+            id = provider.id()
         )
     })?;
     Ok(parsed
-        .jev
+        .slot(provider)
+        .take()
         .map(|j| j.api_key.trim().to_owned())
         .filter(|k| !k.is_empty())
         .map(|key| ResolvedKey {
@@ -161,7 +222,7 @@ fn check_private(path: &Path) -> Result<(), String> {
         .mode();
     if mode & 0o077 != 0 {
         return Err(format!(
-            "{} is readable by group or others (mode {:o}); run `chmod 600` on it or `heal auth jev set` to rewrite it",
+            "{} is readable by group or others (mode {:o}); run `chmod 600` on it",
             path.display(),
             mode & 0o777
         ));
@@ -174,28 +235,45 @@ fn check_private(_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Write the key to `path` with mode 0600, replacing any previous key.
-pub fn store(path: &Path, key: &str) -> Result<(), String> {
+/// Read the file for an update. An unreadable or malformed file is treated
+/// as empty: the point of `set` and `clear` is to repair it.
+fn read_for_update(path: &Path) -> CredentialsFile {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| toml::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
+/// Write `provider`'s key to `path` with mode 0600, replacing its previous
+/// key and keeping the other provider's.
+pub fn store(path: &Path, provider: SemanticProvider, key: &str) -> Result<(), String> {
     let key = key.trim();
     if key.is_empty() {
         return Err("refusing to store an empty key".to_owned());
     }
-    let body = toml::to_string(&CredentialsFile {
-        jev: Some(JevCredentials {
-            api_key: key.to_owned(),
-        }),
-    })
-    .map_err(|e| e.to_string())?;
+    let mut file = read_for_update(path);
+    *file.slot(provider) = Some(ProviderCredentials {
+        api_key: key.to_owned(),
+    });
+    let body = toml::to_string(&file).map_err(|e| e.to_string())?;
     write_private(path, body.as_bytes())
 }
 
-/// Remove the Jev key. Returns whether a key was present.
-pub fn clear(path: &Path) -> Result<bool, String> {
-    match std::fs::remove_file(path) {
-        Ok(()) => Ok(true),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(e) => Err(format!("{}: {e}", path.display())),
+/// Remove `provider`'s key, deleting the file once it holds no key. Returns
+/// whether a key was present.
+pub fn clear(path: &Path, provider: SemanticProvider) -> Result<bool, String> {
+    if !path.exists() {
+        return Ok(false);
     }
+    let mut file = read_for_update(path);
+    let removed = file.slot(provider).take().is_some();
+    if file.jev.is_none() && file.claude.is_none() {
+        std::fs::remove_file(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    } else if removed {
+        let body = toml::to_string(&file).map_err(|e| e.to_string())?;
+        write_private(path, body.as_bytes())?;
+    }
+    Ok(removed)
 }
 
 fn write_private(path: &Path, body: &[u8]) -> Result<(), String> {
@@ -205,22 +283,23 @@ fn write_private(path: &Path, body: &[u8]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::config::SemanticProvider::{Claude, Jev};
 
     #[test]
     fn env_wins_over_file_and_primary_var_wins() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("credentials.toml");
-        store(&path, "file-key-123456").unwrap();
+        store(&path, Jev, "file-key-123456").unwrap();
         let env = |n: &str| match n {
             "TYPESAFE_API_KEY" => Some("primary".to_owned()),
             "TYPESAFEAI_API_KEY" => Some("fallback".to_owned()),
             _ => None,
         };
-        let r = resolve_with(env, Some(&path)).unwrap().unwrap();
+        let r = resolve_with(Jev, env, Some(&path)).unwrap().unwrap();
         assert_eq!(r.key, "primary");
         assert_eq!(r.source, KeySource::Env("TYPESAFE_API_KEY"));
 
-        let r = resolve_with(|_| None, Some(&path)).unwrap().unwrap();
+        let r = resolve_with(Jev, |_| None, Some(&path)).unwrap().unwrap();
         assert_eq!(r.key, "file-key-123456");
         assert!(matches!(r.source, KeySource::File(_)));
     }
@@ -228,7 +307,7 @@ mod tests {
     #[test]
     fn blank_env_values_are_ignored() {
         let env = |n: &str| (n == "TYPESAFE_API_KEY").then(|| "  ".to_owned());
-        assert!(resolve_with(env, None).unwrap().is_none());
+        assert!(resolve_with(Jev, env, None).unwrap().is_none());
     }
 
     #[cfg(unix)]
@@ -237,11 +316,11 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("heal/credentials.toml");
-        store(&path, "abcdefghijkl").unwrap();
+        store(&path, Jev, "abcdefghijkl").unwrap();
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
-        assert!(resolve_with(|_| None, Some(&path)).is_err());
+        assert!(resolve_with(Jev, |_| None, Some(&path)).is_err());
     }
 
     /// A made-up key, assembled at run time so secret scanners that read
@@ -261,7 +340,7 @@ mod tests {
             format!("jev = \"{fake}\"\n"),
         ] {
             write_private(&path, body.as_bytes()).unwrap();
-            let err = resolve_with(|_| None, Some(&path)).unwrap_err();
+            let err = resolve_with(Jev, |_| None, Some(&path)).unwrap_err();
             assert!(!err.contains(&fake), "leaked in: {err}");
             assert!(err.contains("line "), "{err}");
         }
@@ -282,9 +361,38 @@ mod tests {
     fn clear_reports_whether_a_key_existed() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("c.toml");
-        assert!(!clear(&path).unwrap());
-        store(&path, "abcdefghijkl").unwrap();
-        assert!(clear(&path).unwrap());
+        assert!(!clear(&path, Jev).unwrap());
+        store(&path, Jev, "abcdefghijkl").unwrap();
+        assert!(clear(&path, Jev).unwrap());
+    }
+
+    #[test]
+    fn providers_keep_separate_keys_in_one_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("c.toml");
+        store(&path, Jev, "jjjjjjjjjjjj").unwrap();
+        store(&path, Claude, "cccccccccccc").unwrap();
+        let read = |p| resolve_with(p, |_| None, Some(&path)).unwrap();
+        assert_eq!(read(Jev).unwrap().key, "jjjjjjjjjjjj");
+        assert_eq!(read(Claude).unwrap().key, "cccccccccccc");
+
+        assert!(clear(&path, Jev).unwrap());
+        assert!(read(Jev).is_none());
+        assert_eq!(read(Claude).unwrap().key, "cccccccccccc");
+        assert!(!clear(&path, Jev).unwrap(), "already gone");
+        assert!(path.exists());
+
+        assert!(clear(&path, Claude).unwrap());
+        assert!(!path.exists(), "no key left");
+    }
+
+    #[test]
+    fn claude_reads_only_its_own_variable() {
+        let env = |n: &str| (n == "TYPESAFE_API_KEY").then(|| "jev".to_owned());
+        assert!(resolve_with(Claude, env, None).unwrap().is_none());
+        let env = |n: &str| (n == "ANTHROPIC_API_KEY").then(|| "anthropic".to_owned());
+        let r = resolve_with(Claude, env, None).unwrap().unwrap();
+        assert_eq!(r.source, KeySource::Env("ANTHROPIC_API_KEY"));
     }
 
     #[test]

@@ -4,6 +4,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::commands;
+use crate::core::config::SemanticProvider;
 use crate::core::finding::Finding;
 
 #[derive(Debug, Parser)]
@@ -165,7 +166,7 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Opt-in judgments from `TypeSafe`'s Jev classifier
+    /// Opt-in judgments from `TypeSafe`'s Jev classifier or Claude Haiku
     /// (`[features.semantic]`). `ask` is the only HEAL command that sends
     /// project content over the network; every other command reads the
     /// verdicts it caches under `.heal/semantic/verdicts/`.
@@ -183,7 +184,7 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum SemanticAction {
-    /// Ask Jev about the subjects each enabled task selects, skipping
+    /// Ask the configured model about the subjects each enabled task selects, skipping
     /// anything already cached, and write the answers to
     /// `.heal/semantic/verdicts/`.
     Ask(SemanticAskArgs),
@@ -205,7 +206,7 @@ pub struct SemanticAskArgs {
     #[arg(long)]
     pub prune: bool,
     /// Only confirm the key against the API (and the configured model,
-    /// when the API's model list names it; pinned versions are unlisted).
+    /// when the provider can tell; Jev does not list pinned versions).
     #[arg(long, conflicts_with_all = ["dry_run", "refresh", "prune"])]
     pub check: bool,
     /// Describe upcoming work (a file path, or `-` for stdin) so focus-aware
@@ -225,19 +226,26 @@ pub enum AuthProvider {
     /// `TypeSafe` Jev (`[features.semantic]`).
     Jev {
         #[command(subcommand)]
-        action: JevAuthAction,
+        action: KeyAction,
+    },
+    /// Anthropic Claude (`[features.semantic]`). Without a key,
+    /// `heal semantic ask` uses the `claude` CLI's sign-in.
+    Claude {
+        #[command(subcommand)]
+        action: KeyAction,
     },
 }
 
 #[derive(Debug, Clone, Copy, Subcommand)]
-pub enum JevAuthAction {
+pub enum KeyAction {
     /// Read a key from stdin and store it in the per-user credentials
-    /// file (mode 600). `TYPESAFE_API_KEY` still takes precedence.
+    /// file (mode 600). `TYPESAFE_API_KEY` / `ANTHROPIC_API_KEY` still
+    /// take precedence.
     Set {
         #[arg(long)]
         json: bool,
     },
-    /// Show where the key comes from and confirm it against the API.
+    /// Show where the credentials come from and confirm them with the provider.
     Status {
         #[arg(long)]
         json: bool,
@@ -735,15 +743,19 @@ impl Cli {
                     diff: args.diff,
                 },
             ),
-            Command::Auth {
-                provider: AuthProvider::Jev { action },
-            } => match action {
-                JevAuthAction::Set { json } => commands::auth::run_set(json),
-                JevAuthAction::Status { json, offline } => {
-                    commands::auth::run_status(&project, json, offline)
+            Command::Auth { provider } => {
+                let (provider, action) = match provider {
+                    AuthProvider::Jev { action } => (SemanticProvider::Jev, action),
+                    AuthProvider::Claude { action } => (SemanticProvider::Claude, action),
+                };
+                match action {
+                    KeyAction::Set { json } => commands::auth::run_set(provider, json),
+                    KeyAction::Status { json, offline } => {
+                        commands::auth::run_status(&project, provider, json, offline)
+                    }
+                    KeyAction::Clear { json } => commands::auth::run_clear(provider, json),
                 }
-                JevAuthAction::Clear { json } => commands::auth::run_clear(json),
-            },
+            }
         }
     }
 }
@@ -785,7 +797,16 @@ mod tests {
             cli.command,
             Command::Auth {
                 provider: AuthProvider::Jev {
-                    action: JevAuthAction::Status { offline: true, .. }
+                    action: KeyAction::Status { offline: true, .. }
+                }
+            }
+        ));
+        let cli = parse(&["heal", "auth", "claude", "set"]);
+        assert!(matches!(
+            cli.command,
+            Command::Auth {
+                provider: AuthProvider::Claude {
+                    action: KeyAction::Set { .. }
                 }
             }
         ));

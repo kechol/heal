@@ -1,10 +1,11 @@
-//! Jev HTTP client.
+//! HTTP client for the semantic providers.
 //!
 //! This module and `commands::auth` are the only places HEAL opens a
 //! network connection. Everything is blocking: a run is a bounded fan-out
 //! of independent requests, and the scoped threads in
 //! [`crate::semantic::runner`] are enough to keep the server's token
-//! bucket busy without an async runtime.
+//! bucket busy without an async runtime. Retries, pacing, and spend are
+//! shared; a [`Dialect`] holds what differs between providers.
 //!
 //! Retry policy, split-on-`max_tokens_exceeded`, and the failure
 //! taxonomy follow mizchi/jev-lint's measured client (`src/jev.ts`, MIT).
@@ -15,18 +16,21 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::semantic::api::{Question, Request, Response};
-use crate::semantic::cost::{estimate_tokens, usd_for};
+use crate::semantic::api::{Question, Request, Response, Usage};
+use crate::semantic::claude::ClaudeDialect;
+use crate::semantic::cost::estimate_tokens;
 use crate::semantic::pacer::Pacer;
 
-/// The only endpoint HEAL talks to (`scope.md` R5). Deliberately not
-/// configurable: an override would send project content and the key to
-/// wherever it pointed.
-pub const DEFAULT_BASE_URL: &str = "https://api.typesafe.ai";
+/// The Jev endpoint (`scope.md` R5). Deliberately not configurable: an
+/// override would send project content and the key to wherever it pointed.
+pub const JEV_BASE_URL: &str = "https://api.typesafe.ai";
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const DEFAULT_RETRIES: u32 = 4;
 const DEFAULT_RATE_LIMIT_RETRIES: u32 = 8;
+
+/// Request headers, including the provider's authentication.
+pub type Headers = [(&'static str, String)];
 
 /// One HTTP exchange, stripped to what the client needs.
 #[derive(Debug, Clone)]
@@ -39,8 +43,8 @@ pub struct HttpResponse {
 /// The network boundary. Production uses [`UreqTransport`]; tests hand in
 /// a fake so no test ever opens a socket.
 pub trait Transport: Send + Sync {
-    fn post_json(&self, url: &str, api_key: &str, body: &[u8]) -> Result<HttpResponse, String>;
-    fn get(&self, url: &str, api_key: &str) -> Result<HttpResponse, String>;
+    fn post_json(&self, url: &str, headers: &Headers, body: &[u8]) -> Result<HttpResponse, String>;
+    fn get(&self, url: &str, headers: &Headers) -> Result<HttpResponse, String>;
 }
 
 /// rustls with the OS trust store (rustls-native-certs), so a corporate
@@ -101,30 +105,30 @@ impl UreqTransport {
 }
 
 impl Transport for UreqTransport {
-    fn post_json(&self, url: &str, api_key: &str, body: &[u8]) -> Result<HttpResponse, String> {
-        Self::finish(
-            self.agent
-                .post(url)
-                .header("authorization", &format!("Bearer {api_key}"))
-                .header("content-type", "application/json")
-                .send(body),
-        )
+    fn post_json(&self, url: &str, headers: &Headers, body: &[u8]) -> Result<HttpResponse, String> {
+        let mut request = self
+            .agent
+            .post(url)
+            .header("content-type", "application/json");
+        for (name, value) in headers {
+            request = request.header(*name, value);
+        }
+        Self::finish(request.send(body))
     }
 
-    fn get(&self, url: &str, api_key: &str) -> Result<HttpResponse, String> {
-        Self::finish(
-            self.agent
-                .get(url)
-                .header("authorization", &format!("Bearer {api_key}"))
-                .call(),
-        )
+    fn get(&self, url: &str, headers: &Headers) -> Result<HttpResponse, String> {
+        let mut request = self.agent.get(url);
+        for (name, value) in headers {
+            request = request.header(*name, value);
+        }
+        Self::finish(request.call())
     }
 }
 
 /// What the caller can do about a failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JevErrorKind {
-    /// Send fewer questions (the one recoverable 400).
+pub enum AskErrorKind {
+    /// Send fewer questions (the one recoverable failure).
     TooBig,
     /// Fix the key, the account, or `[features.semantic].model`;
     /// retrying will not help, and neither will any other batch.
@@ -136,13 +140,13 @@ pub enum JevErrorKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct JevError {
-    pub kind: JevErrorKind,
+pub struct AskError {
+    pub kind: AskErrorKind,
     pub status: u16,
     pub message: String,
 }
 
-impl std::fmt::Display for JevError {
+impl std::fmt::Display for AskError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.status == 0 {
             write!(f, "{}", self.message)
@@ -152,22 +156,7 @@ impl std::fmt::Display for JevError {
     }
 }
 
-impl std::error::Error for JevError {}
-
-impl JevError {
-    /// An id the server does not know comes back as HTTP 400
-    /// `{"detail":{"error_type":"api_usage_error","message":"Unknown
-    /// model: <id>"}}` (measured against the live API, 2026-09-23).
-    fn classify(status: u16, body: &str) -> JevErrorKind {
-        match status {
-            400 if body.contains("max_tokens_exceeded") => JevErrorKind::TooBig,
-            400 if body.contains("Unknown model") => JevErrorKind::Setup,
-            401..=403 => JevErrorKind::Setup,
-            500..=599 => JevErrorKind::Transient,
-            _ => JevErrorKind::Other,
-        }
-    }
-}
+impl std::error::Error for AskError {}
 
 /// Running totals for the report and the `max_usd` guard.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -180,43 +169,263 @@ pub struct Spend {
     pub splits: u64,
 }
 
-impl Spend {
-    #[must_use]
-    pub fn usd(&self) -> f64 {
-        usd_for(self.input_tokens)
+/// The shared [`Spend`] of one client, updated from parallel requests.
+#[derive(Debug, Default)]
+pub struct SpendMeter(Mutex<Spend>);
+
+impl SpendMeter {
+    pub fn bump(&self, f: impl FnOnce(&mut Spend)) {
+        f(&mut self.0.lock().expect("spend lock"));
+    }
+
+    pub fn record_call(&self, usage: &Usage) {
+        self.bump(|s| {
+            s.calls += 1;
+            s.input_tokens += usage.input_tokens;
+            s.output_tokens += usage.output_tokens;
+        });
+    }
+
+    pub fn get(&self) -> Spend {
+        *self.0.lock().expect("spend lock")
     }
 }
 
-type Sleeper = Arc<dyn Fn(Duration) + Send + Sync>;
+/// Outcome of a credentials check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelCheck {
+    /// `None` when the check cannot tell whether the model is usable.
+    pub model_available: Option<bool>,
+    /// One sentence for the terminal.
+    pub note: String,
+}
 
-pub struct JevClient {
+/// Something that answers typed questions about a state. The runner only
+/// sees this, so a task behaves the same whichever backend answers.
+pub trait Classifier: Send + Sync {
+    /// One request: one state, N questions, N answers.
+    fn ask(
+        &self,
+        state: &Value,
+        questions: &BTreeMap<String, Question>,
+    ) -> Result<Response, AskError>;
+
+    fn meter(&self) -> &SpendMeter;
+
+    fn record_split(&self) {
+        self.meter().bump(|s| s.splits += 1);
+    }
+
+    fn spend(&self) -> Spend {
+        self.meter().get()
+    }
+
+    /// Confirm the credentials without asking anything.
+    fn check(&self) -> Result<ModelCheck, AskError>;
+
+    /// Upper bound on requests in flight, on top of
+    /// `[features.semantic].concurrency`.
+    fn max_concurrency(&self) -> usize {
+        usize::MAX
+    }
+
+    /// Ask, halving the question set whenever the answer reports the
+    /// request too big. The state is unchanged by a split, so a state that
+    /// alone exceeds the ceiling cannot be rescued here — the planner must
+    /// have kept it under [`crate::semantic::cost::state_budget`].
+    fn ask_splitting(
+        &self,
+        state: &Value,
+        questions: &BTreeMap<String, Question>,
+    ) -> Result<Response, AskError> {
+        match self.ask(state, questions) {
+            Err(e) if e.kind == AskErrorKind::TooBig && questions.len() >= 2 => {
+                self.record_split();
+                let half = questions.len().div_ceil(2);
+                let mut merged = Response::default();
+                let (a, b): (Vec<_>, Vec<_>) =
+                    questions.iter().enumerate().partition(|(i, _)| *i < half);
+                for part in [a, b] {
+                    let subset: BTreeMap<String, Question> = part
+                        .into_iter()
+                        .map(|(_, (k, q))| (k.clone(), q.clone()))
+                        .collect();
+                    let res = self.ask_splitting(state, &subset)?;
+                    merged.answers.extend(res.answers);
+                    merged.usage.input_tokens += res.usage.input_tokens;
+                    merged.usage.output_tokens += res.usage.output_tokens;
+                    if merged.model.is_none() {
+                        merged.model = res.model;
+                    }
+                }
+                Ok(merged)
+            }
+            other => other,
+        }
+    }
+}
+
+/// A 2xx body after decoding. The tokens were paid for even when the
+/// response cannot be used, so `failure` travels next to the usage.
+#[derive(Debug, Clone, Default)]
+pub struct Decoded {
+    pub response: Response,
+    pub failure: Option<(AskErrorKind, String)>,
+}
+
+/// What differs between two HTTP providers.
+pub trait Dialect: Send + Sync {
+    fn base_url(&self) -> &'static str;
+    fn ask_path(&self) -> &'static str;
+    fn models_path(&self) -> &'static str;
+    fn auth_headers(&self, api_key: &str) -> Vec<(&'static str, String)>;
+    fn request_body(
+        &self,
+        model: &str,
+        state: &Value,
+        questions: &BTreeMap<String, Question>,
+    ) -> Vec<u8>;
+    /// Reads a 2xx body. `Err` means the body is not this provider's
+    /// response shape at all.
+    fn decode(&self, body: &str, questions: &BTreeMap<String, Question>)
+        -> Result<Decoded, String>;
+    fn classify(&self, status: u16, body: &str) -> AskErrorKind;
+    fn model_check(&self, model: &str, listed: &[String]) -> ModelCheck;
+}
+
+/// `TypeSafe`'s System One endpoint.
+pub struct JevDialect;
+
+impl Dialect for JevDialect {
+    fn base_url(&self) -> &'static str {
+        JEV_BASE_URL
+    }
+
+    fn ask_path(&self) -> &'static str {
+        "/v1/systemone"
+    }
+
+    fn models_path(&self) -> &'static str {
+        "/v1/models"
+    }
+
+    fn auth_headers(&self, api_key: &str) -> Vec<(&'static str, String)> {
+        vec![("authorization", format!("Bearer {api_key}"))]
+    }
+
+    fn request_body(
+        &self,
+        model: &str,
+        state: &Value,
+        questions: &BTreeMap<String, Question>,
+    ) -> Vec<u8> {
+        serde_json::to_vec(&Request {
+            model,
+            state,
+            questions,
+        })
+        .expect("request serialization is infallible")
+    }
+
+    fn decode(
+        &self,
+        body: &str,
+        _questions: &BTreeMap<String, Question>,
+    ) -> Result<Decoded, String> {
+        let response: Response = serde_json::from_str(body).map_err(|e| e.to_string())?;
+        Ok(Decoded {
+            response,
+            failure: None,
+        })
+    }
+
+    /// An id the server does not know comes back as HTTP 400
+    /// `{"detail":{"error_type":"api_usage_error","message":"Unknown
+    /// model: <id>"}}` (measured against the live API, 2026-09-23).
+    fn classify(&self, status: u16, body: &str) -> AskErrorKind {
+        match status {
+            400 if body.contains("max_tokens_exceeded") => AskErrorKind::TooBig,
+            400 if body.contains("Unknown model") => AskErrorKind::Setup,
+            401..=403 => AskErrorKind::Setup,
+            500..=599 => AskErrorKind::Transient,
+            _ => AskErrorKind::Other,
+        }
+    }
+
+    /// Unlisted is not an error here: the listing names only the moving
+    /// aliases, so a pinned version is confirmed by the first
+    /// `heal semantic ask` request instead.
+    fn model_check(&self, model: &str, listed: &[String]) -> ModelCheck {
+        if model_listed(listed, model) {
+            ModelCheck {
+                model_available: Some(true),
+                note: format!("Jev API reachable; model `{model}` available."),
+            }
+        } else {
+            ModelCheck {
+                model_available: None,
+                note: format!(
+                    "Jev API reachable; key accepted. Model `{model}` is not in the API's model \
+                     list ({}); pinned versions are not listed, and an unknown one stops the \
+                     first `heal semantic ask` request.",
+                    if listed.is_empty() {
+                        "empty".to_owned()
+                    } else {
+                        listed.join(", ")
+                    }
+                ),
+            }
+        }
+    }
+}
+
+pub(crate) type Sleeper = Arc<dyn Fn(Duration) + Send + Sync>;
+
+pub struct ApiClient {
     transport: Arc<dyn Transport>,
-    api_key: String,
+    dialect: Arc<dyn Dialect>,
+    headers: Vec<(&'static str, String)>,
     base_url: String,
     model: String,
     retries: u32,
     rate_limit_retries: u32,
     pacer: Mutex<Pacer>,
-    spend: Mutex<Spend>,
+    spend: SpendMeter,
     served_model: Mutex<Option<String>>,
     sleep: Sleeper,
 }
 
-impl JevClient {
+impl ApiClient {
     #[must_use]
-    pub fn new(transport: Arc<dyn Transport>, api_key: String, model: String) -> Self {
+    pub fn new(
+        transport: Arc<dyn Transport>,
+        dialect: Arc<dyn Dialect>,
+        api_key: &str,
+        model: String,
+    ) -> Self {
         Self {
             transport,
-            api_key,
-            base_url: DEFAULT_BASE_URL.to_owned(),
+            headers: dialect.auth_headers(api_key),
+            base_url: dialect.base_url().to_owned(),
+            dialect,
             model,
             retries: DEFAULT_RETRIES,
             rate_limit_retries: DEFAULT_RATE_LIMIT_RETRIES,
             pacer: Mutex::new(Pacer::default()),
-            spend: Mutex::new(Spend::default()),
+            spend: SpendMeter::default(),
             served_model: Mutex::new(None),
             sleep: Arc::new(std::thread::sleep),
         }
+    }
+
+    #[must_use]
+    pub fn jev(transport: Arc<dyn Transport>, api_key: &str, model: String) -> Self {
+        Self::new(transport, Arc::new(JevDialect), api_key, model)
+    }
+
+    #[must_use]
+    pub fn claude(transport: Arc<dyn Transport>, api_key: &str, model: String) -> Self {
+        Self::new(transport, Arc::new(ClaudeDialect), api_key, model)
     }
 
     /// Replace the wait function. Tests pass a no-op so backoff costs nothing.
@@ -241,172 +450,35 @@ impl JevClient {
         &self.model
     }
 
-    pub fn spend(&self) -> Spend {
-        *self.spend.lock().expect("spend lock")
-    }
-
     pub fn served_model(&self) -> Option<String> {
         self.served_model.lock().expect("model lock").clone()
     }
 
     /// `GET /v1/models`: the model ids the key can use. Backs
-    /// `heal auth jev status` and `heal semantic ask --check`.
-    pub fn list_models(&self) -> Result<Vec<String>, JevError> {
-        let url = format!("{}/v1/models", self.base_url);
+    /// `heal auth <provider> status` and `heal semantic ask --check`.
+    pub fn list_models(&self) -> Result<Vec<String>, AskError> {
+        let url = format!("{}{}", self.base_url, self.dialect.models_path());
         let res = self
             .transport
-            .get(&url, &self.api_key)
-            .map_err(|e| JevError {
-                kind: JevErrorKind::Transient,
+            .get(&url, &self.headers)
+            .map_err(|e| AskError {
+                kind: AskErrorKind::Transient,
                 status: 0,
                 message: format!("network: {e}"),
             })?;
         if !(200..300).contains(&res.status) {
-            return Err(JevError {
-                kind: JevError::classify(res.status, &res.body),
+            return Err(AskError {
+                kind: self.dialect.classify(res.status, &res.body),
                 status: res.status,
                 message: truncate(&res.body),
             });
         }
-        let v: Value = serde_json::from_str(&res.body).map_err(|e| JevError {
-            kind: JevErrorKind::Other,
+        let v: Value = serde_json::from_str(&res.body).map_err(|e| AskError {
+            kind: AskErrorKind::Other,
             status: res.status,
             message: format!("unparseable models response: {e}"),
         })?;
         Ok(model_ids(&v))
-    }
-
-    /// One request: one state, N questions, N answers.
-    pub fn ask(
-        &self,
-        state: &Value,
-        questions: &BTreeMap<String, Question>,
-    ) -> Result<Response, JevError> {
-        if questions.is_empty() {
-            return Ok(Response::default());
-        }
-        let body = serde_json::to_vec(&Request {
-            model: &self.model,
-            state,
-            questions,
-        })
-        .expect("request serialization is infallible");
-        #[allow(clippy::cast_precision_loss)]
-        let estimated = estimate_tokens(body.len()) as f64;
-        let url = format!("{}/v1/systemone", self.base_url);
-
-        let mut attempt = 0;
-        let mut limited = 0;
-        loop {
-            self.wait_for_budget(estimated);
-            let result = self.transport.post_json(&url, &self.api_key, &body);
-            let res = match result {
-                Ok(res) => res,
-                Err(e) => {
-                    if attempt == self.retries {
-                        return Err(JevError {
-                            kind: JevErrorKind::Transient,
-                            status: 0,
-                            message: format!("network: {e}"),
-                        });
-                    }
-                    attempt += 1;
-                    self.bump(|s| s.retried += 1);
-                    (self.sleep)(backoff(attempt, None));
-                    continue;
-                }
-            };
-            if (200..300).contains(&res.status) {
-                let parsed: Response = serde_json::from_str(&res.body).map_err(|e| JevError {
-                    kind: JevErrorKind::Other,
-                    status: res.status,
-                    message: format!("unparseable response: {e}"),
-                })?;
-                #[allow(clippy::cast_precision_loss)]
-                let actual = parsed.usage.input_tokens as f64;
-                self.pacer
-                    .lock()
-                    .expect("pacer lock")
-                    .settle(estimated, actual);
-                self.bump(|s| {
-                    s.calls += 1;
-                    s.input_tokens += parsed.usage.input_tokens;
-                    s.output_tokens += parsed.usage.output_tokens;
-                });
-                if let Some(m) = &parsed.model {
-                    *self.served_model.lock().expect("model lock") = Some(m.clone());
-                }
-                return Ok(parsed);
-            }
-            if res.status == 429 {
-                self.pacer
-                    .lock()
-                    .expect("pacer lock")
-                    .throttled(Instant::now());
-                self.bump(|s| s.rate_limited += 1);
-                if limited == self.rate_limit_retries {
-                    return Err(JevError {
-                        kind: JevErrorKind::Transient,
-                        status: 429,
-                        message: "rate limited".to_owned(),
-                    });
-                }
-                limited += 1;
-                (self.sleep)(rate_limit_wait(limited, res.retry_after.as_deref()));
-                continue;
-            }
-            // 529 is the documented "service overloaded" status.
-            let kind = if res.status == 529 {
-                JevErrorKind::Transient
-            } else {
-                JevError::classify(res.status, &res.body)
-            };
-            if kind != JevErrorKind::Transient || attempt == self.retries {
-                return Err(JevError {
-                    kind,
-                    status: res.status,
-                    message: truncate(&res.body),
-                });
-            }
-            attempt += 1;
-            self.bump(|s| s.retried += 1);
-            (self.sleep)(backoff(attempt, res.retry_after.as_deref()));
-        }
-    }
-
-    /// Ask, halving the question set whenever the server reports the
-    /// request too big. The state is unchanged by a split, so a state that
-    /// alone exceeds the ceiling cannot be rescued here — the planner must
-    /// have kept it under [`crate::semantic::cost::state_budget`].
-    pub fn ask_splitting(
-        &self,
-        state: &Value,
-        questions: &BTreeMap<String, Question>,
-    ) -> Result<Response, JevError> {
-        match self.ask(state, questions) {
-            Err(e) if e.kind == JevErrorKind::TooBig && questions.len() >= 2 => {
-                self.bump(|s| s.splits += 1);
-                let half = questions.len().div_ceil(2);
-                let mut merged = Response::default();
-                let (a, b): (Vec<_>, Vec<_>) =
-                    questions.iter().enumerate().partition(|(i, _)| *i < half);
-                for part in [a, b] {
-                    let subset: BTreeMap<String, Question> = part
-                        .into_iter()
-                        .map(|(_, (k, q))| (k.clone(), q.clone()))
-                        .collect();
-                    let res = self.ask_splitting(state, &subset)?;
-                    merged.answers.extend(res.answers);
-                    merged.usage.input_tokens += res.usage.input_tokens;
-                    merged.usage.output_tokens += res.usage.output_tokens;
-                    if merged.model.is_none() {
-                        merged.model = res.model;
-                    }
-                }
-                Ok(merged)
-            }
-            other => other,
-        }
     }
 
     fn wait_for_budget(&self, tokens: f64) {
@@ -425,19 +497,125 @@ impl JevClient {
             (self.sleep)(wait);
         }
     }
+}
 
-    fn bump(&self, f: impl FnOnce(&mut Spend)) {
-        f(&mut self.spend.lock().expect("spend lock"));
+impl Classifier for ApiClient {
+    fn ask(
+        &self,
+        state: &Value,
+        questions: &BTreeMap<String, Question>,
+    ) -> Result<Response, AskError> {
+        if questions.is_empty() {
+            return Ok(Response::default());
+        }
+        let body = self.dialect.request_body(&self.model, state, questions);
+        #[allow(clippy::cast_precision_loss)]
+        let estimated = estimate_tokens(body.len()) as f64;
+        let url = format!("{}{}", self.base_url, self.dialect.ask_path());
+
+        let mut attempt = 0;
+        let mut limited = 0;
+        loop {
+            self.wait_for_budget(estimated);
+            let result = self.transport.post_json(&url, &self.headers, &body);
+            let res = match result {
+                Ok(res) => res,
+                Err(e) => {
+                    if attempt == self.retries {
+                        return Err(AskError {
+                            kind: AskErrorKind::Transient,
+                            status: 0,
+                            message: format!("network: {e}"),
+                        });
+                    }
+                    attempt += 1;
+                    self.spend.bump(|s| s.retried += 1);
+                    (self.sleep)(backoff(attempt, None));
+                    continue;
+                }
+            };
+            if (200..300).contains(&res.status) {
+                let decoded = self
+                    .dialect
+                    .decode(&res.body, questions)
+                    .map_err(|e| AskError {
+                        kind: AskErrorKind::Other,
+                        status: res.status,
+                        message: format!("unparseable response: {e}"),
+                    })?;
+                let parsed = decoded.response;
+                #[allow(clippy::cast_precision_loss)]
+                let actual = parsed.usage.input_tokens as f64;
+                self.pacer
+                    .lock()
+                    .expect("pacer lock")
+                    .settle(estimated, actual);
+                self.spend.record_call(&parsed.usage);
+                if let Some(m) = &parsed.model {
+                    *self.served_model.lock().expect("model lock") = Some(m.clone());
+                }
+                if let Some((kind, message)) = decoded.failure {
+                    return Err(AskError {
+                        kind,
+                        status: res.status,
+                        message,
+                    });
+                }
+                return Ok(parsed);
+            }
+            if res.status == 429 {
+                self.pacer
+                    .lock()
+                    .expect("pacer lock")
+                    .throttled(Instant::now());
+                self.spend.bump(|s| s.rate_limited += 1);
+                if limited == self.rate_limit_retries {
+                    return Err(AskError {
+                        kind: AskErrorKind::Transient,
+                        status: 429,
+                        message: "rate limited".to_owned(),
+                    });
+                }
+                limited += 1;
+                (self.sleep)(rate_limit_wait(limited, res.retry_after.as_deref()));
+                continue;
+            }
+            // 529 is the documented "service overloaded" status.
+            let kind = if res.status == 529 {
+                AskErrorKind::Transient
+            } else {
+                self.dialect.classify(res.status, &res.body)
+            };
+            if kind != AskErrorKind::Transient || attempt == self.retries {
+                return Err(AskError {
+                    kind,
+                    status: res.status,
+                    message: truncate(&res.body),
+                });
+            }
+            attempt += 1;
+            self.spend.bump(|s| s.retried += 1);
+            (self.sleep)(backoff(attempt, res.retry_after.as_deref()));
+        }
+    }
+
+    fn meter(&self) -> &SpendMeter {
+        &self.spend
+    }
+
+    fn check(&self) -> Result<ModelCheck, AskError> {
+        let listed = self.list_models()?;
+        Ok(self.dialect.model_check(&self.model, &listed))
     }
 }
 
-/// Whether `model` appears in a `GET /v1/models` listing. Not being
-/// listed does not make a model unusable: the listing names only the
+/// Whether `model` appears in a `GET /v1/models` listing. For Jev, not
+/// being listed does not make a model unusable: the listing names only the
 /// moving aliases (`jev-latest`, `jev-preview`), while pinned versions
 /// such as `jev-1.13.0` are accepted by `/v1/systemone` without being
 /// listed (measured against the live API, 2026-09-23). An id the server
 /// does not know is caught by the first `/v1/systemone` request instead,
-/// as a [`JevErrorKind::Setup`] error that stops the run.
+/// as an [`AskErrorKind::Setup`] error that stops the run.
 #[must_use]
 pub fn model_listed(models: &[String], model: &str) -> bool {
     models.iter().any(|m| m == model)
@@ -471,7 +649,7 @@ fn model_ids(v: &Value) -> Vec<String> {
     ids
 }
 
-fn truncate(body: &str) -> String {
+pub(crate) fn truncate(body: &str) -> String {
     body.chars().take(240).collect()
 }
 
@@ -482,7 +660,7 @@ fn hinted(retry_after: Option<&str>) -> Option<Duration> {
         .map(Duration::from_secs_f64)
 }
 
-fn backoff(attempt: u32, retry_after: Option<&str>) -> Duration {
+pub(crate) fn backoff(attempt: u32, retry_after: Option<&str>) -> Duration {
     hinted(retry_after).unwrap_or_else(|| {
         let ms = (500_u64 << attempt.min(6)).min(20_000);
         Duration::from_millis(ms)
@@ -500,7 +678,7 @@ fn rate_limit_wait(nth: u32, retry_after: Option<&str>) -> Duration {
 #[cfg(test)]
 pub(crate) mod testing {
     //! Scripted transport shared by semantic tests.
-    use super::{HttpResponse, Transport};
+    use super::{Headers, HttpResponse, Transport};
     use std::sync::Mutex;
 
     type Handler = Box<dyn Fn(&str, &[u8]) -> Result<HttpResponse, String> + Send + Sync>;
@@ -522,14 +700,19 @@ pub(crate) mod testing {
     }
 
     impl Transport for FakeTransport {
-        fn post_json(&self, url: &str, _key: &str, body: &[u8]) -> Result<HttpResponse, String> {
+        fn post_json(
+            &self,
+            url: &str,
+            _headers: &Headers,
+            body: &[u8],
+        ) -> Result<HttpResponse, String> {
             self.requests
                 .lock()
                 .unwrap()
                 .push(String::from_utf8_lossy(body).into_owned());
             (self.handler)(url, body)
         }
-        fn get(&self, url: &str, _key: &str) -> Result<HttpResponse, String> {
+        fn get(&self, url: &str, _headers: &Headers) -> Result<HttpResponse, String> {
             (self.handler)(url, b"")
         }
     }
@@ -571,8 +754,8 @@ mod tests {
         }
     }
 
-    fn client(t: FakeTransport) -> JevClient {
-        JevClient::new(Arc::new(t), "k".into(), "jev-1.13.0".into())
+    fn client(t: FakeTransport) -> ApiClient {
+        ApiClient::jev(Arc::new(t), "k", "jev-1.13.0".into())
             .with_base_url("http://test")
             .with_sleeper(|_| {})
     }
@@ -604,7 +787,7 @@ mod tests {
         let mut qs = BTreeMap::new();
         qs.insert("a".to_owned(), noul("x"));
         let e = c.ask(&json!("s"), &qs).unwrap_err();
-        assert_eq!(e.kind, JevErrorKind::Setup);
+        assert_eq!(e.kind, AskErrorKind::Setup);
         assert_eq!(n.load(Ordering::SeqCst), 1);
     }
 
@@ -624,7 +807,7 @@ mod tests {
         }));
         let qs: BTreeMap<String, Question> = (0..4).map(|i| (format!("q{i}"), noul("x"))).collect();
         let e = c.ask_splitting(&json!("s"), &qs).unwrap_err();
-        assert_eq!(e.kind, JevErrorKind::Setup);
+        assert_eq!(e.kind, AskErrorKind::Setup);
         assert_eq!(n.load(Ordering::SeqCst), 1);
         assert_eq!(c.spend().splits, 0);
     }

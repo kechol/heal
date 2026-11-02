@@ -1,5 +1,5 @@
 //! `heal semantic ask` — the one command that sends project content to
-//! the Jev API (`[features.semantic]`). Team verdicts are written to
+//! the model's provider (`[features.semantic]`). Team verdicts are written to
 //! `.heal/semantic/verdicts/`, one person's (on-demand checks, `focus`) to
 //! the untracked `.heal/cache/semantic/verdicts/`; `heal status` reads
 //! both offline.
@@ -7,12 +7,13 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 
-use crate::core::config::load_from_project;
+use crate::core::config::{load_from_project, SemanticProvider};
 use crate::core::HealPaths;
-use crate::semantic::client::{model_listed, JevClient, UreqTransport};
-use crate::semantic::credentials::{default_credentials_path, resolve};
+use crate::semantic::claude_cli::{ClaudeCli, SystemRunner};
+use crate::semantic::client::{ApiClient, Classifier, UreqTransport};
+use crate::semantic::credentials::{default_credentials_path, resolve_backend, Backend};
 use crate::semantic::runner::{self, AskOptions, AskReport};
 use crate::semantic::store::VerdictStore;
 use crate::semantic::task::{registry, Task, TaskContext};
@@ -40,9 +41,11 @@ pub fn run_ask(project: &Path, args: &AskArgs) -> Result<()> {
     if !semantic.enabled {
         eprintln!(
             "heal semantic: [features.semantic] is disabled in .heal/config.toml.\n\
-             Enabling it sends selected source and docs to the TypeSafe API \
-             (https://docs.typesafe.ai/); set `enabled = true` under \
-             [features.semantic] to opt in."
+             Enabling it sends selected source and docs to the provider of \
+             [features.semantic].model: the TypeSafe API \
+             (https://docs.typesafe.ai/) for a `jev-` model, Anthropic for a \
+             `claude-` model. Set `enabled = true` under [features.semantic] \
+             to opt in."
         );
         std::process::exit(SEMANTIC_SETUP_EXIT_CODE);
     }
@@ -63,17 +66,9 @@ pub fn run_ask(project: &Path, args: &AskArgs) -> Result<()> {
         let Some(client) = client.as_ref() else {
             bail!("--check cannot be combined with --dry-run");
         };
-        let models = match client.list_models() {
-            Ok(m) => m,
-            Err(e) => setup_exit(&format!("Jev API check failed: {e}")),
-        };
-        if model_listed(&models, &semantic.model) {
-            println!("Jev API reachable; model `{}` available.", semantic.model);
-        } else {
-            println!(
-                "Jev API reachable; key accepted. {}",
-                unlisted_model_note(&semantic.model, &models)
-            );
+        match client.check() {
+            Ok(check) => println!("{}", check.note),
+            Err(e) => setup_exit(&format!("{} check failed: {e}", semantic.provider().id())),
         }
         return Ok(());
     }
@@ -101,7 +96,7 @@ pub fn run_ask(project: &Path, args: &AskArgs) -> Result<()> {
         &selected,
         &ctx,
         &mut store,
-        client.as_ref(),
+        client.as_deref(),
         AskOptions {
             dry_run: args.dry_run,
             refresh: args.refresh,
@@ -122,21 +117,6 @@ pub fn run_ask(project: &Path, args: &AskArgs) -> Result<()> {
         std::process::exit(SEMANTIC_SETUP_EXIT_CODE);
     }
     Ok(())
-}
-
-/// Why a model missing from `GET /v1/models` is not an error: the
-/// listing names only the moving aliases, so a pinned version is
-/// confirmed by the first `heal semantic ask` request instead.
-pub fn unlisted_model_note(model: &str, listed: &[String]) -> String {
-    format!(
-        "Model `{model}` is not in the API's model list ({}); pinned versions are not \
-         listed, and an unknown one stops the first `heal semantic ask` request.",
-        if listed.is_empty() {
-            "empty".to_owned()
-        } else {
-            listed.join(", ")
-        }
-    )
 }
 
 /// Print `message` and exit with [`SEMANTIC_SETUP_EXIT_CODE`]: the run
@@ -177,24 +157,37 @@ fn select_tasks<'a>(
         .collect())
 }
 
-/// Resolve the key and build a client. Shared with `heal auth jev status`.
-pub(crate) fn build_client(model: &str) -> Result<JevClient> {
+/// Build the client for `model`. Shared with `heal auth <provider> status`.
+/// Claude prefers an API key and falls back to the `claude` CLI's sign-in.
+pub(crate) fn build_client(model: &str) -> Result<Box<dyn Classifier>> {
+    let provider = SemanticProvider::of_model(model);
     let file = default_credentials_path();
-    let key = resolve(file.as_deref())
-        .map_err(anyhow::Error::msg)?
-        .ok_or_else(|| {
-            anyhow!(
+    let key = match resolve_backend(provider, file.as_deref()).map_err(anyhow::Error::msg)? {
+        Some(Backend::Api(key)) => key,
+        Some(Backend::ClaudeCli) => {
+            return Ok(Box::new(ClaudeCli::new(
+                Arc::new(SystemRunner),
+                model.to_owned(),
+            )));
+        }
+        None => bail!(match provider {
+            SemanticProvider::Jev =>
                 "no Jev API key found. Export TYPESAFE_API_KEY, or run \
                  `heal auth jev set` to store one in your user config \
-                 (never in .heal/). Keys: https://console.typesafe.ai/"
-            )
-        })?;
-    let transport = UreqTransport::new().map_err(anyhow::Error::msg)?;
-    Ok(JevClient::new(
-        Arc::new(transport),
-        key.key,
-        model.to_owned(),
-    ))
+                 (never in .heal/). Keys: https://console.typesafe.ai/",
+            SemanticProvider::Claude =>
+                "no Claude credentials found. Export ANTHROPIC_API_KEY, run \
+                 `heal auth claude set` to store a key in your user config \
+                 (never in .heal/), or install and sign in to the `claude` CLI.",
+        }),
+    };
+    let transport = Arc::new(UreqTransport::new().map_err(anyhow::Error::msg)?);
+    Ok(match provider {
+        SemanticProvider::Jev => Box::new(ApiClient::jev(transport, &key.key, model.to_owned())),
+        SemanticProvider::Claude => {
+            Box::new(ApiClient::claude(transport, &key.key, model.to_owned()))
+        }
+    })
 }
 
 fn print_report(r: &AskReport) {
@@ -241,8 +234,8 @@ fn print_report(r: &AskReport) {
     }
     if !r.dry_run {
         println!(
-            "  total: {} request(s), {} input tokens, ${:.4}",
-            r.requests_sent, r.input_tokens, r.usd
+            "  total: {} request(s), {} input tokens, {} output tokens, ${:.4}",
+            r.requests_sent, r.input_tokens, r.output_tokens, r.usd
         );
     }
     if r.stopped_by_budget {

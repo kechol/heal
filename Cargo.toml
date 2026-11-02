@@ -34,7 +34,7 @@ tree-sitter-rust = "0.24"
 ignore = "0.4"
 git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 # HTTP client for the opt-in `[features.semantic]` family. Only
-# `heal semantic ask` and `heal auth jev status` open connections.
+# `heal semantic ask` and `heal auth <provider> status` open connections.
 # `rustls-no-provider` keeps webpki-roots out: trust roots come from
 # the OS store via rustls-native-certs, so corporate CAs keep working.
 ureq = { version = "3.4", default-features = false, features = ["rustls-no-provider"] }

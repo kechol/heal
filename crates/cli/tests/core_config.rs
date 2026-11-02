@@ -1,6 +1,6 @@
 use heal_cli::core::config::{
     assign_workspace, load_from_project, Config, CrossWorkspacePolicy, DrainSpec, DrainTier,
-    HotspotMatch,
+    HotspotMatch, SemanticProvider,
 };
 use heal_cli::core::finding::{Finding, Location};
 use heal_cli::core::severity::Severity;
@@ -1034,6 +1034,7 @@ fn semantic_rejects_moving_aliases_and_bad_limits() {
     for body in [
         "[features.semantic]\nmodel = \"jev-latest\"\n",
         "[features.semantic]\nmodel = \"jev-preview\"\n",
+        "[features.semantic]\nmodel = \"claude-opus-5-5\"\n",
         "[features.semantic]\nmax_usd = 0.0\n",
         "[features.semantic]\nconcurrency = 0\n",
         "[features.semantic.tasks.not_a_task]\nenabled = true\n",
@@ -1045,6 +1046,16 @@ fn semantic_rejects_moving_aliases_and_bad_limits() {
         );
     }
     assert!(Config::from_toml_str("[features.semantic]\napi_key = \"x\"\n").is_err());
+}
+
+#[test]
+fn semantic_provider_follows_the_model_id() {
+    let cfg = Config::from_toml_str("[features.semantic]\nmodel = \"claude-haiku-5-5\"\n").unwrap();
+    assert_eq!(cfg.features.semantic.provider(), SemanticProvider::Claude);
+    assert_eq!(
+        Config::default().features.semantic.provider(),
+        SemanticProvider::Jev
+    );
 }
 
 #[test]

@@ -7,8 +7,8 @@ use std::sync::Mutex;
 use serde::Serialize;
 
 use crate::semantic::api::Answer;
-use crate::semantic::client::{JevClient, JevErrorKind, Spend};
-use crate::semantic::cost::usd_for;
+use crate::semantic::client::{AskErrorKind, Classifier, Spend};
+use crate::semantic::cost::{pricing, Pricing};
 use crate::semantic::plan::{pack, Batch, PackError};
 use crate::semantic::store::{Verdict, VerdictStore};
 use crate::semantic::task::{Answered, Item, Task, TaskContext};
@@ -53,6 +53,7 @@ pub struct AskReport {
     pub tasks: Vec<TaskReport>,
     pub requests_sent: u64,
     pub input_tokens: u64,
+    pub output_tokens: u64,
     pub usd: f64,
     /// Dispatch stopped before a batch that would cross `max_usd`.
     pub stopped_by_budget: bool,
@@ -74,6 +75,7 @@ fn plan_task(
     ctx: &TaskContext<'_>,
     store: &mut VerdictStore,
     opts: AskOptions,
+    price: Pricing,
 ) -> anyhow::Result<Planned> {
     let mut report = TaskReport {
         task: task.id().to_owned(),
@@ -104,7 +106,7 @@ fn plan_task(
             continue;
         }
         let n = pending.len();
-        match pack(group.state, pending) {
+        match pack(group.state, pending, price.max_questions_per_request) {
             Ok(mut b) => {
                 report.to_ask += n;
                 batches.append(&mut b);
@@ -119,7 +121,10 @@ fn plan_task(
     }
     report.requests = batches.len();
     report.est_input_tokens = batches.iter().map(|b| b.est_tokens).sum();
-    report.est_usd = usd_for(report.est_input_tokens as u64);
+    // A fold, not `sum()`: the empty float sum is -0.0, printed as `$-0.0000`.
+    report.est_usd = batches.iter().fold(0.0, |total, b| {
+        total + price.estimate_usd(b.est_tokens, b.questions.len())
+    });
     Ok(Planned {
         report,
         batches,
@@ -136,10 +141,11 @@ pub fn run(
     tasks: &[&dyn Task],
     ctx: &TaskContext<'_>,
     store: &mut VerdictStore,
-    client: Option<&JevClient>,
+    client: Option<&dyn Classifier>,
     opts: AskOptions,
 ) -> anyhow::Result<AskReport> {
     let semantic = ctx.semantic();
+    let price = pricing(&semantic.model);
     let dry_run = opts.dry_run || client.is_none();
     let mut report = AskReport {
         model: semantic.model.clone(),
@@ -152,7 +158,7 @@ pub fn run(
             .snapshot(task.depends_on())
             .map_err(anyhow::Error::msg)?;
         let tctx = ctx.with_prior(&snapshot);
-        let mut planned = plan_task(*task, &tctx, store, opts)?;
+        let mut planned = plan_task(*task, &tctx, store, opts, price)?;
         if opts.prune && !dry_run {
             planned.report.pruned = store
                 .prune(task.id(), &planned.keep)
@@ -164,7 +170,8 @@ pub fn run(
                     &planned.batches,
                     client,
                     semantic.max_usd - reserved,
-                    semantic.concurrency,
+                    semantic.concurrency.min(client.max_concurrency()),
+                    price,
                 );
                 reserved += out.reserved;
                 for (key, answer) in out.answers {
@@ -213,7 +220,8 @@ pub fn run(
         let spend: Spend = client.spend();
         report.requests_sent = spend.calls;
         report.input_tokens = spend.input_tokens;
-        report.usd = spend.usd();
+        report.output_tokens = spend.output_tokens;
+        report.usd = price.usd(spend.input_tokens, spend.output_tokens);
     }
     Ok(report)
 }
@@ -235,7 +243,13 @@ struct Dispatched {
 /// first may still go out, so the cutoff is not strictly in queue order.
 /// A setup failure (bad key, no credit, unknown model) stops every
 /// worker, since every batch would fail the same way.
-fn dispatch(queue: &[Batch], client: &JevClient, budget: f64, concurrency: usize) -> Dispatched {
+fn dispatch(
+    queue: &[Batch],
+    client: &dyn Classifier,
+    budget: f64,
+    concurrency: usize,
+    price: Pricing,
+) -> Dispatched {
     let reserved = Mutex::new(0.0_f64);
     let stop = AtomicBool::new(false);
     let over_budget = AtomicBool::new(false);
@@ -256,7 +270,7 @@ fn dispatch(queue: &[Batch], client: &JevClient, budget: f64, concurrency: usize
                 let Some(batch) = queue.get(i) else {
                     return;
                 };
-                let est = usd_for(batch.est_tokens as u64);
+                let est = price.estimate_usd(batch.est_tokens, batch.questions.len());
                 {
                     let mut r = reserved.lock().expect("reserve lock");
                     if *r + est > budget {
@@ -279,7 +293,7 @@ fn dispatch(queue: &[Batch], client: &JevClient, budget: f64, concurrency: usize
                     }
                     Err(e) => {
                         failed.fetch_add(batch.questions.len(), Ordering::SeqCst);
-                        if e.kind == JevErrorKind::Setup {
+                        if e.kind == AskErrorKind::Setup {
                             stop.store(true, Ordering::SeqCst);
                             fatal
                                 .lock()
@@ -313,7 +327,7 @@ mod tests {
     use crate::core::config::Config;
     use crate::semantic::api::Question;
     use crate::semantic::client::testing::{answer_all_noul, FakeTransport};
-    use crate::semantic::client::HttpResponse;
+    use crate::semantic::client::{ApiClient, HttpResponse};
     use crate::semantic::task::{Group, Item};
     use serde_json::json;
     use std::sync::Arc;
@@ -350,10 +364,10 @@ mod tests {
 
     fn client(
         handler: impl Fn(&str, &[u8]) -> Result<HttpResponse, String> + Send + Sync + 'static,
-    ) -> JevClient {
-        JevClient::new(
+    ) -> ApiClient {
+        ApiClient::jev(
             Arc::new(FakeTransport::new(handler)),
-            "k".into(),
+            "k",
             "jev-1.13.0".into(),
         )
         .with_base_url("http://test")
@@ -376,7 +390,30 @@ mod tests {
         let r = run(&[&task], &ctx, &mut store, Some(&c), AskOptions::default()).unwrap();
         assert_eq!(r.tasks[0].cached, 3);
         assert_eq!(r.tasks[0].to_ask, 0);
+        assert!(r.tasks[0].est_usd.is_sign_positive(), "no `$-0.0000`");
         assert_eq!(c.spend().calls, 1, "second run must not send");
+    }
+
+    #[test]
+    fn claude_plan_caps_questions_and_prices_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = Config::default();
+        cfg.features.semantic.model = "claude-haiku-5-5".to_owned();
+        let ctx = TaskContext::new(dir.path(), &cfg).unwrap();
+        let mut store = VerdictStore::new(dir.path().join("v"));
+        let r = run(
+            &[&Fixed(60)],
+            &ctx,
+            &mut store,
+            None,
+            AskOptions {
+                dry_run: true,
+                ..AskOptions::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(r.tasks[0].requests, 3, "25 + 25 + 10 questions");
+        assert!(r.tasks[0].est_usd > 0.0);
     }
 
     #[test]
