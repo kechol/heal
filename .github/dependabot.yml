@@ -15,9 +15,10 @@ updates:
           - patch
           - minor
 
-  # GitHub Actions — keeps the SHA-pinned action references fresh.
-  # Without this, the SHA pins in ci.yml / release.yml would silently
-  # drift behind upstream security and feature releases.
+  # GitHub Actions — keeps the action versions in the workflows and their
+  # commits in .github/workflows/actions.lock fresh. Without this, the
+  # locked commits would silently drift behind upstream security and
+  # feature releases.
   - package-ecosystem: github-actions
     directory: /
     schedule:
